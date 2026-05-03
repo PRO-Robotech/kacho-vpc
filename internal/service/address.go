@@ -92,6 +92,7 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 
 	addrID := ids.NewUID()
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Create address %s", req.Name),
 		&vpcv1.CreateAddressMetadata{AddressId: addrID},
 	)
@@ -241,6 +242,7 @@ func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*ope
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Update address %s", req.AddressID),
 		&vpcv1.UpdateAddressMetadata{AddressId: req.AddressID},
 	)
@@ -305,6 +307,7 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Delete address %s", id),
 		&vpcv1.DeleteAddressMetadata{AddressId: id},
 	)

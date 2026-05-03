@@ -69,6 +69,7 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 
 	netID := ids.NewUID()
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Create network %s", req.Name),
 		&vpcv1.CreateNetworkMetadata{NetworkId: netID},
 	)
@@ -117,6 +118,7 @@ func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*ope
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Update network %s", req.NetworkID),
 		&vpcv1.UpdateNetworkMetadata{NetworkId: req.NetworkID},
 	)
@@ -176,6 +178,7 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Delete network %s", id),
 		&vpcv1.DeleteNetworkMetadata{NetworkId: id},
 	)

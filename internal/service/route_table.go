@@ -76,6 +76,7 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 
 	rtID := ids.NewUID()
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Create route table %s", req.Name),
 		&vpcv1.CreateRouteTableMetadata{RouteTableId: rtID},
 	)
@@ -130,6 +131,7 @@ func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq)
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Update route table %s", req.RouteTableID),
 		&vpcv1.UpdateRouteTableMetadata{RouteTableId: req.RouteTableID},
 	)
@@ -191,6 +193,7 @@ func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Delete route table %s", id),
 		&vpcv1.DeleteRouteTableMetadata{RouteTableId: id},
 	)

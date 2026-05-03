@@ -81,6 +81,7 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 
 	subID := ids.NewUID()
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Create subnet %s", req.Name),
 		&vpcv1.CreateSubnetMetadata{SubnetId: subID},
 	)
@@ -138,6 +139,7 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Update subnet %s", req.SubnetID),
 		&vpcv1.UpdateSubnetMetadata{SubnetId: req.SubnetID},
 	)
@@ -207,6 +209,7 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	}
 
 	op, err := operations.New(
+		"vpc",
 		fmt.Sprintf("Delete subnet %s", id),
 		&vpcv1.DeleteSubnetMetadata{SubnetId: id},
 	)
