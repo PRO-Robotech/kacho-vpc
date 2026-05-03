@@ -1,0 +1,14 @@
+name: vpc
+replicas: 1
+image: kacho-vpc:dev
+imagePullPolicy: IfNotPresent
+ports:
+  grpc: 9090
+db:
+  host: kacho-umbrella-pg-vpc
+  port: "5432"
+  user: vpc
+  name: kacho_vpc
+  passwordSecretName: kacho-umbrella-pg-vpc
+  passwordSecretKey: password
+resourceManagerAddr: "resource-manager.kacho.svc.cluster.local:9090"
