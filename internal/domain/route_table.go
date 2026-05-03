@@ -19,5 +19,4 @@ type RouteTable struct {
 	Labels       map[string]string
 	NetworkID    string
 	StaticRoutes []StaticRoute
-	DeletedAt    *time.Time
 }

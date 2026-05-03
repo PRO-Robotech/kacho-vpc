@@ -49,5 +49,4 @@ type Address struct {
 	ExternalIpv4 *ExternalIpv4Spec
 	// Для internal:
 	InternalIpv4 *InternalIpv4Spec
-	DeletedAt    *time.Time
 }

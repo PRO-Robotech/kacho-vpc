@@ -23,5 +23,4 @@ type Subnet struct {
 	V6CidrBlocks []string // OUTPUT_ONLY ipv6
 	RouteTableID string
 	DhcpOptions  *DhcpOptions
-	DeletedAt    *time.Time
 }

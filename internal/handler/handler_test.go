@@ -71,7 +71,7 @@ func (r *mockNetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.
 	return n, nil
 }
 
-func (r *mockNetworkRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockNetworkRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {

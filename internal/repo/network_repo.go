@@ -24,10 +24,10 @@ func NewNetworkRepo(pool *pgxpool.Pool) *NetworkRepo {
 	return &NetworkRepo{pool: pool}
 }
 
-const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id, deleted_at`
+const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id`
 
 func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, error) {
-	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1 AND deleted_at IS NULL`, networkCols)
+	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, networkCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	n, err := scanNetwork(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -43,7 +43,7 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 	}
 
 	args := []any{}
-	conditions := []string{"deleted_at IS NULL"}
+	conditions := []string{}
 	argIdx := 1
 
 	if f.FolderID != "" {
@@ -61,7 +61,10 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conditions, " AND ")
+	var where string
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
 	q := fmt.Sprintf(`SELECT %s FROM networks %s ORDER BY created_at ASC, id ASC LIMIT $%d`, networkCols, where, argIdx)
 	args = append(args, pageSize+1)
 
@@ -111,7 +114,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 
 	const q = `
 		UPDATE networks SET name=$2, description=$3, labels=$4, default_security_group_id=$5
-		WHERE id=$1 AND deleted_at IS NULL
+		WHERE id=$1
 		RETURNING ` + networkCols
 
 	row := r.pool.QueryRow(ctx, q,
@@ -124,8 +127,8 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 	return result, err
 }
 
-func (r *NetworkRepo) SoftDelete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE networks SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
@@ -147,7 +150,7 @@ func scanNetwork(row scannable) (*domain.Network, error) {
 
 	err := row.Scan(
 		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON,
-		&n.DefaultSecurityGroupID, &n.DeletedAt,
+		&n.DefaultSecurityGroupID,
 	)
 	if err != nil {
 		return nil, err

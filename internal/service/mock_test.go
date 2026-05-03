@@ -61,7 +61,7 @@ func (r *mockNetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.
 	return n, nil
 }
 
-func (r *mockNetworkRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockNetworkRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
@@ -122,7 +122,7 @@ func (r *mockSubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.Su
 	return s, nil
 }
 
-func (r *mockSubnetRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockSubnetRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
@@ -182,7 +182,7 @@ func (r *mockAddressRepo) Update(_ context.Context, a *domain.Address) (*domain.
 	return a, nil
 }
 
-func (r *mockAddressRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockAddressRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
@@ -257,7 +257,7 @@ func (r *mockRouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*
 	return rt, nil
 }
 
-func (r *mockRouteTableRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockRouteTableRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {

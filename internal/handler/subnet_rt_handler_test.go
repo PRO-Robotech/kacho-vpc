@@ -60,7 +60,7 @@ func (r *mockSubnetRepoForSvc) Update(_ context.Context, s *domain.Subnet) (*dom
 	r.data[s.ID] = s
 	return s, nil
 }
-func (r *mockSubnetRepoForSvc) SoftDelete(_ context.Context, id string) error {
+func (r *mockSubnetRepoForSvc) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
@@ -110,7 +110,7 @@ func (r *mockRouteTableRepoForSvc) Update(_ context.Context, rt *domain.RouteTab
 	r.data[rt.ID] = rt
 	return rt, nil
 }
-func (r *mockRouteTableRepoForSvc) SoftDelete(_ context.Context, id string) error {
+func (r *mockRouteTableRepoForSvc) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {

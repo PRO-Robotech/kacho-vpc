@@ -40,7 +40,7 @@ type NetworkRepo interface {
 	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.Network, string, error)
 	Insert(ctx context.Context, n *domain.Network) (*domain.Network, error)
 	Update(ctx context.Context, n *domain.Network) (*domain.Network, error)
-	SoftDelete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.
@@ -49,7 +49,7 @@ type SubnetRepo interface {
 	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error)
 	Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
 	Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
-	SoftDelete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 }
 
 // AddressRepo — port-интерфейс репозитория адресов.
@@ -58,7 +58,7 @@ type AddressRepo interface {
 	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.Address, string, error)
 	Insert(ctx context.Context, a *domain.Address) (*domain.Address, error)
 	Update(ctx context.Context, a *domain.Address) (*domain.Address, error)
-	SoftDelete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 	// ExistsIP проверяет уникальность IP (external) в рамках folder/global.
 	ExistsIP(ctx context.Context, ip string) (bool, error)
 }
@@ -69,7 +69,7 @@ type RouteTableRepo interface {
 	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error)
 	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
 	Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
-	SoftDelete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string) error
 }
 
 // FolderClient — port для проверки существования Folder.

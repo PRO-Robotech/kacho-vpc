@@ -24,10 +24,10 @@ func NewRouteTableRepo(pool *pgxpool.Pool) *RouteTableRepo {
 	return &RouteTableRepo{pool: pool}
 }
 
-const routeTableCols = `id, folder_id, created_at, name, description, labels, network_id, static_routes, deleted_at`
+const routeTableCols = `id, folder_id, created_at, name, description, labels, network_id, static_routes`
 
 func (r *RouteTableRepo) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
-	q := fmt.Sprintf(`SELECT %s FROM route_tables WHERE id = $1 AND deleted_at IS NULL`, routeTableCols)
+	q := fmt.Sprintf(`SELECT %s FROM route_tables WHERE id = $1`, routeTableCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	rt, err := scanRouteTable(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -43,7 +43,7 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 	}
 
 	args := []any{}
-	conditions := []string{"deleted_at IS NULL"}
+	conditions := []string{}
 	argIdx := 1
 
 	if f.FolderID != "" {
@@ -66,7 +66,10 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conditions, " AND ")
+	var where string
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
 	q := fmt.Sprintf(`SELECT %s FROM route_tables %s ORDER BY created_at ASC, id ASC LIMIT $%d`, routeTableCols, where, argIdx)
 	args = append(args, pageSize+1)
 
@@ -119,7 +122,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 
 	const q = `
 		UPDATE route_tables SET name=$2, description=$3, labels=$4, static_routes=$5
-		WHERE id=$1 AND deleted_at IS NULL
+		WHERE id=$1
 		RETURNING ` + routeTableCols
 
 	row := r.pool.QueryRow(ctx, q,
@@ -132,8 +135,8 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 	return result, err
 }
 
-func (r *RouteTableRepo) SoftDelete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE route_tables SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM route_tables WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
@@ -151,7 +154,7 @@ func scanRouteTable(row scannable) (*domain.RouteTable, error) {
 
 	err := row.Scan(
 		&rt.ID, &rt.FolderID, &rt.CreatedAt, &rt.Name, &rt.Description, &labelsJSON,
-		&rt.NetworkID, &routesJSON, &rt.DeletedAt,
+		&rt.NetworkID, &routesJSON,
 	)
 	if err != nil {
 		return nil, err

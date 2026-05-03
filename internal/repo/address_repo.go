@@ -24,10 +24,10 @@ func NewAddressRepo(pool *pgxpool.Pool) *AddressRepo {
 	return &AddressRepo{pool: pool}
 }
 
-const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, deleted_at`
+const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4`
 
 func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, error) {
-	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1 AND deleted_at IS NULL`, addressCols)
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, addressCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	a, err := scanAddress(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -43,7 +43,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	}
 
 	args := []any{}
-	conditions := []string{"deleted_at IS NULL"}
+	conditions := []string{}
 	argIdx := 1
 
 	if f.FolderID != "" {
@@ -61,7 +61,10 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conditions, " AND ")
+	var where string
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
 	q := fmt.Sprintf(`SELECT %s FROM addresses %s ORDER BY created_at ASC, id ASC LIMIT $%d`, addressCols, where, argIdx)
 	args = append(args, pageSize+1)
 
@@ -115,7 +118,7 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 
 	const q = `
 		UPDATE addresses SET name=$2, description=$3, labels=$4, reserved=$5, used=$6, deletion_protection=$7
-		WHERE id=$1 AND deleted_at IS NULL
+		WHERE id=$1
 		RETURNING ` + addressCols
 
 	row := r.pool.QueryRow(ctx, q,
@@ -128,8 +131,8 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 	return result, err
 }
 
-func (r *AddressRepo) SoftDelete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE addresses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+func (r *AddressRepo) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
@@ -141,11 +144,10 @@ func (r *AddressRepo) SoftDelete(ctx context.Context, id string) error {
 
 // ExistsIP проверяет, занят ли IP-адрес (в external или internal).
 func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
-	// Проверяем и external, и internal
 	var count int
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM addresses
-		WHERE deleted_at IS NULL AND (
+		WHERE (
 			(external_ipv4->>'address' = $1) OR
 			(internal_ipv4->>'address' = $1)
 		)
@@ -166,7 +168,7 @@ func scanAddress(row scannable) (*domain.Address, error) {
 	err := row.Scan(
 		&a.ID, &a.FolderID, &a.CreatedAt, &a.Name, &a.Description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
-		&extJSON, &intJSON, &a.DeletedAt,
+		&extJSON, &intJSON,
 	)
 	if err != nil {
 		return nil, err

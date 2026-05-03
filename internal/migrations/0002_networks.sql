@@ -7,11 +7,10 @@ CREATE TABLE networks (
   name                      TEXT        NOT NULL,
   description               TEXT        NOT NULL DEFAULT '',
   labels                    JSONB       NOT NULL DEFAULT '{}',
-  default_security_group_id TEXT        NOT NULL DEFAULT '',
-  deleted_at                TIMESTAMPTZ
+  default_security_group_id TEXT        NOT NULL DEFAULT ''
 );
 
-CREATE INDEX networks_folder_idx ON networks (folder_id) WHERE deleted_at IS NULL;
+CREATE INDEX networks_folder_idx ON networks (folder_id);
 CREATE INDEX networks_created_at_idx ON networks (created_at);
 
 -- +goose Down

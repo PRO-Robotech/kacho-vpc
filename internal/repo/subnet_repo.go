@@ -25,10 +25,10 @@ func NewSubnetRepo(pool *pgxpool.Pool) *SubnetRepo {
 	return &SubnetRepo{pool: pool}
 }
 
-const subnetCols = `id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options, deleted_at`
+const subnetCols = `id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options`
 
 func (r *SubnetRepo) Get(ctx context.Context, id string) (*domain.Subnet, error) {
-	q := fmt.Sprintf(`SELECT %s FROM subnets WHERE id = $1 AND deleted_at IS NULL`, subnetCols)
+	q := fmt.Sprintf(`SELECT %s FROM subnets WHERE id = $1`, subnetCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	s, err := scanSubnet(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -44,7 +44,7 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 	}
 
 	args := []any{}
-	conditions := []string{"deleted_at IS NULL"}
+	conditions := []string{}
 	argIdx := 1
 
 	if f.FolderID != "" {
@@ -67,7 +67,10 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conditions, " AND ")
+	var where string
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
 	q := fmt.Sprintf(`SELECT %s FROM subnets %s ORDER BY created_at ASC, id ASC LIMIT $%d`, subnetCols, where, argIdx)
 	args = append(args, pageSize+1)
 
@@ -123,7 +126,7 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 
 	const q = `
 		UPDATE subnets SET name=$2, description=$3, labels=$4, v4_cidr_blocks=$5, route_table_id=$6, dhcp_options=$7
-		WHERE id=$1 AND deleted_at IS NULL
+		WHERE id=$1
 		RETURNING ` + subnetCols
 
 	row := r.pool.QueryRow(ctx, q,
@@ -138,8 +141,8 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	return result, err
 }
 
-func (r *SubnetRepo) SoftDelete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE subnets SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
@@ -159,7 +162,7 @@ func scanSubnet(row scannable) (*domain.Subnet, error) {
 
 	err := row.Scan(
 		&s.ID, &s.FolderID, &s.CreatedAt, &s.Name, &s.Description, &labelsJSON,
-		&s.NetworkID, &s.ZoneID, &v4, &v6, &routeTableID, &dhcpJSON, &s.DeletedAt,
+		&s.NetworkID, &s.ZoneID, &v4, &v6, &routeTableID, &dhcpJSON,
 	)
 	if err != nil {
 		return nil, err

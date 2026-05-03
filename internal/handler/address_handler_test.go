@@ -68,7 +68,7 @@ func (r *mockAddressRepo) Update(_ context.Context, a *domain.Address) (*domain.
 	return a, nil
 }
 
-func (r *mockAddressRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockAddressRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
@@ -125,7 +125,7 @@ func (r *mockSubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.Su
 	return s, nil
 }
 
-func (r *mockSubnetRepo) SoftDelete(_ context.Context, id string) error {
+func (r *mockSubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 

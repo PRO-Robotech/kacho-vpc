@@ -95,8 +95,8 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "updated-network", updated.Name)
 
-	// SoftDelete
-	err = r.SoftDelete(ctx, n.ID)
+	// Delete
+	err = r.Delete(ctx, n.ID)
 	require.NoError(t, err)
 
 	// Get after delete — должна вернуть ErrNotFound

@@ -218,7 +218,7 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if err := s.repo.SoftDelete(ctx, id); err != nil {
+		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
 		return anypb.New(&vpcv1.DeleteSubnetMetadata{SubnetId: id})

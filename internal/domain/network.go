@@ -11,5 +11,4 @@ type Network struct {
 	Description            string
 	Labels                 map[string]string
 	DefaultSecurityGroupID string
-	DeletedAt              *time.Time
 }
