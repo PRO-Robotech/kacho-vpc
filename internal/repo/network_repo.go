@@ -2,26 +2,19 @@ package repo
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-const networkCols = `id, folder_id, name, description, created_at, labels,
-	status, generation, resource_version, observed_generation, status_last_transition_at, deleted_at`
-
-// NetworkRepo реализует service.NetworkRepo.
+// NetworkRepo — реализация service.NetworkRepo поверх pgxpool.
 type NetworkRepo struct {
 	pool *pgxpool.Pool
 }
@@ -31,63 +24,45 @@ func NewNetworkRepo(pool *pgxpool.Pool) *NetworkRepo {
 	return &NetworkRepo{pool: pool}
 }
 
+const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id, deleted_at`
+
 func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, error) {
-	uid, err := strToUUID(id)
-	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("id", "invalid uuid").Err()
+	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1 AND deleted_at IS NULL`, networkCols)
+	row := r.pool.QueryRow(ctx, q, id)
+	n, err := scanNetwork(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, service.ErrNotFound
 	}
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+networkCols+` FROM networks WHERE id = $1 AND deleted_at IS NULL`, uid)
-	return scanNetwork(row)
+	return n, err
 }
 
-func (r *NetworkRepo) GetByFolderAndName(ctx context.Context, folderID, name string) (*domain.Network, error) {
-	fid, err := strToUUID(folderID)
-	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
-	}
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+networkCols+` FROM networks WHERE folder_id = $1 AND name = $2 AND deleted_at IS NULL`,
-		fid, name)
-	return scanNetwork(row)
-}
-
-func (r *NetworkRepo) List(ctx context.Context, filter service.ListFilter) ([]domain.Network, string, error) {
-	pageSize := filter.PageSize
+func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p service.Pagination) ([]*domain.Network, string, error) {
+	pageSize := p.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 50
 	}
 
 	args := []any{}
-	conds := []string{"deleted_at IS NULL"}
+	conditions := []string{"deleted_at IS NULL"}
 	argIdx := 1
 
-	if filter.FolderID != "" {
-		fid, err := strToUUID(filter.FolderID)
-		if err != nil {
-			return nil, "", coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
-		}
-		conds = append(conds, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, fid)
+	if f.FolderID != "" {
+		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
+		args = append(args, f.FolderID)
 		argIdx++
 	}
-
-	if filter.PageToken != "" {
-		cur, decErr := decodeNetworkPageToken(filter.PageToken)
-		if decErr == nil {
-			conds = append(conds, fmt.Sprintf("(created_at, id::text) > ($%d, $%d)", argIdx, argIdx+1))
-			args = append(args, cur.CreatedAt, cur.ID)
-			argIdx += 2
+	if p.PageToken != "" {
+		ts, id, err := decodePageToken(p.PageToken)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid page_token: %w", err)
 		}
+		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
+		args = append(args, ts, id)
+		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conds, " AND ")
-	orderBy := "ORDER BY created_at ASC, id ASC"
-	if filter.OrderBy != "" {
-		orderBy = buildOrderBy(filter.OrderBy)
-	}
-
-	q := fmt.Sprintf(`SELECT `+networkCols+` FROM networks %s %s LIMIT $%d`, where, orderBy, argIdx)
+	where := "WHERE " + strings.Join(conditions, " AND ")
+	q := fmt.Sprintf(`SELECT %s FROM networks %s ORDER BY created_at ASC, id ASC LIMIT $%d`, networkCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.pool.Query(ctx, q, args...)
@@ -96,13 +71,13 @@ func (r *NetworkRepo) List(ctx context.Context, filter service.ListFilter) ([]do
 	}
 	defer rows.Close()
 
-	var result []domain.Network
+	var result []*domain.Network
 	for rows.Next() {
-		n, serr := scanNetworkRow(rows)
-		if serr != nil {
-			return nil, "", serr
+		n, err := scanNetwork(rows)
+		if err != nil {
+			return nil, "", err
 		}
-		result = append(result, *n)
+		result = append(result, n)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", err
@@ -111,188 +86,74 @@ func (r *NetworkRepo) List(ctx context.Context, filter service.ListFilter) ([]do
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = encodeNetworkPageToken(last.CreatedAt, last.ID)
+		nextToken = encodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
 }
 
-func (r *NetworkRepo) Create(ctx context.Context, n *domain.Network) error {
-	uid, err := strToUUID(n.ID)
-	if err != nil {
-		return err
-	}
-	fid, err := strToUUID(n.FolderID)
-	if err != nil {
-		return err
-	}
-	statusStr := domain.NetworkStatusString[n.Status]
-	if statusStr == "" {
-		statusStr = "NETWORK_STATUS_PROVISIONING"
-	}
+func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Network, error) {
+	labelsJSON, _ := json.Marshal(n.Labels)
 
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO networks (id, folder_id, name, description, labels, status, generation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		uid, fid, n.Name, n.Description, mapToJSON(n.Labels), statusStr, n.Generation,
+	const q = `
+		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING ` + networkCols
+
+	row := r.pool.QueryRow(ctx, q,
+		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
-	return err
+	return scanNetwork(row)
 }
 
-func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) error {
-	uid, err := strToUUID(n.ID)
-	if err != nil {
-		return err
-	}
-	statusStr := domain.NetworkStatusString[n.Status]
-	if statusStr == "" {
-		statusStr = "NETWORK_STATUS_ACTIVE"
-	}
+func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
+	labelsJSON, _ := json.Marshal(n.Labels)
 
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE networks
-		SET name = $2, description = $3, labels = $4, status = $5, generation = $6,
-		    resource_version = gen_random_uuid()::text,
-		    status_last_transition_at = now()
-		WHERE id = $1 AND deleted_at IS NULL`,
-		uid, n.Name, n.Description, mapToJSON(n.Labels), statusStr, n.Generation,
+	const q = `
+		UPDATE networks SET name=$2, description=$3, labels=$4, default_security_group_id=$5
+		WHERE id=$1 AND deleted_at IS NULL
+		RETURNING ` + networkCols
+
+	row := r.pool.QueryRow(ctx, q,
+		n.ID, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
-	if err != nil {
-		return err
+	result, err := scanNetwork(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, service.ErrNotFound
 	}
-	if tag.RowsAffected() == 0 {
-		return coreerrors.NotFound("Network", n.ID).Err()
-	}
-	return nil
+	return result, err
 }
 
 func (r *NetworkRepo) SoftDelete(ctx context.Context, id string) error {
-	uid, err := strToUUID(id)
-	if err != nil {
-		return err
-	}
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE networks SET deleted_at = now(), status = 'NETWORK_STATUS_DELETING' WHERE id = $1 AND deleted_at IS NULL`,
-		uid)
+	tag, err := r.pool.Exec(ctx, `UPDATE networks SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return coreerrors.NotFound("Network", id).Err()
+		return service.ErrNotFound
 	}
 	return nil
-}
-
-func (r *NetworkRepo) HasDependents(ctx context.Context, id string) (bool, error) {
-	uid, err := strToUUID(id)
-	if err != nil {
-		return false, err
-	}
-	var count int
-	err = r.pool.QueryRow(ctx, `
-		SELECT (SELECT COUNT(*) FROM subnets WHERE network_id = $1 AND deleted_at IS NULL) +
-		       (SELECT COUNT(*) FROM security_groups WHERE network_id = $1 AND deleted_at IS NULL) +
-		       (SELECT COUNT(*) FROM route_tables WHERE network_id = $1 AND deleted_at IS NULL)`,
-		uid).Scan(&count)
-	return count > 0, err
 }
 
 // ---- scan helpers ----
 
-func scanNetwork(row pgx.Row) (*domain.Network, error) {
-	n, err := scanNetworkFields(row.Scan)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return n, err
+type scannable interface {
+	Scan(dest ...any) error
 }
 
-func scanNetworkRow(rows pgx.Rows) (*domain.Network, error) {
-	return scanNetworkFields(rows.Scan)
-}
+func scanNetwork(row scannable) (*domain.Network, error) {
+	var n domain.Network
+	var labelsJSON []byte
 
-func scanNetworkFields(scanFn func(...any) error) (*domain.Network, error) {
-	var (
-		id, folderID, name, description string
-		createdAt                        pgtype.Timestamptz
-		labelsJSON                       []byte
-		statusStr                        string
-		generation                       int64
-		resourceVersion                  string
-		observedGeneration               int64
-		statusLastTransition             pgtype.Timestamptz
-		deletedAt                        pgtype.Timestamptz
-	)
-	err := scanFn(
-		&id, &folderID, &name, &description, &createdAt, &labelsJSON,
-		&statusStr, &generation, &resourceVersion, &observedGeneration,
-		&statusLastTransition, &deletedAt,
+	err := row.Scan(
+		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON,
+		&n.DefaultSecurityGroupID, &n.DeletedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Network{
-		ID:                     id,
-		FolderID:               folderID,
-		Name:                   name,
-		Description:            description,
-		CreatedAt:              tsToTime(createdAt),
-		Labels:                 jsonToMap(labelsJSON),
-		Status:                 domain.ParseNetworkStatus(statusStr),
-		Generation:             generation,
-		ResourceVersion:        resourceVersion,
-		ObservedGeneration:     observedGeneration,
-		StatusLastTransitionAt: tsToTime(statusLastTransition),
-		DeletedAt:              tsToTimePtr(deletedAt),
-	}, nil
+	if labelsJSON != nil {
+		_ = json.Unmarshal(labelsJSON, &n.Labels)
+	}
+	return &n, nil
 }
-
-// ---- pagination helpers ----
-
-type networkPageCursor struct {
-	CreatedAt time.Time
-	ID        string
-}
-
-func encodeNetworkPageToken(t time.Time, id string) string {
-	raw := strconv.FormatInt(t.UnixNano(), 10) + ":" + id
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-func decodeNetworkPageToken(token string) (networkPageCursor, error) {
-	b, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return networkPageCursor{}, err
-	}
-	parts := strings.SplitN(string(b), ":", 2)
-	if len(parts) != 2 {
-		return networkPageCursor{}, fmt.Errorf("malformed token")
-	}
-	ns, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return networkPageCursor{}, err
-	}
-	return networkPageCursor{CreatedAt: time.Unix(0, ns).UTC(), ID: parts[1]}, nil
-}
-
-// buildOrderBy строит ORDER BY из строки "field asc/desc".
-func buildOrderBy(orderBy string) string {
-	parts := strings.Fields(orderBy)
-	if len(parts) == 0 {
-		return "ORDER BY created_at ASC, id ASC"
-	}
-	col := strings.ToLower(parts[0])
-	dir := "ASC"
-	if len(parts) > 1 && strings.ToUpper(parts[1]) == "DESC" {
-		dir = "DESC"
-	}
-	allowed := map[string]string{
-		"created_at": "created_at",
-		"name":       "name",
-	}
-	if dbCol, ok := allowed[col]; ok {
-		return fmt.Sprintf("ORDER BY %s %s, id ASC", dbCol, dir)
-	}
-	return "ORDER BY created_at ASC, id ASC"
-}
-

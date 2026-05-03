@@ -7,12 +7,12 @@ CREATE TABLE operations (
   created_by    TEXT         NOT NULL DEFAULT 'anonymous',
   modified_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
   done          BOOLEAN      NOT NULL DEFAULT false,
-  metadata_type TEXT,                 -- type_url из Any
-  metadata_data BYTEA,                -- value из Any
-  resource_id   TEXT,                 -- denorm для filter в List
+  metadata_type TEXT,
+  metadata_data BYTEA,
+  resource_id   TEXT,
   error_code    INT,
   error_message TEXT,
-  error_details BYTEA,                -- google.rpc.Status.details (Any[])
+  error_details BYTEA,
   response_type TEXT,
   response_data BYTEA
 );

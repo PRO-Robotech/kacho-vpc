@@ -7,7 +7,7 @@ COPY kacho-vpc /src/kacho-vpc
 
 WORKDIR /src/kacho-vpc
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o /kacho-vpc ./cmd/kacho-vpc
+RUN CGO_ENABLED=0 go build -o /kacho-vpc ./cmd/vpc
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates

@@ -2,46 +2,52 @@ package domain
 
 import "time"
 
-// AddressStatus — статус публичного IP-адреса.
-type AddressStatus int
+// AddressType — тип IP-адреса.
+type AddressType int32
 
 const (
-	AddressStatusUnspecified AddressStatus = 0
-	AddressStatusReserved    AddressStatus = 1
-	AddressStatusInUse       AddressStatus = 2
-	AddressStatusReleased    AddressStatus = 3
+	AddressTypeUnspecified AddressType = 0
+	AddressTypeInternal    AddressType = 1
+	AddressTypeExternal    AddressType = 2
 )
 
-// AddressStatusString — строковые значения статусов адреса.
-var AddressStatusString = map[AddressStatus]string{
-	AddressStatusUnspecified: "ADDRESS_STATUS_UNSPECIFIED",
-	AddressStatusReserved:    "ADDRESS_STATUS_RESERVED",
-	AddressStatusInUse:       "ADDRESS_STATUS_IN_USE",
-	AddressStatusReleased:    "ADDRESS_STATUS_RELEASED",
+// IpVersion — версия IP.
+type IpVersion int32
+
+const (
+	IpVersionUnspecified IpVersion = 0
+	IpVersionIPv4        IpVersion = 1
+	IpVersionIPv6        IpVersion = 2
+)
+
+// ExternalIpv4Spec — параметры внешнего IPv4-адреса.
+type ExternalIpv4Spec struct {
+	Address string `json:"address"` // например 203.0.113.X
+	ZoneID  string `json:"zone_id"`
 }
 
-// ParseAddressStatus парсит строку статуса.
-func ParseAddressStatus(s string) AddressStatus {
-	for k, v := range AddressStatusString {
-		if v == s {
-			return k
-		}
-	}
-	return AddressStatusUnspecified
+// InternalIpv4Spec — параметры внутреннего IPv4-адреса.
+type InternalIpv4Spec struct {
+	Address  string `json:"address"`   // например 10.0.0.X
+	SubnetID string `json:"subnet_id"`
 }
 
-// Address — публичный IP-адрес (sub-phase 1.0, только EXTERNAL).
+// Address — IP-адрес (internal или external).
 type Address struct {
-	ID          string
-	FolderID    string
-	Name        string
-	Description string
-	CreatedAt   time.Time
-	Labels      map[string]string
-	AddressType string // ADDRESS_TYPE_EXTERNAL
-	ZoneID      string
-	// AllocatedIPv4 — server-allocated из 203.0.113.0/24 (TEST-NET-3).
-	AllocatedIPv4 string
-	Status        AddressStatus
-	DeletedAt     *time.Time
+	ID                 string
+	FolderID           string
+	CreatedAt          time.Time
+	Name               string
+	Description        string
+	Labels             map[string]string
+	Type               AddressType
+	IpVersion          IpVersion
+	Reserved           bool
+	Used               bool
+	DeletionProtection bool
+	// Для external:
+	ExternalIpv4 *ExternalIpv4Spec
+	// Для internal:
+	InternalIpv4 *InternalIpv4Spec
+	DeletedAt    *time.Time
 }

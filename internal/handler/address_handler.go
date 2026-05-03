@@ -2,113 +2,149 @@ package handler
 
 import (
 	"context"
-	"strings"
 
-	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// AddressHandler реализует pb.AddressServiceServer.
+// AddressHandler реализует vpcv1.AddressServiceServer.
 type AddressHandler struct {
-	pb.UnimplementedAddressServiceServer
-	svc *service.AddressService
+	vpcv1.UnimplementedAddressServiceServer
+	svc *svc.AddressService
 }
 
 // NewAddressHandler создаёт AddressHandler.
-func NewAddressHandler(svc *service.AddressService) *AddressHandler {
-	return &AddressHandler{svc: svc}
+func NewAddressHandler(s *svc.AddressService) *AddressHandler {
+	return &AddressHandler{svc: s}
 }
 
-func (h *AddressHandler) Get(ctx context.Context, req *pb.GetAddressRequest) (*pb.Address, error) {
-	a, err := h.svc.Get(ctx, req.GetAddressId())
+func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) (*vpcv1.Address, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
 	if err != nil {
 		return nil, err
 	}
-	return addressDomainToProto(a), nil
+	return addressToProto(a), nil
 }
 
-func (h *AddressHandler) List(ctx context.Context, req *pb.ListAddressesRequest) (*pb.ListAddressesResponse, error) {
-	filter := service.ListFilter{
-		FolderID:  req.GetFolderId(),
-		PageSize:  req.GetPageSize(),
-		PageToken: req.GetPageToken(),
-		Filter:    req.GetFilter(),
-		OrderBy:   req.GetOrderBy(),
-	}
-	addresses, nextToken, err := h.svc.List(ctx, filter)
+func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
+	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
+		FolderID: req.FolderId,
+	}, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
 	if err != nil {
 		return nil, err
 	}
-	resp := &pb.ListAddressesResponse{NextPageToken: nextToken}
-	for i := range addresses {
-		resp.Addresses = append(resp.Addresses, addressDomainToProto(&addresses[i]))
+	resp := &vpcv1.ListAddressesResponse{NextPageToken: nextToken}
+	for _, a := range addrs {
+		resp.Addresses = append(resp.Addresses, addressToProto(a))
 	}
 	return resp, nil
 }
 
-func (h *AddressHandler) Create(ctx context.Context, req *pb.CreateAddressRequest) (*operationv1.Operation, error) {
-	addrType := addrTypeString(req.GetAddressType())
-	op, err := h.svc.Create(ctx,
-		req.GetFolderId(), req.GetName(), req.GetDescription(), req.GetLabels(),
-		addrType, req.GetZoneId(),
-	)
+func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (*operationpb.Operation, error) {
+	createReq := svc.CreateAddressReq{
+		FolderID:           req.FolderId,
+		Name:               req.Name,
+		Description:        req.Description,
+		Labels:             req.Labels,
+		DeletionProtection: req.DeletionProtection,
+	}
+
+	if ext := req.GetExternalIpv4AddressSpec(); ext != nil {
+		createReq.ExternalSpec = &svc.ExternalAddrSpec{
+			Address: ext.Address,
+			ZoneID:  ext.ZoneId,
+		}
+	} else if intSpec := req.GetInternalIpv4AddressSpec(); intSpec != nil {
+		createReq.InternalSpec = &svc.InternalAddrSpec{
+			Address:  intSpec.Address,
+			SubnetID: intSpec.GetSubnetId(),
+		}
+	}
+
+	op, err := h.svc.Create(ctx, createReq)
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-func (h *AddressHandler) Update(ctx context.Context, req *pb.UpdateAddressRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Update(ctx,
-		req.GetAddressId(),
-		req.GetName(), req.GetDescription(), req.GetLabels(),
-		maskFields(req.GetUpdateMask()),
-	)
+func (h *AddressHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressRequest) (*operationpb.Operation, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	var mask []string
+	if req.UpdateMask != nil {
+		mask = req.UpdateMask.Paths
+	}
+	op, err := h.svc.Update(ctx, svc.UpdateAddressReq{
+		AddressID:          req.AddressId,
+		Name:               req.Name,
+		Description:        req.Description,
+		Labels:             req.Labels,
+		DeletionProtection: req.DeletionProtection,
+		Reserved:           req.Reserved,
+		UpdateMask:         mask,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-func (h *AddressHandler) Delete(ctx context.Context, req *pb.DeleteAddressRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Delete(ctx, req.GetAddressId())
+func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (*operationpb.Operation, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	op, err := h.svc.Delete(ctx, req.AddressId)
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-func addressDomainToProto(a *domain.Address) *pb.Address {
-	proto := &pb.Address{
-		Id:            a.ID,
-		FolderId:      a.FolderID,
-		Name:          a.Name,
-		Description:   a.Description,
-		Labels:        a.Labels,
-		AddressType:   addrTypeProto(a.AddressType),
-		ZoneId:        a.ZoneID,
-		AllocatedIpv4: a.AllocatedIPv4,
-		Status:        pb.AddressStatus(a.Status),
+// addressToProto конвертирует domain Address → proto Address.
+func addressToProto(a *domain.Address) *vpcv1.Address {
+	p := &vpcv1.Address{
+		Id:                 a.ID,
+		FolderId:           a.FolderID,
+		CreatedAt:          timestamppb.New(a.CreatedAt),
+		Name:               a.Name,
+		Description:        a.Description,
+		Labels:             a.Labels,
+		Reserved:           a.Reserved,
+		Used:               a.Used,
+		Type:               vpcv1.Address_Type(a.Type),
+		IpVersion:          vpcv1.Address_IpVersion(a.IpVersion),
+		DeletionProtection: a.DeletionProtection,
 	}
-	if !a.CreatedAt.IsZero() {
-		proto.CreatedAt = timestamppb.New(a.CreatedAt)
+	if a.ExternalIpv4 != nil {
+		p.Address = &vpcv1.Address_ExternalIpv4Address{
+			ExternalIpv4Address: &vpcv1.ExternalIpv4Address{
+				Address: a.ExternalIpv4.Address,
+				ZoneId:  a.ExternalIpv4.ZoneID,
+			},
+		}
+	} else if a.InternalIpv4 != nil {
+		p.Address = &vpcv1.Address_InternalIpv4Address{
+			InternalIpv4Address: &vpcv1.InternalIpv4Address{
+				Address: a.InternalIpv4.Address,
+				Scope: &vpcv1.InternalIpv4Address_SubnetId{
+					SubnetId: a.InternalIpv4.SubnetID,
+				},
+			},
+		}
 	}
-	return proto
-}
-
-func addrTypeProto(t string) pb.AddressType {
-	if strings.Contains(strings.ToUpper(t), "EXTERNAL") {
-		return pb.AddressType_ADDRESS_TYPE_EXTERNAL
-	}
-	return pb.AddressType_ADDRESS_TYPE_UNSPECIFIED
-}
-
-func addrTypeString(t pb.AddressType) string {
-	if t == pb.AddressType_ADDRESS_TYPE_EXTERNAL {
-		return "ADDRESS_TYPE_EXTERNAL"
-	}
-	return ""
+	return p
 }

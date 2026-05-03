@@ -2,64 +2,83 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/ids"
-	"github.com/PRO-Robotech/kacho-corelib/operations"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
-// RouteTableService реализует use-cases для RouteTable.
+// CreateRouteTableReq — запрос на создание таблицы маршрутизации.
+type CreateRouteTableReq struct {
+	FolderID     string
+	Name         string
+	Description  string
+	Labels       map[string]string
+	NetworkID    string
+	StaticRoutes []domain.StaticRoute
+}
+
+// UpdateRouteTableReq — запрос на обновление таблицы маршрутизации.
+type UpdateRouteTableReq struct {
+	RouteTableID string
+	Name         string
+	Description  string
+	Labels       map[string]string
+	StaticRoutes []domain.StaticRoute
+	UpdateMask   []string
+}
+
+// RouteTableService — бизнес-логика управления таблицами маршрутизации.
 type RouteTableService struct {
 	repo         RouteTableRepo
 	networkRepo  NetworkRepo
-	opsRepo      operations.Repo
 	folderClient FolderClient
+	opsRepo      operations.Repo
 }
 
 // NewRouteTableService создаёт RouteTableService.
-func NewRouteTableService(r RouteTableRepo, nr NetworkRepo, ops operations.Repo, fc FolderClient) *RouteTableService {
-	return &RouteTableService{repo: r, networkRepo: nr, opsRepo: ops, folderClient: fc}
+func NewRouteTableService(repo RouteTableRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *RouteTableService {
+	return &RouteTableService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
 
-// Get возвращает RouteTable по ID (синхронный).
+// Get возвращает RouteTable по ID.
 func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
-	if id == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("route_table_id", "route_table_id is required").Err()
-	}
 	rt, err := s.repo.Get(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	if rt == nil {
-		return nil, coreerrors.NotFound("RouteTable", id).Err()
+		return nil, mapRepoErr(err)
 	}
 	return rt, nil
 }
 
-// List возвращает список RouteTable (синхронный).
-func (s *RouteTableService) List(ctx context.Context, filter ListFilter) ([]domain.RouteTable, string, error) {
-	return s.repo.List(ctx, filter)
+// List возвращает список таблиц маршрутизации.
+func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error) {
+	return s.repo.List(ctx, f, p)
 }
 
-// Create создаёт RouteTable асинхронно.
-func (s *RouteTableService) Create(ctx context.Context, folderID, networkID, name, description string, labels map[string]string, routes []domain.StaticRoute) (*operations.Operation, error) {
-	if folderID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "folder_id is required").Err()
+// Create инициирует создание RouteTable.
+func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq) (*operations.Operation, error) {
+	if req.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if networkID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("network_id", "network_id is required").Err()
+	if req.NetworkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	if name == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("name", "name is required").Err()
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name required")
 	}
 
-	resourceID := ids.NewUID()
-	op, err := operations.New("Create RouteTable "+name, &pb.CreateRouteTableMetadata{RouteTableId: resourceID})
+	rtID := ids.NewUID()
+	op, err := operations.New(
+		fmt.Sprintf("Create route table %s", req.Name),
+		&vpcv1.CreateRouteTableMetadata{RouteTableId: rtID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -68,72 +87,52 @@ func (s *RouteTableService) Create(ctx context.Context, folderID, networkID, nam
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, ferr := s.folderClient.Exists(ctx, folderID)
-		if ferr != nil {
-			return nil, ferr
-		}
-		if !exists {
-			return nil, status.Errorf(codes.FailedPrecondition, "Folder %s not found", folderID)
-		}
-
-		net, nerr := s.networkRepo.Get(ctx, networkID)
-		if nerr != nil {
-			return nil, nerr
-		}
-		if net == nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "Network %s not found", networkID)
-		}
-
-		assigned := assignRouteIDs(routes)
-
-		rt := &domain.RouteTable{
-			ID:           resourceID,
-			FolderID:     folderID,
-			NetworkID:    networkID,
-			Name:         name,
-			Description:  description,
-			Labels:       labels,
-			Status:       domain.RouteTableStatusProvisioning,
-			Generation:   1,
-			StaticRoutes: assigned,
-		}
-		if cerr := s.repo.Create(ctx, rt); cerr != nil {
-			return nil, cerr
-		}
-
-		created, gerr := s.repo.Get(ctx, resourceID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		created.Status = domain.RouteTableStatusActive
-		if uerr := s.repo.Update(ctx, created); uerr != nil {
-			return nil, uerr
-		}
-		final, gerr := s.repo.Get(ctx, resourceID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		return anypb.New(domainRTToProto(final))
+		return s.doCreate(ctx, rtID, req)
 	})
 
 	return &op, nil
 }
 
-// Update обновляет RouteTable асинхронно (static_routes — full-replace).
-func (s *RouteTableService) Update(ctx context.Context, rtID, resourceVersion, name, description string, labels map[string]string, routes []domain.StaticRoute, updateMask []string) (*operations.Operation, error) {
-	if rtID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("route_table_id", "route_table_id is required").Err()
+func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req CreateRouteTableReq) (*anypb.Any, error) {
+	exists, err := s.folderClient.Exists(ctx, req.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
 	}
 
-	existing, err := s.repo.Get(ctx, rtID)
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		return nil, status.Errorf(codes.NotFound, "network %s not found", req.NetworkID)
+	}
+
+	rt := &domain.RouteTable{
+		ID:           rtID,
+		FolderID:     req.FolderID,
+		CreatedAt:    time.Now().UTC(),
+		Name:         req.Name,
+		Description:  req.Description,
+		Labels:       req.Labels,
+		NetworkID:    req.NetworkID,
+		StaticRoutes: req.StaticRoutes,
+	}
+	created, err := s.repo.Insert(ctx, rt)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("RouteTable", rtID).Err()
+	return anypb.New(domainRouteTableToProto(created))
+}
+
+// Update обновляет RouteTable.
+func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq) (*operations.Operation, error) {
+	if req.RouteTableID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
 
-	op, err := operations.New("Update RouteTable "+rtID, &pb.UpdateRouteTableMetadata{RouteTableId: rtID})
+	op, err := operations.New(
+		fmt.Sprintf("Update route table %s", req.RouteTableID),
+		&vpcv1.UpdateRouteTableMetadata{RouteTableId: req.RouteTableID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -142,120 +141,101 @@ func (s *RouteTableService) Update(ctx context.Context, rtID, resourceVersion, n
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		cur, gerr := s.repo.Get(ctx, rtID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if cur == nil {
-			return nil, status.Errorf(codes.NotFound, "RouteTable %s not found", rtID)
-		}
-		if resourceVersion != "" && cur.ResourceVersion != resourceVersion {
-			return nil, status.Errorf(codes.Aborted, "resource_version mismatch: expected %s, got %s", resourceVersion, cur.ResourceVersion)
-		}
-
-		applyRTUpdateMask(cur, name, description, labels, routes, updateMask)
-		cur.Generation++
-		if uerr := s.repo.Update(ctx, cur); uerr != nil {
-			return nil, uerr
-		}
-		final, gerr := s.repo.Get(ctx, rtID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		return anypb.New(domainRTToProto(final))
+		return s.doUpdate(ctx, req)
 	})
 
 	return &op, nil
 }
 
-// Delete удаляет RouteTable асинхронно.
-func (s *RouteTableService) Delete(ctx context.Context, rtID string) (*operations.Operation, error) {
-	if rtID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("route_table_id", "route_table_id is required").Err()
+func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableReq) (*anypb.Any, error) {
+	rt, err := s.repo.Get(ctx, req.RouteTableID)
+	if err != nil {
+		return nil, mapRepoErr(err)
 	}
 
-	existing, err := s.repo.Get(ctx, rtID)
+	applyRouteTableMask(rt, req)
+
+	updated, err := s.repo.Update(ctx, rt)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("RouteTable", rtID).Err()
-	}
-
-	op, err := operations.New("Delete RouteTable "+rtID, &pb.DeleteRouteTableMetadata{RouteTableId: rtID})
-	if err != nil {
-		return nil, err
-	}
-	if err := s.opsRepo.Create(ctx, op); err != nil {
-		return nil, err
-	}
-
-	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if derr := s.repo.SoftDelete(ctx, rtID); derr != nil {
-			return nil, derr
-		}
-		return anypb.New(&pb.DeleteRouteTableMetadata{RouteTableId: rtID})
-	})
-
-	return &op, nil
+	return anypb.New(domainRouteTableToProto(updated))
 }
 
-// assignRouteIDs назначает server-side UUID каждому маршруту.
-func assignRouteIDs(routes []domain.StaticRoute) []domain.StaticRoute {
-	result := make([]domain.StaticRoute, len(routes))
-	for i, r := range routes {
-		r.ID = ids.NewUID()
-		result[i] = r
-	}
-	return result
-}
-
-func applyRTUpdateMask(rt *domain.RouteTable, name, description string, labels map[string]string, routes []domain.StaticRoute, mask []string) {
-	if len(mask) == 0 {
-		rt.Name = name
-		rt.Description = description
-		rt.Labels = labels
-		rt.StaticRoutes = assignRouteIDs(routes)
+func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {
+	if len(req.UpdateMask) == 0 {
+		rt.Name = req.Name
+		rt.Description = req.Description
+		rt.Labels = req.Labels
+		rt.StaticRoutes = req.StaticRoutes
 		return
 	}
-	for _, f := range mask {
-		switch f {
+	for _, field := range req.UpdateMask {
+		switch field {
 		case "name":
-			rt.Name = name
+			rt.Name = req.Name
 		case "description":
-			rt.Description = description
+			rt.Description = req.Description
 		case "labels":
-			rt.Labels = labels
+			rt.Labels = req.Labels
 		case "static_routes":
-			rt.StaticRoutes = assignRouteIDs(routes)
+			rt.StaticRoutes = req.StaticRoutes
 		}
 	}
 }
 
-func domainRTToProto(rt *domain.RouteTable) *pb.RouteTable {
-	routes := make([]*pb.StaticRoute, len(rt.StaticRoutes))
-	for i, r := range rt.StaticRoutes {
-		routes[i] = &pb.StaticRoute{
-			Id:                r.ID,
-			DestinationPrefix: r.DestinationPrefix,
-			NextHopAddress:    r.NextHopAddress,
-			Description:       r.Description,
+// Delete удаляет RouteTable.
+func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+
+	op, err := operations.New(
+		fmt.Sprintf("Delete route table %s", id),
+		&vpcv1.DeleteRouteTableMetadata{RouteTableId: id},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		if err := s.repo.SoftDelete(ctx, id); err != nil {
+			return nil, mapRepoErr(err)
 		}
+		return anypb.New(&vpcv1.DeleteRouteTableMetadata{RouteTableId: id})
+	})
+
+	return &op, nil
+}
+
+// domainRouteTableToProto конвертирует domain RouteTable в proto RouteTable.
+func domainRouteTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
+	p := &vpcv1.RouteTable{
+		Id:          rt.ID,
+		FolderId:    rt.FolderID,
+		Name:        rt.Name,
+		Description: rt.Description,
+		Labels:      rt.Labels,
+		NetworkId:   rt.NetworkID,
 	}
-	proto := &pb.RouteTable{
-		Id:              rt.ID,
-		FolderId:        rt.FolderID,
-		NetworkId:       rt.NetworkID,
-		Name:            rt.Name,
-		Description:     rt.Description,
-		Labels:          rt.Labels,
-		Status:          pb.RouteTableStatus(rt.Status),
-		Generation:      rt.Generation,
-		ResourceVersion: rt.ResourceVersion,
-		StaticRoutes:    routes,
+	for _, sr := range rt.StaticRoutes {
+		protoSR := &vpcv1.StaticRoute{
+			Labels: sr.Labels,
+		}
+		if sr.DestinationPrefix != "" {
+			protoSR.Destination = &vpcv1.StaticRoute_DestinationPrefix{
+				DestinationPrefix: sr.DestinationPrefix,
+			}
+		}
+		if sr.NextHopAddress != "" {
+			protoSR.NextHop = &vpcv1.StaticRoute_NextHopAddress{
+				NextHopAddress: sr.NextHopAddress,
+			}
+		}
+		p.StaticRoutes = append(p.StaticRoutes, protoSR)
 	}
-	if !rt.CreatedAt.IsZero() {
-		proto.CreatedAt = timestampProto(rt.CreatedAt)
-	}
-	return proto
+	return p
 }

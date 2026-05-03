@@ -2,23 +2,19 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-const addrCols = `id, folder_id, name, description, created_at, labels,
-	address_type, zone_id, allocated_ipv4, status, deleted_at`
-
-// AddressRepo реализует service.AddressRepo.
+// AddressRepo — реализация service.AddressRepo поверх pgxpool.
 type AddressRepo struct {
 	pool *pgxpool.Pool
 }
@@ -28,60 +24,45 @@ func NewAddressRepo(pool *pgxpool.Pool) *AddressRepo {
 	return &AddressRepo{pool: pool}
 }
 
+const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, deleted_at`
+
 func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, error) {
-	uid, err := strToUUID(id)
-	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("id", "invalid uuid").Err()
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1 AND deleted_at IS NULL`, addressCols)
+	row := r.pool.QueryRow(ctx, q, id)
+	a, err := scanAddress(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, service.ErrNotFound
 	}
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+addrCols+` FROM addresses WHERE id = $1 AND deleted_at IS NULL`, uid)
-	return scanAddress(row)
+	return a, err
 }
 
-func (r *AddressRepo) GetByFolderAndName(ctx context.Context, folderID, name string) (*domain.Address, error) {
-	fid, err := strToUUID(folderID)
-	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
-	}
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+addrCols+` FROM addresses WHERE folder_id = $1 AND name = $2 AND deleted_at IS NULL`,
-		fid, name)
-	return scanAddress(row)
-}
-
-func (r *AddressRepo) List(ctx context.Context, filter service.ListFilter) ([]domain.Address, string, error) {
-	pageSize := filter.PageSize
+func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*domain.Address, string, error) {
+	pageSize := p.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 50
 	}
 
 	args := []any{}
-	conds := []string{"deleted_at IS NULL"}
+	conditions := []string{"deleted_at IS NULL"}
 	argIdx := 1
 
-	if filter.FolderID != "" {
-		fid, err := strToUUID(filter.FolderID)
-		if err != nil {
-			return nil, "", coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
-		}
-		conds = append(conds, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, fid)
+	if f.FolderID != "" {
+		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
+		args = append(args, f.FolderID)
 		argIdx++
 	}
-
-	if filter.PageToken != "" {
-		cur, decErr := decodeNetworkPageToken(filter.PageToken)
-		if decErr == nil {
-			conds = append(conds, fmt.Sprintf("(created_at, id::text) > ($%d, $%d)", argIdx, argIdx+1))
-			args = append(args, cur.CreatedAt, cur.ID)
-			argIdx += 2
+	if p.PageToken != "" {
+		ts, id, err := decodePageToken(p.PageToken)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid page_token: %w", err)
 		}
+		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
+		args = append(args, ts, id)
+		argIdx += 2
 	}
 
-	where := "WHERE " + strings.Join(conds, " AND ")
-	orderBy := buildOrderBy(filter.OrderBy)
-
-	q := fmt.Sprintf(`SELECT `+addrCols+` FROM addresses %s %s LIMIT $%d`, where, orderBy, argIdx)
+	where := "WHERE " + strings.Join(conditions, " AND ")
+	q := fmt.Sprintf(`SELECT %s FROM addresses %s ORDER BY created_at ASC, id ASC LIMIT $%d`, addressCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.pool.Query(ctx, q, args...)
@@ -90,13 +71,13 @@ func (r *AddressRepo) List(ctx context.Context, filter service.ListFilter) ([]do
 	}
 	defer rows.Close()
 
-	var result []domain.Address
+	var result []*domain.Address
 	for rows.Next() {
-		a, serr := scanAddressRow(rows)
-		if serr != nil {
-			return nil, "", serr
+		a, err := scanAddress(rows)
+		if err != nil {
+			return nil, "", err
 		}
-		result = append(result, *a)
+		result = append(result, a)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", err
@@ -105,123 +86,124 @@ func (r *AddressRepo) List(ctx context.Context, filter service.ListFilter) ([]do
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = encodeNetworkPageToken(last.CreatedAt, last.ID)
+		nextToken = encodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
 }
 
-func (r *AddressRepo) Create(ctx context.Context, a *domain.Address) error {
-	uid, err := strToUUID(a.ID)
-	if err != nil {
-		return err
-	}
-	fid, err := strToUUID(a.FolderID)
-	if err != nil {
-		return err
-	}
-	statusStr := domain.AddressStatusString[a.Status]
-	if statusStr == "" {
-		statusStr = "ADDRESS_STATUS_RESERVED"
-	}
+func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Address, error) {
+	labelsJSON, _ := json.Marshal(a.Labels)
+	extJSON := marshalExternalIPv4(a.ExternalIpv4)
+	intJSON := marshalInternalIPv4(a.InternalIpv4)
 
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO addresses (id, folder_id, name, description, labels, address_type, zone_id, allocated_ipv4, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		uid, fid, a.Name, a.Description, mapToJSON(a.Labels),
-		a.AddressType, a.ZoneID, a.AllocatedIPv4, statusStr,
+	const q = `
+		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING ` + addressCols
+
+	row := r.pool.QueryRow(ctx, q,
+		a.ID, a.FolderID, a.CreatedAt, a.Name, a.Description, labelsJSON,
+		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
+		extJSON, intJSON,
 	)
-	return err
+	return scanAddress(row)
 }
 
-func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) error {
-	uid, err := strToUUID(a.ID)
-	if err != nil {
-		return err
-	}
-	statusStr := domain.AddressStatusString[a.Status]
-	if statusStr == "" {
-		statusStr = "ADDRESS_STATUS_RESERVED"
-	}
+func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
+	labelsJSON, _ := json.Marshal(a.Labels)
 
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE addresses
-		SET name = $2, description = $3, labels = $4, status = $5
-		WHERE id = $1 AND deleted_at IS NULL`,
-		uid, a.Name, a.Description, mapToJSON(a.Labels), statusStr,
+	const q = `
+		UPDATE addresses SET name=$2, description=$3, labels=$4, reserved=$5, used=$6, deletion_protection=$7
+		WHERE id=$1 AND deleted_at IS NULL
+		RETURNING ` + addressCols
+
+	row := r.pool.QueryRow(ctx, q,
+		a.ID, a.Name, a.Description, labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
 	)
-	if err != nil {
-		return err
+	result, err := scanAddress(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, service.ErrNotFound
 	}
-	if tag.RowsAffected() == 0 {
-		return coreerrors.NotFound("Address", a.ID).Err()
-	}
-	return nil
+	return result, err
 }
 
 func (r *AddressRepo) SoftDelete(ctx context.Context, id string) error {
-	uid, err := strToUUID(id)
-	if err != nil {
-		return err
-	}
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE addresses SET deleted_at = now(), status = 'ADDRESS_STATUS_RELEASED' WHERE id = $1 AND deleted_at IS NULL`,
-		uid)
+	tag, err := r.pool.Exec(ctx, `UPDATE addresses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return coreerrors.NotFound("Address", id).Err()
+		return service.ErrNotFound
 	}
 	return nil
+}
+
+// ExistsIP проверяет, занят ли IP-адрес (в external или internal).
+func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
+	// Проверяем и external, и internal
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM addresses
+		WHERE deleted_at IS NULL AND (
+			(external_ipv4->>'address' = $1) OR
+			(internal_ipv4->>'address' = $1)
+		)
+	`, ip).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ---- scan helpers ----
 
-func scanAddress(row pgx.Row) (*domain.Address, error) {
-	a, err := scanAddressFields(row.Scan)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return a, err
-}
+func scanAddress(row scannable) (*domain.Address, error) {
+	var a domain.Address
+	var labelsJSON, extJSON, intJSON []byte
+	var addrType, ipVersion int32
 
-func scanAddressRow(rows pgx.Rows) (*domain.Address, error) {
-	return scanAddressFields(rows.Scan)
-}
-
-func scanAddressFields(scanFn func(...any) error) (*domain.Address, error) {
-	var (
-		id, folderID, name, description string
-		createdAt                        pgtype.Timestamptz
-		labelsJSON                       []byte
-		addressType, zoneID              string
-		allocatedIPv4                    *string
-		statusStr                        string
-		deletedAt                        pgtype.Timestamptz
-	)
-	err := scanFn(
-		&id, &folderID, &name, &description, &createdAt, &labelsJSON,
-		&addressType, &zoneID, &allocatedIPv4, &statusStr, &deletedAt,
+	err := row.Scan(
+		&a.ID, &a.FolderID, &a.CreatedAt, &a.Name, &a.Description, &labelsJSON,
+		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
+		&extJSON, &intJSON, &a.DeletedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	ip := ""
-	if allocatedIPv4 != nil {
-		ip = *allocatedIPv4
+	a.Type = domain.AddressType(addrType)
+	a.IpVersion = domain.IpVersion(ipVersion)
+
+	if labelsJSON != nil {
+		_ = json.Unmarshal(labelsJSON, &a.Labels)
 	}
-	return &domain.Address{
-		ID:            id,
-		FolderID:      folderID,
-		Name:          name,
-		Description:   description,
-		CreatedAt:     tsToTime(createdAt),
-		Labels:        jsonToMap(labelsJSON),
-		AddressType:   addressType,
-		ZoneID:        zoneID,
-		AllocatedIPv4: ip,
-		Status:        domain.ParseAddressStatus(statusStr),
-		DeletedAt:     tsToTimePtr(deletedAt),
-	}, nil
+	if extJSON != nil {
+		var ext domain.ExternalIpv4Spec
+		if err := json.Unmarshal(extJSON, &ext); err == nil {
+			a.ExternalIpv4 = &ext
+		}
+	}
+	if intJSON != nil {
+		var intSpec domain.InternalIpv4Spec
+		if err := json.Unmarshal(intJSON, &intSpec); err == nil {
+			a.InternalIpv4 = &intSpec
+		}
+	}
+	return &a, nil
+}
+
+func marshalExternalIPv4(e *domain.ExternalIpv4Spec) []byte {
+	if e == nil {
+		return nil
+	}
+	b, _ := json.Marshal(e)
+	return b
+}
+
+func marshalInternalIPv4(i *domain.InternalIpv4Spec) []byte {
+	if i == nil {
+		return nil
+	}
+	b, _ := json.Marshal(i)
+	return b
 }

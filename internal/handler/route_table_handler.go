@@ -3,119 +3,151 @@ package handler
 import (
 	"context"
 
-	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// RouteTableHandler реализует pb.RouteTableServiceServer.
+// RouteTableHandler реализует vpcv1.RouteTableServiceServer.
 type RouteTableHandler struct {
-	pb.UnimplementedRouteTableServiceServer
-	svc *service.RouteTableService
+	vpcv1.UnimplementedRouteTableServiceServer
+	svc *svc.RouteTableService
 }
 
 // NewRouteTableHandler создаёт RouteTableHandler.
-func NewRouteTableHandler(svc *service.RouteTableService) *RouteTableHandler {
-	return &RouteTableHandler{svc: svc}
+func NewRouteTableHandler(s *svc.RouteTableService) *RouteTableHandler {
+	return &RouteTableHandler{svc: s}
 }
 
-func (h *RouteTableHandler) Get(ctx context.Context, req *pb.GetRouteTableRequest) (*pb.RouteTable, error) {
-	rt, err := h.svc.Get(ctx, req.GetRouteTableId())
+func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableRequest) (*vpcv1.RouteTable, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
 	if err != nil {
 		return nil, err
 	}
-	return rtDomainToProto(rt), nil
+	return routeTableToProto(rt), nil
 }
 
-func (h *RouteTableHandler) List(ctx context.Context, req *pb.ListRouteTablesRequest) (*pb.ListRouteTablesResponse, error) {
-	filter := service.ListFilter{
-		FolderID:  req.GetFolderId(),
-		PageSize:  req.GetPageSize(),
-		PageToken: req.GetPageToken(),
-		Filter:    req.GetFilter(),
-		OrderBy:   req.GetOrderBy(),
-	}
-	tables, nextToken, err := h.svc.List(ctx, filter)
+func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
+	rts, nextToken, err := h.svc.List(ctx, svc.RouteTableFilter{
+		FolderID: req.FolderId,
+	}, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
 	if err != nil {
 		return nil, err
 	}
-	resp := &pb.ListRouteTablesResponse{NextPageToken: nextToken}
-	for i := range tables {
-		resp.RouteTables = append(resp.RouteTables, rtDomainToProto(&tables[i]))
+	resp := &vpcv1.ListRouteTablesResponse{NextPageToken: nextToken}
+	for _, rt := range rts {
+		resp.RouteTables = append(resp.RouteTables, routeTableToProto(rt))
 	}
 	return resp, nil
 }
 
-func (h *RouteTableHandler) Create(ctx context.Context, req *pb.CreateRouteTableRequest) (*operationv1.Operation, error) {
-	routes := protoRoutesToDomain(req.GetStaticRoutes())
-	op, err := h.svc.Create(ctx,
-		req.GetFolderId(), req.GetNetworkId(), req.GetName(), req.GetDescription(), req.GetLabels(), routes,
-	)
-	if err != nil {
-		return nil, err
+func (h *RouteTableHandler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest) (*operationpb.Operation, error) {
+	createReq := svc.CreateRouteTableReq{
+		FolderID:    req.FolderId,
+		Name:        req.Name,
+		Description: req.Description,
+		Labels:      req.Labels,
+		NetworkID:   req.NetworkId,
 	}
-	return operationToProto(op), nil
-}
-
-func (h *RouteTableHandler) Update(ctx context.Context, req *pb.UpdateRouteTableRequest) (*operationv1.Operation, error) {
-	routes := protoRoutesToDomain(req.GetStaticRoutes())
-	op, err := h.svc.Update(ctx,
-		req.GetRouteTableId(), req.GetResourceVersion(),
-		req.GetName(), req.GetDescription(), req.GetLabels(), routes,
-		maskFields(req.GetUpdateMask()),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return operationToProto(op), nil
-}
-
-func (h *RouteTableHandler) Delete(ctx context.Context, req *pb.DeleteRouteTableRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Delete(ctx, req.GetRouteTableId())
-	if err != nil {
-		return nil, err
-	}
-	return operationToProto(op), nil
-}
-
-func rtDomainToProto(rt *domain.RouteTable) *pb.RouteTable {
-	routes := make([]*pb.StaticRoute, len(rt.StaticRoutes))
-	for i, r := range rt.StaticRoutes {
-		routes[i] = &pb.StaticRoute{
-			Id:                r.ID,
-			DestinationPrefix: r.DestinationPrefix,
-			NextHopAddress:    r.NextHopAddress,
-			Description:       r.Description,
+	for _, sr := range req.StaticRoutes {
+		route := domain.StaticRoute{
+			Labels: sr.Labels,
 		}
+		if sr.GetDestinationPrefix() != "" {
+			route.DestinationPrefix = sr.GetDestinationPrefix()
+		}
+		if sr.GetNextHopAddress() != "" {
+			route.NextHopAddress = sr.GetNextHopAddress()
+		}
+		createReq.StaticRoutes = append(createReq.StaticRoutes, route)
 	}
-	proto := &pb.RouteTable{
-		Id:              rt.ID,
-		FolderId:        rt.FolderID,
-		NetworkId:       rt.NetworkID,
-		Name:            rt.Name,
-		Description:     rt.Description,
-		Labels:          rt.Labels,
-		Status:          pb.RouteTableStatus(rt.Status),
-		Generation:      rt.Generation,
-		ResourceVersion: rt.ResourceVersion,
-		StaticRoutes:    routes,
+	op, err := h.svc.Create(ctx, createReq)
+	if err != nil {
+		return nil, err
 	}
-	if !rt.CreatedAt.IsZero() {
-		proto.CreatedAt = timestamppb.New(rt.CreatedAt)
-	}
-	return proto
+	return operationToProto(op), nil
 }
 
-func protoRoutesToDomain(protoRoutes []*pb.StaticRoute) []domain.StaticRoute {
-	routes := make([]domain.StaticRoute, len(protoRoutes))
-	for i, r := range protoRoutes {
-		routes[i] = domain.StaticRoute{
-			DestinationPrefix: r.GetDestinationPrefix(),
-			NextHopAddress:    r.GetNextHopAddress(),
-			Description:       r.GetDescription(),
-		}
+func (h *RouteTableHandler) Update(ctx context.Context, req *vpcv1.UpdateRouteTableRequest) (*operationpb.Operation, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
-	return routes
+	var mask []string
+	if req.UpdateMask != nil {
+		mask = req.UpdateMask.Paths
+	}
+	updReq := svc.UpdateRouteTableReq{
+		RouteTableID: req.RouteTableId,
+		Name:         req.Name,
+		Description:  req.Description,
+		Labels:       req.Labels,
+		UpdateMask:   mask,
+	}
+	for _, sr := range req.StaticRoutes {
+		route := domain.StaticRoute{
+			Labels: sr.Labels,
+		}
+		if sr.GetDestinationPrefix() != "" {
+			route.DestinationPrefix = sr.GetDestinationPrefix()
+		}
+		if sr.GetNextHopAddress() != "" {
+			route.NextHopAddress = sr.GetNextHopAddress()
+		}
+		updReq.StaticRoutes = append(updReq.StaticRoutes, route)
+	}
+	op, err := h.svc.Update(ctx, updReq)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTableRequest) (*operationpb.Operation, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	op, err := h.svc.Delete(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+// routeTableToProto конвертирует domain RouteTable → proto RouteTable.
+func routeTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
+	p := &vpcv1.RouteTable{
+		Id:          rt.ID,
+		FolderId:    rt.FolderID,
+		CreatedAt:   timestamppb.New(rt.CreatedAt),
+		Name:        rt.Name,
+		Description: rt.Description,
+		Labels:      rt.Labels,
+		NetworkId:   rt.NetworkID,
+	}
+	for _, sr := range rt.StaticRoutes {
+		protoSR := &vpcv1.StaticRoute{Labels: sr.Labels}
+		if sr.DestinationPrefix != "" {
+			protoSR.Destination = &vpcv1.StaticRoute_DestinationPrefix{
+				DestinationPrefix: sr.DestinationPrefix,
+			}
+		}
+		if sr.NextHopAddress != "" {
+			protoSR.NextHop = &vpcv1.StaticRoute_NextHopAddress{
+				NextHopAddress: sr.NextHopAddress,
+			}
+		}
+		p.StaticRoutes = append(p.StaticRoutes, protoSR)
+	}
+	return p
 }

@@ -2,49 +2,26 @@ package domain
 
 import "time"
 
-// SubnetStatus — статус подсети.
-type SubnetStatus int
-
-const (
-	SubnetStatusUnspecified  SubnetStatus = 0
-	SubnetStatusProvisioning SubnetStatus = 1
-	SubnetStatusActive       SubnetStatus = 2
-	SubnetStatusDeleting     SubnetStatus = 3
-)
-
-// SubnetStatusString — строковые значения статусов подсети.
-var SubnetStatusString = map[SubnetStatus]string{
-	SubnetStatusUnspecified:  "SUBNET_STATUS_UNSPECIFIED",
-	SubnetStatusProvisioning: "SUBNET_STATUS_PROVISIONING",
-	SubnetStatusActive:       "SUBNET_STATUS_ACTIVE",
-	SubnetStatusDeleting:     "SUBNET_STATUS_DELETING",
+// DhcpOptions — опции DHCP для подсети.
+type DhcpOptions struct {
+	DomainNameServers []string `json:"domain_name_servers,omitempty"`
+	DomainName        string   `json:"domain_name,omitempty"`
+	NtpServers        []string `json:"ntp_servers,omitempty"`
 }
 
-// ParseSubnetStatus парсит строку статуса.
-func ParseSubnetStatus(s string) SubnetStatus {
-	for k, v := range SubnetStatusString {
-		if v == s {
-			return k
-		}
-	}
-	return SubnetStatusUnspecified
-}
-
-// Subnet — подсеть внутри Network (sub-phase 1.0).
+// Subnet — подсеть.
 type Subnet struct {
-	ID                     string
-	FolderID               string
-	NetworkID              string
-	ZoneID                 string
-	CIDRBlock              string
-	Name                   string
-	Description            string
-	CreatedAt              time.Time
-	Labels                 map[string]string
-	Status                 SubnetStatus
-	Generation             int64
-	ResourceVersion        string
-	ObservedGeneration     int64
-	StatusLastTransitionAt time.Time
-	DeletedAt              *time.Time
+	ID           string
+	FolderID     string
+	CreatedAt    time.Time
+	Name         string
+	Description  string
+	Labels       map[string]string
+	NetworkID    string
+	ZoneID       string
+	V4CidrBlocks []string // repeated string в YC
+	V6CidrBlocks []string // OUTPUT_ONLY ipv6
+	RouteTableID string
+	DhcpOptions  *DhcpOptions
+	DeletedAt    *time.Time
 }

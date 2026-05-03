@@ -2,66 +2,99 @@ package service
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
-	"strings"
+	"net"
+	"time"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/ids"
-	"github.com/PRO-Robotech/kacho-corelib/operations"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
-// AddressService реализует use-cases для Address.
+// CreateAddressReq — запрос на создание адреса.
+type CreateAddressReq struct {
+	FolderID           string
+	Name               string
+	Description        string
+	Labels             map[string]string
+	DeletionProtection bool
+	// Для external (если ExternalSpec != nil):
+	ExternalSpec *ExternalAddrSpec
+	// Для internal (если InternalSpec != nil):
+	InternalSpec *InternalAddrSpec
+}
+
+// ExternalAddrSpec — спецификация внешнего адреса.
+type ExternalAddrSpec struct {
+	Address string
+	ZoneID  string
+}
+
+// InternalAddrSpec — спецификация внутреннего адреса.
+type InternalAddrSpec struct {
+	Address  string
+	SubnetID string
+}
+
+// UpdateAddressReq — запрос на обновление адреса.
+type UpdateAddressReq struct {
+	AddressID          string
+	Name               string
+	Description        string
+	Labels             map[string]string
+	DeletionProtection bool
+	Reserved           bool
+	UpdateMask         []string
+}
+
+// AddressService — бизнес-логика управления IP-адресами.
 type AddressService struct {
 	repo         AddressRepo
-	opsRepo      operations.Repo
+	subnetRepo   SubnetRepo
 	folderClient FolderClient
+	opsRepo      operations.Repo
 }
 
 // NewAddressService создаёт AddressService.
-func NewAddressService(r AddressRepo, ops operations.Repo, fc FolderClient) *AddressService {
-	return &AddressService{repo: r, opsRepo: ops, folderClient: fc}
+func NewAddressService(repo AddressRepo, subnetRepo SubnetRepo, folderClient FolderClient, opsRepo operations.Repo) *AddressService {
+	return &AddressService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
 
-// Get возвращает Address по ID (синхронный).
+// Get возвращает Address по ID.
 func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, error) {
-	if id == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("address_id", "address_id is required").Err()
-	}
 	a, err := s.repo.Get(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	if a == nil {
-		return nil, coreerrors.NotFound("Address", id).Err()
+		return nil, mapRepoErr(err)
 	}
 	return a, nil
 }
 
-// List возвращает список Address (синхронный).
-func (s *AddressService) List(ctx context.Context, filter ListFilter) ([]domain.Address, string, error) {
-	return s.repo.List(ctx, filter)
+// List возвращает список адресов.
+func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.Address, string, error) {
+	return s.repo.List(ctx, f, p)
 }
 
-// Create создаёт Address асинхронно с выделением IP из 203.0.113.0/24.
-func (s *AddressService) Create(ctx context.Context, folderID, name, description string, labels map[string]string, addressType string, zoneID string) (*operations.Operation, error) {
-	if folderID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "folder_id is required").Err()
+// Create инициирует создание Address.
+func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*operations.Operation, error) {
+	if req.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if name == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("name", "name is required").Err()
-	}
-	if addressType != "" && addressType != "ADDRESS_TYPE_EXTERNAL" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("address_type", "only ADDRESS_TYPE_EXTERNAL is supported in phase 1.0").Err()
+	if req.ExternalSpec == nil && req.InternalSpec == nil {
+		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
 
-	resourceID := ids.NewUID()
-	op, err := operations.New("Create Address "+name, &pb.CreateAddressMetadata{AddressId: resourceID})
+	addrID := ids.NewUID()
+	op, err := operations.New(
+		fmt.Sprintf("Create address %s", req.Name),
+		&vpcv1.CreateAddressMetadata{AddressId: addrID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -70,69 +103,147 @@ func (s *AddressService) Create(ctx context.Context, folderID, name, description
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, ferr := s.folderClient.Exists(ctx, folderID)
-		if ferr != nil {
-			return nil, ferr
-		}
-		if !exists {
-			return nil, status.Errorf(codes.FailedPrecondition, "Folder %s not found", folderID)
-		}
+		return s.doCreate(ctx, addrID, req)
+	})
 
-		a := &domain.Address{
-			ID:          resourceID,
-			FolderID:    folderID,
-			Name:        name,
-			Description: description,
-			Labels:      labels,
-			AddressType: "ADDRESS_TYPE_EXTERNAL",
-			ZoneID:      zoneID,
-			Status:      domain.AddressStatusReserved,
-		}
+	return &op, nil
+}
 
-		// Выделяем псевдо-случайный IP из 203.0.113.0/24 (TEST-NET-3, RFC 5737)
-		// Retry max 10 при UNIQUE violation.
-		const maxRetries = 10
-		for i := 0; i < maxRetries; i++ {
-			octet := rand.Intn(254) + 1 //nolint:gosec
-			a.AllocatedIPv4 = fmt.Sprintf("203.0.113.%d", octet)
-			cerr := s.repo.Create(ctx, a)
-			if cerr == nil {
-				break
+func (s *AddressService) doCreate(ctx context.Context, addrID string, req CreateAddressReq) (*anypb.Any, error) {
+	exists, err := s.folderClient.Exists(ctx, req.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
+	}
+
+	a := &domain.Address{
+		ID:                 addrID,
+		FolderID:           req.FolderID,
+		CreatedAt:          time.Now().UTC(),
+		Name:               req.Name,
+		Description:        req.Description,
+		Labels:             req.Labels,
+		DeletionProtection: req.DeletionProtection,
+		Reserved:           true,
+	}
+
+	if req.ExternalSpec != nil {
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv4
+		ipAddr := req.ExternalSpec.Address
+		if ipAddr == "" {
+			ipAddr, err = s.allocateExternalIP(ctx)
+			if err != nil {
+				return nil, err
 			}
-			if isUniqueViolation(cerr) {
-				if i == maxRetries-1 {
-					return nil, coreerrors.Aborted("failed to allocate IP address after retries").Err()
-				}
-				continue
+		}
+		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
+			Address: ipAddr,
+			ZoneID:  req.ExternalSpec.ZoneID,
+		}
+	} else {
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv4
+		ipAddr := req.InternalSpec.Address
+		subnetID := req.InternalSpec.SubnetID
+		if ipAddr == "" && subnetID != "" {
+			sub, serr := s.subnetRepo.Get(ctx, subnetID)
+			if serr != nil {
+				return nil, status.Errorf(codes.NotFound, "subnet %s not found", subnetID)
 			}
-			return nil, cerr
+			ipAddr, err = s.allocateInternalIP(ctx, sub)
+			if err != nil {
+				return nil, err
+			}
 		}
-
-		final, gerr := s.repo.Get(ctx, resourceID)
-		if gerr != nil {
-			return nil, gerr
+		a.InternalIpv4 = &domain.InternalIpv4Spec{
+			Address:  ipAddr,
+			SubnetID: subnetID,
 		}
-		return anypb.New(domainAddressToProto(final))
-	})
-
-	return &op, nil
-}
-
-// Update обновляет Address асинхронно.
-func (s *AddressService) Update(ctx context.Context, addressID, name, description string, labels map[string]string, updateMask []string) (*operations.Operation, error) {
-	if addressID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("address_id", "address_id is required").Err()
 	}
 
-	existing, err := s.repo.Get(ctx, addressID)
+	created, err := s.repo.Insert(ctx, a)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("Address", addressID).Err()
+	return anypb.New(domainAddressToProto(created))
+}
+
+// allocateExternalIP выбирает случайный IP из 203.0.113.0/24 (TEST-NET-3 RFC 5737).
+func (s *AddressService) allocateExternalIP(ctx context.Context) (string, error) {
+	const maxAttempts = 10
+	_, network, _ := net.ParseCIDR("203.0.113.0/24")
+	baseIP := binary.BigEndian.Uint32(network.IP)
+	ones, bits := network.Mask.Size()
+	hostBits := bits - ones
+	maxHosts := uint32(1<<hostBits) - 2 // исключаем .0 и .255
+
+	for i := 0; i < maxAttempts; i++ {
+		offset := uint32(rand.Intn(int(maxHosts))) + 1
+		ipInt := baseIP + offset
+		var ipBytes [4]byte
+		binary.BigEndian.PutUint32(ipBytes[:], ipInt)
+		ip := net.IP(ipBytes[:]).String()
+
+		alreadyExists, err := s.repo.ExistsIP(ctx, ip)
+		if err != nil {
+			return "", err
+		}
+		if !alreadyExists {
+			return ip, nil
+		}
+	}
+	return "", status.Error(codes.ResourceExhausted, "cannot allocate external IP: pool exhausted")
+}
+
+// allocateInternalIP выбирает случайный IP из первого CIDR подсети.
+func (s *AddressService) allocateInternalIP(ctx context.Context, sub *domain.Subnet) (string, error) {
+	if len(sub.V4CidrBlocks) == 0 {
+		return "", status.Error(codes.FailedPrecondition, "subnet has no cidr blocks")
+	}
+	const maxAttempts = 10
+	_, network, err := net.ParseCIDR(sub.V4CidrBlocks[0])
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "parse subnet cidr: %v", err)
+	}
+	baseIP := binary.BigEndian.Uint32(network.IP)
+	ones, bits := network.Mask.Size()
+	hostBits := bits - ones
+	maxHosts := uint32(1<<hostBits) - 2
+	if maxHosts == 0 {
+		return "", status.Error(codes.FailedPrecondition, "subnet too small")
 	}
 
-	op, err := operations.New("Update Address "+addressID, &pb.UpdateAddressMetadata{AddressId: addressID})
+	for i := 0; i < maxAttempts; i++ {
+		offset := uint32(rand.Intn(int(maxHosts))) + 1
+		ipInt := baseIP + offset
+		var ipBytes [4]byte
+		binary.BigEndian.PutUint32(ipBytes[:], ipInt)
+		ip := net.IP(ipBytes[:]).String()
+
+		alreadyExists, err := s.repo.ExistsIP(ctx, ip)
+		if err != nil {
+			return "", err
+		}
+		if !alreadyExists {
+			return ip, nil
+		}
+	}
+	return "", status.Error(codes.ResourceExhausted, "cannot allocate internal IP: subnet exhausted")
+}
+
+// Update обновляет Address.
+func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*operations.Operation, error) {
+	if req.AddressID == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+
+	op, err := operations.New(
+		fmt.Sprintf("Update address %s", req.AddressID),
+		&vpcv1.UpdateAddressMetadata{AddressId: req.AddressID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -141,111 +252,109 @@ func (s *AddressService) Update(ctx context.Context, addressID, name, descriptio
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		cur, gerr := s.repo.Get(ctx, addressID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if cur == nil {
-			return nil, status.Errorf(codes.NotFound, "Address %s not found", addressID)
-		}
-
-		applyAddressUpdateMask(cur, name, description, labels, updateMask)
-		if uerr := s.repo.Update(ctx, cur); uerr != nil {
-			return nil, uerr
-		}
-		final, gerr := s.repo.Get(ctx, addressID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		return anypb.New(domainAddressToProto(final))
+		return s.doUpdate(ctx, req)
 	})
 
 	return &op, nil
 }
 
-// Delete удаляет Address асинхронно.
-func (s *AddressService) Delete(ctx context.Context, addressID string) (*operations.Operation, error) {
-	if addressID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("address_id", "address_id is required").Err()
+func (s *AddressService) doUpdate(ctx context.Context, req UpdateAddressReq) (*anypb.Any, error) {
+	a, err := s.repo.Get(ctx, req.AddressID)
+	if err != nil {
+		return nil, mapRepoErr(err)
 	}
 
-	existing, err := s.repo.Get(ctx, addressID)
+	applyAddressMask(a, req)
+
+	updated, err := s.repo.Update(ctx, a)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("Address", addressID).Err()
-	}
-
-	op, err := operations.New("Delete Address "+addressID, &pb.DeleteAddressMetadata{AddressId: addressID})
-	if err != nil {
-		return nil, err
-	}
-	if err := s.opsRepo.Create(ctx, op); err != nil {
-		return nil, err
-	}
-
-	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if derr := s.repo.SoftDelete(ctx, addressID); derr != nil {
-			return nil, derr
-		}
-		return anypb.New(&pb.DeleteAddressMetadata{AddressId: addressID})
-	})
-
-	return &op, nil
+	return anypb.New(domainAddressToProto(updated))
 }
 
-func applyAddressUpdateMask(a *domain.Address, name, description string, labels map[string]string, mask []string) {
-	if len(mask) == 0 {
-		a.Name = name
-		a.Description = description
-		a.Labels = labels
+func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
+	if len(req.UpdateMask) == 0 {
+		a.Name = req.Name
+		a.Description = req.Description
+		a.Labels = req.Labels
+		a.DeletionProtection = req.DeletionProtection
+		a.Reserved = req.Reserved
 		return
 	}
-	for _, f := range mask {
-		switch f {
+	for _, field := range req.UpdateMask {
+		switch field {
 		case "name":
-			a.Name = name
+			a.Name = req.Name
 		case "description":
-			a.Description = description
+			a.Description = req.Description
 		case "labels":
-			a.Labels = labels
+			a.Labels = req.Labels
+		case "deletion_protection":
+			a.DeletionProtection = req.DeletionProtection
+		case "reserved":
+			a.Reserved = req.Reserved
 		}
 	}
 }
 
-func domainAddressToProto(a *domain.Address) *pb.Address {
-	proto := &pb.Address{
-		Id:            a.ID,
-		FolderId:      a.FolderID,
-		Name:          a.Name,
-		Description:   a.Description,
-		Labels:        a.Labels,
-		AddressType:   addressTypeProto(a.AddressType),
-		ZoneId:        a.ZoneID,
-		AllocatedIpv4: a.AllocatedIPv4,
-		Status:        pb.AddressStatus(a.Status),
+// Delete удаляет Address.
+func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	if !a.CreatedAt.IsZero() {
-		proto.CreatedAt = timestampProto(a.CreatedAt)
+
+	op, err := operations.New(
+		fmt.Sprintf("Delete address %s", id),
+		&vpcv1.DeleteAddressMetadata{AddressId: id},
+	)
+	if err != nil {
+		return nil, err
 	}
-	return proto
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		if err := s.repo.SoftDelete(ctx, id); err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(&vpcv1.DeleteAddressMetadata{AddressId: id})
+	})
+
+	return &op, nil
 }
 
-func addressTypeProto(t string) pb.AddressType {
-	if strings.EqualFold(t, "ADDRESS_TYPE_EXTERNAL") || strings.EqualFold(t, "EXTERNAL") {
-		return pb.AddressType_ADDRESS_TYPE_EXTERNAL
+// domainAddressToProto конвертирует domain Address в proto Address.
+func domainAddressToProto(a *domain.Address) *vpcv1.Address {
+	p := &vpcv1.Address{
+		Id:                 a.ID,
+		FolderId:           a.FolderID,
+		Name:               a.Name,
+		Description:        a.Description,
+		Labels:             a.Labels,
+		Reserved:           a.Reserved,
+		Used:               a.Used,
+		Type:               vpcv1.Address_Type(a.Type),
+		IpVersion:          vpcv1.Address_IpVersion(a.IpVersion),
+		DeletionProtection: a.DeletionProtection,
 	}
-	return pb.AddressType_ADDRESS_TYPE_UNSPECIFIED
-}
-
-// isUniqueViolation определяет является ли ошибка нарушением UNIQUE constraint.
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
+	if a.ExternalIpv4 != nil {
+		p.Address = &vpcv1.Address_ExternalIpv4Address{
+			ExternalIpv4Address: &vpcv1.ExternalIpv4Address{
+				Address: a.ExternalIpv4.Address,
+				ZoneId:  a.ExternalIpv4.ZoneID,
+			},
+		}
+	} else if a.InternalIpv4 != nil {
+		p.Address = &vpcv1.Address_InternalIpv4Address{
+			InternalIpv4Address: &vpcv1.InternalIpv4Address{
+				Address: a.InternalIpv4.Address,
+				Scope: &vpcv1.InternalIpv4Address_SubnetId{
+					SubnetId: a.InternalIpv4.SubnetID,
+				},
+			},
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "23505") ||
-		strings.Contains(msg, "unique_violation") ||
-		strings.Contains(msg, "duplicate key")
+	return p
 }

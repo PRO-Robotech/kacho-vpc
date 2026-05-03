@@ -1,5 +1,5 @@
 BINARY := kacho-vpc
-CMD     := ./cmd/kacho-vpc
+CMD     := ./cmd/vpc
 IMAGE   := kacho-vpc:dev
 
 .PHONY: build test vet lint docker sync-migrations generate

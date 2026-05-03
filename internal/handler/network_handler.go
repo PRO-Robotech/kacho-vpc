@@ -3,101 +3,106 @@ package handler
 import (
 	"context"
 
-	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// NetworkHandler реализует pb.NetworkServiceServer.
+// NetworkHandler реализует vpcv1.NetworkServiceServer.
 type NetworkHandler struct {
-	pb.UnimplementedNetworkServiceServer
-	svc *service.NetworkService
+	vpcv1.UnimplementedNetworkServiceServer
+	svc *svc.NetworkService
 }
 
 // NewNetworkHandler создаёт NetworkHandler.
-func NewNetworkHandler(svc *service.NetworkService) *NetworkHandler {
-	return &NetworkHandler{svc: svc}
+func NewNetworkHandler(s *svc.NetworkService) *NetworkHandler {
+	return &NetworkHandler{svc: s}
 }
 
-func (h *NetworkHandler) Get(ctx context.Context, req *pb.GetNetworkRequest) (*pb.Network, error) {
-	n, err := h.svc.Get(ctx, req.GetNetworkId())
+func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) (*vpcv1.Network, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
 	if err != nil {
 		return nil, err
 	}
-	return networkDomainToProto(n), nil
+	return networkToProto(n), nil
 }
 
-func (h *NetworkHandler) List(ctx context.Context, req *pb.ListNetworksRequest) (*pb.ListNetworksResponse, error) {
-	filter := service.ListFilter{
-		FolderID:  req.GetFolderId(),
-		PageSize:  req.GetPageSize(),
-		PageToken: req.GetPageToken(),
-		Filter:    req.GetFilter(),
-		OrderBy:   req.GetOrderBy(),
-	}
-	networks, nextToken, err := h.svc.List(ctx, filter)
+func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
+	nets, nextToken, err := h.svc.List(ctx, svc.NetworkFilter{
+		FolderID: req.FolderId,
+	}, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
 	if err != nil {
 		return nil, err
 	}
-	resp := &pb.ListNetworksResponse{
-		NextPageToken: nextToken,
-	}
-	for i := range networks {
-		resp.Networks = append(resp.Networks, networkDomainToProto(&networks[i]))
+	resp := &vpcv1.ListNetworksResponse{NextPageToken: nextToken}
+	for _, n := range nets {
+		resp.Networks = append(resp.Networks, networkToProto(n))
 	}
 	return resp, nil
 }
 
-func (h *NetworkHandler) Create(ctx context.Context, req *pb.CreateNetworkRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Create(ctx, req.GetFolderId(), req.GetName(), req.GetDescription(), req.GetLabels())
+func (h *NetworkHandler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Create(ctx, svc.CreateNetworkReq{
+		FolderID:    req.FolderId,
+		Name:        req.Name,
+		Description: req.Description,
+		Labels:      req.Labels,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-func (h *NetworkHandler) Update(ctx context.Context, req *pb.UpdateNetworkRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Update(ctx,
-		req.GetNetworkId(),
-		req.GetResourceVersion(),
-		req.GetName(),
-		req.GetDescription(),
-		req.GetLabels(),
-		maskFields(req.GetUpdateMask()),
-	)
+func (h *NetworkHandler) Update(ctx context.Context, req *vpcv1.UpdateNetworkRequest) (*operationpb.Operation, error) {
+	var mask []string
+	if req.UpdateMask != nil {
+		mask = req.UpdateMask.Paths
+	}
+	op, err := h.svc.Update(ctx, svc.UpdateNetworkReq{
+		NetworkID:   req.NetworkId,
+		Name:        req.Name,
+		Description: req.Description,
+		Labels:      req.Labels,
+		UpdateMask:  mask,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-func (h *NetworkHandler) Delete(ctx context.Context, req *pb.DeleteNetworkRequest) (*operationv1.Operation, error) {
-	op, err := h.svc.Delete(ctx, req.GetNetworkId())
+func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (*operationpb.Operation, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	op, err := h.svc.Delete(ctx, req.NetworkId)
 	if err != nil {
 		return nil, err
 	}
 	return operationToProto(op), nil
 }
 
-// networkDomainToProto конвертирует domain.Network в pb.Network.
-func networkDomainToProto(n *domain.Network) *pb.Network {
-	proto := &pb.Network{
-		Id:              n.ID,
-		FolderId:        n.FolderID,
-		Name:            n.Name,
-		Description:     n.Description,
-		Labels:          n.Labels,
-		Status:          pb.NetworkStatus(n.Status),
-		Generation:      n.Generation,
-		ResourceVersion: n.ResourceVersion,
+// networkToProto конвертирует domain Network → proto Network.
+func networkToProto(n *domain.Network) *vpcv1.Network {
+	return &vpcv1.Network{
+		Id:                     n.ID,
+		FolderId:               n.FolderID,
+		CreatedAt:              timestamppb.New(n.CreatedAt),
+		Name:                   n.Name,
+		Description:            n.Description,
+		Labels:                 n.Labels,
+		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
 	}
-	if !n.CreatedAt.IsZero() {
-		proto.CreatedAt = timestamppb.New(n.CreatedAt)
-	}
-	if !n.StatusLastTransitionAt.IsZero() {
-		proto.StatusLastTransitionAt = timestamppb.New(n.StatusLastTransitionAt)
-	}
-	return proto
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -19,7 +20,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/observability"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/config"
@@ -31,7 +33,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("usage: kacho-vpc {serve|migrate up|migrate down|migrate status}")
+		log.Fatal("usage: vpc {serve|migrate up|migrate down|migrate status}")
 	}
 	cmd := os.Args[1]
 
@@ -43,7 +45,7 @@ func main() {
 	switch cmd {
 	case "migrate":
 		if len(os.Args) < 3 {
-			log.Fatal("usage: kacho-vpc migrate {up|down|status}")
+			log.Fatal("usage: vpc migrate {up|down|status}")
 		}
 		runMigrate(cfg, os.Args[2])
 	case "serve":
@@ -60,6 +62,7 @@ func runServe(cfg config.Config) error {
 	defer cancel()
 
 	logger := observability.NewSlogger(os.Stdout)
+	slog.SetDefault(logger)
 
 	pool, err := coredb.NewPool(ctx, cfg.DSN())
 	if err != nil {
@@ -67,12 +70,11 @@ func runServe(cfg config.Config) error {
 	}
 	defer pool.Close()
 
-	// Operations repo (каждый сервис — своя схема, используем "public").
+	// Operations repo.
 	opsRepo := operations.NewRepo(pool, "public")
 
-	// Подключение к resource-manager для кросс-сервисной валидации Folder.
-	rmConn, err := grpc.NewClient(cfg.ResourceManagerAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// gRPC клиент к resource-manager.
+	rmConn, err := grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
@@ -80,27 +82,30 @@ func runServe(cfg config.Config) error {
 
 	folderClient := clients.NewFolderClient(rmConn)
 
-	// Репозитории.
+	// Repos.
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
-	sgRepo := repo.NewSecurityGroupRepo(pool)
-	rtRepo := repo.NewRouteTableRepo(pool)
-	addrRepo := repo.NewAddressRepo(pool)
+	addressRepo := repo.NewAddressRepo(pool)
+	routeTableRepo := repo.NewRouteTableRepo(pool)
 
-	// Сервисы.
-	networkSvc := service.NewNetworkService(networkRepo, opsRepo, folderClient)
-	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, opsRepo, folderClient)
-	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, opsRepo, folderClient)
-	rtSvc := service.NewRouteTableService(rtRepo, networkRepo, opsRepo, folderClient)
-	addrSvc := service.NewAddressService(addrRepo, opsRepo, folderClient)
+	// Services.
+	networkSvc := service.NewNetworkService(networkRepo, folderClient, opsRepo)
+	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
+	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo)
+	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
 
-	// gRPC сервер.
+	// gRPC server.
 	grpcSrv := grpcsrv.NewServer()
-	pb.RegisterNetworkServiceServer(grpcSrv, handler.NewNetworkHandler(networkSvc))
-	pb.RegisterSubnetServiceServer(grpcSrv, handler.NewSubnetHandler(subnetSvc))
-	pb.RegisterSecurityGroupServiceServer(grpcSrv, handler.NewSecurityGroupHandler(sgSvc))
-	pb.RegisterRouteTableServiceServer(grpcSrv, handler.NewRouteTableHandler(rtSvc))
-	pb.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addrSvc))
+
+	// Регистрируем 4 реализованных сервиса.
+	vpcv1.RegisterNetworkServiceServer(grpcSrv, handler.NewNetworkHandler(networkSvc))
+	vpcv1.RegisterSubnetServiceServer(grpcSrv, handler.NewSubnetHandler(subnetSvc))
+	vpcv1.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addressSvc))
+	vpcv1.RegisterRouteTableServiceServer(grpcSrv, handler.NewRouteTableHandler(routeTableSvc))
+	operationpb.RegisterOperationServiceServer(grpcSrv, handler.NewOperationHandler(opsRepo))
+
+	// SG / Gateway / PrivateLink — НЕ регистрируем:
+	// клиенты получат UNIMPLEMENTED от grpc-рефлексии/маршрутизации.
 
 	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)
 	if err != nil {

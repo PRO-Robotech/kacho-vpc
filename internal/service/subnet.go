@@ -2,70 +2,88 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/ids"
-	"github.com/PRO-Robotech/kacho-corelib/operations"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
-// SubnetService реализует use-cases для Subnet.
+// CreateSubnetReq — запрос на создание подсети.
+type CreateSubnetReq struct {
+	FolderID     string
+	Name         string
+	Description  string
+	Labels       map[string]string
+	NetworkID    string
+	ZoneID       string
+	V4CidrBlocks []string
+	RouteTableID string
+	DhcpOptions  *domain.DhcpOptions
+}
+
+// UpdateSubnetReq — запрос на обновление подсети.
+type UpdateSubnetReq struct {
+	SubnetID     string
+	Name         string
+	Description  string
+	Labels       map[string]string
+	RouteTableID string
+	DhcpOptions  *domain.DhcpOptions
+	V4CidrBlocks []string
+	UpdateMask   []string
+}
+
+// SubnetService — бизнес-логика управления подсетями.
 type SubnetService struct {
 	repo         SubnetRepo
 	networkRepo  NetworkRepo
-	opsRepo      operations.Repo
 	folderClient FolderClient
+	opsRepo      operations.Repo
 }
 
 // NewSubnetService создаёт SubnetService.
-func NewSubnetService(r SubnetRepo, nr NetworkRepo, ops operations.Repo, fc FolderClient) *SubnetService {
-	return &SubnetService{repo: r, networkRepo: nr, opsRepo: ops, folderClient: fc}
+func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *SubnetService {
+	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
 
-// Get возвращает Subnet по ID (синхронный).
+// Get возвращает Subnet по ID.
 func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, error) {
-	if id == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("subnet_id", "subnet_id is required").Err()
-	}
 	sub, err := s.repo.Get(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	if sub == nil {
-		return nil, coreerrors.NotFound("Subnet", id).Err()
+		return nil, mapRepoErr(err)
 	}
 	return sub, nil
 }
 
-// List возвращает список Subnet (синхронный).
-func (s *SubnetService) List(ctx context.Context, filter ListFilter) ([]domain.Subnet, string, error) {
-	return s.repo.List(ctx, filter)
+// List возвращает список подсетей.
+func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error) {
+	return s.repo.List(ctx, f, p)
 }
 
-// Create создаёт Subnet асинхронно.
-func (s *SubnetService) Create(ctx context.Context, folderID, networkID, zoneID, cidrBlock, name, description string, labels map[string]string) (*operations.Operation, error) {
-	if folderID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "folder_id is required").Err()
+// Create инициирует создание Subnet.
+func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*operations.Operation, error) {
+	if req.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if networkID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("network_id", "network_id is required").Err()
+	if req.NetworkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	if name == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("name", "name is required").Err()
-	}
-	if cidrBlock == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("cidr_block", "cidr_block is required").Err()
-	}
-	if err := validateCIDR(cidrBlock); err != nil {
-		return nil, err
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name required")
 	}
 
-	resourceID := ids.NewUID()
-	op, err := operations.New("Create Subnet "+name, &pb.CreateSubnetMetadata{SubnetId: resourceID})
+	subID := ids.NewUID()
+	op, err := operations.New(
+		fmt.Sprintf("Create subnet %s", req.Name),
+		&vpcv1.CreateSubnetMetadata{SubnetId: subID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -74,71 +92,55 @@ func (s *SubnetService) Create(ctx context.Context, folderID, networkID, zoneID,
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, ferr := s.folderClient.Exists(ctx, folderID)
-		if ferr != nil {
-			return nil, ferr
-		}
-		if !exists {
-			return nil, status.Errorf(codes.FailedPrecondition, "Folder %s not found", folderID)
-		}
-
-		net, nerr := s.networkRepo.Get(ctx, networkID)
-		if nerr != nil {
-			return nil, nerr
-		}
-		if net == nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "Network %s not found", networkID)
-		}
-
-		sub := &domain.Subnet{
-			ID:          resourceID,
-			FolderID:    folderID,
-			NetworkID:   networkID,
-			ZoneID:      zoneID,
-			CIDRBlock:   cidrBlock,
-			Name:        name,
-			Description: description,
-			Labels:      labels,
-			Status:      domain.SubnetStatusProvisioning,
-			Generation:  1,
-		}
-		if cerr := s.repo.Create(ctx, sub); cerr != nil {
-			return nil, cerr
-		}
-
-		created, gerr := s.repo.Get(ctx, resourceID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		created.Status = domain.SubnetStatusActive
-		if uerr := s.repo.Update(ctx, created); uerr != nil {
-			return nil, uerr
-		}
-		final, gerr := s.repo.Get(ctx, resourceID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		return anypb.New(domainSubnetToProto(final))
+		return s.doCreate(ctx, subID, req)
 	})
 
 	return &op, nil
 }
 
-// Update обновляет Subnet асинхронно.
-func (s *SubnetService) Update(ctx context.Context, subnetID, resourceVersion, name, description string, labels map[string]string, updateMask []string) (*operations.Operation, error) {
-	if subnetID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("subnet_id", "subnet_id is required").Err()
+func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSubnetReq) (*anypb.Any, error) {
+	exists, err := s.folderClient.Exists(ctx, req.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
 	}
 
-	existing, err := s.repo.Get(ctx, subnetID)
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		return nil, status.Errorf(codes.NotFound, "network %s not found", req.NetworkID)
+	}
+
+	sub := &domain.Subnet{
+		ID:           subID,
+		FolderID:     req.FolderID,
+		CreatedAt:    time.Now().UTC(),
+		Name:         req.Name,
+		Description:  req.Description,
+		Labels:       req.Labels,
+		NetworkID:    req.NetworkID,
+		ZoneID:       req.ZoneID,
+		V4CidrBlocks: req.V4CidrBlocks,
+		RouteTableID: req.RouteTableID,
+		DhcpOptions:  req.DhcpOptions,
+	}
+	created, err := s.repo.Insert(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("Subnet", subnetID).Err()
+	return anypb.New(domainSubnetToProto(created))
+}
+
+// Update обновляет Subnet.
+func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
+	if req.SubnetID == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
 
-	op, err := operations.New("Update Subnet "+subnetID, &pb.UpdateSubnetMetadata{SubnetId: subnetID})
+	op, err := operations.New(
+		fmt.Sprintf("Update subnet %s", req.SubnetID),
+		&vpcv1.UpdateSubnetMetadata{SubnetId: req.SubnetID},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -147,102 +149,104 @@ func (s *SubnetService) Update(ctx context.Context, subnetID, resourceVersion, n
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		cur, gerr := s.repo.Get(ctx, subnetID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if cur == nil {
-			return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
-		}
-		if resourceVersion != "" && cur.ResourceVersion != resourceVersion {
-			return nil, status.Errorf(codes.Aborted, "resource_version mismatch: expected %s, got %s", resourceVersion, cur.ResourceVersion)
-		}
-
-		applySubnetUpdateMask(cur, name, description, labels, updateMask)
-		cur.Generation++
-		if uerr := s.repo.Update(ctx, cur); uerr != nil {
-			return nil, uerr
-		}
-		final, gerr := s.repo.Get(ctx, subnetID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		return anypb.New(domainSubnetToProto(final))
+		return s.doUpdate(ctx, req)
 	})
 
 	return &op, nil
 }
 
-// Delete удаляет Subnet асинхронно.
-func (s *SubnetService) Delete(ctx context.Context, subnetID string) (*operations.Operation, error) {
-	if subnetID == "" {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("subnet_id", "subnet_id is required").Err()
+func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*anypb.Any, error) {
+	sub, err := s.repo.Get(ctx, req.SubnetID)
+	if err != nil {
+		return nil, mapRepoErr(err)
 	}
 
-	existing, err := s.repo.Get(ctx, subnetID)
+	applySubnetMask(sub, req)
+
+	updated, err := s.repo.Update(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
-	if existing == nil {
-		return nil, coreerrors.NotFound("Subnet", subnetID).Err()
-	}
-
-	op, err := operations.New("Delete Subnet "+subnetID, &pb.DeleteSubnetMetadata{SubnetId: subnetID})
-	if err != nil {
-		return nil, err
-	}
-	if err := s.opsRepo.Create(ctx, op); err != nil {
-		return nil, err
-	}
-
-	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if derr := s.repo.SoftDelete(ctx, subnetID); derr != nil {
-			return nil, derr
-		}
-		return anypb.New(&pb.DeleteSubnetMetadata{SubnetId: subnetID})
-	})
-
-	return &op, nil
+	return anypb.New(domainSubnetToProto(updated))
 }
 
-func applySubnetUpdateMask(s *domain.Subnet, name, description string, labels map[string]string, mask []string) {
-	if len(mask) == 0 {
-		s.Name = name
-		s.Description = description
-		s.Labels = labels
+func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
+	if len(req.UpdateMask) == 0 {
+		sub.Name = req.Name
+		sub.Description = req.Description
+		sub.Labels = req.Labels
+		sub.RouteTableID = req.RouteTableID
+		sub.DhcpOptions = req.DhcpOptions
+		if len(req.V4CidrBlocks) > 0 {
+			sub.V4CidrBlocks = req.V4CidrBlocks
+		}
 		return
 	}
-	for _, f := range mask {
-		switch f {
+	for _, field := range req.UpdateMask {
+		switch field {
 		case "name":
-			s.Name = name
+			sub.Name = req.Name
 		case "description":
-			s.Description = description
+			sub.Description = req.Description
 		case "labels":
-			s.Labels = labels
+			sub.Labels = req.Labels
+		case "route_table_id":
+			sub.RouteTableID = req.RouteTableID
+		case "dhcp_options":
+			sub.DhcpOptions = req.DhcpOptions
+		case "v4_cidr_blocks":
+			sub.V4CidrBlocks = req.V4CidrBlocks
 		}
 	}
 }
 
-func domainSubnetToProto(s *domain.Subnet) *pb.Subnet {
-	proto := &pb.Subnet{
-		Id:              s.ID,
-		FolderId:        s.FolderID,
-		NetworkId:       s.NetworkID,
-		ZoneId:          s.ZoneID,
-		CidrBlock:       s.CIDRBlock,
-		Name:            s.Name,
-		Description:     s.Description,
-		Labels:          s.Labels,
-		Status:          pb.SubnetStatus(s.Status),
-		Generation:      s.Generation,
-		ResourceVersion: s.ResourceVersion,
+// Delete удаляет Subnet.
+func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if !s.CreatedAt.IsZero() {
-		proto.CreatedAt = timestampProto(s.CreatedAt)
+
+	op, err := operations.New(
+		fmt.Sprintf("Delete subnet %s", id),
+		&vpcv1.DeleteSubnetMetadata{SubnetId: id},
+	)
+	if err != nil {
+		return nil, err
 	}
-	if !s.StatusLastTransitionAt.IsZero() {
-		proto.StatusLastTransitionAt = timestampProto(s.StatusLastTransitionAt)
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
 	}
-	return proto
+
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		if err := s.repo.SoftDelete(ctx, id); err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(&vpcv1.DeleteSubnetMetadata{SubnetId: id})
+	})
+
+	return &op, nil
+}
+
+// domainSubnetToProto конвертирует domain Subnet в proto Subnet.
+func domainSubnetToProto(s *domain.Subnet) *vpcv1.Subnet {
+	p := &vpcv1.Subnet{
+		Id:           s.ID,
+		FolderId:     s.FolderID,
+		Name:         s.Name,
+		Description:  s.Description,
+		Labels:       s.Labels,
+		NetworkId:    s.NetworkID,
+		ZoneId:       s.ZoneID,
+		V4CidrBlocks: s.V4CidrBlocks,
+		V6CidrBlocks: s.V6CidrBlocks,
+		RouteTableId: s.RouteTableID,
+	}
+	if s.DhcpOptions != nil {
+		p.DhcpOptions = &vpcv1.DhcpOptions{
+			DomainNameServers: s.DhcpOptions.DomainNameServers,
+			DomainName:        s.DhcpOptions.DomainName,
+			NtpServers:        s.DhcpOptions.NtpServers,
+		}
+	}
+	return p
 }

@@ -12,9 +12,6 @@ import (
 )
 
 // FolderClient реализует service.FolderClient через gRPC к resource-manager.
-//
-// Использует FolderService.Get() из нового flat API (sub-phase 1.0).
-// Retry-policy: на codes.Unavailable — exponential backoff 100ms..5s, max-elapsed 30s.
 type FolderClient struct {
 	cli rmv1.FolderServiceClient
 }
@@ -24,27 +21,21 @@ func NewFolderClient(conn *grpc.ClientConn) *FolderClient {
 	return &FolderClient{cli: rmv1.NewFolderServiceClient(conn)}
 }
 
-// Exists проверяет существование Folder в resource-manager.
-//
-// При codes.Unavailable выполняется retry с exponential backoff.
-// При codes.NotFound возвращает (false, nil) — папки нет.
-// При прочих ошибках — (false, err).
+// Exists проверяет существование Folder.
 func (c *FolderClient) Exists(ctx context.Context, folderID string) (bool, error) {
-	var found bool
+	var exists bool
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		_, ferr := c.cli.Get(ctx, &rmv1.GetFolderRequest{FolderId: folderID})
-		if ferr != nil {
-			if st, ok := status.FromError(ferr); ok && st.Code() == codes.NotFound {
-				found = false
+		_, rerr := c.cli.Get(ctx, &rmv1.GetFolderRequest{FolderId: folderID})
+		if rerr != nil {
+			st, ok := status.FromError(rerr)
+			if ok && st.Code() == codes.NotFound {
+				exists = false
 				return nil
 			}
-			return ferr
+			return rerr
 		}
-		found = true
+		exists = true
 		return nil
 	})
-	if err != nil {
-		return false, err
-	}
-	return found, nil
+	return exists, err
 }
