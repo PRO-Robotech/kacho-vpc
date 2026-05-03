@@ -1,5 +1,5 @@
 apiVersion: v2
 name: vpc
-version: 0.3.0
-appVersion: 0.3.0
-description: Kachō VPC (Network, Subnet, SecurityGroup, RouteTable, Address)
+version: 1.0.0
+appVersion: 1.0.0
+description: Kachō VPC (Network, Subnet, SecurityGroup, RouteTable, Address) — flat API + Operations

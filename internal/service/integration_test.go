@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -12,26 +13,55 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	testcontainers "github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/testcontainers/testcontainers-go"
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
-	"github.com/PRO-Robotech/kacho-corelib/outbox"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// noopFolderClient всегда возвращает Exists=true (для тестов без resource-manager).
+// noopFolderClient всегда возвращает Exists=true.
 type noopFolderClient struct{}
 
 func (n *noopFolderClient) Exists(_ context.Context, _ string) (bool, error) {
 	return true, nil
 }
 
-// ---------- DB Setup ----------
+// ---- DB Setup ----
+
+func setupTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	ctx := context.Background()
+
+	pg, err := tcpostgres.Run(ctx,
+		"postgres:16",
+		tcpostgres.WithDatabase("testdb"),
+		tcpostgres.WithUsername("testuser"),
+		tcpostgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+		),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+
+	connStr, err := pg.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	pool, err := coredb.NewPool(ctx, connStr)
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+
+	applyMigrationsDirect(t, pool)
+
+	return pool
+}
 
 func applyMigrationsDirect(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
@@ -74,7 +104,6 @@ func extractUpSection(content string) string {
 		if trimmed == "-- +goose Down" {
 			break
 		}
-		// Пропускаем goose StatementBegin/End аннотации
 		if trimmed == "-- +goose StatementBegin" || trimmed == "-- +goose StatementEnd" {
 			continue
 		}
@@ -85,35 +114,6 @@ func extractUpSection(content string) string {
 	return strings.Join(result, "\n")
 }
 
-func setupTestDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-
-	ctx := context.Background()
-
-	pg, err := tcpostgres.Run(ctx,
-		"postgres:16",
-		tcpostgres.WithDatabase("testdb"),
-		tcpostgres.WithUsername("testuser"),
-		tcpostgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
-		),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = pg.Terminate(ctx) })
-
-	connStr, err := pg.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	pool, err := coredb.NewPool(ctx, connStr)
-	require.NoError(t, err)
-	t.Cleanup(func() { pool.Close() })
-
-	applyMigrationsDirect(t, pool)
-
-	return pool
-}
-
 func setupServices(t *testing.T, pool *pgxpool.Pool) (
 	*service.NetworkService,
 	*service.SubnetService,
@@ -122,55 +122,78 @@ func setupServices(t *testing.T, pool *pgxpool.Pool) (
 	*service.AddressService,
 ) {
 	t.Helper()
-	transactor := coredb.NewTransactor(pool)
-	outboxWriter := outbox.NewWriter("kacho_vpc")
+	opsRepo := operations.NewRepo(pool, "public")
 	fc := &noopFolderClient{}
 
-	networkRepo := repo.NewNetworkRepo(pool, transactor, outboxWriter)
-	subnetRepo := repo.NewSubnetRepo(pool, transactor, outboxWriter)
-	sgRepo := repo.NewSecurityGroupRepo(pool, transactor, outboxWriter)
-	rtRepo := repo.NewRouteTableRepo(pool, transactor, outboxWriter)
-	addrRepo := repo.NewAddressRepo(pool, transactor, outboxWriter)
+	networkRepo := repo.NewNetworkRepo(pool)
+	subnetRepo := repo.NewSubnetRepo(pool)
+	sgRepo := repo.NewSecurityGroupRepo(pool)
+	rtRepo := repo.NewRouteTableRepo(pool)
+	addrRepo := repo.NewAddressRepo(pool)
 
-	networkSvc := service.NewNetworkService(networkRepo, fc)
-	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, fc)
-	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, fc)
-	rtSvc := service.NewRouteTableService(rtRepo, networkRepo, fc)
-	addrSvc := service.NewAddressService(addrRepo, fc)
+	networkSvc := service.NewNetworkService(networkRepo, opsRepo, fc)
+	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, opsRepo, fc)
+	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, opsRepo, fc)
+	rtSvc := service.NewRouteTableService(rtRepo, networkRepo, opsRepo, fc)
+	addrSvc := service.NewAddressService(addrRepo, opsRepo, fc)
 
 	return networkSvc, subnetSvc, sgSvc, rtSvc, addrSvc
 }
 
-// ---------- Integration Tests ----------
-
 const (
-	testFolderID  = "10000000-0000-0000-0000-000000000001"
-	testCloudID   = "20000000-0000-0000-0000-000000000001"
-	testOrgID     = "30000000-0000-0000-0000-000000000001"
+	testFolderID = "10000000-0000-0000-0000-000000000001"
 )
 
-// B1: Создание Network через реальный Postgres.
+// waitForOp ждёт завершения операции, периодически опрашивая opsRepo.
+func waitForOp(t *testing.T, pool *pgxpool.Pool, opID string) *operations.Operation {
+	t.Helper()
+	opsRepo := operations.NewRepo(pool, "public")
+	ctx := context.Background()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		op, err := opsRepo.Get(ctx, opID)
+		require.NoError(t, err)
+		if op.Done {
+			return op
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("operation did not complete in time")
+	return nil
+}
+
+// B1: Создание Network через async Operations.
 func TestIntegration_B1_NetworkCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test skipped in short mode")
 	}
 	pool := setupTestDB(t)
 	networkSvc, _, _, _, _ := setupServices(t, pool)
+	ctx := context.Background()
 
-	net, err := networkSvc.Upsert(context.Background(), &domain.Network{
-		Name:           "test-network",
-		FolderID:       testFolderID,
-		CloudID:        testCloudID,
-		OrganizationID: testOrgID,
-	})
+	op, err := networkSvc.Create(ctx, testFolderID, "test-network", "desc", nil)
 	require.NoError(t, err)
-	assert.NotEmpty(t, net.UID)
-	assert.Equal(t, "test-network", net.Name)
-	assert.Equal(t, "ACTIVE", net.State)
-	assert.Greater(t, net.ResourceVersion, int64(0))
+	assert.NotEmpty(t, op.ID)
+
+	// Ждём завершения операции
+	finalOp := waitForOp(t, pool, op.ID)
+	assert.True(t, finalOp.Done)
+	assert.Nil(t, finalOp.Error, "operation should succeed")
+	assert.NotNil(t, finalOp.Response)
+
+	// Проверяем, что Network создана в БД
+	networkRepo := repo.NewNetworkRepo(pool)
+	opsRepo := operations.NewRepo(pool, "public")
+	netSvc := service.NewNetworkService(networkRepo, opsRepo, &noopFolderClient{})
+
+	// Список из folder
+	nets, _, err := netSvc.List(ctx, service.ListFilter{FolderID: testFolderID})
+	require.NoError(t, err)
+	assert.Len(t, nets, 1)
+	assert.Equal(t, "test-network", nets[0].Name)
 }
 
-// B5: Удаление Network с зависимостями → FAILED_PRECONDITION.
+// B5: Удаление Network с зависимостями → Operation с ошибкой FAILED_PRECONDITION.
 func TestIntegration_B5_NetworkDeleteWithDeps(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test skipped in short mode")
@@ -179,28 +202,38 @@ func TestIntegration_B5_NetworkDeleteWithDeps(t *testing.T) {
 	networkSvc, subnetSvc, _, _, _ := setupServices(t, pool)
 	ctx := context.Background()
 
-	net, err := networkSvc.Upsert(ctx, &domain.Network{
-		Name: "net-with-deps", FolderID: testFolderID,
-		CloudID: testCloudID, OrganizationID: testOrgID,
-	})
+	folderID := "10000000-0000-0000-0000-000000000002"
+	createOp, err := networkSvc.Create(ctx, folderID, "net-with-deps", "", nil)
 	require.NoError(t, err)
 
-	_, err = subnetSvc.Upsert(ctx, &domain.Subnet{
-		Name:      "subnet-dep",
-		FolderID:  testFolderID,
-		NetworkID: net.UID,
-		CIDRBlock: "10.0.0.0/24",
-	})
-	require.NoError(t, err)
+	netOp := waitForOp(t, pool, createOp.ID)
+	require.True(t, netOp.Done)
+	require.Nil(t, netOp.Error)
 
-	err = networkSvc.Delete(ctx, net.UID)
-	require.Error(t, err)
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	// Получаем созданную сеть
+	nets, _, err := service.NewNetworkService(repo.NewNetworkRepo(pool), operations.NewRepo(pool, "public"), &noopFolderClient{}).
+		List(ctx, service.ListFilter{FolderID: folderID})
+	require.NoError(t, err)
+	require.Len(t, nets, 1)
+	netID := nets[0].ID
+
+	// Создаём Subnet для зависимости
+	snOp, err := subnetSvc.Create(ctx, folderID, netID, "ru-central1-a", "10.0.0.0/24", "dep-subnet", "", nil)
+	require.NoError(t, err)
+	snFinalOp := waitForOp(t, pool, snOp.ID)
+	require.True(t, snFinalOp.Done)
+	require.Nil(t, snFinalOp.Error)
+
+	// Пытаемся удалить Network
+	delOp, err := networkSvc.Delete(ctx, netID)
+	require.NoError(t, err)
+	delFinalOp := waitForOp(t, pool, delOp.ID)
+	assert.True(t, delFinalOp.Done)
+	assert.NotNil(t, delFinalOp.Error, "should fail with FAILED_PRECONDITION")
+	assert.Equal(t, int32(codes.FailedPrecondition), delFinalOp.Error.Code)
 }
 
-// C1: Создание Subnet с валидным network_id.
+// C1: Создание Subnet с валидным CIDR.
 func TestIntegration_C1_SubnetCreate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test skipped in short mode")
@@ -209,27 +242,52 @@ func TestIntegration_C1_SubnetCreate(t *testing.T) {
 	networkSvc, subnetSvc, _, _, _ := setupServices(t, pool)
 	ctx := context.Background()
 
-	folderID2 := "10000000-0000-0000-0000-000000000002"
-
-	net, err := networkSvc.Upsert(ctx, &domain.Network{
-		Name: "parent-net", FolderID: folderID2,
-		CloudID: testCloudID, OrganizationID: testOrgID,
-	})
+	folderID := "10000000-0000-0000-0000-000000000003"
+	netOp, err := networkSvc.Create(ctx, folderID, "parent-net", "", nil)
 	require.NoError(t, err)
+	waitForOp(t, pool, netOp.ID)
 
-	subnet, err := subnetSvc.Upsert(ctx, &domain.Subnet{
-		Name:      "my-subnet",
-		FolderID:  folderID2,
-		NetworkID: net.UID,
-		CIDRBlock: "192.168.0.0/24",
-	})
+	nets, _, err := service.NewNetworkService(repo.NewNetworkRepo(pool), operations.NewRepo(pool, "public"), &noopFolderClient{}).
+		List(ctx, service.ListFilter{FolderID: folderID})
 	require.NoError(t, err)
-	assert.NotEmpty(t, subnet.UID)
-	assert.Equal(t, "ACTIVE", subnet.State)
-	assert.Equal(t, net.UID, subnet.NetworkID)
+	require.Len(t, nets, 1)
+	netID := nets[0].ID
+
+	snOp, err := subnetSvc.Create(ctx, folderID, netID, "ru-central1-a", "192.168.0.0/24", "my-subnet", "", nil)
+	require.NoError(t, err)
+	snFinalOp := waitForOp(t, pool, snOp.ID)
+	assert.True(t, snFinalOp.Done)
+	assert.Nil(t, snFinalOp.Error)
+
+	// Проверяем что Subnet создана
+	subnetRepo := repo.NewSubnetRepo(pool)
+	opsRepo := operations.NewRepo(pool, "public")
+	snSvc := service.NewSubnetService(subnetRepo, repo.NewNetworkRepo(pool), opsRepo, &noopFolderClient{})
+	subnets, _, err := snSvc.List(ctx, service.ListFilter{FolderID: folderID})
+	require.NoError(t, err)
+	require.Len(t, subnets, 1)
+	assert.Equal(t, "192.168.0.0/24", subnets[0].CIDRBlock)
 }
 
-// D3: SG Upsert — full-replace правил с новыми server-assigned UUIDs.
+// C_CIDR: Subnet с некорректным CIDR → INVALID_ARGUMENT немедленно.
+func TestIntegration_C_InvalidCIDR(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test skipped in short mode")
+	}
+	pool := setupTestDB(t)
+	_, subnetSvc, _, _, _ := setupServices(t, pool)
+	ctx := context.Background()
+
+	_, err := subnetSvc.Create(ctx, testFolderID, "net-id", "ru-central1-a",
+		"192.168.0.1/24", // host bits set
+		"bad-subnet", "", nil)
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+// D3: SecurityGroup rules full-replace.
 func TestIntegration_D3_SGRulesFullReplace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test skipped in short mode")
@@ -238,44 +296,57 @@ func TestIntegration_D3_SGRulesFullReplace(t *testing.T) {
 	networkSvc, _, sgSvc, _, _ := setupServices(t, pool)
 	ctx := context.Background()
 
-	folderID := "00000000-0000-0000-0000-000000000003"
-	net, err := networkSvc.Upsert(ctx, &domain.Network{
-		Name: "sg-net", FolderID: folderID,
-		CloudID: testCloudID, OrganizationID: testOrgID,
-	})
+	folderID := "10000000-0000-0000-0000-000000000004"
+	netOp, err := networkSvc.Create(ctx, folderID, "sg-net", "", nil)
 	require.NoError(t, err)
+	waitForOp(t, pool, netOp.ID)
 
-	// Первый upsert с 2 правилами
-	sg1, err := sgSvc.Upsert(ctx, &domain.SecurityGroup{
-		Name:      "sg-test",
-		FolderID:  folderID,
-		NetworkID: net.UID,
-		Rules: []domain.SecurityGroupRule{
-			{Direction: "INGRESS", Protocol: "TCP", PortRangeMin: 80, PortRangeMax: 80},
-			{Direction: "EGRESS", Protocol: "ANY"},
-		},
-	})
+	nets, _, err := service.NewNetworkService(repo.NewNetworkRepo(pool), operations.NewRepo(pool, "public"), &noopFolderClient{}).
+		List(ctx, service.ListFilter{FolderID: folderID})
 	require.NoError(t, err)
-	assert.Len(t, sg1.Rules, 2)
-	// server-assigned IDs
-	for _, r := range sg1.Rules {
-		assert.NotEmpty(t, r.ID)
+	netID := nets[0].ID
+
+	// Создаём SG с 2 правилами
+	rules1 := []domain.SecurityGroupRule{
+		{Direction: "INGRESS", Protocol: "TCP", PortRangeMin: 80, PortRangeMax: 80},
+		{Direction: "EGRESS", Protocol: "ICMP"},
 	}
-	oldRuleIDs := []string{sg1.Rules[0].ID, sg1.Rules[1].ID}
-
-	// Второй upsert с 1 правилом — full-replace
-	sg2, err := sgSvc.Upsert(ctx, &domain.SecurityGroup{
-		Name:      "sg-test",
-		FolderID:  folderID,
-		NetworkID: net.UID,
-		Rules: []domain.SecurityGroupRule{
-			{Direction: "INGRESS", Protocol: "UDP"},
-		},
-	})
+	sgCreateOp, err := sgSvc.Create(ctx, folderID, netID, "sg-test", "", nil, rules1)
 	require.NoError(t, err)
-	assert.Len(t, sg2.Rules, 1, "должно быть только 1 правило после full-replace")
-	// Новый ID должен быть отличен от старых
-	assert.NotContains(t, oldRuleIDs, sg2.Rules[0].ID)
+	sgFinalOp := waitForOp(t, pool, sgCreateOp.ID)
+	require.True(t, sgFinalOp.Done)
+	require.Nil(t, sgFinalOp.Error)
+
+	// Читаем созданную SG
+	sgRepo2 := repo.NewSecurityGroupRepo(pool)
+	opsRepo2 := operations.NewRepo(pool, "public")
+	sgSvc2 := service.NewSecurityGroupService(sgRepo2, repo.NewNetworkRepo(pool), opsRepo2, &noopFolderClient{})
+	sgs, _, err := sgSvc2.List(ctx, service.ListFilter{FolderID: folderID})
+	require.NoError(t, err)
+	require.Len(t, sgs, 1)
+	assert.Len(t, sgs[0].Rules, 2, "должно быть 2 правила после создания")
+	for _, r := range sgs[0].Rules {
+		assert.NotEmpty(t, r.ID, "каждое правило должно иметь server-assigned ID")
+	}
+	sgID := sgs[0].ID
+	sgRV := sgs[0].ResourceVersion
+	oldRuleIDs := []string{sgs[0].Rules[0].ID, sgs[0].Rules[1].ID}
+
+	// Update с 1 правилом — full-replace
+	rules2 := []domain.SecurityGroupRule{
+		{Direction: "EGRESS", Protocol: "UDP"},
+	}
+	updateOp, err := sgSvc2.Update(ctx, sgID, sgRV, "sg-test", "", nil, rules2, nil)
+	require.NoError(t, err)
+	updateFinalOp := waitForOp(t, pool, updateOp.ID)
+	require.True(t, updateFinalOp.Done)
+	require.Nil(t, updateFinalOp.Error)
+
+	// Проверяем что rules заменены
+	sgsAfter, _, err := sgSvc2.List(ctx, service.ListFilter{FolderID: folderID})
+	require.NoError(t, err)
+	require.Len(t, sgsAfter[0].Rules, 1, "должно быть 1 правило после full-replace")
+	assert.NotContains(t, oldRuleIDs, sgsAfter[0].Rules[0].ID, "ID правила должен быть новым")
 }
 
 // F1: Создание Address с автоматическим IP из 203.0.113.0/24.
@@ -287,20 +358,27 @@ func TestIntegration_F1_AddressAllocatesIP(t *testing.T) {
 	_, _, _, _, addrSvc := setupServices(t, pool)
 	ctx := context.Background()
 
-	addr, err := addrSvc.Upsert(ctx, &domain.Address{
-		Name:           "my-ip",
-		FolderID:       "00000000-0000-0000-0000-000000000004",
-		CloudID:        testCloudID,
-		OrganizationID: testOrgID,
-	})
+	folderID := "10000000-0000-0000-0000-000000000005"
+	createOp, err := addrSvc.Create(ctx, folderID, "my-ip", "desc", nil, "ADDRESS_TYPE_EXTERNAL", "ru-central1-a")
 	require.NoError(t, err)
-	assert.Equal(t, "RESERVED", addr.State)
-	assert.Equal(t, "EXTERNAL", addr.AddressType)
-	assert.True(t, strings.HasPrefix(addr.AllocatedIPv4, "203.0.113."), "IP must be from 203.0.113.0/24, got: "+addr.AllocatedIPv4)
+	finalOp := waitForOp(t, pool, createOp.ID)
+	require.True(t, finalOp.Done)
+	require.Nil(t, finalOp.Error)
+
+	// Читаем созданный адрес
+	addrRepo := repo.NewAddressRepo(pool)
+	opsRepo := operations.NewRepo(pool, "public")
+	addrSvc2 := service.NewAddressService(addrRepo, opsRepo, &noopFolderClient{})
+	addrs, _, err := addrSvc2.List(ctx, service.ListFilter{FolderID: folderID})
+	require.NoError(t, err)
+	require.Len(t, addrs, 1)
+	assert.True(t, strings.HasPrefix(addrs[0].AllocatedIPv4, "203.0.113."),
+		"IP должен быть из 203.0.113.0/24, получен: "+addrs[0].AllocatedIPv4)
+	assert.Equal(t, domain.AddressStatusReserved, addrs[0].Status)
 }
 
-// G1: NetworkExists возвращает true для существующей сети.
-func TestIntegration_G1_NetworkExists(t *testing.T) {
+// F_OCC: Update с неверным resource_version → Operation с ошибкой ABORTED.
+func TestIntegration_F_OCC(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test skipped in short mode")
 	}
@@ -308,40 +386,22 @@ func TestIntegration_G1_NetworkExists(t *testing.T) {
 	networkSvc, _, _, _, _ := setupServices(t, pool)
 	ctx := context.Background()
 
-	net, err := networkSvc.Upsert(ctx, &domain.Network{
-		Name:           "exists-net",
-		FolderID:       "00000000-0000-0000-0000-000000000005",
-		CloudID:        testCloudID,
-		OrganizationID: testOrgID,
-	})
+	folderID := "10000000-0000-0000-0000-000000000006"
+	createOp, err := networkSvc.Create(ctx, folderID, "occ-net", "", nil)
 	require.NoError(t, err)
+	waitForOp(t, pool, createOp.ID)
 
-	found, err := networkSvc.GetByUID(ctx, net.UID)
+	nets, _, err := service.NewNetworkService(repo.NewNetworkRepo(pool), operations.NewRepo(pool, "public"), &noopFolderClient{}).
+		List(ctx, service.ListFilter{FolderID: folderID})
 	require.NoError(t, err)
-	assert.NotNil(t, found)
-	assert.Equal(t, net.UID, found.UID)
-}
+	netID := nets[0].ID
 
-// H4: FolderClient недоступен → ошибка при создании сети.
-func TestIntegration_H4_FolderClientUnavailable(t *testing.T) {
-	netRepo := new(MockNetworkRepo)
+	// Обновляем с неверным resource_version
+	updateOp, err := networkSvc.Update(ctx, netID, "wrong-rv", "occ-net-updated", "", nil, nil)
+	require.NoError(t, err) // синхронная часть OK
 
-	// FolderClient, который возвращает ошибку
-	failFC := &failFolderClient{}
-	svc := service.NewNetworkService(netRepo, failFC)
-
-	_, err := svc.Upsert(context.Background(), &domain.Network{
-		Name:     "net",
-		FolderID: "00000000-0000-0000-0000-000000000006",
-	})
-
-	require.Error(t, err)
-	// Ошибка должна прокинуться из FolderClient
-}
-
-// failFolderClient имитирует недоступный resource-manager.
-type failFolderClient struct{}
-
-func (f *failFolderClient) Exists(_ context.Context, _ string) (bool, error) {
-	return false, status.Error(codes.Unavailable, "connection refused")
+	updateFinalOp := waitForOp(t, pool, updateOp.ID)
+	assert.True(t, updateFinalOp.Done)
+	assert.NotNil(t, updateFinalOp.Error, "должна быть ошибка ABORTED")
+	assert.Equal(t, int32(codes.Aborted), updateFinalOp.Error.Code)
 }

@@ -2,24 +2,46 @@ package domain
 
 import "time"
 
-// Address — публичный IP-адрес (EXTERNAL only в sub-phase 0.3).
+// AddressStatus — статус публичного IP-адреса.
+type AddressStatus int
+
+const (
+	AddressStatusUnspecified AddressStatus = 0
+	AddressStatusReserved    AddressStatus = 1
+	AddressStatusInUse       AddressStatus = 2
+	AddressStatusReleased    AddressStatus = 3
+)
+
+// AddressStatusString — строковые значения статусов адреса.
+var AddressStatusString = map[AddressStatus]string{
+	AddressStatusUnspecified: "ADDRESS_STATUS_UNSPECIFIED",
+	AddressStatusReserved:    "ADDRESS_STATUS_RESERVED",
+	AddressStatusInUse:       "ADDRESS_STATUS_IN_USE",
+	AddressStatusReleased:    "ADDRESS_STATUS_RELEASED",
+}
+
+// ParseAddressStatus парсит строку статуса.
+func ParseAddressStatus(s string) AddressStatus {
+	for k, v := range AddressStatusString {
+		if v == s {
+			return k
+		}
+	}
+	return AddressStatusUnspecified
+}
+
+// Address — публичный IP-адрес (sub-phase 1.0, только EXTERNAL).
 type Address struct {
-	UID               string
-	FolderID          string
-	CloudID           string
-	OrganizationID    string
-	Name              string
-	Labels            map[string]string
-	Annotations       map[string]string
-	CreationTimestamp time.Time
-	ResourceVersion   int64
-	Generation        int64
-	DeletionTimestamp *time.Time
-	Finalizers        []string
-	AddressType       string // EXTERNAL
-	ZoneID            string
-	DisplayName       string
-	Description       string
-	State             string // RESERVED | IN_USE | RELEASED
-	AllocatedIPv4     string
+	ID          string
+	FolderID    string
+	Name        string
+	Description string
+	CreatedAt   time.Time
+	Labels      map[string]string
+	AddressType string // ADDRESS_TYPE_EXTERNAL
+	ZoneID      string
+	// AllocatedIPv4 — server-allocated из 203.0.113.0/24 (TEST-NET-3).
+	AllocatedIPv4 string
+	Status        AddressStatus
+	DeletedAt     *time.Time
 }

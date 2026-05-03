@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,426 +9,225 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/protobuf/proto"
 
-	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/outbox"
-	"github.com/PRO-Robotech/kacho-corelib/selector"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
-
-	commonv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/common/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const subnetColumns = `uid, network_id, folder_id, cloud_id, organization_id, name, labels, annotations,
-	creation_timestamp, resource_version, generation, deletion_timestamp, finalizers, spec, status`
+const subnetCols = `id, folder_id, network_id, zone_id, cidr_block, name, description,
+	created_at, labels, status, generation, resource_version, observed_generation, status_last_transition_at, deleted_at`
 
 // SubnetRepo реализует service.SubnetRepo.
 type SubnetRepo struct {
-	pool         *pgxpool.Pool
-	transactor   *coredb.Transactor
-	outboxWriter *outbox.Writer
+	pool *pgxpool.Pool
 }
 
 // NewSubnetRepo создаёт SubnetRepo.
-func NewSubnetRepo(pool *pgxpool.Pool, transactor *coredb.Transactor, outboxWriter *outbox.Writer) *SubnetRepo {
-	return &SubnetRepo{pool: pool, transactor: transactor, outboxWriter: outboxWriter}
+func NewSubnetRepo(pool *pgxpool.Pool) *SubnetRepo {
+	return &SubnetRepo{pool: pool}
 }
 
-func (r *SubnetRepo) GetByUID(ctx context.Context, uid string) (*domain.Subnet, error) {
-	pgUID, err := strToUUID(uid)
+func (r *SubnetRepo) Get(ctx context.Context, id string) (*domain.Subnet, error) {
+	uid, err := strToUUID(id)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("uid", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+subnetColumns+` FROM subnets WHERE uid = $1 AND deletion_timestamp IS NULL`, pgUID)
+		`SELECT `+subnetCols+` FROM subnets WHERE id = $1 AND deleted_at IS NULL`, uid)
 	return scanSubnet(row)
 }
 
 func (r *SubnetRepo) GetByFolderAndName(ctx context.Context, folderID, name string) (*domain.Subnet, error) {
-	pgFolderID, err := strToUUID(folderID)
+	fid, err := strToUUID(folderID)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+subnetColumns+` FROM subnets WHERE folder_id = $1 AND name = $2 AND deletion_timestamp IS NULL`,
-		pgFolderID, name)
+		`SELECT `+subnetCols+` FROM subnets WHERE folder_id = $1 AND name = $2 AND deleted_at IS NULL`,
+		fid, name)
 	return scanSubnet(row)
 }
 
-func (r *SubnetRepo) List(ctx context.Context, selectors []service.Selector, page service.Pagination) ([]*domain.Subnet, string, int64, error) {
-	var coreSelectors []selector.Selector
-	for _, s := range selectors {
-		cs := selector.Selector{Labels: s.Labels}
-		if s.Name != "" || s.FolderID != "" || s.CloudID != "" || s.OrganizationID != "" {
-			cs.Field = &selector.FieldFilter{
-				Name:           s.Name,
-				FolderID:       s.FolderID,
-				CloudID:        s.CloudID,
-				OrganizationID: s.OrganizationID,
-			}
-		}
-		coreSelectors = append(coreSelectors, cs)
-	}
-
-	pageSize := int(page.PageSize)
+func (r *SubnetRepo) List(ctx context.Context, filter service.ListFilter) ([]domain.Subnet, string, error) {
+	pageSize := filter.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
-		pageSize = 100
+		pageSize = 50
 	}
 
-	snapshotRV, err := r.SnapshotResourceVersion(ctx)
-	if err != nil {
-		return nil, "", 0, err
+	args := []any{}
+	conds := []string{"deleted_at IS NULL"}
+	argIdx := 1
+
+	if filter.FolderID != "" {
+		fid, err := strToUUID(filter.FolderID)
+		if err != nil {
+			return nil, "", coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
+		}
+		conds = append(conds, fmt.Sprintf("folder_id = $%d", argIdx))
+		args = append(args, fid)
+		argIdx++
 	}
 
-	br, err := selector.Build(coreSelectors)
-	if err != nil {
-		return nil, "", 0, err
-	}
-
-	var pageClause string
-	var pageArgs []any
-	var pageToken *selector.PageToken
-
-	if page.PageToken != "" {
-		var tok selector.PageToken
-		if jsonErr := json.Unmarshal([]byte(page.PageToken), &tok); jsonErr == nil {
-			pageToken = &tok
+	if filter.PageToken != "" {
+		cur, decErr := decodeNetworkPageToken(filter.PageToken)
+		if decErr == nil {
+			conds = append(conds, fmt.Sprintf("(created_at, id::text) > ($%d, $%d)", argIdx, argIdx+1))
+			args = append(args, cur.CreatedAt, cur.ID)
+			argIdx += 2
 		}
 	}
 
-	paramBase := len(br.Args) + 1
-	if pageToken != nil {
-		pageClause, pageArgs = selector.BuildPageClause(pageToken, paramBase)
-		paramBase += len(pageArgs)
-	}
+	where := "WHERE " + strings.Join(conds, " AND ")
+	orderBy := buildOrderBy(filter.OrderBy)
 
-	// C6: поддержка фильтра по network_id через refs
-	var networkIDClause string
-	var networkIDArgs []any
-	for _, s := range selectors {
-		if s.NetworkID != "" {
-			pgNetID, parseErr := strToUUID(s.NetworkID)
-			if parseErr == nil {
-				networkIDArgs = append(networkIDArgs, pgNetID)
-				networkIDClause = fmt.Sprintf("network_id = $%d", paramBase+len(networkIDArgs)-1)
-				paramBase++
-			}
-		}
-	}
-
-	query := buildListQuerySubnet(br, pageClause, networkIDClause)
-	args := append(br.Args, pageArgs...)
-	args = append(args, networkIDArgs...)
+	q := fmt.Sprintf(`SELECT `+subnetCols+` FROM subnets %s %s LIMIT $%d`, where, orderBy, argIdx)
 	args = append(args, pageSize+1)
-	limitParam := fmt.Sprintf("$%d", paramBase)
-	query += fmt.Sprintf(" ORDER BY resource_version ASC, uid ASC LIMIT %s", limitParam)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	var subnets []*domain.Subnet
+	var result []domain.Subnet
 	for rows.Next() {
-		s, scanErr := scanSubnetFromRows(rows)
-		if scanErr != nil {
-			return nil, "", 0, scanErr
+		s, serr := scanSubnetRow(rows)
+		if serr != nil {
+			return nil, "", serr
 		}
-		subnets = append(subnets, s)
+		result = append(result, *s)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 
 	var nextToken string
-	if len(subnets) > pageSize {
-		subnets = subnets[:pageSize]
-		last := subnets[len(subnets)-1]
-		tok := selector.PageToken{LastResourceVersion: last.ResourceVersion, LastUID: last.UID}
-		b, _ := json.Marshal(tok)
-		nextToken = string(b)
+	if int64(len(result)) > pageSize {
+		last := result[pageSize-1]
+		nextToken = encodeNetworkPageToken(last.CreatedAt, last.ID)
+		result = result[:pageSize]
 	}
-
-	return subnets, nextToken, snapshotRV, nil
+	return result, nextToken, nil
 }
 
-func (r *SubnetRepo) SnapshotResourceVersion(ctx context.Context) (int64, error) {
-	var rv int64
-	err := r.pool.QueryRow(ctx, `SELECT last_value FROM resource_version_seq`).Scan(&rv)
-	return rv, err
-}
-
-func (r *SubnetRepo) Insert(ctx context.Context, subnet *domain.Subnet) (*domain.Subnet, error) {
-	pgUID, err := strToUUID(subnet.UID)
-	if err != nil {
-		return nil, err
-	}
-	pgNetID, err := strToUUID(subnet.NetworkID)
-	if err != nil {
-		return nil, err
-	}
-	pgFolderID, err := strToUUID(subnet.FolderID)
-	if err != nil {
-		return nil, err
-	}
-	pgCloudID, _ := strToUUID(subnet.CloudID)
-	pgOrgID, _ := strToUUID(subnet.OrganizationID)
-
-	var result *domain.Subnet
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`INSERT INTO subnets (uid, network_id, folder_id, cloud_id, organization_id, name, labels, annotations, spec, status)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-			 RETURNING `+subnetColumns,
-			pgUID, pgNetID, pgFolderID, pgCloudID, pgOrgID, subnet.Name,
-			mapToJSONB(subnet.Labels), mapToJSONB(subnet.Annotations),
-			domainSubnetToSpec(subnet), domainSubnetToStatus(subnet),
-		)
-		s, scanErr := scanSubnet(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = s
-
-		data, _ := proto.Marshal(domainSubnetToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "ADDED",
-			ResourceKind: "Subnet",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *SubnetRepo) Update(ctx context.Context, subnet *domain.Subnet) (*domain.Subnet, error) {
-	pgUID, err := strToUUID(subnet.UID)
-	if err != nil {
-		return nil, err
-	}
-
-	var result *domain.Subnet
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`UPDATE subnets SET labels = $2, annotations = $3, spec = $4, generation = generation + 1
-			 WHERE uid = $1 RETURNING `+subnetColumns,
-			pgUID, mapToJSONB(subnet.Labels), mapToJSONB(subnet.Annotations), domainSubnetToSpec(subnet),
-		)
-		s, scanErr := scanSubnet(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = s
-
-		data, _ := proto.Marshal(domainSubnetToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "MODIFIED",
-			ResourceKind: "Subnet",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *SubnetRepo) HardDelete(ctx context.Context, uid string) error {
-	pgUID, err := strToUUID(uid)
+func (r *SubnetRepo) Create(ctx context.Context, s *domain.Subnet) error {
+	uid, err := strToUUID(s.ID)
 	if err != nil {
 		return err
 	}
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		_, delErr := tx.Exec(ctx, `DELETE FROM subnets WHERE uid = $1`, pgUID)
-		if delErr != nil {
-			return delErr
-		}
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "DELETED",
-			ResourceKind: "Subnet",
-			ResourceUID:  uid,
-			Data:         nil,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return txErr
+	fid, err := strToUUID(s.FolderID)
+	if err != nil {
+		return err
 	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
+	nid, err := strToUUID(s.NetworkID)
+	if err != nil {
+		return err
+	}
+	statusStr := domain.SubnetStatusString[s.Status]
+	if statusStr == "" {
+		statusStr = "SUBNET_STATUS_PROVISIONING"
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO subnets (id, folder_id, network_id, zone_id, cidr_block, name, description, labels, status, generation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		uid, fid, nid, s.ZoneID, s.CIDRBlock, s.Name, s.Description, mapToJSON(s.Labels), statusStr, s.Generation,
+	)
+	return err
+}
+
+func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) error {
+	uid, err := strToUUID(s.ID)
+	if err != nil {
+		return err
+	}
+	statusStr := domain.SubnetStatusString[s.Status]
+	if statusStr == "" {
+		statusStr = "SUBNET_STATUS_ACTIVE"
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE subnets
+		SET name = $2, description = $3, labels = $4, status = $5, generation = $6,
+		    resource_version = gen_random_uuid()::text,
+		    status_last_transition_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`,
+		uid, s.Name, s.Description, mapToJSON(s.Labels), statusStr, s.Generation,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("Subnet", s.ID).Err()
+	}
+	return nil
+}
+
+func (r *SubnetRepo) SoftDelete(ctx context.Context, id string) error {
+	uid, err := strToUUID(id)
+	if err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE subnets SET deleted_at = now(), status = 'SUBNET_STATUS_DELETING' WHERE id = $1 AND deleted_at IS NULL`,
+		uid)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("Subnet", id).Err()
+	}
 	return nil
 }
 
 func scanSubnet(row pgx.Row) (*domain.Subnet, error) {
-	var (
-		uid               pgtype.UUID
-		networkID         pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
-	)
-	err := row.Scan(&uid, &networkID, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+	s, err := scanSubnetFields(row.Scan)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-
-	var specData subnetSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData subnetStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
-	return &domain.Subnet{
-		UID:               uuidToStr(uid),
-		NetworkID:         uuidToStr(networkID),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		CIDRBlock:         specData.CIDRBlock,
-		ZoneID:            specData.ZoneID,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		State:             statusData.State,
-	}, nil
+	return s, err
 }
 
-func scanSubnetFromRows(rows pgx.Rows) (*domain.Subnet, error) {
+func scanSubnetRow(rows pgx.Rows) (*domain.Subnet, error) {
+	return scanSubnetFields(rows.Scan)
+}
+
+func scanSubnetFields(scanFn func(...any) error) (*domain.Subnet, error) {
 	var (
-		uid               pgtype.UUID
-		networkID         pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
+		id, folderID, networkID, zoneID, cidrBlock, name, description string
+		createdAt                                                       pgtype.Timestamptz
+		labelsJSON                                                      []byte
+		statusStr                                                       string
+		generation                                                      int64
+		resourceVersion                                                 string
+		observedGeneration                                              int64
+		statusLastTransition                                            pgtype.Timestamptz
+		deletedAt                                                       pgtype.Timestamptz
 	)
-	err := rows.Scan(&uid, &networkID, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
+	err := scanFn(
+		&id, &folderID, &networkID, &zoneID, &cidrBlock, &name, &description,
+		&createdAt, &labelsJSON, &statusStr, &generation, &resourceVersion,
+		&observedGeneration, &statusLastTransition, &deletedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	var specData subnetSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData subnetStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
 	return &domain.Subnet{
-		UID:               uuidToStr(uid),
-		NetworkID:         uuidToStr(networkID),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		CIDRBlock:         specData.CIDRBlock,
-		ZoneID:            specData.ZoneID,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		State:             statusData.State,
+		ID:                     id,
+		FolderID:               folderID,
+		NetworkID:              networkID,
+		ZoneID:                 zoneID,
+		CIDRBlock:              cidrBlock,
+		Name:                   name,
+		Description:            description,
+		CreatedAt:              tsToTime(createdAt),
+		Labels:                 jsonToMap(labelsJSON),
+		Status:                 domain.ParseSubnetStatus(statusStr),
+		Generation:             generation,
+		ResourceVersion:        resourceVersion,
+		ObservedGeneration:     observedGeneration,
+		StatusLastTransitionAt: tsToTime(statusLastTransition),
+		DeletedAt:              tsToTimePtr(deletedAt),
 	}, nil
-}
-
-func buildListQuerySubnet(br selector.BuildResult, pageClause, networkIDClause string) string {
-	var sb strings.Builder
-	sb.WriteString(`SELECT ` + subnetColumns + ` FROM subnets WHERE deletion_timestamp IS NULL`)
-
-	if br.WhereClause != "" {
-		clause := strings.TrimPrefix(br.WhereClause, "WHERE ")
-		sb.WriteString(" AND (")
-		sb.WriteString(clause)
-		sb.WriteString(")")
-	}
-
-	if networkIDClause != "" {
-		sb.WriteString(" AND ")
-		sb.WriteString(networkIDClause)
-	}
-
-	if pageClause != "" {
-		sb.WriteString(" AND (")
-		sb.WriteString(pageClause)
-		sb.WriteString(")")
-	}
-
-	return sb.String()
-}
-
-func domainSubnetToProto(s *domain.Subnet) *pb.Subnet {
-	meta := &commonv1.ResourceMeta{
-		Uid:             s.UID,
-		Name:            s.Name,
-		FolderId:        s.FolderID,
-		CloudId:         s.CloudID,
-		OrganizationId:  s.OrganizationID,
-		Labels:          s.Labels,
-		Annotations:     s.Annotations,
-		ResourceVersion: fmt.Sprintf("%d", s.ResourceVersion),
-		Generation:      s.Generation,
-		Finalizers:      s.Finalizers,
-	}
-	if !s.CreationTimestamp.IsZero() {
-		meta.CreationTimestamp = timestamppb.New(s.CreationTimestamp)
-	}
-	if s.DeletionTimestamp != nil {
-		meta.DeletionTimestamp = timestamppb.New(*s.DeletionTimestamp)
-	}
-	return &pb.Subnet{
-		Metadata: meta,
-		Spec: &pb.SubnetSpec{
-			NetworkId:   s.NetworkID,
-			CidrBlock:   s.CIDRBlock,
-			ZoneId:      s.ZoneID,
-			DisplayName: s.DisplayName,
-			Description: s.Description,
-		},
-		Status: &pb.SubnetStatus{State: s.State},
-	}
 }

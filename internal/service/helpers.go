@@ -1,9 +1,12 @@
 package service
 
-// normalizeMap нормализует nil-map к пустой map для корректного сравнения.
-func normalizeMap(m map[string]string) map[string]string {
-	if m == nil {
-		return map[string]string{}
-	}
-	return m
+import (
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// timestampProto конвертирует time.Time в *timestamppb.Timestamp.
+func timestampProto(t time.Time) *timestamppb.Timestamp {
+	return timestamppb.New(t)
 }

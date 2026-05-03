@@ -2,113 +2,170 @@ package handler
 
 import (
 	"context"
-	"errors"
-	"strconv"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
+	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation/v1"
 	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/watch"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // SecurityGroupHandler реализует pb.SecurityGroupServiceServer.
 type SecurityGroupHandler struct {
 	pb.UnimplementedSecurityGroupServiceServer
 	svc *service.SecurityGroupService
-	hub *watch.Hub
 }
 
 // NewSecurityGroupHandler создаёт SecurityGroupHandler.
-func NewSecurityGroupHandler(svc *service.SecurityGroupService, hub *watch.Hub) *SecurityGroupHandler {
-	return &SecurityGroupHandler{svc: svc, hub: hub}
+func NewSecurityGroupHandler(svc *service.SecurityGroupService) *SecurityGroupHandler {
+	return &SecurityGroupHandler{svc: svc}
 }
 
-func (h *SecurityGroupHandler) Upsert(ctx context.Context, req *pb.SecurityGroupUpsertRequest) (*pb.SecurityGroupUpsertResponse, error) {
-	resp := &pb.SecurityGroupUpsertResponse{}
-	for _, in := range req.GetSecurityGroups() {
-		sg := protoSGToDomain(in)
-		result, err := h.svc.Upsert(ctx, sg)
-		if err != nil {
-			return nil, err
-		}
-		resp.SecurityGroups = append(resp.SecurityGroups, domainSGToProto(result))
-	}
-	return resp, nil
-}
-
-func (h *SecurityGroupHandler) Delete(ctx context.Context, req *pb.SecurityGroupDeleteRequest) (*pb.SecurityGroupDeleteResponse, error) {
-	for _, item := range req.GetItems() {
-		uid := item.GetUid()
-		if uid == "" {
-			return nil, coreerrors.InvalidArgument().AddFieldViolation("uid", "uid is required for delete").Err()
-		}
-		if err := h.svc.Delete(ctx, uid); err != nil {
-			return nil, err
-		}
-	}
-	return &pb.SecurityGroupDeleteResponse{}, nil
-}
-
-func (h *SecurityGroupHandler) List(ctx context.Context, req *pb.SecurityGroupListRequest) (*pb.SecurityGroupListResponse, error) {
-	selectors := protoSelectorsToService(req.GetSelectors())
-	page := service.Pagination{
-		PageToken: req.GetPageToken(),
-		PageSize:  req.GetPageSize(),
-	}
-
-	sgs, nextToken, snapshotRV, err := h.svc.List(ctx, selectors, page)
+func (h *SecurityGroupHandler) Get(ctx context.Context, req *pb.GetSecurityGroupRequest) (*pb.SecurityGroup, error) {
+	sg, err := h.svc.Get(ctx, req.GetSecurityGroupId())
 	if err != nil {
 		return nil, err
 	}
+	return sgDomainToProto(sg), nil
+}
 
-	resp := &pb.SecurityGroupListResponse{
-		ResourceVersion: strconv.FormatInt(snapshotRV, 10),
-		NextPageToken:   nextToken,
+func (h *SecurityGroupHandler) List(ctx context.Context, req *pb.ListSecurityGroupsRequest) (*pb.ListSecurityGroupsResponse, error) {
+	filter := service.ListFilter{
+		FolderID:  req.GetFolderId(),
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+		Filter:    req.GetFilter(),
+		OrderBy:   req.GetOrderBy(),
 	}
-	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, domainSGToProto(sg))
+	sgs, nextToken, err := h.svc.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	resp := &pb.ListSecurityGroupsResponse{NextPageToken: nextToken}
+	for i := range sgs {
+		resp.SecurityGroups = append(resp.SecurityGroups, sgDomainToProto(&sgs[i]))
 	}
 	return resp, nil
 }
 
-func (h *SecurityGroupHandler) Watch(req *pb.SecurityGroupWatchRequest, stream pb.SecurityGroupService_WatchServer) error {
-	ctx := stream.Context()
-
-	var fromRV int64
-	if rvStr := req.GetResourceVersion(); rvStr != "" {
-		var err error
-		fromRV, err = strconv.ParseInt(rvStr, 10, 64)
-		if err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid resource_version: %v", err)
-		}
-	}
-
-	matchers := []watch.SelectorMatcher{
-		func(evt watch.Event) bool { return evt.ResourceKind == "SecurityGroup" },
-	}
-	sub, err := h.hub.Subscribe(ctx, fromRV, matchers...)
+func (h *SecurityGroupHandler) Create(ctx context.Context, req *pb.CreateSecurityGroupRequest) (*operationv1.Operation, error) {
+	rules := protoRulesToDomain(req.GetRules())
+	op, err := h.svc.Create(ctx,
+		req.GetFolderId(), req.GetNetworkId(), req.GetName(), req.GetDescription(), req.GetLabels(), rules,
+	)
 	if err != nil {
-		if errors.Is(err, watch.ErrGone) {
-			return status.Error(codes.OutOfRange, "resourceVersion too old, please relist")
-		}
-		return err
+		return nil, err
 	}
-	defer sub.Unsubscribe()
+	return operationToProto(op), nil
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case evt, ok := <-sub.C:
-			if !ok {
-				return nil
-			}
-			if err := stream.Send(watchEventToProto(evt)); err != nil {
-				return err
-			}
+func (h *SecurityGroupHandler) Update(ctx context.Context, req *pb.UpdateSecurityGroupRequest) (*operationv1.Operation, error) {
+	rules := protoRulesToDomain(req.GetRules())
+	op, err := h.svc.Update(ctx,
+		req.GetSecurityGroupId(), req.GetResourceVersion(),
+		req.GetName(), req.GetDescription(), req.GetLabels(), rules,
+		maskFields(req.GetUpdateMask()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *SecurityGroupHandler) Delete(ctx context.Context, req *pb.DeleteSecurityGroupRequest) (*operationv1.Operation, error) {
+	op, err := h.svc.Delete(ctx, req.GetSecurityGroupId())
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func sgDomainToProto(sg *domain.SecurityGroup) *pb.SecurityGroup {
+	rules := make([]*pb.SecurityGroupRule, len(sg.Rules))
+	for i, r := range sg.Rules {
+		rules[i] = &pb.SecurityGroupRule{
+			Id:           r.ID,
+			Direction:    directionProto(r.Direction),
+			Protocol:     protocolProto(r.Protocol),
+			PortRangeMin: r.PortRangeMin,
+			PortRangeMax: r.PortRangeMax,
+			CidrBlocks:   r.CIDRBlocks,
+			Description:  r.Description,
 		}
 	}
+	proto := &pb.SecurityGroup{
+		Id:              sg.ID,
+		FolderId:        sg.FolderID,
+		NetworkId:       sg.NetworkID,
+		Name:            sg.Name,
+		Description:     sg.Description,
+		Labels:          sg.Labels,
+		Status:          pb.SecurityGroupStatus(sg.Status),
+		Generation:      sg.Generation,
+		ResourceVersion: sg.ResourceVersion,
+		Rules:           rules,
+	}
+	if !sg.CreatedAt.IsZero() {
+		proto.CreatedAt = timestamppb.New(sg.CreatedAt)
+	}
+	return proto
+}
+
+func protoRulesToDomain(protoRules []*pb.SecurityGroupRule) []domain.SecurityGroupRule {
+	rules := make([]domain.SecurityGroupRule, len(protoRules))
+	for i, r := range protoRules {
+		rules[i] = domain.SecurityGroupRule{
+			Direction:    directionString(r.GetDirection()),
+			Protocol:     protocolString(r.GetProtocol()),
+			PortRangeMin: r.GetPortRangeMin(),
+			PortRangeMax: r.GetPortRangeMax(),
+			CIDRBlocks:   r.GetCidrBlocks(),
+			Description:  r.GetDescription(),
+		}
+	}
+	return rules
+}
+
+func directionProto(d string) pb.Direction {
+	switch d {
+	case "INGRESS", "DIRECTION_INGRESS":
+		return pb.Direction_DIRECTION_INGRESS
+	case "EGRESS", "DIRECTION_EGRESS":
+		return pb.Direction_DIRECTION_EGRESS
+	}
+	return pb.Direction_DIRECTION_UNSPECIFIED
+}
+
+func directionString(d pb.Direction) string {
+	switch d {
+	case pb.Direction_DIRECTION_INGRESS:
+		return "INGRESS"
+	case pb.Direction_DIRECTION_EGRESS:
+		return "EGRESS"
+	}
+	return ""
+}
+
+func protocolProto(p string) pb.Protocol {
+	switch p {
+	case "TCP", "PROTOCOL_TCP":
+		return pb.Protocol_PROTOCOL_TCP
+	case "UDP", "PROTOCOL_UDP":
+		return pb.Protocol_PROTOCOL_UDP
+	case "ICMP", "PROTOCOL_ICMP":
+		return pb.Protocol_PROTOCOL_ICMP
+	}
+	return pb.Protocol_PROTOCOL_UNSPECIFIED
+}
+
+func protocolString(p pb.Protocol) string {
+	switch p {
+	case pb.Protocol_PROTOCOL_TCP:
+		return "TCP"
+	case pb.Protocol_PROTOCOL_UDP:
+		return "UDP"
+	case pb.Protocol_PROTOCOL_ICMP:
+		return "ICMP"
+	}
+	return ""
 }

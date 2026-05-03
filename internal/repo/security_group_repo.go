@@ -10,415 +10,283 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
-	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/outbox"
-	"github.com/PRO-Robotech/kacho-corelib/selector"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
-
-	commonv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/common/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
-const sgColumns = `uid, network_id, folder_id, cloud_id, organization_id, name, labels, annotations,
-	creation_timestamp, resource_version, generation, deletion_timestamp, finalizers, spec, status`
+const sgCols = `id, folder_id, network_id, name, description,
+	created_at, labels, status, generation, resource_version, rules, deleted_at`
 
 // SecurityGroupRepo реализует service.SecurityGroupRepo.
 type SecurityGroupRepo struct {
-	pool         *pgxpool.Pool
-	transactor   *coredb.Transactor
-	outboxWriter *outbox.Writer
+	pool *pgxpool.Pool
 }
 
 // NewSecurityGroupRepo создаёт SecurityGroupRepo.
-func NewSecurityGroupRepo(pool *pgxpool.Pool, transactor *coredb.Transactor, outboxWriter *outbox.Writer) *SecurityGroupRepo {
-	return &SecurityGroupRepo{pool: pool, transactor: transactor, outboxWriter: outboxWriter}
+func NewSecurityGroupRepo(pool *pgxpool.Pool) *SecurityGroupRepo {
+	return &SecurityGroupRepo{pool: pool}
 }
 
-func (r *SecurityGroupRepo) GetByUID(ctx context.Context, uid string) (*domain.SecurityGroup, error) {
-	pgUID, err := strToUUID(uid)
+func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
+	uid, err := strToUUID(id)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("uid", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+sgColumns+` FROM security_groups WHERE uid = $1 AND deletion_timestamp IS NULL`, pgUID)
+		`SELECT `+sgCols+` FROM security_groups WHERE id = $1 AND deleted_at IS NULL`, uid)
 	return scanSG(row)
 }
 
 func (r *SecurityGroupRepo) GetByFolderAndName(ctx context.Context, folderID, name string) (*domain.SecurityGroup, error) {
-	pgFolderID, err := strToUUID(folderID)
+	fid, err := strToUUID(folderID)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+sgColumns+` FROM security_groups WHERE folder_id = $1 AND name = $2 AND deletion_timestamp IS NULL`,
-		pgFolderID, name)
+		`SELECT `+sgCols+` FROM security_groups WHERE folder_id = $1 AND name = $2 AND deleted_at IS NULL`,
+		fid, name)
 	return scanSG(row)
 }
 
-func (r *SecurityGroupRepo) List(ctx context.Context, selectors []service.Selector, page service.Pagination) ([]*domain.SecurityGroup, string, int64, error) {
-	var coreSelectors []selector.Selector
-	for _, s := range selectors {
-		cs := selector.Selector{Labels: s.Labels}
-		if s.Name != "" || s.FolderID != "" || s.CloudID != "" || s.OrganizationID != "" {
-			cs.Field = &selector.FieldFilter{
-				Name:           s.Name,
-				FolderID:       s.FolderID,
-				CloudID:        s.CloudID,
-				OrganizationID: s.OrganizationID,
-			}
-		}
-		coreSelectors = append(coreSelectors, cs)
-	}
-
-	pageSize := int(page.PageSize)
+func (r *SecurityGroupRepo) List(ctx context.Context, filter service.ListFilter) ([]domain.SecurityGroup, string, error) {
+	pageSize := filter.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
-		pageSize = 100
+		pageSize = 50
 	}
 
-	snapshotRV, err := r.SnapshotResourceVersion(ctx)
-	if err != nil {
-		return nil, "", 0, err
+	args := []any{}
+	conds := []string{"deleted_at IS NULL"}
+	argIdx := 1
+
+	if filter.FolderID != "" {
+		fid, err := strToUUID(filter.FolderID)
+		if err != nil {
+			return nil, "", coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
+		}
+		conds = append(conds, fmt.Sprintf("folder_id = $%d", argIdx))
+		args = append(args, fid)
+		argIdx++
 	}
 
-	br, err := selector.Build(coreSelectors)
-	if err != nil {
-		return nil, "", 0, err
-	}
-
-	var pageClause string
-	var pageArgs []any
-	var pageToken *selector.PageToken
-	if page.PageToken != "" {
-		var tok selector.PageToken
-		if jsonErr := json.Unmarshal([]byte(page.PageToken), &tok); jsonErr == nil {
-			pageToken = &tok
+	if filter.PageToken != "" {
+		cur, decErr := decodeNetworkPageToken(filter.PageToken)
+		if decErr == nil {
+			conds = append(conds, fmt.Sprintf("(created_at, id::text) > ($%d, $%d)", argIdx, argIdx+1))
+			args = append(args, cur.CreatedAt, cur.ID)
+			argIdx += 2
 		}
 	}
-	paramBase := len(br.Args) + 1
-	if pageToken != nil {
-		pageClause, pageArgs = selector.BuildPageClause(pageToken, paramBase)
-		paramBase += len(pageArgs)
-	}
 
-	query := buildListQuerySG(br, pageClause)
-	args := append(br.Args, pageArgs...)
+	where := "WHERE " + strings.Join(conds, " AND ")
+	orderBy := buildOrderBy(filter.OrderBy)
+
+	q := fmt.Sprintf(`SELECT `+sgCols+` FROM security_groups %s %s LIMIT $%d`, where, orderBy, argIdx)
 	args = append(args, pageSize+1)
-	limitParam := fmt.Sprintf("$%d", paramBase)
-	query += fmt.Sprintf(" ORDER BY resource_version ASC, uid ASC LIMIT %s", limitParam)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	var sgs []*domain.SecurityGroup
+	var result []domain.SecurityGroup
 	for rows.Next() {
-		sg, scanErr := scanSGFromRows(rows)
-		if scanErr != nil {
-			return nil, "", 0, scanErr
+		sg, serr := scanSGRow(rows)
+		if serr != nil {
+			return nil, "", serr
 		}
-		sgs = append(sgs, sg)
+		result = append(result, *sg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 
 	var nextToken string
-	if len(sgs) > pageSize {
-		sgs = sgs[:pageSize]
-		last := sgs[len(sgs)-1]
-		tok := selector.PageToken{LastResourceVersion: last.ResourceVersion, LastUID: last.UID}
-		b, _ := json.Marshal(tok)
-		nextToken = string(b)
+	if int64(len(result)) > pageSize {
+		last := result[pageSize-1]
+		nextToken = encodeNetworkPageToken(last.CreatedAt, last.ID)
+		result = result[:pageSize]
 	}
-	return sgs, nextToken, snapshotRV, nil
+	return result, nextToken, nil
 }
 
-func (r *SecurityGroupRepo) SnapshotResourceVersion(ctx context.Context) (int64, error) {
-	var rv int64
-	err := r.pool.QueryRow(ctx, `SELECT last_value FROM resource_version_seq`).Scan(&rv)
-	return rv, err
-}
-
-func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	pgUID, err := strToUUID(sg.UID)
-	if err != nil {
-		return nil, err
-	}
-	pgNetID, err := strToUUID(sg.NetworkID)
-	if err != nil {
-		return nil, err
-	}
-	pgFolderID, err := strToUUID(sg.FolderID)
-	if err != nil {
-		return nil, err
-	}
-	pgCloudID, _ := strToUUID(sg.CloudID)
-	pgOrgID, _ := strToUUID(sg.OrganizationID)
-
-	var result *domain.SecurityGroup
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`INSERT INTO security_groups (uid, network_id, folder_id, cloud_id, organization_id, name, labels, annotations, spec, status)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-			 RETURNING `+sgColumns,
-			pgUID, pgNetID, pgFolderID, pgCloudID, pgOrgID, sg.Name,
-			mapToJSONB(sg.Labels), mapToJSONB(sg.Annotations),
-			domainSGToSpec(sg), domainSGToStatus(sg),
-		)
-		res, scanErr := scanSG(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = res
-
-		data, _ := proto.Marshal(domainSGToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "ADDED",
-			ResourceKind: "SecurityGroup",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	pgUID, err := strToUUID(sg.UID)
-	if err != nil {
-		return nil, err
-	}
-
-	var result *domain.SecurityGroup
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`UPDATE security_groups SET labels = $2, annotations = $3, spec = $4, generation = generation + 1
-			 WHERE uid = $1 RETURNING `+sgColumns,
-			pgUID, mapToJSONB(sg.Labels), mapToJSONB(sg.Annotations), domainSGToSpec(sg),
-		)
-		res, scanErr := scanSG(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = res
-
-		data, _ := proto.Marshal(domainSGToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "MODIFIED",
-			ResourceKind: "SecurityGroup",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *SecurityGroupRepo) HardDelete(ctx context.Context, uid string) error {
-	pgUID, err := strToUUID(uid)
+func (r *SecurityGroupRepo) Create(ctx context.Context, sg *domain.SecurityGroup) error {
+	uid, err := strToUUID(sg.ID)
 	if err != nil {
 		return err
 	}
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		_, delErr := tx.Exec(ctx, `DELETE FROM security_groups WHERE uid = $1`, pgUID)
-		if delErr != nil {
-			return delErr
-		}
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "DELETED",
-			ResourceKind: "SecurityGroup",
-			ResourceUID:  uid,
-			Data:         nil,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return txErr
+	fid, err := strToUUID(sg.FolderID)
+	if err != nil {
+		return err
 	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
+	nid, err := strToUUID(sg.NetworkID)
+	if err != nil {
+		return err
+	}
+	statusStr := domain.SecurityGroupStatusString[sg.Status]
+	if statusStr == "" {
+		statusStr = "SECURITY_GROUP_STATUS_PROVISIONING"
+	}
+	rulesJSON, merr := marshalRules(sg.Rules)
+	if merr != nil {
+		return merr
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO security_groups (id, folder_id, network_id, name, description, labels, status, generation, rules)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		uid, fid, nid, sg.Name, sg.Description, mapToJSON(sg.Labels), statusStr, sg.Generation, rulesJSON,
+	)
+	return err
+}
+
+func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) error {
+	uid, err := strToUUID(sg.ID)
+	if err != nil {
+		return err
+	}
+	statusStr := domain.SecurityGroupStatusString[sg.Status]
+	if statusStr == "" {
+		statusStr = "SECURITY_GROUP_STATUS_ACTIVE"
+	}
+	rulesJSON, merr := marshalRules(sg.Rules)
+	if merr != nil {
+		return merr
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE security_groups
+		SET name = $2, description = $3, labels = $4, status = $5, generation = $6,
+		    rules = $7, resource_version = gen_random_uuid()::text
+		WHERE id = $1 AND deleted_at IS NULL`,
+		uid, sg.Name, sg.Description, mapToJSON(sg.Labels), statusStr, sg.Generation, rulesJSON,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("SecurityGroup", sg.ID).Err()
+	}
 	return nil
 }
 
-func (r *SecurityGroupRepo) HasDependents(_ context.Context, _ string) (bool, error) {
-	return false, nil
+func (r *SecurityGroupRepo) SoftDelete(ctx context.Context, id string) error {
+	uid, err := strToUUID(id)
+	if err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE security_groups SET deleted_at = now(), status = 'SECURITY_GROUP_STATUS_DELETING' WHERE id = $1 AND deleted_at IS NULL`,
+		uid)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("SecurityGroup", id).Err()
+	}
+	return nil
 }
+
+// ---- scan helpers ----
 
 func scanSG(row pgx.Row) (*domain.SecurityGroup, error) {
-	var (
-		uid               pgtype.UUID
-		networkID         pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
-	)
-	err := row.Scan(&uid, &networkID, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+	sg, err := scanSGFields(row.Scan)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-
-	var specData sgSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData sgStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
-	return &domain.SecurityGroup{
-		UID:               uuidToStr(uid),
-		NetworkID:         uuidToStr(networkID),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		Rules:             specToSGRules(spec),
-		State:             statusData.State,
-	}, nil
+	return sg, err
 }
 
-func scanSGFromRows(rows pgx.Rows) (*domain.SecurityGroup, error) {
+func scanSGRow(rows pgx.Rows) (*domain.SecurityGroup, error) {
+	return scanSGFields(rows.Scan)
+}
+
+func scanSGFields(scanFn func(...any) error) (*domain.SecurityGroup, error) {
 	var (
-		uid               pgtype.UUID
-		networkID         pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
+		id, folderID, networkID, name, description string
+		createdAt                                   pgtype.Timestamptz
+		labelsJSON, rulesJSON                       []byte
+		statusStr                                   string
+		generation                                  int64
+		resourceVersion                             string
+		deletedAt                                   pgtype.Timestamptz
 	)
-	err := rows.Scan(&uid, &networkID, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
+	err := scanFn(
+		&id, &folderID, &networkID, &name, &description,
+		&createdAt, &labelsJSON, &statusStr, &generation, &resourceVersion, &rulesJSON, &deletedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	var specData sgSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData sgStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
+	rules, _ := unmarshalRules(rulesJSON)
 	return &domain.SecurityGroup{
-		UID:               uuidToStr(uid),
-		NetworkID:         uuidToStr(networkID),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		Rules:             specToSGRules(spec),
-		State:             statusData.State,
+		ID:              id,
+		FolderID:        folderID,
+		NetworkID:       networkID,
+		Name:            name,
+		Description:     description,
+		CreatedAt:       tsToTime(createdAt),
+		Labels:          jsonToMap(labelsJSON),
+		Status:          domain.ParseSecurityGroupStatus(statusStr),
+		Generation:      generation,
+		ResourceVersion: resourceVersion,
+		Rules:           rules,
+		DeletedAt:       tsToTimePtr(deletedAt),
 	}, nil
 }
 
-func buildListQuerySG(br selector.BuildResult, pageClause string) string {
-	var sb strings.Builder
-	sb.WriteString(`SELECT ` + sgColumns + ` FROM security_groups WHERE deletion_timestamp IS NULL`)
-	if br.WhereClause != "" {
-		clause := strings.TrimPrefix(br.WhereClause, "WHERE ")
-		sb.WriteString(" AND (")
-		sb.WriteString(clause)
-		sb.WriteString(")")
-	}
-	if pageClause != "" {
-		sb.WriteString(" AND (")
-		sb.WriteString(pageClause)
-		sb.WriteString(")")
-	}
-	return sb.String()
+// ---- JSON helpers for rules/routes ----
+
+type ruleJSON struct {
+	ID           string   `json:"id"`
+	Direction    string   `json:"direction"`
+	Protocol     string   `json:"protocol"`
+	PortRangeMin int32    `json:"port_range_min"`
+	PortRangeMax int32    `json:"port_range_max"`
+	CIDRBlocks   []string `json:"cidr_blocks"`
+	Description  string   `json:"description"`
 }
 
-func domainSGToProto(sg *domain.SecurityGroup) *pb.SecurityGroup {
-	meta := &commonv1.ResourceMeta{
-		Uid:             sg.UID,
-		Name:            sg.Name,
-		FolderId:        sg.FolderID,
-		CloudId:         sg.CloudID,
-		OrganizationId:  sg.OrganizationID,
-		Labels:          sg.Labels,
-		Annotations:     sg.Annotations,
-		ResourceVersion: fmt.Sprintf("%d", sg.ResourceVersion),
-		Generation:      sg.Generation,
-		Finalizers:      sg.Finalizers,
+func marshalRules(rules []domain.SecurityGroupRule) ([]byte, error) {
+	if len(rules) == 0 {
+		return []byte("[]"), nil
 	}
-	if !sg.CreationTimestamp.IsZero() {
-		meta.CreationTimestamp = timestamppb.New(sg.CreationTimestamp)
-	}
-	if sg.DeletionTimestamp != nil {
-		meta.DeletionTimestamp = timestamppb.New(*sg.DeletionTimestamp)
-	}
-
-	rules := make([]*pb.SecurityGroupRule, len(sg.Rules))
-	for i, r := range sg.Rules {
-		rules[i] = &pb.SecurityGroupRule{
-			Id:           r.ID,
+	items := make([]ruleJSON, len(rules))
+	for i, r := range rules {
+		items[i] = ruleJSON{
+			ID:           r.ID,
 			Direction:    r.Direction,
 			Protocol:     r.Protocol,
 			PortRangeMin: r.PortRangeMin,
 			PortRangeMax: r.PortRangeMax,
-			CidrBlocks:   r.CIDRBlocks,
+			CIDRBlocks:   r.CIDRBlocks,
 			Description:  r.Description,
 		}
 	}
+	return json.Marshal(items)
+}
 
-	return &pb.SecurityGroup{
-		Metadata: meta,
-		Spec: &pb.SecurityGroupSpec{
-			NetworkId:   sg.NetworkID,
-			DisplayName: sg.DisplayName,
-			Description: sg.Description,
-			Rules:       rules,
-		},
-		Status: &pb.SecurityGroupStatus{State: sg.State},
+func unmarshalRules(b []byte) ([]domain.SecurityGroupRule, error) {
+	if len(b) == 0 {
+		return nil, nil
 	}
+	var items []ruleJSON
+	if err := json.Unmarshal(b, &items); err != nil {
+		return nil, err
+	}
+	rules := make([]domain.SecurityGroupRule, len(items))
+	for i, r := range items {
+		rules[i] = domain.SecurityGroupRule{
+			ID:           r.ID,
+			Direction:    r.Direction,
+			Protocol:     r.Protocol,
+			PortRangeMin: r.PortRangeMin,
+			PortRangeMax: r.PortRangeMax,
+			CIDRBlocks:   r.CIDRBlocks,
+			Description:  r.Description,
+		}
+	}
+	return rules, nil
 }

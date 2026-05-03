@@ -2,420 +2,297 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/protobuf/proto"
 
-	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
-	"github.com/PRO-Robotech/kacho-corelib/outbox"
-	"github.com/PRO-Robotech/kacho-corelib/selector"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
-
-	commonv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/common/v1"
-	pb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const networkColumns = `uid, folder_id, cloud_id, organization_id, name, labels, annotations,
-	creation_timestamp, resource_version, generation, deletion_timestamp, finalizers, spec, status`
+const networkCols = `id, folder_id, name, description, created_at, labels,
+	status, generation, resource_version, observed_generation, status_last_transition_at, deleted_at`
 
 // NetworkRepo реализует service.NetworkRepo.
 type NetworkRepo struct {
-	pool         *pgxpool.Pool
-	transactor   *coredb.Transactor
-	outboxWriter *outbox.Writer
+	pool *pgxpool.Pool
 }
 
 // NewNetworkRepo создаёт NetworkRepo.
-func NewNetworkRepo(pool *pgxpool.Pool, transactor *coredb.Transactor, outboxWriter *outbox.Writer) *NetworkRepo {
-	return &NetworkRepo{pool: pool, transactor: transactor, outboxWriter: outboxWriter}
+func NewNetworkRepo(pool *pgxpool.Pool) *NetworkRepo {
+	return &NetworkRepo{pool: pool}
 }
 
-func (r *NetworkRepo) GetByUID(ctx context.Context, uid string) (*domain.Network, error) {
-	pgUID, err := strToUUID(uid)
+func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, error) {
+	uid, err := strToUUID(id)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("uid", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+networkColumns+` FROM networks WHERE uid = $1 AND deletion_timestamp IS NULL`, pgUID)
+		`SELECT `+networkCols+` FROM networks WHERE id = $1 AND deleted_at IS NULL`, uid)
 	return scanNetwork(row)
 }
 
 func (r *NetworkRepo) GetByFolderAndName(ctx context.Context, folderID, name string) (*domain.Network, error) {
-	pgFolderID, err := strToUUID(folderID)
+	fid, err := strToUUID(folderID)
 	if err != nil {
-		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid format").Err()
+		return nil, coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
 	}
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+networkColumns+` FROM networks WHERE folder_id = $1 AND name = $2 AND deletion_timestamp IS NULL`,
-		pgFolderID, name)
+		`SELECT `+networkCols+` FROM networks WHERE folder_id = $1 AND name = $2 AND deleted_at IS NULL`,
+		fid, name)
 	return scanNetwork(row)
 }
 
-func (r *NetworkRepo) List(ctx context.Context, selectors []service.Selector, page service.Pagination) ([]*domain.Network, string, int64, error) {
-	var coreSelectors []selector.Selector
-	for _, s := range selectors {
-		cs := selector.Selector{Labels: s.Labels}
-		if s.Name != "" || s.FolderID != "" || s.CloudID != "" || s.OrganizationID != "" {
-			cs.Field = &selector.FieldFilter{
-				Name:           s.Name,
-				FolderID:       s.FolderID,
-				CloudID:        s.CloudID,
-				OrganizationID: s.OrganizationID,
-			}
-		}
-		coreSelectors = append(coreSelectors, cs)
-	}
-
-	pageSize := int(page.PageSize)
+func (r *NetworkRepo) List(ctx context.Context, filter service.ListFilter) ([]domain.Network, string, error) {
+	pageSize := filter.PageSize
 	if pageSize <= 0 || pageSize > 1000 {
-		pageSize = 100
+		pageSize = 50
 	}
 
-	snapshotRV, err := r.SnapshotResourceVersion(ctx)
-	if err != nil {
-		return nil, "", 0, err
+	args := []any{}
+	conds := []string{"deleted_at IS NULL"}
+	argIdx := 1
+
+	if filter.FolderID != "" {
+		fid, err := strToUUID(filter.FolderID)
+		if err != nil {
+			return nil, "", coreerrors.InvalidArgument().AddFieldViolation("folder_id", "invalid uuid").Err()
+		}
+		conds = append(conds, fmt.Sprintf("folder_id = $%d", argIdx))
+		args = append(args, fid)
+		argIdx++
 	}
 
-	br, err := selector.Build(coreSelectors)
-	if err != nil {
-		return nil, "", 0, err
-	}
-
-	var pageClause string
-	var pageArgs []any
-	var pageToken *selector.PageToken
-
-	if page.PageToken != "" {
-		var tok selector.PageToken
-		if jsonErr := json.Unmarshal([]byte(page.PageToken), &tok); jsonErr == nil {
-			pageToken = &tok
+	if filter.PageToken != "" {
+		cur, decErr := decodeNetworkPageToken(filter.PageToken)
+		if decErr == nil {
+			conds = append(conds, fmt.Sprintf("(created_at, id::text) > ($%d, $%d)", argIdx, argIdx+1))
+			args = append(args, cur.CreatedAt, cur.ID)
+			argIdx += 2
 		}
 	}
 
-	paramBase := len(br.Args) + 1
-	if pageToken != nil {
-		pageClause, pageArgs = selector.BuildPageClause(pageToken, paramBase)
-		paramBase += len(pageArgs)
+	where := "WHERE " + strings.Join(conds, " AND ")
+	orderBy := "ORDER BY created_at ASC, id ASC"
+	if filter.OrderBy != "" {
+		orderBy = buildOrderBy(filter.OrderBy)
 	}
 
-	query := buildListQueryNetwork(br, pageClause)
-	args := append(br.Args, pageArgs...)
+	q := fmt.Sprintf(`SELECT `+networkCols+` FROM networks %s %s LIMIT $%d`, where, orderBy, argIdx)
 	args = append(args, pageSize+1)
-	limitParam := fmt.Sprintf("$%d", paramBase)
-	query += fmt.Sprintf(" ORDER BY resource_version ASC, uid ASC LIMIT %s", limitParam)
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	var networks []*domain.Network
+	var result []domain.Network
 	for rows.Next() {
-		n, scanErr := scanNetworkFromRows(rows)
-		if scanErr != nil {
-			return nil, "", 0, scanErr
+		n, serr := scanNetworkRow(rows)
+		if serr != nil {
+			return nil, "", serr
 		}
-		networks = append(networks, n)
+		result = append(result, *n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", 0, err
+		return nil, "", err
 	}
 
 	var nextToken string
-	if len(networks) > pageSize {
-		networks = networks[:pageSize]
-		last := networks[len(networks)-1]
-		tok := selector.PageToken{LastResourceVersion: last.ResourceVersion, LastUID: last.UID}
-		b, _ := json.Marshal(tok)
-		nextToken = string(b)
+	if int64(len(result)) > pageSize {
+		last := result[pageSize-1]
+		nextToken = encodeNetworkPageToken(last.CreatedAt, last.ID)
+		result = result[:pageSize]
 	}
-
-	return networks, nextToken, snapshotRV, nil
+	return result, nextToken, nil
 }
 
-func (r *NetworkRepo) SnapshotResourceVersion(ctx context.Context) (int64, error) {
-	var rv int64
-	err := r.pool.QueryRow(ctx, `SELECT last_value FROM resource_version_seq`).Scan(&rv)
-	return rv, err
-}
-
-func (r *NetworkRepo) Insert(ctx context.Context, net *domain.Network) (*domain.Network, error) {
-	pgUID, err := strToUUID(net.UID)
-	if err != nil {
-		return nil, err
-	}
-	pgFolderID, err := strToUUID(net.FolderID)
-	if err != nil {
-		return nil, err
-	}
-	pgCloudID, err := strToUUID(net.CloudID)
-	if err != nil {
-		// CloudID может быть пустым для первых тестов — допускаем nil UUID
-		pgCloudID = pgtype.UUID{}
-	}
-	pgOrgID, err := strToUUID(net.OrganizationID)
-	if err != nil {
-		pgOrgID = pgtype.UUID{}
-	}
-
-	var result *domain.Network
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`INSERT INTO networks (uid, folder_id, cloud_id, organization_id, name, labels, annotations, spec, status)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-			 RETURNING `+networkColumns,
-			pgUID, pgFolderID, pgCloudID, pgOrgID, net.Name,
-			mapToJSONB(net.Labels), mapToJSONB(net.Annotations),
-			domainNetworkToSpec(net), domainNetworkToStatus(net),
-		)
-		n, scanErr := scanNetwork(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = n
-
-		data, _ := proto.Marshal(domainNetworkToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "ADDED",
-			ResourceKind: "Network",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *NetworkRepo) Update(ctx context.Context, net *domain.Network) (*domain.Network, error) {
-	pgUID, err := strToUUID(net.UID)
-	if err != nil {
-		return nil, err
-	}
-
-	var result *domain.Network
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		row := tx.QueryRow(ctx,
-			`UPDATE networks SET labels = $2, annotations = $3, spec = $4, generation = generation + 1
-			 WHERE uid = $1 RETURNING `+networkColumns,
-			pgUID, mapToJSONB(net.Labels), mapToJSONB(net.Annotations), domainNetworkToSpec(net),
-		)
-		n, scanErr := scanNetwork(row)
-		if scanErr != nil {
-			return scanErr
-		}
-		result = n
-
-		data, _ := proto.Marshal(domainNetworkToProto(result))
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "MODIFIED",
-			ResourceKind: "Network",
-			ResourceUID:  result.UID,
-			Data:         data,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return nil, txErr
-	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
-	return result, nil
-}
-
-func (r *NetworkRepo) HardDelete(ctx context.Context, uid string) error {
-	pgUID, err := strToUUID(uid)
+func (r *NetworkRepo) Create(ctx context.Context, n *domain.Network) error {
+	uid, err := strToUUID(n.ID)
 	if err != nil {
 		return err
 	}
-	txErr := r.transactor.InTx(ctx, func(tx pgx.Tx) error {
-		_, delErr := tx.Exec(ctx, `DELETE FROM networks WHERE uid = $1`, pgUID)
-		if delErr != nil {
-			return delErr
-		}
-		_, evtErr := r.outboxWriter.WriteEvent(ctx, tx, outbox.Event{
-			EventType:    "DELETED",
-			ResourceKind: "Network",
-			ResourceUID:  uid,
-			Data:         nil,
-		})
-		return evtErr
-	})
-	if txErr != nil {
-		return txErr
+	fid, err := strToUUID(n.FolderID)
+	if err != nil {
+		return err
 	}
-	_ = r.outboxWriter.Notify(ctx, r.pool)
+	statusStr := domain.NetworkStatusString[n.Status]
+	if statusStr == "" {
+		statusStr = "NETWORK_STATUS_PROVISIONING"
+	}
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO networks (id, folder_id, name, description, labels, status, generation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		uid, fid, n.Name, n.Description, mapToJSON(n.Labels), statusStr, n.Generation,
+	)
+	return err
+}
+
+func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) error {
+	uid, err := strToUUID(n.ID)
+	if err != nil {
+		return err
+	}
+	statusStr := domain.NetworkStatusString[n.Status]
+	if statusStr == "" {
+		statusStr = "NETWORK_STATUS_ACTIVE"
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE networks
+		SET name = $2, description = $3, labels = $4, status = $5, generation = $6,
+		    resource_version = gen_random_uuid()::text,
+		    status_last_transition_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`,
+		uid, n.Name, n.Description, mapToJSON(n.Labels), statusStr, n.Generation,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("Network", n.ID).Err()
+	}
 	return nil
 }
 
-func (r *NetworkRepo) HasDependents(ctx context.Context, uid string) (bool, error) {
-	pgUID, err := strToUUID(uid)
+func (r *NetworkRepo) SoftDelete(ctx context.Context, id string) error {
+	uid, err := strToUUID(id)
+	if err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE networks SET deleted_at = now(), status = 'NETWORK_STATUS_DELETING' WHERE id = $1 AND deleted_at IS NULL`,
+		uid)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return coreerrors.NotFound("Network", id).Err()
+	}
+	return nil
+}
+
+func (r *NetworkRepo) HasDependents(ctx context.Context, id string) (bool, error) {
+	uid, err := strToUUID(id)
 	if err != nil {
 		return false, err
 	}
 	var count int
-	err = r.pool.QueryRow(ctx,
-		`SELECT (SELECT COUNT(*) FROM subnets WHERE network_id = $1 AND deletion_timestamp IS NULL) +
-		        (SELECT COUNT(*) FROM security_groups WHERE network_id = $1 AND deletion_timestamp IS NULL) +
-		        (SELECT COUNT(*) FROM route_tables WHERE network_id = $1 AND deletion_timestamp IS NULL)`,
-		pgUID).Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	err = r.pool.QueryRow(ctx, `
+		SELECT (SELECT COUNT(*) FROM subnets WHERE network_id = $1 AND deleted_at IS NULL) +
+		       (SELECT COUNT(*) FROM security_groups WHERE network_id = $1 AND deleted_at IS NULL) +
+		       (SELECT COUNT(*) FROM route_tables WHERE network_id = $1 AND deleted_at IS NULL)`,
+		uid).Scan(&count)
+	return count > 0, err
 }
+
+// ---- scan helpers ----
 
 func scanNetwork(row pgx.Row) (*domain.Network, error) {
-	var (
-		uid               pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
-	)
-	err := row.Scan(&uid, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+	n, err := scanNetworkFields(row.Scan)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-
-	var specData networkSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData networkStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
-	return &domain.Network{
-		UID:               uuidToStr(uid),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		State:             statusData.State,
-	}, nil
+	return n, err
 }
 
-func scanNetworkFromRows(rows pgx.Rows) (*domain.Network, error) {
+func scanNetworkRow(rows pgx.Rows) (*domain.Network, error) {
+	return scanNetworkFields(rows.Scan)
+}
+
+func scanNetworkFields(scanFn func(...any) error) (*domain.Network, error) {
 	var (
-		uid               pgtype.UUID
-		folderID          pgtype.UUID
-		cloudID           pgtype.UUID
-		orgID             pgtype.UUID
-		name              string
-		labels            []byte
-		annotations       []byte
-		creationTimestamp pgtype.Timestamptz
-		resourceVersion   int64
-		generation        int64
-		deletionTimestamp pgtype.Timestamptz
-		finalizers        []string
-		spec              []byte
-		statusBytes       []byte
+		id, folderID, name, description string
+		createdAt                        pgtype.Timestamptz
+		labelsJSON                       []byte
+		statusStr                        string
+		generation                       int64
+		resourceVersion                  string
+		observedGeneration               int64
+		statusLastTransition             pgtype.Timestamptz
+		deletedAt                        pgtype.Timestamptz
 	)
-	err := rows.Scan(&uid, &folderID, &cloudID, &orgID, &name, &labels, &annotations,
-		&creationTimestamp, &resourceVersion, &generation, &deletionTimestamp, &finalizers, &spec, &statusBytes)
+	err := scanFn(
+		&id, &folderID, &name, &description, &createdAt, &labelsJSON,
+		&statusStr, &generation, &resourceVersion, &observedGeneration,
+		&statusLastTransition, &deletedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	var specData networkSpecJSON
-	_ = json.Unmarshal(spec, &specData)
-	var statusData networkStatusJSON
-	_ = json.Unmarshal(statusBytes, &statusData)
-
 	return &domain.Network{
-		UID:               uuidToStr(uid),
-		FolderID:          uuidToStr(folderID),
-		CloudID:           uuidToStr(cloudID),
-		OrganizationID:    uuidToStr(orgID),
-		Name:              name,
-		Labels:            jsonbToMap(labels),
-		Annotations:       jsonbToMap(annotations),
-		CreationTimestamp: tsToTime(creationTimestamp),
-		ResourceVersion:   resourceVersion,
-		Generation:        generation,
-		DeletionTimestamp: tsToTimePtr(deletionTimestamp),
-		Finalizers:        finalizers,
-		DisplayName:       specData.DisplayName,
-		Description:       specData.Description,
-		State:             statusData.State,
+		ID:                     id,
+		FolderID:               folderID,
+		Name:                   name,
+		Description:            description,
+		CreatedAt:              tsToTime(createdAt),
+		Labels:                 jsonToMap(labelsJSON),
+		Status:                 domain.ParseNetworkStatus(statusStr),
+		Generation:             generation,
+		ResourceVersion:        resourceVersion,
+		ObservedGeneration:     observedGeneration,
+		StatusLastTransitionAt: tsToTime(statusLastTransition),
+		DeletedAt:              tsToTimePtr(deletedAt),
 	}, nil
 }
 
-func buildListQueryNetwork(br selector.BuildResult, pageClause string) string {
-	var sb strings.Builder
-	sb.WriteString(`SELECT ` + networkColumns + ` FROM networks WHERE deletion_timestamp IS NULL`)
+// ---- pagination helpers ----
 
-	if br.WhereClause != "" {
-		clause := strings.TrimPrefix(br.WhereClause, "WHERE ")
-		sb.WriteString(" AND (")
-		sb.WriteString(clause)
-		sb.WriteString(")")
-	}
-
-	if pageClause != "" {
-		sb.WriteString(" AND (")
-		sb.WriteString(pageClause)
-		sb.WriteString(")")
-	}
-
-	return sb.String()
+type networkPageCursor struct {
+	CreatedAt time.Time
+	ID        string
 }
 
-func domainNetworkToProto(n *domain.Network) *pb.Network {
-	meta := &commonv1.ResourceMeta{
-		Uid:             n.UID,
-		Name:            n.Name,
-		FolderId:        n.FolderID,
-		CloudId:         n.CloudID,
-		OrganizationId:  n.OrganizationID,
-		Labels:          n.Labels,
-		Annotations:     n.Annotations,
-		ResourceVersion: fmt.Sprintf("%d", n.ResourceVersion),
-		Generation:      n.Generation,
-		Finalizers:      n.Finalizers,
-	}
-	if !n.CreationTimestamp.IsZero() {
-		meta.CreationTimestamp = timestamppb.New(n.CreationTimestamp)
-	}
-	if n.DeletionTimestamp != nil {
-		meta.DeletionTimestamp = timestamppb.New(*n.DeletionTimestamp)
-	}
-	return &pb.Network{
-		Metadata: meta,
-		Spec:     &pb.NetworkSpec{DisplayName: n.DisplayName, Description: n.Description},
-		Status:   &pb.NetworkStatus{State: n.State},
-	}
+func encodeNetworkPageToken(t time.Time, id string) string {
+	raw := strconv.FormatInt(t.UnixNano(), 10) + ":" + id
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
+
+func decodeNetworkPageToken(token string) (networkPageCursor, error) {
+	b, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return networkPageCursor{}, err
+	}
+	parts := strings.SplitN(string(b), ":", 2)
+	if len(parts) != 2 {
+		return networkPageCursor{}, fmt.Errorf("malformed token")
+	}
+	ns, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return networkPageCursor{}, err
+	}
+	return networkPageCursor{CreatedAt: time.Unix(0, ns).UTC(), ID: parts[1]}, nil
+}
+
+// buildOrderBy строит ORDER BY из строки "field asc/desc".
+func buildOrderBy(orderBy string) string {
+	parts := strings.Fields(orderBy)
+	if len(parts) == 0 {
+		return "ORDER BY created_at ASC, id ASC"
+	}
+	col := strings.ToLower(parts[0])
+	dir := "ASC"
+	if len(parts) > 1 && strings.ToUpper(parts[1]) == "DESC" {
+		dir = "DESC"
+	}
+	allowed := map[string]string{
+		"created_at": "created_at",
+		"name":       "name",
+	}
+	if dbCol, ok := allowed[col]; ok {
+		return fmt.Sprintf("ORDER BY %s %s, id ASC", dbCol, dir)
+	}
+	return "ORDER BY created_at ASC, id ASC"
+}
+
