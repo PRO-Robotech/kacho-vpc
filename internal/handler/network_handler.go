@@ -39,6 +39,7 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
 	nets, nextToken, err := h.svc.List(ctx, svc.NetworkFilter{
 		FolderID: req.FolderId,
+		Filter:   req.Filter,
 	}, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,

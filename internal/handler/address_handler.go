@@ -39,6 +39,7 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
 	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
 		FolderID: req.FolderId,
+		Filter:   req.Filter,
 	}, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
@@ -55,6 +56,18 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 		conditions = append(conditions, fmt.Sprintf("network_id = $%d", argIdx))
 		args = append(args, f.NetworkID)
 		argIdx++
+	}
+	if f.Filter != "" {
+		ast, perr := filter.Parse(f.Filter, []string{"name"})
+		if perr != nil {
+			return nil, "", invalidFilterErr(perr)
+		}
+		if ast != nil {
+			frag, fargs := ast.ToSQL(argIdx)
+			conditions = append(conditions, frag)
+			args = append(args, fargs...)
+			argIdx += len(fargs)
+		}
 	}
 	if p.PageToken != "" {
 		ts, id, err := decodePageToken(p.PageToken)

@@ -39,6 +39,7 @@ func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableReq
 func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
 	rts, nextToken, err := h.svc.List(ctx, svc.RouteTableFilter{
 		FolderID: req.FolderId,
+		Filter:   req.Filter,
 	}, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,

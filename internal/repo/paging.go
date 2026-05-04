@@ -18,6 +18,12 @@ func invalidPageTokenErr(err error) error {
 	return status.Errorf(codes.InvalidArgument, "page_token is invalid: %v", err)
 }
 
+// invalidFilterErr оборачивает ParseError из filter.Parse в gRPC InvalidArgument
+// с YC-verbatim message ("Bad expression at column N. ...").
+func invalidFilterErr(err error) error {
+	return status.Error(codes.InvalidArgument, err.Error())
+}
+
 // encodePageToken кодирует created_at + id в непрозрачный page_token.
 func encodePageToken(createdAt time.Time, id string) string {
 	raw := strconv.FormatInt(createdAt.UnixNano(), 10) + ":" + id

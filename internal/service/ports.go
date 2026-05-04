@@ -15,23 +15,29 @@ type Pagination struct {
 // NetworkFilter — фильтр для списка сетей.
 type NetworkFilter struct {
 	FolderID string
+	// Filter — raw filter expression (YC-syntax: `name="<value>"`).
+	// Парсится в repo с whitelist allowedFields=["name"].
+	Filter string
 }
 
 // SubnetFilter — фильтр для списка подсетей.
 type SubnetFilter struct {
 	FolderID  string
 	NetworkID string
+	Filter    string // raw filter expression (YC-syntax)
 }
 
 // AddressFilter — фильтр для списка адресов.
 type AddressFilter struct {
 	FolderID string
+	Filter   string
 }
 
 // RouteTableFilter — фильтр для списка таблиц маршрутизации.
 type RouteTableFilter struct {
 	FolderID  string
 	NetworkID string
+	Filter    string
 }
 
 // NetworkRepo — port-интерфейс репозитория сетей.

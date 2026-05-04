@@ -39,6 +39,7 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
 	subs, nextToken, err := h.svc.List(ctx, svc.SubnetFilter{
 		FolderID: req.FolderId,
+		Filter:   req.Filter,
 	}, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
