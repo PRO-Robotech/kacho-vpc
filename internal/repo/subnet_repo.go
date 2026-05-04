@@ -60,7 +60,7 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 	if p.PageToken != "" {
 		ts, id, err := decodePageToken(p.PageToken)
 		if err != nil {
-			return nil, "", fmt.Errorf("invalid page_token: %w", err)
+			return nil, "", invalidPageTokenErr(err)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -138,12 +138,21 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, service.ErrNotFound
 	}
+	if isUniqueViolation(err) {
+		return nil, service.ErrAlreadyExists
+	}
 	return result, err
 }
 
 func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {
+		if isFKViolation(err) {
+			return fmt.Errorf("%w: subnet has dependent resources", service.ErrFailedPrecondition)
+		}
+		if isInvalidUUID(err) {
+			return service.ErrNotFound
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {

@@ -6,7 +6,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// invalidPageTokenErr оборачивает ошибку decodePageToken в gRPC InvalidArgument.
+// Не утечь raw repo-error клиенту (PAGE-TOKEN-LEAK finding) — page_token это
+// клиентский input, а не domain-state.
+func invalidPageTokenErr(err error) error {
+	return status.Errorf(codes.InvalidArgument, "page_token is invalid: %v", err)
+}
 
 // encodePageToken кодирует created_at + id в непрозрачный page_token.
 func encodePageToken(createdAt time.Time, id string) string {

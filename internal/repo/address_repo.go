@@ -54,7 +54,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	if p.PageToken != "" {
 		ts, id, err := decodePageToken(p.PageToken)
 		if err != nil {
-			return nil, "", fmt.Errorf("invalid page_token: %w", err)
+			return nil, "", invalidPageTokenErr(err)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -128,12 +128,21 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, service.ErrNotFound
 	}
+	if isUniqueViolation(err) {
+		return nil, service.ErrAlreadyExists
+	}
 	return result, err
 }
 
 func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {
+		if isFKViolation(err) {
+			return fmt.Errorf("%w: address is in use", service.ErrFailedPrecondition)
+		}
+		if isInvalidUUID(err) {
+			return service.ErrNotFound
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {

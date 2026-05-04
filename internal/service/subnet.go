@@ -11,6 +11,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
@@ -89,6 +90,15 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
 			return nil, err
 		}
+	}
+	if err := corevalidate.Name("name", req.Name); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Description("description", req.Description); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+		return nil, err
 	}
 
 	subID := ids.NewUID()

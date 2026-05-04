@@ -54,7 +54,7 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 	if p.PageToken != "" {
 		ts, id, err := decodePageToken(p.PageToken)
 		if err != nil {
-			return nil, "", fmt.Errorf("invalid page_token: %w", err)
+			return nil, "", invalidPageTokenErr(err)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -124,12 +124,22 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, service.ErrNotFound
 	}
+	if isUniqueViolation(err) {
+		return nil, service.ErrAlreadyExists
+	}
 	return result, err
 }
 
 func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
+		if isFKViolation(err) {
+			// Network has dependent subnets/route-tables — verbatim YC error.
+			return fmt.Errorf("%w: network is not empty", service.ErrFailedPrecondition)
+		}
+		if isInvalidUUID(err) {
+			return service.ErrNotFound
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {

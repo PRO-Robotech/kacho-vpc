@@ -12,6 +12,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
@@ -70,6 +71,15 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 	// Sync UUID-validation до Operation worker'а: garbage-UUID = invalid_argument,
 	// а не «folder not found» (см. N-CR-INVALID-UUID-mapping.md).
 	if err := validateUUID("folder_id", req.FolderID); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Name("name", req.Name); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Description("description", req.Description); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
 	}
 
