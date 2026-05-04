@@ -85,6 +85,11 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	if err := validateUUID("network_id", req.NetworkID); err != nil {
 		return nil, err
 	}
+	// ZoneId — verbatim YC whitelist `ru-central1-{a,b,c,d}`. Пустой zone_id —
+	// `zone_id is required`. См. ZONE-ID-VALIDATION.md.
+	if err := corevalidate.ZoneId("zone_id", req.ZoneID); err != nil {
+		return nil, err
+	}
 	// SU-CIDR-2: host-bits в v4CidrBlocks (например `10.0.0.5/24`) → InvalidArgument.
 	for i, c := range req.V4CidrBlocks {
 		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {

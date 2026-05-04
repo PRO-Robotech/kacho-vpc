@@ -364,9 +364,26 @@ func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
 }
 
 // Delete удаляет Address.
+//
+// Sync-проверка `deletion_protection`: если адрес помечен как
+// deletion_protection=true, мутация запрещена сразу до запуска Operation
+// (FAILED_PRECONDITION). Это verbatim YC contract — клиент должен сначала
+// снять защиту PATCH-ем.
+//
+// Если адреса нет вовсе — пробрасывается NotFound (через mapRepoErr).
+// Если репо вернул другую ошибку — Internal.
 func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+
+	existing, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if existing.DeletionProtection {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has deletion_protection enabled; clear it via Update before Delete", id)
 	}
 
 	op, err := operations.New(

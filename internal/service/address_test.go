@@ -158,11 +158,42 @@ func TestAddressService_Delete_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
 
-	op, err := svc.Delete(context.Background(), ids.NewUID())
-	require.NoError(t, err)
+	// Delete теперь делает sync Get для проверки deletion_protection,
+	// поэтому NotFound возвращается синхронно, а не внутри goroutine.
+	_, err := svc.Delete(context.Background(), ids.NewUID())
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+}
 
-	time.Sleep(100 * time.Millisecond)
-	savedOp, _ := or.Get(context.Background(), op.ID)
-	assert.True(t, savedOp.Done)
-	assert.NotNil(t, savedOp.Error) // NotFound внутри goroutine
+func TestAddressService_Delete_DeletionProtection(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+
+	// Положим адрес с включённой защитой от удаления.
+	addrID := ids.NewUID()
+	a := &domain.Address{
+		ID:                 addrID,
+		FolderID:           "f1",
+		Type:               domain.AddressTypeExternal,
+		IpVersion:          domain.IpVersionIPv4,
+		ExternalIpv4:       &domain.ExternalIpv4Spec{Address: "203.0.113.99"},
+		DeletionProtection: true,
+		Reserved:           true,
+	}
+	_, _ = ar.Insert(context.Background(), a)
+
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+
+	// Sync FAILED_PRECONDITION; Operation НЕ создаётся.
+	_, err := svc.Delete(context.Background(), addrID)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+
+	// Адрес остался на месте.
+	got, getErr := svc.Get(context.Background(), addrID)
+	require.NoError(t, getErr)
+	assert.True(t, got.DeletionProtection)
 }

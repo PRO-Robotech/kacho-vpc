@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -87,6 +88,12 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 		return nil, err
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+		return nil, err
+	}
+	// RT-CIDR-VALIDATION: каждая static route должна иметь валидный CIDR
+	// destinationPrefix (без host-bits) и валидный nextHopAddress (IPv4/IPv6).
+	// См. RT-STATIC-ROUTES-VALIDATION.md.
+	if err := validateStaticRoutes(req.StaticRoutes); err != nil {
 		return nil, err
 	}
 
@@ -185,7 +192,7 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 	return anypb.New(domainRouteTableToProto(updated))
 }
 
-// validateRouteTableUpdate проверяет name/description/labels в Update.
+// validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
 func validateRouteTableUpdate(req UpdateRouteTableReq) error {
 	known := map[string]struct{}{
 		"name": {}, "description": {}, "labels": {}, "static_routes": {},
@@ -214,6 +221,47 @@ func validateRouteTableUpdate(req UpdateRouteTableReq) error {
 			if err := corevalidate.Labels("labels", req.Labels); err != nil {
 				return err
 			}
+		case "static_routes":
+			if err := validateStaticRoutes(req.StaticRoutes); err != nil {
+				return err
+			}
+		}
+	}
+	// Полный апдейт без mask тоже валидирует static_routes, если они есть.
+	if len(req.UpdateMask) == 0 && len(req.StaticRoutes) > 0 {
+		if err := validateStaticRoutes(req.StaticRoutes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStaticRoutes проверяет каждую запись routes:
+//   - destinationPrefix: валидный CIDR (IPv4 или IPv6) без host-bits;
+//   - nextHopAddress: валидный IP-адрес (IPv4 или IPv6).
+//
+// Пустой массив — допустим (route table без статических маршрутов).
+// При нарушении — InvalidArgument с FieldViolation `static_routes[<i>].<field>`.
+func validateStaticRoutes(routes []domain.StaticRoute) error {
+	for i, r := range routes {
+		dpField := fmt.Sprintf("static_routes[%d].destination_prefix", i)
+		if r.DestinationPrefix == "" {
+			return invalidArg(dpField, dpField+" is required")
+		}
+		prefix, err := netip.ParsePrefix(r.DestinationPrefix)
+		if err != nil {
+			return invalidArg(dpField, dpField+" must be a valid CIDR (e.g. 10.0.0.0/24)")
+		}
+		if prefix.Masked() != prefix {
+			return invalidArg(dpField,
+				dpField+" must have zero host-bits (use the network address, e.g. 10.0.0.0/24, not 10.0.0.5/24)")
+		}
+		nhField := fmt.Sprintf("static_routes[%d].next_hop_address", i)
+		if r.NextHopAddress == "" {
+			return invalidArg(nhField, nhField+" is required")
+		}
+		if _, err := netip.ParseAddr(r.NextHopAddress); err != nil {
+			return invalidArg(nhField, nhField+" must be a valid IP address (IPv4 or IPv6)")
 		}
 	}
 	return nil
