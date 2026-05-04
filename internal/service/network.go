@@ -186,18 +186,9 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 		return nil, err
 	}
 
-	// Auto-create default SG (verbatim YC).
-	if s.sgService != nil {
-		defaultSG, sgErr := s.sgService.CreateDefaultForNetwork(ctx, req.FolderID, netID)
-		if sgErr == nil && defaultSG != nil {
-			created.DefaultSecurityGroupID = defaultSG.ID
-			// Persist в DB
-			_, _ = s.repo.Update(ctx, created)
-		}
-		// Если SG не создалась — Network всё равно есть, default_security_group_id остаётся "".
-		// Это soft-failure (best-effort). Можно сделать strict — обернуть в транзакцию.
-	}
-
+	// Pure: НЕ создаём default SG здесь. Это делает kacho-vpc-controllers
+	// (default-sg reconciler-loop) асинхронно. См.
+	// POST-PROCESSING-IN-CONTROLLERS.md.
 	return anypb.New(domainNetworkToProto(created))
 }
 

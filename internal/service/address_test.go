@@ -69,13 +69,15 @@ func TestAddressService_Create_External_OK(t *testing.T) {
 	assert.Equal(t, "203.0.113.10", addrs[0].ExternalIpv4.Address)
 }
 
-func TestAddressService_Create_External_AutoAlloc(t *testing.T) {
+func TestAddressService_Create_External_NoAutoAlloc(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
 
-	// Без явного адреса — должен выделить автоматически из 203.0.113.0/24
+	// Без явного адреса — service остаётся pure: address.address пуст.
+	// Аллокация — задача kacho-vpc-controllers (allocator reconciler-loop).
+	// См. POST-PROCESSING-IN-CONTROLLERS.md.
 	op, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID:     "f1",
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
@@ -90,8 +92,9 @@ func TestAddressService_Create_External_AutoAlloc(t *testing.T) {
 
 	addrs, _, _ := svc.List(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
-	addr := addrs[0].ExternalIpv4.Address
-	assert.Contains(t, addr, "203.0.113.")
+	assert.Equal(t, "", addrs[0].ExternalIpv4.Address,
+		"service must NOT auto-allocate IP — controller's job")
+	assert.Equal(t, "ru-central1-a", addrs[0].ExternalIpv4.ZoneID)
 }
 
 func TestAddressService_Create_Internal_WithSubnet(t *testing.T) {

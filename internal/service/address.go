@@ -2,10 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"math/rand"
-	"net"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -63,6 +60,13 @@ type UpdateAddressReq struct {
 }
 
 // AddressService — бизнес-логика управления IP-адресами.
+//
+// Сервис pure: НЕ генерирует IP, НЕ дёргает random/network. Если клиент
+// не указал ip-адрес — поле остаётся пустым; внешний controller
+// (`kacho-vpc-controllers`, allocator-loop) затем UPDATE-нёт address с
+// аллоцированным IP.
+//
+// См. POST-PROCESSING-IN-CONTROLLERS.md (architecture-decision).
 type AddressService struct {
 	repo         AddressRepo
 	subnetRepo   SubnetRepo
@@ -171,15 +175,10 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	if req.ExternalSpec != nil {
 		a.Type = domain.AddressTypeExternal
 		a.IpVersion = domain.IpVersionIPv4
-		ipAddr := req.ExternalSpec.Address
-		if ipAddr == "" {
-			ipAddr, err = s.allocateExternalIP(ctx)
-			if err != nil {
-				return nil, err
-			}
-		}
+		// Pure: записываем то, что пришло от клиента; если address пустой —
+		// его аллоцирует kacho-vpc-controllers (allocator-loop).
 		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
-			Address: ipAddr,
+			Address: req.ExternalSpec.Address,
 			ZoneID:  req.ExternalSpec.ZoneID,
 		}
 		if r := req.ExternalSpec.Requirements; r != nil {
@@ -191,21 +190,19 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	} else {
 		a.Type = domain.AddressTypeInternal
 		a.IpVersion = domain.IpVersionIPv4
-		ipAddr := req.InternalSpec.Address
 		subnetID := req.InternalSpec.SubnetID
-		if ipAddr == "" && subnetID != "" {
-			sub, serr := s.subnetRepo.Get(ctx, subnetID)
-			if serr != nil {
-				// verbatim YC text: "Subnet <X> not found".
+		// FK-валидация (verbatim YC text "Subnet <X> not found"). Она в
+		// сервисе остаётся — потому что относится к чтению связанного
+		// ресурса, а не к side-effect.
+		if subnetID != "" {
+			if _, serr := s.subnetRepo.Get(ctx, subnetID); serr != nil {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
 			}
-			ipAddr, err = s.allocateInternalIP(ctx, sub)
-			if err != nil {
-				return nil, err
-			}
 		}
+		// Pure: если client передал internal IP — пишем; иначе пусто,
+		// аллоцирует controller.
 		a.InternalIpv4 = &domain.InternalIpv4Spec{
-			Address:  ipAddr,
+			Address:  req.InternalSpec.Address,
 			SubnetID: subnetID,
 		}
 	}
@@ -215,69 +212,6 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		return nil, err
 	}
 	return anypb.New(domainAddressToProto(created))
-}
-
-// allocateExternalIP выбирает случайный IP из 203.0.113.0/24 (TEST-NET-3 RFC 5737).
-func (s *AddressService) allocateExternalIP(ctx context.Context) (string, error) {
-	const maxAttempts = 10
-	_, network, _ := net.ParseCIDR("203.0.113.0/24")
-	baseIP := binary.BigEndian.Uint32(network.IP)
-	ones, bits := network.Mask.Size()
-	hostBits := bits - ones
-	maxHosts := uint32(1<<hostBits) - 2 // исключаем .0 и .255
-
-	for i := 0; i < maxAttempts; i++ {
-		offset := uint32(rand.Intn(int(maxHosts))) + 1
-		ipInt := baseIP + offset
-		var ipBytes [4]byte
-		binary.BigEndian.PutUint32(ipBytes[:], ipInt)
-		ip := net.IP(ipBytes[:]).String()
-
-		alreadyExists, err := s.repo.ExistsIP(ctx, ip)
-		if err != nil {
-			return "", err
-		}
-		if !alreadyExists {
-			return ip, nil
-		}
-	}
-	return "", status.Error(codes.ResourceExhausted, "cannot allocate external IP: pool exhausted")
-}
-
-// allocateInternalIP выбирает случайный IP из первого CIDR подсети.
-func (s *AddressService) allocateInternalIP(ctx context.Context, sub *domain.Subnet) (string, error) {
-	if len(sub.V4CidrBlocks) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "subnet has no cidr blocks")
-	}
-	const maxAttempts = 10
-	_, network, err := net.ParseCIDR(sub.V4CidrBlocks[0])
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "parse subnet cidr: %v", err)
-	}
-	baseIP := binary.BigEndian.Uint32(network.IP)
-	ones, bits := network.Mask.Size()
-	hostBits := bits - ones
-	maxHosts := uint32(1<<hostBits) - 2
-	if maxHosts == 0 {
-		return "", status.Error(codes.FailedPrecondition, "subnet too small")
-	}
-
-	for i := 0; i < maxAttempts; i++ {
-		offset := uint32(rand.Intn(int(maxHosts))) + 1
-		ipInt := baseIP + offset
-		var ipBytes [4]byte
-		binary.BigEndian.PutUint32(ipBytes[:], ipInt)
-		ip := net.IP(ipBytes[:]).String()
-
-		alreadyExists, err := s.repo.ExistsIP(ctx, ip)
-		if err != nil {
-			return "", err
-		}
-		if !alreadyExists {
-			return ip, nil
-		}
-	}
-	return "", status.Error(codes.ResourceExhausted, "cannot allocate internal IP: subnet exhausted")
 }
 
 // Update обновляет Address.
