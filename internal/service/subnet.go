@@ -166,8 +166,11 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 // Update обновляет Subnet.
 //
 // SU-CIDR-IM-1: v4_cidr_blocks / v6_cidr_blocks / network_id / zone_id —
-// immutable после Create. Любая попытка изменить (через update_mask или
-// «полный апдейт» с непустым V4CidrBlocks) → InvalidArgument до Operation.
+// immutable после Create. Поведение verbatim YC:
+//   - Если update_mask **явно** содержит immutable field → InvalidArgument.
+//   - Если клиент прислал immutable field в body без mask или с mask других
+//     полей (как обычно делает UI, шлющий full-object PATCH) → silently
+//     игнорируем. applySubnetMask не применяет immutable fields.
 func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
@@ -177,11 +180,6 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 		case "v4_cidr_blocks", "v6_cidr_blocks", "network_id", "zone_id":
 			return nil, invalidArg(field, field+" is immutable after Subnet.Create")
 		}
-	}
-	// Без update_mask клиент мог прислать V4CidrBlocks в полном-апдейте — так
-	// тоже нельзя.
-	if len(req.UpdateMask) == 0 && len(req.V4CidrBlocks) > 0 {
-		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is immutable after Subnet.Create")
 	}
 	if err := validateSubnetUpdate(req); err != nil {
 		return nil, err
@@ -299,16 +297,19 @@ func validateDhcpOptions(d *domain.DhcpOptions) error {
 	return nil
 }
 
+// applySubnetMask применяет mutable поля из req к sub.
+//
+// Immutable fields (v4_cidr_blocks, v6_cidr_blocks, network_id, zone_id) НЕ
+// применяются никогда — даже если клиент прислал их в body без mask. Sync-check
+// в Update() уже отверг бы попытку явно указать их в update_mask.
 func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 	if len(req.UpdateMask) == 0 {
+		// Полный update — только mutable fields.
 		sub.Name = req.Name
 		sub.Description = req.Description
 		sub.Labels = req.Labels
 		sub.RouteTableID = req.RouteTableID
 		sub.DhcpOptions = req.DhcpOptions
-		if len(req.V4CidrBlocks) > 0 {
-			sub.V4CidrBlocks = req.V4CidrBlocks
-		}
 		return
 	}
 	for _, field := range req.UpdateMask {
@@ -323,8 +324,6 @@ func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 			sub.RouteTableID = req.RouteTableID
 		case "dhcp_options":
 			sub.DhcpOptions = req.DhcpOptions
-		case "v4_cidr_blocks":
-			sub.V4CidrBlocks = req.V4CidrBlocks
 		}
 	}
 }
