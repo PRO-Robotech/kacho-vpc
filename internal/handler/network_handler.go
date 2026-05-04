@@ -107,11 +107,18 @@ func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.List
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	// Network must exist; no SG support yet — return empty list (verbatim к YC поведению "пусто").
-	if _, err := h.svc.Get(ctx, req.NetworkId); err != nil {
+	sgs, nextToken, err := h.svc.ListSecurityGroups(ctx, req.NetworkId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
 		return nil, err
 	}
-	return &vpcv1.ListNetworkSecurityGroupsResponse{}, nil
+	resp := &vpcv1.ListNetworkSecurityGroupsResponse{NextPageToken: nextToken}
+	for _, sg := range sgs {
+		resp.SecurityGroups = append(resp.SecurityGroups, sgToProto(sg))
+	}
+	return resp, nil
 }
 
 func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNetworkRouteTablesRequest) (*vpcv1.ListNetworkRouteTablesResponse, error) {

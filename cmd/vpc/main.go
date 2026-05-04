@@ -87,9 +87,11 @@ func runServe(cfg config.Config) error {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
 	routeTableRepo := repo.NewRouteTableRepo(pool)
+	sgRepo := repo.NewSecurityGroupRepo(pool)
 
 	// Services.
-	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, folderClient, opsRepo)
+	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
+	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
 	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
@@ -102,6 +104,7 @@ func runServe(cfg config.Config) error {
 	vpcv1.RegisterSubnetServiceServer(grpcSrv, handler.NewSubnetHandler(subnetSvc))
 	vpcv1.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addressSvc))
 	vpcv1.RegisterRouteTableServiceServer(grpcSrv, handler.NewRouteTableHandler(routeTableSvc))
+	vpcv1.RegisterSecurityGroupServiceServer(grpcSrv, handler.NewSecurityGroupHandler(sgSvc))
 	operationpb.RegisterOperationServiceServer(grpcSrv, handler.NewOperationHandler(opsRepo))
 
 	// SG / Gateway / PrivateLink — НЕ регистрируем:

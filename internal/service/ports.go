@@ -75,6 +75,23 @@ type AddressRepo interface {
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error)
 }
 
+// SecurityGroupFilter — фильтр для списка SG.
+type SecurityGroupFilter struct {
+	FolderID  string
+	NetworkID string
+	Filter    string
+}
+
+// SecurityGroupRepo — port-интерфейс репозитория SG.
+type SecurityGroupRepo interface {
+	Get(ctx context.Context, id string) (*domain.SecurityGroup, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroup, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error)
+	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error)
+	Delete(ctx context.Context, id string) error
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error)
+}
+
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.
 type RouteTableRepo interface {
 	Get(ctx context.Context, id string) (*domain.RouteTable, error)

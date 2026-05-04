@@ -40,6 +40,7 @@ type NetworkService struct {
 	repo           NetworkRepo
 	subnetRepo     SubnetRepo
 	routeTableRepo RouteTableRepo
+	sgService      *SecurityGroupService // для создания default SG (может быть nil в тестах)
 	folderClient   FolderClient
 	opsRepo        operations.Repo
 }
@@ -48,13 +49,16 @@ type NetworkService struct {
 //
 // subnetRepo / routeTableRepo используются для per-network children endpoints
 // (ListSubnets / ListRouteTables). Могут быть nil — тогда соответствующие
-// методы вернут empty list. В composition root (cmd/main.go) передаётся
-// рабочий repo.
-func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
+// методы вернут empty list.
+//
+// sgService nil — disable auto-create default SG (для unit-тестов или
+// если фича отключена).
+func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, sgService *SecurityGroupService, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
 	return &NetworkService{
 		repo:           repo,
 		subnetRepo:     subnetRepo,
 		routeTableRepo: routeTableRepo,
+		sgService:      sgService,
 		folderClient:   folderClient,
 		opsRepo:        opsRepo,
 	}
@@ -70,6 +74,17 @@ func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pa
 		return nil, "", nil
 	}
 	return s.subnetRepo.List(ctx, SubnetFilter{NetworkID: networkID}, p)
+}
+
+// ListSecurityGroups возвращает SG, привязанные к данной сети.
+func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroup, string, error) {
+	if _, err := s.repo.Get(ctx, networkID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	if s.sgService == nil {
+		return nil, "", nil
+	}
+	return s.sgService.repo.List(ctx, SecurityGroupFilter{NetworkID: networkID}, p)
 }
 
 // ListRouteTables возвращает route tables, привязанные к данной сети.
@@ -170,6 +185,19 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 	if err != nil {
 		return nil, err
 	}
+
+	// Auto-create default SG (verbatim YC).
+	if s.sgService != nil {
+		defaultSG, sgErr := s.sgService.CreateDefaultForNetwork(ctx, req.FolderID, netID)
+		if sgErr == nil && defaultSG != nil {
+			created.DefaultSecurityGroupID = defaultSG.ID
+			// Persist в DB
+			_, _ = s.repo.Update(ctx, created)
+		}
+		// Если SG не создалась — Network всё равно есть, default_security_group_id остаётся "".
+		// Это soft-failure (best-effort). Можно сделать strict — обернуть в транзакцию.
+	}
+
 	return anypb.New(domainNetworkToProto(created))
 }
 
@@ -339,6 +367,14 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		// Перед удалением Network — удалить связанный default SG (FK RESTRICT).
+		// Не-default SG — preserve, FK не даст удалить Network ⇒ FAILED_PRECONDITION.
+		if s.sgService != nil {
+			n, gerr := s.repo.Get(ctx, id)
+			if gerr == nil && n.DefaultSecurityGroupID != "" {
+				_ = s.sgService.repo.Delete(ctx, n.DefaultSecurityGroupID)
+			}
+		}
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
