@@ -111,9 +111,10 @@ func runServe(cfg config.Config) error {
 	// клиенты получат UNIMPLEMENTED от grpc-рефлексии/маршрутизации.
 
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
-	// Регистрируем InternalWatchService для kacho-vpc-controllers.
+	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
 	internalSrv := grpcsrv.NewServer()
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, logger.With("component", "internal-watch")))
+	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressHandler(pool, logger.With("component", "internal-address")))
 
 	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)
 	if err != nil {
