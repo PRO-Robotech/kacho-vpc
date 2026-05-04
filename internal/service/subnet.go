@@ -100,6 +100,9 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
 	}
+	if err := validateDhcpOptions(req.DhcpOptions); err != nil {
+		return nil, err
+	}
 
 	subID := ids.NewUID()
 	op, err := operations.New(
@@ -252,6 +255,45 @@ func validateSubnetUpdate(req UpdateSubnetReq) error {
 			if err := corevalidate.Labels("labels", req.Labels); err != nil {
 				return err
 			}
+		case "dhcp_options":
+			if err := validateDhcpOptions(req.DhcpOptions); err != nil {
+				return err
+			}
+		}
+	}
+	// Полный апдейт (без update_mask) — DhcpOptions тоже валидируются.
+	if len(req.UpdateMask) == 0 {
+		if err := validateDhcpOptions(req.DhcpOptions); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateDhcpOptions — verbatim YC contract:
+//   - domainName: RFC 1123 DNS name либо empty.
+//   - domainNameServers[]: каждый элемент — IP-адрес.
+//   - ntpServers[]: каждый элемент — IP-адрес.
+//
+// Probe YC (2026-05-04):
+//   - "!!!" → 400 "Illegal argument Invalid domain name '!!!'"
+//   - "not-an-ip" в domainNameServers → 400 "Cannot parse address: not-an-ip"
+//   - "pool.ntp.org" в ntpServers → 400 "Cannot parse address: pool.ntp.org"
+func validateDhcpOptions(d *domain.DhcpOptions) error {
+	if d == nil {
+		return nil
+	}
+	if err := corevalidate.DhcpDomainName("dhcp_options.domain_name", d.DomainName); err != nil {
+		return err
+	}
+	for _, ns := range d.DomainNameServers {
+		if err := corevalidate.IPAddress("dhcp_options.domain_name_servers", ns); err != nil {
+			return err
+		}
+	}
+	for _, ntp := range d.NtpServers {
+		if err := corevalidate.IPAddress("dhcp_options.ntp_servers", ntp); err != nil {
+			return err
 		}
 	}
 	return nil
