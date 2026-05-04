@@ -110,15 +110,34 @@ func runServe(cfg config.Config) error {
 	// SG / Gateway / PrivateLink — НЕ регистрируем:
 	// клиенты получат UNIMPLEMENTED от grpc-рефлексии/маршрутизации.
 
+	// Internal gRPC server — отдельный порт, не виден через api-gateway.
+	// Регистрируем InternalWatchService для kacho-vpc-controllers.
+	internalSrv := grpcsrv.NewServer()
+	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, logger.With("component", "internal-watch")))
+
 	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)
 	if err != nil {
 		return err
 	}
-	logger.Info("kacho-vpc listening", "port", cfg.GrpcPort)
+	internalListener, err := net.Listen("tcp", ":"+cfg.InternalGrpcPort)
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+	logger.Info("kacho-vpc listening",
+		"public_port", cfg.GrpcPort,
+		"internal_port", cfg.InternalGrpcPort)
 
 	go func() {
 		<-ctx.Done()
+		internalSrv.GracefulStop()
 		grpcSrv.GracefulStop()
+	}()
+
+	go func() {
+		if err := internalSrv.Serve(internalListener); err != nil {
+			logger.Error("internal grpc server stopped", "err", err)
+		}
 	}()
 
 	return grpcSrv.Serve(listener)

@@ -40,6 +40,8 @@ spec:
           ports:
             - name: grpc
               containerPort: {{ .Values.ports.grpc }}
+            - name: grpc-internal
+              containerPort: {{ .Values.ports.internalGrpc }}
           env:
             - name: KACHO_VPC_DB_HOST
               value: "{{ .Values.db.host }}"
@@ -56,6 +58,8 @@ spec:
                   key: {{ .Values.db.passwordSecretKey }}
             - name: KACHO_VPC_GRPC_PORT
               value: "{{ .Values.ports.grpc }}"
+            - name: KACHO_VPC_INTERNAL_PORT
+              value: "{{ .Values.ports.internalGrpc }}"
             - name: KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR
               value: "{{ .Values.resourceManagerAddr }}"
           readinessProbe:

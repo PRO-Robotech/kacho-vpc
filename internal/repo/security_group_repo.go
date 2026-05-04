@@ -116,15 +116,27 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 	labelsJSON, _ := json.Marshal(sg.Labels)
 	rulesJSON, _ := json.Marshal(sg.Rules)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		INSERT INTO security_groups (id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING ` + sgCols
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		sg.ID, sg.FolderID, sg.NetworkID, sg.CreatedAt, sg.Name, sg.Description, labelsJSON, sg.Status, sg.DefaultForNetwork, rulesJSON,
 	)
 	result, err := scanSG(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sg.Name)
+	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "CREATED", securityGroupPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "SecurityGroup", sg.Name)
 	}
 	return result, nil
@@ -133,34 +145,71 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
 	labelsJSON, _ := json.Marshal(sg.Labels)
 	rulesJSON, _ := json.Marshal(sg.Rules)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE security_groups SET name=$2, description=$3, labels=$4, rules=$5, status=$6
 		WHERE id=$1
 		RETURNING ` + sgCols
-	row := r.pool.QueryRow(ctx, q, sg.ID, sg.Name, sg.Description, labelsJSON, rulesJSON, sg.Status)
+	row := tx.QueryRow(ctx, q, sg.ID, sg.Name, sg.Description, labelsJSON, rulesJSON, sg.Status)
 	result, err := scanSG(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sg.ID)
+	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "UPDATED", securityGroupPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "SecurityGroup", sg.ID)
 	}
 	return result, nil
 }
 
 func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM security_groups WHERE id = $1`, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `DELETE FROM security_groups WHERE id = $1`, id)
 	if err != nil {
 		return wrapPgErr(err, "SecurityGroup", id)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: SecurityGroup %s not found", service.ErrNotFound, id)
 	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "SecurityGroup", id)
+	}
 	return nil
 }
 
 func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	q := fmt.Sprintf(`UPDATE security_groups SET folder_id = $2 WHERE id = $1 RETURNING %s`, sgCols)
-	row := r.pool.QueryRow(ctx, q, id, folderID)
+	row := tx.QueryRow(ctx, q, id, folderID)
 	sg, err := scanSG(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", id)
+	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "SecurityGroup", id)
 	}
 	return sg, nil

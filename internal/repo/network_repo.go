@@ -110,16 +110,28 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Network, error) {
 	labelsJSON, _ := json.Marshal(n.Labels)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + networkCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := scanNetwork(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Network", n.Name)
+	}
+	if err := emitVPC(ctx, tx, "Network", result.ID, "CREATED", networkPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", n.Name)
 	}
 	return result, nil
@@ -128,16 +140,28 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
 	labelsJSON, _ := json.Marshal(n.Labels)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE networks SET name=$2, description=$3, labels=$4, default_security_group_id=$5
 		WHERE id=$1
 		RETURNING ` + networkCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		n.ID, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := scanNetwork(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Network", n.ID)
+	}
+	if err := emitVPC(ctx, tx, "Network", result.ID, "UPDATED", networkPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", n.ID)
 	}
 	return result, nil
@@ -145,20 +169,38 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 
 // SetFolderID меняет folder_id у Network (для :move).
 func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE networks SET folder_id = $2
 		WHERE id = $1
 		RETURNING ` + networkCols
-	row := r.pool.QueryRow(ctx, q, id, folderID)
+	row := tx.QueryRow(ctx, q, id, folderID)
 	result, err := scanNetwork(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Network", id)
+	}
+	if err := emitVPC(ctx, tx, "Network", result.ID, "UPDATED", networkPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", id)
 	}
 	return result, nil
 }
 
 func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
 			// Network has dependent subnets/route-tables — verbatim YC error.
@@ -170,6 +212,12 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: Network %s not found", service.ErrNotFound, id)
+	}
+	if err := emitVPC(ctx, tx, "Network", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "Network", id)
 	}
 	return nil
 }

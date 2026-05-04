@@ -4,6 +4,7 @@ image: kacho-vpc:dev
 imagePullPolicy: IfNotPresent
 ports:
   grpc: 9090
+  internalGrpc: 9091
 db:
   host: kacho-umbrella-pg-vpc
   port: "5432"

@@ -15,6 +15,11 @@ type Config struct {
 	DBName     string `envconfig:"KACHO_VPC_DB_NAME" default:"kacho_vpc"`
 	GrpcPort   string `envconfig:"KACHO_VPC_GRPC_PORT" default:"9090"`
 
+	// InternalGrpcPort — порт для cluster-internal RPC (InternalWatchService).
+	// НЕ выставляется через api-gateway. Используется kacho-vpc-controllers
+	// для подписки на стрим событий из vpc_outbox.
+	InternalGrpcPort string `envconfig:"KACHO_VPC_INTERNAL_PORT" default:"9091"`
+
 	ResourceManagerGRPCAddr string `envconfig:"KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR" default:"resource-manager.kacho.svc.cluster.local:9090"`
 }
 

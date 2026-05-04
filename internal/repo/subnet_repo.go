@@ -117,12 +117,18 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	labelsJSON, _ := json.Marshal(s.Labels)
 	dhcpJSON := marshalDhcp(s.DhcpOptions)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		INSERT INTO subnets (id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + subnetCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		s.ID, s.FolderID, s.CreatedAt, s.Name, s.Description, labelsJSON,
 		s.NetworkID, s.ZoneID,
 		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
@@ -142,6 +148,12 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	if err != nil {
 		return nil, wrapPgErr(err, "Subnet", s.Name)
 	}
+	if err := emitVPC(ctx, tx, "Subnet", result.ID, "CREATED", subnetPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Subnet", s.Name)
+	}
 	return result, nil
 }
 
@@ -149,12 +161,18 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	labelsJSON, _ := json.Marshal(s.Labels)
 	dhcpJSON := marshalDhcp(s.DhcpOptions)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE subnets SET name=$2, description=$3, labels=$4, v4_cidr_blocks=$5, route_table_id=$6, dhcp_options=$7
 		WHERE id=$1
 		RETURNING ` + subnetCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		s.ID, s.Name, s.Description, labelsJSON,
 		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
 		nullableStr(s.RouteTableID), dhcpJSON,
@@ -163,22 +181,46 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	if err != nil {
 		return nil, wrapPgErr(err, "Subnet", s.ID)
 	}
+	if err := emitVPC(ctx, tx, "Subnet", result.ID, "UPDATED", subnetPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Subnet", s.ID)
+	}
 	return result, nil
 }
 
 // SetFolderID меняет folder_id у Subnet.
 func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	q := fmt.Sprintf(`UPDATE subnets SET folder_id = $2 WHERE id = $1 RETURNING %s`, subnetCols)
-	row := r.pool.QueryRow(ctx, q, id, folderID)
+	row := tx.QueryRow(ctx, q, id, folderID)
 	s, err := scanSubnet(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", id)
 	}
 	return s, nil
 }
 
 func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
 			return fmt.Errorf("%w: subnet has dependent resources", service.ErrFailedPrecondition)
@@ -188,6 +230,12 @@ func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: Subnet %s not found", service.ErrNotFound, id)
+	}
+	if err := emitVPC(ctx, tx, "Subnet", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "Subnet", id)
 	}
 	return nil
 }

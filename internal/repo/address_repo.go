@@ -112,12 +112,18 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	extJSON := marshalExternalIPv4(a.ExternalIpv4)
 	intJSON := marshalInternalIPv4(a.InternalIpv4)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING ` + addressCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		a.ID, a.FolderID, a.CreatedAt, a.Name, a.Description, labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
 		extJSON, intJSON,
@@ -126,22 +132,40 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	if err != nil {
 		return nil, wrapPgErr(err, "Address", a.Name)
 	}
+	if err := emitVPC(ctx, tx, "Address", result.ID, "CREATED", addressPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", a.Name)
+	}
 	return result, nil
 }
 
 func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
 	labelsJSON, _ := json.Marshal(a.Labels)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE addresses SET name=$2, description=$3, labels=$4, reserved=$5, used=$6, deletion_protection=$7
 		WHERE id=$1
 		RETURNING ` + addressCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		a.ID, a.Name, a.Description, labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
 	)
 	result, err := scanAddress(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Address", a.ID)
+	}
+	if err := emitVPC(ctx, tx, "Address", result.ID, "UPDATED", addressPayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", a.ID)
 	}
 	return result, nil
@@ -149,17 +173,35 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 
 // SetFolderID меняет folder_id у Address.
 func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	q := fmt.Sprintf(`UPDATE addresses SET folder_id = $2 WHERE id = $1 RETURNING %s`, addressCols)
-	row := r.pool.QueryRow(ctx, q, id, folderID)
+	row := tx.QueryRow(ctx, q, id, folderID)
 	a, err := scanAddress(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", id)
 	}
 	return a, nil
 }
 
 func (r *AddressRepo) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
 			return fmt.Errorf("%w: address is in use", service.ErrFailedPrecondition)
@@ -169,6 +211,12 @@ func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: Address %s not found", service.ErrNotFound, id)
+	}
+	if err := emitVPC(ctx, tx, "Address", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "Address", id)
 	}
 	return nil
 }

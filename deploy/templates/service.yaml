@@ -10,3 +10,6 @@ spec:
     - name: grpc
       port: {{ .Values.ports.grpc }}
       targetPort: grpc
+    - name: grpc-internal
+      port: {{ .Values.ports.internalGrpc }}
+      targetPort: grpc-internal

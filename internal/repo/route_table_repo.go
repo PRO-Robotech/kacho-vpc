@@ -116,17 +116,29 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 	labelsJSON, _ := json.Marshal(rt.Labels)
 	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		INSERT INTO route_tables (id, folder_id, created_at, name, description, labels, network_id, static_routes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING ` + routeTableCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		rt.ID, rt.FolderID, rt.CreatedAt, rt.Name, rt.Description, labelsJSON,
 		rt.NetworkID, routesJSON,
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", rt.Name)
+	}
+	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "CREATED", routeTablePayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "RouteTable", rt.Name)
 	}
 	return result, nil
@@ -136,16 +148,28 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 	labelsJSON, _ := json.Marshal(rt.Labels)
 	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
 
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	const q = `
 		UPDATE route_tables SET name=$2, description=$3, labels=$4, static_routes=$5
 		WHERE id=$1
 		RETURNING ` + routeTableCols
 
-	row := r.pool.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		rt.ID, rt.Name, rt.Description, labelsJSON, routesJSON,
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", rt.ID)
+	}
+	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "UPDATED", routeTablePayload(result)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "RouteTable", rt.ID)
 	}
 	return result, nil
@@ -153,17 +177,35 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 
 // SetFolderID меняет folder_id у RouteTable.
 func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	q := fmt.Sprintf(`UPDATE route_tables SET folder_id = $2 WHERE id = $1 RETURNING %s`, routeTableCols)
-	row := r.pool.QueryRow(ctx, q, id, folderID)
+	row := tx.QueryRow(ctx, q, id, folderID)
 	rt, err := scanRouteTable(row)
 	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", id)
+	}
+	if err := emitVPC(ctx, tx, "RouteTable", rt.ID, "UPDATED", routeTablePayload(rt)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "RouteTable", id)
 	}
 	return rt, nil
 }
 
 func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM route_tables WHERE id = $1`, id)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `DELETE FROM route_tables WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
 			return fmt.Errorf("%w: route table is in use", service.ErrFailedPrecondition)
@@ -173,6 +215,12 @@ func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: RouteTable %s not found", service.ErrNotFound, id)
+	}
+	if err := emitVPC(ctx, tx, "RouteTable", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "RouteTable", id)
 	}
 	return nil
 }
