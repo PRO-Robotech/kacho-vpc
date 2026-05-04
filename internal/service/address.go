@@ -34,8 +34,15 @@ type CreateAddressReq struct {
 
 // ExternalAddrSpec — спецификация внешнего адреса.
 type ExternalAddrSpec struct {
-	Address string
-	ZoneID  string
+	Address      string
+	ZoneID       string
+	Requirements *AddrRequirements
+}
+
+// AddrRequirements — параметры внешнего IP (DDoS, SMTP).
+type AddrRequirements struct {
+	DdosProtectionProvider string
+	OutgoingSmtpCapability string
 }
 
 // InternalAddrSpec — спецификация внутреннего адреса.
@@ -103,6 +110,22 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
 	}
+	// Verbatim YC: requirements.ddos_protection_provider только из whitelist;
+	// requirements.outgoing_smtp_capability — только пустое (probe 2026-05-04).
+	if req.ExternalSpec != nil && req.ExternalSpec.Requirements != nil {
+		if err := corevalidate.DdosProvider(
+			"external_ipv4_address_spec.requirements.ddos_protection_provider",
+			req.ExternalSpec.Requirements.DdosProtectionProvider,
+		); err != nil {
+			return nil, err
+		}
+		if err := corevalidate.SmtpCapability(
+			"external_ipv4_address_spec.requirements.outgoing_smtp_capability",
+			req.ExternalSpec.Requirements.OutgoingSmtpCapability,
+		); err != nil {
+			return nil, err
+		}
+	}
 
 	addrID := ids.NewUID()
 	op, err := operations.New(
@@ -158,6 +181,12 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
 			Address: ipAddr,
 			ZoneID:  req.ExternalSpec.ZoneID,
+		}
+		if r := req.ExternalSpec.Requirements; r != nil {
+			a.ExternalIpv4.Requirements = &domain.AddressRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
 		}
 	} else {
 		a.Type = domain.AddressTypeInternal
@@ -418,12 +447,17 @@ func domainAddressToProto(a *domain.Address) *vpcv1.Address {
 		DeletionProtection: a.DeletionProtection,
 	}
 	if a.ExternalIpv4 != nil {
-		p.Address = &vpcv1.Address_ExternalIpv4Address{
-			ExternalIpv4Address: &vpcv1.ExternalIpv4Address{
-				Address: a.ExternalIpv4.Address,
-				ZoneId:  a.ExternalIpv4.ZoneID,
-			},
+		ext := &vpcv1.ExternalIpv4Address{
+			Address: a.ExternalIpv4.Address,
+			ZoneId:  a.ExternalIpv4.ZoneID,
 		}
+		if a.ExternalIpv4.Requirements != nil {
+			ext.Requirements = &vpcv1.AddressRequirements{
+				DdosProtectionProvider: a.ExternalIpv4.Requirements.DdosProtectionProvider,
+				OutgoingSmtpCapability: a.ExternalIpv4.Requirements.OutgoingSmtpCapability,
+			}
+		}
+		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
 	} else if a.InternalIpv4 != nil {
 		p.Address = &vpcv1.Address_InternalIpv4Address{
 			InternalIpv4Address: &vpcv1.InternalIpv4Address{

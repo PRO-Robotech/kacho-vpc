@@ -67,6 +67,12 @@ func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressReq
 			Address: ext.Address,
 			ZoneID:  ext.ZoneId,
 		}
+		if r := ext.GetRequirements(); r != nil {
+			createReq.ExternalSpec.Requirements = &svc.AddrRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
+		}
 	} else if intSpec := req.GetInternalIpv4AddressSpec(); intSpec != nil {
 		createReq.InternalSpec = &svc.InternalAddrSpec{
 			Address:  intSpec.Address,
@@ -134,12 +140,17 @@ func addressToProto(a *domain.Address) *vpcv1.Address {
 		DeletionProtection: a.DeletionProtection,
 	}
 	if a.ExternalIpv4 != nil {
-		p.Address = &vpcv1.Address_ExternalIpv4Address{
-			ExternalIpv4Address: &vpcv1.ExternalIpv4Address{
-				Address: a.ExternalIpv4.Address,
-				ZoneId:  a.ExternalIpv4.ZoneID,
-			},
+		ext := &vpcv1.ExternalIpv4Address{
+			Address: a.ExternalIpv4.Address,
+			ZoneId:  a.ExternalIpv4.ZoneID,
 		}
+		if a.ExternalIpv4.Requirements != nil {
+			ext.Requirements = &vpcv1.AddressRequirements{
+				DdosProtectionProvider: a.ExternalIpv4.Requirements.DdosProtectionProvider,
+				OutgoingSmtpCapability: a.ExternalIpv4.Requirements.OutgoingSmtpCapability,
+			}
+		}
+		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
 	} else if a.InternalIpv4 != nil {
 		p.Address = &vpcv1.Address_InternalIpv4Address{
 			InternalIpv4Address: &vpcv1.InternalIpv4Address{

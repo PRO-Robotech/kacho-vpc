@@ -22,8 +22,16 @@ const (
 
 // ExternalIpv4Spec — параметры внешнего IPv4-адреса.
 type ExternalIpv4Spec struct {
-	Address string `json:"address"` // например 203.0.113.X
-	ZoneID  string `json:"zone_id"`
+	Address      string               `json:"address"` // например 203.0.113.X
+	ZoneID       string               `json:"zone_id"`
+	Requirements *AddressRequirements `json:"requirements,omitempty"`
+}
+
+// AddressRequirements — требования к выделенному внешнему IP (DDoS provider,
+// возможность отправки SMTP). Поле проброшено verbatim YC.
+type AddressRequirements struct {
+	DdosProtectionProvider string `json:"ddos_protection_provider,omitempty"`
+	OutgoingSmtpCapability string `json:"outgoing_smtp_capability,omitempty"`
 }
 
 // InternalIpv4Spec — параметры внутреннего IPv4-адреса.
