@@ -92,9 +92,9 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 		return nil, err
 	}
 
-	rtID := ids.NewUID()
+	rtID := ids.NewID(ids.PrefixRouteTable)
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create route table %s", req.Name),
 		&vpcv1.CreateRouteTableMetadata{RouteTableId: rtID},
 	)
@@ -156,7 +156,7 @@ func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq)
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update route table %s", req.RouteTableID),
 		&vpcv1.UpdateRouteTableMetadata{RouteTableId: req.RouteTableID},
 	)
@@ -304,7 +304,7 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	op, err := operations.New("vpc", fmt.Sprintf("Move route table %s", id),
+	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move route table %s", id),
 		&vpcv1.MoveRouteTableMetadata{RouteTableId: id})
 	if err != nil {
 		return nil, err
@@ -336,7 +336,7 @@ func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete route table %s", id),
 		&vpcv1.DeleteRouteTableMetadata{RouteTableId: id},
 	)

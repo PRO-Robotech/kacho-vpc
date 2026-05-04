@@ -131,9 +131,9 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 		}
 	}
 
-	addrID := ids.NewUID()
+	addrID := ids.NewID(ids.PrefixAddress)
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create address %s", req.Name),
 		&vpcv1.CreateAddressMetadata{AddressId: addrID},
 	)
@@ -227,7 +227,7 @@ func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*ope
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update address %s", req.AddressID),
 		&vpcv1.UpdateAddressMetadata{AddressId: req.AddressID},
 	)
@@ -348,7 +348,7 @@ func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*op
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	op, err := operations.New("vpc", fmt.Sprintf("Move address %s", id),
+	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move address %s", id),
 		&vpcv1.MoveAddressMetadata{AddressId: id})
 	if err != nil {
 		return nil, err
@@ -390,7 +390,7 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete address %s", id),
 		&vpcv1.DeleteAddressMetadata{AddressId: id},
 	)

@@ -86,8 +86,8 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 		return nil, err
 	}
 
-	sgID := ids.NewUID()
-	op, err := operations.New("vpc",
+	sgID := ids.NewID(ids.PrefixSecurityGroup)
+	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Create security group %s", req.Name),
 		&vpcv1.CreateSecurityGroupMetadata{SecurityGroupId: sgID},
 	)
@@ -138,7 +138,7 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 // Стандартный default SG в YC: 2 правила (INGRESS и EGRESS), protocol ANY, cidr 0.0.0.0/0.
 func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, folderID, networkID string) (*domain.SecurityGroup, error) {
 	sg := &domain.SecurityGroup{
-		ID:                ids.NewUID(),
+		ID:                ids.NewID(ids.PrefixSecurityGroup),
 		FolderID:          folderID,
 		NetworkID:         networkID,
 		CreatedAt:         time.Now().UTC(),
@@ -149,14 +149,14 @@ func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, fold
 		DefaultForNetwork: true,
 		Rules: []domain.SecurityGroupRule{
 			{
-				ID:             ids.NewUID(),
+				ID:             ids.NewID(ids.PrefixSecurityGroup),
 				Direction:      "INGRESS",
 				ProtocolName:   "ANY",
 				ProtocolNumber: -1,
 				V4CidrBlocks:   []string{"0.0.0.0/0"},
 			},
 			{
-				ID:             ids.NewUID(),
+				ID:             ids.NewID(ids.PrefixSecurityGroup),
 				Direction:      "EGRESS",
 				ProtocolName:   "ANY",
 				ProtocolNumber: -1,
@@ -176,7 +176,7 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
-	op, err := operations.New("vpc",
+	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Update security group %s", req.SecurityGroupID),
 		&vpcv1.UpdateSecurityGroupMetadata{SecurityGroupId: req.SecurityGroupID},
 	)
@@ -237,7 +237,7 @@ func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operatio
 		return nil, status.Errorf(codes.FailedPrecondition, "default security group cannot be deleted")
 	}
 
-	op, err := operations.New("vpc",
+	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete security group %s", id),
 		&vpcv1.DeleteSecurityGroupMetadata{SecurityGroupId: id},
 	)
@@ -264,7 +264,7 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	op, err := operations.New("vpc", fmt.Sprintf("Move security group %s", id),
+	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move security group %s", id),
 		&vpcv1.MoveSecurityGroupMetadata{SecurityGroupId: id})
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 	out := make([]domain.SecurityGroupRule, len(rules))
 	for i, r := range rules {
 		if r.ID == "" {
-			r.ID = ids.NewUID()
+			r.ID = ids.NewID(ids.PrefixSecurityGroup)
 		}
 		out[i] = r
 	}

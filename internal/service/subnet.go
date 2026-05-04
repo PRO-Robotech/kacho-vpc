@@ -104,9 +104,9 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 		return nil, err
 	}
 
-	subID := ids.NewUID()
+	subID := ids.NewID(ids.PrefixSubnet)
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create subnet %s", req.Name),
 		&vpcv1.CreateSubnetMetadata{SubnetId: subID},
 	)
@@ -186,7 +186,7 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update subnet %s", req.SubnetID),
 		&vpcv1.UpdateSubnetMetadata{SubnetId: req.SubnetID},
 	)
@@ -348,7 +348,7 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	op, err := operations.New("vpc", fmt.Sprintf("Move subnet %s", id),
+	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move subnet %s", id),
 		&vpcv1.MoveSubnetMetadata{SubnetId: id})
 	if err != nil {
 		return nil, err
@@ -380,7 +380,7 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	}
 
 	op, err := operations.New(
-		"vpc",
+		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete subnet %s", id),
 		&vpcv1.DeleteSubnetMetadata{SubnetId: id},
 	)

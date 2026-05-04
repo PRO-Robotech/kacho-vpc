@@ -7,23 +7,34 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
 )
 
-// validateUUID проверяет что value — валидный UUID (любой версии).
-// Возвращает gRPC InvalidArgument с BadRequest.field_violations[].
+// validateID проверяет что value — синтаксически валидный resource id:
+// либо в формате "<3-char prefix><17-char crockford-base32>" (см.
+// ids.HasKnownPrefix), либо в legacy-UUID-формате (на случай миграционного
+// окна или внешних клиентов, передающих старые id).
 //
-// Используется в Create/Update сервисах перед запуском Operation worker'а:
-// garbage-UUID (PG SQLSTATE 22P02) и не-UUID-формат должен быть синхронным
-// `code:3 INVALID_ARGUMENT`, не async `code:5 NOT_FOUND` (см. финдинги
-// F-CR-INVALID-UUID-mapping, N-CR-INVALID-UUID-mapping, A-CR-INVALID-FOLDER).
-func validateUUID(field, value string) error {
+// Возвращает gRPC InvalidArgument с BadRequest.field_violations[] если ни
+// один формат не подошёл. Используется в Create/Update сервисах перед
+// запуском Operation worker'а: garbage-id (PG SQLSTATE 22P02) и не-id
+// формат должен быть синхронным `code:3 INVALID_ARGUMENT`, не async
+// `code:5 NOT_FOUND` (см. финдинги F-CR-INVALID-UUID-mapping,
+// N-CR-INVALID-UUID-mapping, A-CR-INVALID-FOLDER).
+//
+//nolint:unused // оставлен как util для будущего pre-validation; вызовы — в TODO
+func validateID(field, value string) error {
+	if ids.HasKnownPrefix(value) {
+		return nil
+	}
 	if _, err := uuid.Parse(value); err == nil {
 		return nil
 	}
-	st := status.New(codes.InvalidArgument, field+" must be a valid UUID")
+	st := status.New(codes.InvalidArgument, field+" must be a valid resource id")
 	br := &errdetails.BadRequest{
 		FieldViolations: []*errdetails.BadRequest_FieldViolation{
-			{Field: field, Description: field + " must be a valid UUID"},
+			{Field: field, Description: field + " must be a valid resource id"},
 		},
 	}
 	if withDetails, derr := st.WithDetails(br); derr == nil {
