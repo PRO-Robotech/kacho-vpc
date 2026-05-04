@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -65,6 +66,11 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 	}
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "name required")
+	}
+	// Sync UUID-validation до Operation worker'а: garbage-UUID = invalid_argument,
+	// а не «folder not found» (см. N-CR-INVALID-UUID-mapping.md).
+	if err := validateUUID("folder_id", req.FolderID); err != nil {
+		return nil, err
 	}
 
 	netID := ids.NewUID()
@@ -213,12 +219,23 @@ func domainNetworkToProto(n *domain.Network) *vpcv1.Network {
 }
 
 // mapRepoErr переводит domain-ошибки репозитория в gRPC-статусы.
+// errors.Is используется потому, что repo может оборачивать sentinel через %w
+// (например, ErrFailedPrecondition + контекст "network is not empty").
 func mapRepoErr(err error) error {
-	if err == ErrNotFound {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrNotFound) {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	if err == ErrAlreadyExists {
+	if errors.Is(err, ErrAlreadyExists) {
 		return status.Error(codes.AlreadyExists, err.Error())
+	}
+	if errors.Is(err, ErrFailedPrecondition) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if errors.Is(err, ErrInvalidArg) {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	return err
 }

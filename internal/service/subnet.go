@@ -78,6 +78,18 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "name required")
 	}
+	if err := validateUUID("folder_id", req.FolderID); err != nil {
+		return nil, err
+	}
+	if err := validateUUID("network_id", req.NetworkID); err != nil {
+		return nil, err
+	}
+	// SU-CIDR-2: host-bits в v4CidrBlocks (например `10.0.0.5/24`) → InvalidArgument.
+	for i, c := range req.V4CidrBlocks {
+		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
 
 	subID := ids.NewUID()
 	op, err := operations.New(
@@ -133,9 +145,24 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 }
 
 // Update обновляет Subnet.
+//
+// SU-CIDR-IM-1: v4_cidr_blocks / v6_cidr_blocks / network_id / zone_id —
+// immutable после Create. Любая попытка изменить (через update_mask или
+// «полный апдейт» с непустым V4CidrBlocks) → InvalidArgument до Operation.
 func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	for _, field := range req.UpdateMask {
+		switch field {
+		case "v4_cidr_blocks", "v6_cidr_blocks", "network_id", "zone_id":
+			return nil, invalidArg(field, field+" is immutable after Subnet.Create")
+		}
+	}
+	// Без update_mask клиент мог прислать V4CidrBlocks в полном-апдейте — так
+	// тоже нельзя.
+	if len(req.UpdateMask) == 0 && len(req.V4CidrBlocks) > 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is immutable after Subnet.Create")
 	}
 
 	op, err := operations.New(

@@ -73,6 +73,12 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "name required")
 	}
+	if err := validateUUID("folder_id", req.FolderID); err != nil {
+		return nil, err
+	}
+	if err := validateUUID("network_id", req.NetworkID); err != nil {
+		return nil, err
+	}
 
 	rtID := ids.NewUID()
 	op, err := operations.New(

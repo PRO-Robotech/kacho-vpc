@@ -89,6 +89,14 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 	if req.ExternalSpec == nil && req.InternalSpec == nil {
 		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
+	if err := validateUUID("folder_id", req.FolderID); err != nil {
+		return nil, err
+	}
+	if req.InternalSpec != nil && req.InternalSpec.SubnetID != "" {
+		if err := validateUUID("address_spec.internal_ipv4_address_spec.subnet_id", req.InternalSpec.SubnetID); err != nil {
+			return nil, err
+		}
+	}
 
 	addrID := ids.NewUID()
 	op, err := operations.New(
