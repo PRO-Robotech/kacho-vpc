@@ -247,5 +247,9 @@ func mapRepoErr(err error) error {
 	if errors.Is(err, ErrInvalidArg) {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
+	if errors.Is(err, ErrInternal) {
+		// Generic Internal без leak'а pgx-текста.
+		return status.Error(codes.Internal, "internal database error")
+	}
 	return err
 }

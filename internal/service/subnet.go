@@ -134,6 +134,10 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 		return nil, status.Errorf(codes.NotFound, "network %s not found", req.NetworkID)
 	}
 
+	// SU-CIDR-OVERLAP — пересечения v4 CIDR в рамках одной VPC ловятся
+	// атомарно DB-level EXCLUDE constraint (миграция 0007), repo маппит
+	// SQLSTATE 23P01 на ErrInvalidArg. См. SU-CIDR-OVERLAP.md.
+
 	sub := &domain.Subnet{
 		ID:           subID,
 		FolderID:     req.FolderID,
@@ -149,7 +153,7 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 	}
 	created, err := s.repo.Insert(ctx, sub)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainSubnetToProto(created))
 }

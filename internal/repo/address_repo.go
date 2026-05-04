@@ -3,11 +3,9 @@ package repo
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -30,10 +28,10 @@ func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, erro
 	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, addressCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	a, err := scanAddress(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
 	}
-	return a, err
+	return a, nil
 }
 
 func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*domain.Address, string, error) {
@@ -70,7 +68,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
 
@@ -78,12 +76,12 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	for rows.Next() {
 		a, err := scanAddress(rows)
 		if err != nil {
-			return nil, "", err
+			return nil, "", wrapPgErr(err, "Address", "")
 		}
 		result = append(result, a)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Address", "")
 	}
 
 	var nextToken string
@@ -110,7 +108,11 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
 		extJSON, intJSON,
 	)
-	return scanAddress(row)
+	result, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", a.Name)
+	}
+	return result, nil
 }
 
 func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
@@ -125,13 +127,10 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 		a.ID, a.Name, a.Description, labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
 	)
 	result, err := scanAddress(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", a.ID)
 	}
-	if isUniqueViolation(err) {
-		return nil, service.ErrAlreadyExists
-	}
-	return result, err
+	return result, nil
 }
 
 func (r *AddressRepo) Delete(ctx context.Context, id string) error {
@@ -143,7 +142,7 @@ func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 		if isInvalidUUID(err) {
 			return service.ErrNotFound
 		}
-		return err
+		return wrapPgErr(err, "Address", id)
 	}
 	if tag.RowsAffected() == 0 {
 		return service.ErrNotFound
@@ -162,7 +161,7 @@ func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 		)
 	`, ip).Scan(&count)
 	if err != nil {
-		return false, err
+		return false, wrapPgErr(err, "Address", "")
 	}
 	return count > 0, nil
 }

@@ -3,11 +3,9 @@ package repo
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -30,10 +28,10 @@ func (r *RouteTableRepo) Get(ctx context.Context, id string) (*domain.RouteTable
 	q := fmt.Sprintf(`SELECT %s FROM route_tables WHERE id = $1`, routeTableCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	rt, err := scanRouteTable(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", id)
 	}
-	return rt, err
+	return rt, nil
 }
 
 func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p service.Pagination) ([]*domain.RouteTable, string, error) {
@@ -75,7 +73,7 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "RouteTable", "")
 	}
 	defer rows.Close()
 
@@ -83,12 +81,12 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 	for rows.Next() {
 		rt, err := scanRouteTable(rows)
 		if err != nil {
-			return nil, "", err
+			return nil, "", wrapPgErr(err, "RouteTable", "")
 		}
 		result = append(result, rt)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "RouteTable", "")
 	}
 
 	var nextToken string
@@ -113,7 +111,11 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 		rt.ID, rt.FolderID, rt.CreatedAt, rt.Name, rt.Description, labelsJSON,
 		rt.NetworkID, routesJSON,
 	)
-	return scanRouteTable(row)
+	result, err := scanRouteTable(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", rt.Name)
+	}
+	return result, nil
 }
 
 func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
@@ -129,13 +131,10 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 		rt.ID, rt.Name, rt.Description, labelsJSON, routesJSON,
 	)
 	result, err := scanRouteTable(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", rt.ID)
 	}
-	if isUniqueViolation(err) {
-		return nil, service.ErrAlreadyExists
-	}
-	return result, err
+	return result, nil
 }
 
 func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
@@ -147,7 +146,7 @@ func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 		if isInvalidUUID(err) {
 			return service.ErrNotFound
 		}
-		return err
+		return wrapPgErr(err, "RouteTable", id)
 	}
 	if tag.RowsAffected() == 0 {
 		return service.ErrNotFound

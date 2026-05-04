@@ -10,3 +10,13 @@ var ErrAlreadyExists = errors.New("already exists")
 
 // ErrInvalidArg возвращается при некорректных входных данных.
 var ErrInvalidArg = errors.New("invalid argument")
+
+// ErrFailedPrecondition возвращается, когда операция отклонена из-за состояния
+// ресурса (например, попытка удалить Network с зависимыми Subnets — нарушение FK
+// в Postgres SQLSTATE 23503). Маппится в gRPC FailedPrecondition (как у YC:
+// "Network is not empty").
+var ErrFailedPrecondition = errors.New("failed precondition")
+
+// ErrInternal — generic-ошибка для неклассифицированных DB-проблем. Маппится
+// на gRPC Internal с фиксированным сообщением, чтобы не leak'ать pgx-текст.
+var ErrInternal = errors.New("internal database error")

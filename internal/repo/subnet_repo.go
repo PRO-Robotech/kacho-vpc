@@ -3,11 +3,9 @@ package repo
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -31,10 +29,10 @@ func (r *SubnetRepo) Get(ctx context.Context, id string) (*domain.Subnet, error)
 	q := fmt.Sprintf(`SELECT %s FROM subnets WHERE id = $1`, subnetCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	s, err := scanSubnet(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
 	}
-	return s, err
+	return s, nil
 }
 
 func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service.Pagination) ([]*domain.Subnet, string, error) {
@@ -76,7 +74,7 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Subnet", "")
 	}
 	defer rows.Close()
 
@@ -84,12 +82,12 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 	for rows.Next() {
 		s, err := scanSubnet(rows)
 		if err != nil {
-			return nil, "", err
+			return nil, "", wrapPgErr(err, "Subnet", "")
 		}
 		result = append(result, s)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Subnet", "")
 	}
 
 	var nextToken string
@@ -117,7 +115,18 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V6CidrBlocks)), LowerBound: 1}}},
 		nullableStr(s.RouteTableID), dhcpJSON,
 	)
-	return scanSubnet(row)
+	result, err := scanSubnet(row)
+	if isExclusionViolation(err) {
+		// SU-CIDR-OVERLAP race-protection: service checkCIDRDisjoint могла
+		// пропустить параллельный Create, но EXCLUDE constraint в БД его
+		// поймал. Маппим на InvalidArgument с понятным сообщением.
+		return nil, fmt.Errorf("%w: v4 CIDR overlaps existing subnet in this network",
+			service.ErrInvalidArg)
+	}
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", s.Name)
+	}
+	return result, nil
 }
 
 func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
@@ -135,13 +144,10 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 		nullableStr(s.RouteTableID), dhcpJSON,
 	)
 	result, err := scanSubnet(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", s.ID)
 	}
-	if isUniqueViolation(err) {
-		return nil, service.ErrAlreadyExists
-	}
-	return result, err
+	return result, nil
 }
 
 func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
@@ -153,7 +159,7 @@ func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
 		if isInvalidUUID(err) {
 			return service.ErrNotFound
 		}
-		return err
+		return wrapPgErr(err, "Subnet", id)
 	}
 	if tag.RowsAffected() == 0 {
 		return service.ErrNotFound

@@ -3,11 +3,9 @@ package repo
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -30,10 +28,10 @@ func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, erro
 	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, networkCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	n, err := scanNetwork(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Network", id)
 	}
-	return n, err
+	return n, nil
 }
 
 func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p service.Pagination) ([]*domain.Network, string, error) {
@@ -70,7 +68,7 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Network", "")
 	}
 	defer rows.Close()
 
@@ -78,12 +76,12 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 	for rows.Next() {
 		n, err := scanNetwork(rows)
 		if err != nil {
-			return nil, "", err
+			return nil, "", wrapPgErr(err, "Network", "")
 		}
 		result = append(result, n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", err
+		return nil, "", wrapPgErr(err, "Network", "")
 	}
 
 	var nextToken string
@@ -106,7 +104,11 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 	row := r.pool.QueryRow(ctx, q,
 		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
-	return scanNetwork(row)
+	result, err := scanNetwork(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Network", n.Name)
+	}
+	return result, nil
 }
 
 func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
@@ -121,13 +123,10 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 		n.ID, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := scanNetwork(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, service.ErrNotFound
+	if err != nil {
+		return nil, wrapPgErr(err, "Network", n.ID)
 	}
-	if isUniqueViolation(err) {
-		return nil, service.ErrAlreadyExists
-	}
-	return result, err
+	return result, nil
 }
 
 func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
@@ -140,7 +139,7 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 		if isInvalidUUID(err) {
 			return service.ErrNotFound
 		}
-		return err
+		return wrapPgErr(err, "Network", id)
 	}
 	if tag.RowsAffected() == 0 {
 		return service.ErrNotFound
