@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
@@ -35,9 +36,9 @@ func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, erro
 }
 
 func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*domain.Address, string, error) {
-	pageSize := p.PageSize
-	if pageSize <= 0 || pageSize > 1000 {
-		pageSize = 50
+	pageSize, err := validate.PageSize("page_size", p.PageSize)
+	if err != nil {
+		return nil, "", err
 	}
 
 	args := []any{}

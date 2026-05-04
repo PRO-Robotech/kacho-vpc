@@ -178,6 +178,9 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 	if len(req.UpdateMask) == 0 && len(req.V4CidrBlocks) > 0 {
 		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is immutable after Subnet.Create")
 	}
+	if err := validateSubnetUpdate(req); err != nil {
+		return nil, err
+	}
 
 	op, err := operations.New(
 		"vpc",
@@ -211,6 +214,47 @@ func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*any
 		return nil, err
 	}
 	return anypb.New(domainSubnetToProto(updated))
+}
+
+// validateSubnetUpdate проверяет name/description/labels в Update.
+//
+// Поля immutable (v4_cidr_blocks, network_id, zone_id) обрабатываются ВЫШЕ:
+// в Update; здесь они уже отсеяны.
+func validateSubnetUpdate(req UpdateSubnetReq) error {
+	known := map[string]struct{}{
+		"name": {}, "description": {}, "labels": {},
+		"route_table_id": {}, "dhcp_options": {},
+		// immutable-поля разрешены в known только чтобы пройти UpdateMask-check;
+		// сама immutability ловится выше.
+		"v4_cidr_blocks": {}, "v6_cidr_blocks": {}, "network_id": {}, "zone_id": {},
+	}
+	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
+		return err
+	}
+	updates := req.UpdateMask
+	if len(updates) == 0 {
+		updates = []string{"name", "description", "labels"}
+	}
+	for _, f := range updates {
+		switch f {
+		case "name":
+			if req.Name == "" {
+				return invalidArg("name", "name is required")
+			}
+			if err := corevalidate.Name("name", req.Name); err != nil {
+				return err
+			}
+		case "description":
+			if err := corevalidate.Description("description", req.Description); err != nil {
+				return err
+			}
+		case "labels":
+			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {

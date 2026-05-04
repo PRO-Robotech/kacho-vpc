@@ -141,9 +141,14 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 }
 
 // Update обновляет RouteTable.
+//
+// Sync-валидация: см. validateRouteTableUpdate.
 func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq) (*operations.Operation, error) {
 	if req.RouteTableID == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	if err := validateRouteTableUpdate(req); err != nil {
+		return nil, err
 	}
 
 	op, err := operations.New(
@@ -178,6 +183,40 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 		return nil, err
 	}
 	return anypb.New(domainRouteTableToProto(updated))
+}
+
+// validateRouteTableUpdate проверяет name/description/labels в Update.
+func validateRouteTableUpdate(req UpdateRouteTableReq) error {
+	known := map[string]struct{}{
+		"name": {}, "description": {}, "labels": {}, "static_routes": {},
+	}
+	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
+		return err
+	}
+	updates := req.UpdateMask
+	if len(updates) == 0 {
+		updates = []string{"name", "description", "labels"}
+	}
+	for _, f := range updates {
+		switch f {
+		case "name":
+			if req.Name == "" {
+				return invalidArg("name", "name is required")
+			}
+			if err := corevalidate.Name("name", req.Name); err != nil {
+				return err
+			}
+		case "description":
+			if err := corevalidate.Description("description", req.Description); err != nil {
+				return err
+			}
+		case "labels":
+			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {

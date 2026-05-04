@@ -256,9 +256,15 @@ func (s *AddressService) allocateInternalIP(ctx context.Context, sub *domain.Sub
 }
 
 // Update обновляет Address.
+//
+// Sync-валидация: см. validateAddressUpdate. Address — особый случай: name
+// может быть пустым (как и в Create), потому что для адресов name необязательное.
 func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*operations.Operation, error) {
 	if req.AddressID == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	if err := validateAddressUpdate(req); err != nil {
+		return nil, err
 	}
 
 	op, err := operations.New(
@@ -293,6 +299,43 @@ func (s *AddressService) doUpdate(ctx context.Context, req UpdateAddressReq) (*a
 		return nil, err
 	}
 	return anypb.New(domainAddressToProto(updated))
+}
+
+// validateAddressUpdate проверяет name/description/labels в Update Address.
+//
+// В отличие от Network/Cloud/Folder/Subnet, name для Address optional —
+// `name=""` валиден, regex применяется только если непустой.
+func validateAddressUpdate(req UpdateAddressReq) error {
+	known := map[string]struct{}{
+		"name": {}, "description": {}, "labels": {},
+		"deletion_protection": {}, "reserved": {},
+	}
+	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
+		return err
+	}
+	updates := req.UpdateMask
+	if len(updates) == 0 {
+		updates = []string{"name", "description", "labels"}
+	}
+	for _, f := range updates {
+		switch f {
+		case "name":
+			if req.Name != "" {
+				if err := corevalidate.Name("name", req.Name); err != nil {
+					return err
+				}
+			}
+		case "description":
+			if err := corevalidate.Description("description", req.Description); err != nil {
+				return err
+			}
+		case "labels":
+			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func applyAddressMask(a *domain.Address, req UpdateAddressReq) {

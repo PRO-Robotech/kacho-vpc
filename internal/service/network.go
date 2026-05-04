@@ -128,9 +128,16 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 }
 
 // Update обновляет Network.
+//
+// Sync-валидация update_mask и значений выполняется ДО Operation: каждое поле,
+// упомянутое в mask, проверяется по тем же правилам, что и Create. Без mask —
+// валидируются все три поля (name/description/labels). См. validateNetworkUpdate.
 func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*operations.Operation, error) {
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	if err := validateNetworkUpdate(req); err != nil {
+		return nil, err
 	}
 
 	op, err := operations.New(
@@ -165,6 +172,45 @@ func (s *NetworkService) doUpdate(ctx context.Context, req UpdateNetworkReq) (*a
 		return nil, err
 	}
 	return anypb.New(domainNetworkToProto(updated))
+}
+
+// validateNetworkUpdate — sync-проверка update_mask и значений.
+//
+// Decision table (для каждого поля в mask):
+//   - name      → должно быть non-empty + соответствовать verbatim YC name regex.
+//   - description → длина <=256 chars (utf-8 runes).
+//   - labels    → <=64 пар, ключ/значение — verbatim YC.
+//
+// Поле, не упомянутое в mask, не валидируется (= unchanged).
+func validateNetworkUpdate(req UpdateNetworkReq) error {
+	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}}
+	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
+		return err
+	}
+	updates := req.UpdateMask
+	if len(updates) == 0 {
+		updates = []string{"name", "description", "labels"}
+	}
+	for _, f := range updates {
+		switch f {
+		case "name":
+			if req.Name == "" {
+				return invalidArg("name", "name is required")
+			}
+			if err := corevalidate.Name("name", req.Name); err != nil {
+				return err
+			}
+		case "description":
+			if err := corevalidate.Description("description", req.Description); err != nil {
+				return err
+			}
+		case "labels":
+			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func applyNetworkMask(n *domain.Network, req UpdateNetworkReq) {
