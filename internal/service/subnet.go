@@ -329,6 +329,51 @@ func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 	}
 }
 
+// ListOperations возвращает операции для конкретного Subnet (фильтр resource_id).
+func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p Pagination) ([]operations.Operation, string, error) {
+	if _, err := s.repo.Get(ctx, subnetID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return s.opsRepo.List(ctx, operations.ListFilter{
+		ResourceID: subnetID,
+		PageSize:   p.PageSize,
+		PageToken:  p.PageToken,
+	})
+}
+
+// Move инициирует перенос Subnet в другой folder.
+func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if destFolderID == "" {
+		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	op, err := operations.New("vpc", fmt.Sprintf("Move subnet %s", id),
+		&vpcv1.MoveSubnetMetadata{SubnetId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		exists, err := s.folderClient.Exists(ctx, destFolderID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+		}
+		if !exists {
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		}
+		updated, err := s.repo.SetFolderID(ctx, id, destFolderID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainSubnetToProto(updated))
+	})
+	return &op, nil
+}
+
 // Delete удаляет Subnet.
 func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
 	if id == "" {

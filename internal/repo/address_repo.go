@@ -134,6 +134,17 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 	return result, nil
 }
 
+// SetFolderID меняет folder_id у Address.
+func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error) {
+	q := fmt.Sprintf(`UPDATE addresses SET folder_id = $2 WHERE id = $1 RETURNING %s`, addressCols)
+	row := r.pool.QueryRow(ctx, q, id, folderID)
+	a, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	return a, nil
+}
+
 func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {

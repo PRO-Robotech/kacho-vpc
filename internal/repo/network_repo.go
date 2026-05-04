@@ -130,6 +130,20 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 	return result, nil
 }
 
+// SetFolderID меняет folder_id у Network (для :move).
+func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error) {
+	const q = `
+		UPDATE networks SET folder_id = $2
+		WHERE id = $1
+		RETURNING ` + networkCols
+	row := r.pool.QueryRow(ctx, q, id, folderID)
+	result, err := scanNetwork(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Network", id)
+	}
+	return result, nil
+}
+
 func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {

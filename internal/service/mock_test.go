@@ -71,6 +71,17 @@ func (r *mockNetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *mockNetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Network, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	n.FolderID = folderID
+	return n, nil
+}
+
 // ---- mock SubnetRepo ----
 
 type mockSubnetRepo struct {
@@ -132,6 +143,17 @@ func (r *mockSubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *mockSubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Subnet, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	s.FolderID = folderID
+	return s, nil
+}
+
 // ---- mock AddressRepo ----
 
 type mockAddressRepo struct {
@@ -190,6 +212,17 @@ func (r *mockAddressRepo) Delete(_ context.Context, id string) error {
 	}
 	delete(r.data, id)
 	return nil
+}
+
+func (r *mockAddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	a.FolderID = folderID
+	return a, nil
 }
 
 func (r *mockAddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
@@ -265,6 +298,17 @@ func (r *mockRouteTableRepo) Delete(_ context.Context, id string) error {
 	}
 	delete(r.data, id)
 	return nil
+}
+
+func (r *mockRouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.RouteTable, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rt, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	rt.FolderID = folderID
+	return rt, nil
 }
 
 // ---- mock FolderClient ----

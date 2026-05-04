@@ -114,6 +114,32 @@ func (h *RouteTableHandler) Update(ctx context.Context, req *vpcv1.UpdateRouteTa
 	return operationToProto(op), nil
 }
 
+func (h *RouteTableHandler) ListOperations(ctx context.Context, req *vpcv1.ListRouteTableOperationsRequest) (*vpcv1.ListRouteTableOperationsResponse, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	ops, nextToken, err := h.svc.ListOperations(ctx, req.RouteTableId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListRouteTableOperationsResponse{NextPageToken: nextToken}
+	for i := range ops {
+		resp.Operations = append(resp.Operations, operationToProto(&ops[i]))
+	}
+	return resp, nil
+}
+
+func (h *RouteTableHandler) Move(ctx context.Context, req *vpcv1.MoveRouteTableRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Move(ctx, req.RouteTableId, req.DestinationFolderId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
 func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTableRequest) (*operationpb.Operation, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")

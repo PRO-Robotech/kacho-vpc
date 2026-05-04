@@ -109,6 +109,32 @@ func (h *SubnetHandler) Update(ctx context.Context, req *vpcv1.UpdateSubnetReque
 	return operationToProto(op), nil
 }
 
+func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubnetOperationsRequest) (*vpcv1.ListSubnetOperationsResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	ops, nextToken, err := h.svc.ListOperations(ctx, req.SubnetId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListSubnetOperationsResponse{NextPageToken: nextToken}
+	for i := range ops {
+		resp.Operations = append(resp.Operations, operationToProto(&ops[i]))
+	}
+	return resp, nil
+}
+
+func (h *SubnetHandler) Move(ctx context.Context, req *vpcv1.MoveSubnetRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Move(ctx, req.SubnetId, req.DestinationFolderId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
 func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetRequest) (*operationpb.Operation, error) {
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")

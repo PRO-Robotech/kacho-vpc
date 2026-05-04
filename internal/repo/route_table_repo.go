@@ -138,6 +138,17 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 	return result, nil
 }
 
+// SetFolderID меняет folder_id у RouteTable.
+func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error) {
+	q := fmt.Sprintf(`UPDATE route_tables SET folder_id = $2 WHERE id = $1 RETURNING %s`, routeTableCols)
+	row := r.pool.QueryRow(ctx, q, id, folderID)
+	rt, err := scanRouteTable(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "RouteTable", id)
+	}
+	return rt, nil
+}
+
 func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM route_tables WHERE id = $1`, id)
 	if err != nil {

@@ -394,6 +394,51 @@ func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
 // (FAILED_PRECONDITION). Это verbatim YC contract — клиент должен сначала
 // снять защиту PATCH-ем.
 //
+// ListOperations возвращает операции для конкретного Address.
+func (s *AddressService) ListOperations(ctx context.Context, addressID string, p Pagination) ([]operations.Operation, string, error) {
+	if _, err := s.repo.Get(ctx, addressID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return s.opsRepo.List(ctx, operations.ListFilter{
+		ResourceID: addressID,
+		PageSize:   p.PageSize,
+		PageToken:  p.PageToken,
+	})
+}
+
+// Move инициирует перенос Address в другой folder.
+func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	if destFolderID == "" {
+		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	op, err := operations.New("vpc", fmt.Sprintf("Move address %s", id),
+		&vpcv1.MoveAddressMetadata{AddressId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		exists, err := s.folderClient.Exists(ctx, destFolderID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+		}
+		if !exists {
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		}
+		updated, err := s.repo.SetFolderID(ctx, id, destFolderID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainAddressToProto(updated))
+	})
+	return &op, nil
+}
+
 // Если адреса нет вовсе — пробрасывается NotFound (через mapRepoErr).
 // Если репо вернул другую ошибку — Internal.
 func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Operation, error) {

@@ -89,7 +89,7 @@ func runServe(cfg config.Config) error {
 	routeTableRepo := repo.NewRouteTableRepo(pool)
 
 	// Services.
-	networkSvc := service.NewNetworkService(networkRepo, folderClient, opsRepo)
+	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, folderClient, opsRepo)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
 	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)

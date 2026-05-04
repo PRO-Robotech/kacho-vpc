@@ -110,6 +110,32 @@ func (h *AddressHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressReq
 	return operationToProto(op), nil
 }
 
+func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddressOperationsRequest) (*vpcv1.ListAddressOperationsResponse, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	ops, nextToken, err := h.svc.ListOperations(ctx, req.AddressId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListAddressOperationsResponse{NextPageToken: nextToken}
+	for i := range ops {
+		resp.Operations = append(resp.Operations, operationToProto(&ops[i]))
+	}
+	return resp, nil
+}
+
+func (h *AddressHandler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Move(ctx, req.AddressId, req.DestinationFolderId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
 func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (*operationpb.Operation, error) {
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")

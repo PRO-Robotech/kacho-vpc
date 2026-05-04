@@ -41,6 +41,8 @@ type NetworkRepo interface {
 	Insert(ctx context.Context, n *domain.Network) (*domain.Network, error)
 	Update(ctx context.Context, n *domain.Network) (*domain.Network, error)
 	Delete(ctx context.Context, id string) error
+	// SetFolderID меняет folder_id ресурса (для :move action). Возвращает обновлённый ресурс.
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error)
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.
@@ -50,6 +52,8 @@ type SubnetRepo interface {
 	Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
 	Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
 	Delete(ctx context.Context, id string) error
+	// SetFolderID меняет folder_id ресурса.
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error)
 }
 
 // AddressRepo — port-интерфейс репозитория адресов.
@@ -61,6 +65,8 @@ type AddressRepo interface {
 	Delete(ctx context.Context, id string) error
 	// ExistsIP проверяет уникальность IP (external) в рамках folder/global.
 	ExistsIP(ctx context.Context, ip string) (bool, error)
+	// SetFolderID меняет folder_id ресурса.
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error)
 }
 
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.
@@ -70,6 +76,8 @@ type RouteTableRepo interface {
 	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
 	Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
 	Delete(ctx context.Context, id string) error
+	// SetFolderID меняет folder_id ресурса.
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error)
 }
 
 // FolderClient — port для проверки существования Folder.

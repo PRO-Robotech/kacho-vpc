@@ -84,6 +84,79 @@ func (h *NetworkHandler) Update(ctx context.Context, req *vpcv1.UpdateNetworkReq
 	return operationToProto(op), nil
 }
 
+func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetworkSubnetsRequest) (*vpcv1.ListNetworkSubnetsResponse, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	subs, nextToken, err := h.svc.ListSubnets(ctx, req.NetworkId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListNetworkSubnetsResponse{NextPageToken: nextToken}
+	for _, s := range subs {
+		resp.Subnets = append(resp.Subnets, subnetToProto(s))
+	}
+	return resp, nil
+}
+
+func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.ListNetworkSecurityGroupsRequest) (*vpcv1.ListNetworkSecurityGroupsResponse, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// Network must exist; no SG support yet — return empty list (verbatim к YC поведению "пусто").
+	if _, err := h.svc.Get(ctx, req.NetworkId); err != nil {
+		return nil, err
+	}
+	return &vpcv1.ListNetworkSecurityGroupsResponse{}, nil
+}
+
+func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNetworkRouteTablesRequest) (*vpcv1.ListNetworkRouteTablesResponse, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	rts, nextToken, err := h.svc.ListRouteTables(ctx, req.NetworkId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListNetworkRouteTablesResponse{NextPageToken: nextToken}
+	for _, rt := range rts {
+		resp.RouteTables = append(resp.RouteTables, routeTableToProto(rt))
+	}
+	return resp, nil
+}
+
+func (h *NetworkHandler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkOperationsRequest) (*vpcv1.ListNetworkOperationsResponse, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	ops, nextToken, err := h.svc.ListOperations(ctx, req.NetworkId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListNetworkOperationsResponse{NextPageToken: nextToken}
+	for i := range ops {
+		resp.Operations = append(resp.Operations, operationToProto(&ops[i]))
+	}
+	return resp, nil
+}
+
+func (h *NetworkHandler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Move(ctx, req.NetworkId, req.DestinationFolderId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
 func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (*operationpb.Operation, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")

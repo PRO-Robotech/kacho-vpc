@@ -37,14 +37,62 @@ type UpdateNetworkReq struct {
 
 // NetworkService — бизнес-логика управления сетями.
 type NetworkService struct {
-	repo         NetworkRepo
-	folderClient FolderClient
-	opsRepo      operations.Repo
+	repo           NetworkRepo
+	subnetRepo     SubnetRepo
+	routeTableRepo RouteTableRepo
+	folderClient   FolderClient
+	opsRepo        operations.Repo
 }
 
 // NewNetworkService создаёт NetworkService.
-func NewNetworkService(repo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
-	return &NetworkService{repo: repo, folderClient: folderClient, opsRepo: opsRepo}
+//
+// subnetRepo / routeTableRepo используются для per-network children endpoints
+// (ListSubnets / ListRouteTables). Могут быть nil — тогда соответствующие
+// методы вернут empty list. В composition root (cmd/main.go) передаётся
+// рабочий repo.
+func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
+	return &NetworkService{
+		repo:           repo,
+		subnetRepo:     subnetRepo,
+		routeTableRepo: routeTableRepo,
+		folderClient:   folderClient,
+		opsRepo:        opsRepo,
+	}
+}
+
+// ListSubnets возвращает подсети, принадлежащие данной сети.
+// Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).
+func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pagination) ([]*domain.Subnet, string, error) {
+	if _, err := s.repo.Get(ctx, networkID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	if s.subnetRepo == nil {
+		return nil, "", nil
+	}
+	return s.subnetRepo.List(ctx, SubnetFilter{NetworkID: networkID}, p)
+}
+
+// ListRouteTables возвращает route tables, привязанные к данной сети.
+func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTable, string, error) {
+	if _, err := s.repo.Get(ctx, networkID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	if s.routeTableRepo == nil {
+		return nil, "", nil
+	}
+	return s.routeTableRepo.List(ctx, RouteTableFilter{NetworkID: networkID}, p)
+}
+
+// ListOperations возвращает операции, относящиеся к данному ресурсу (по resource_id).
+func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p Pagination) ([]operations.Operation, string, error) {
+	if _, err := s.repo.Get(ctx, networkID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return s.opsRepo.List(ctx, operations.ListFilter{
+		ResourceID: networkID,
+		PageSize:   p.PageSize,
+		PageToken:  p.PageToken,
+	})
 }
 
 // Get возвращает Network по ID.
@@ -227,6 +275,49 @@ func applyNetworkMask(n *domain.Network, req UpdateNetworkReq) {
 			n.Labels = req.Labels
 		}
 	}
+}
+
+// Move инициирует перенос Network в другой folder, возвращает Operation.
+//
+// Sync-валидация: destinationFolderId required.
+// Async (внутри Operation worker): destination folder Exists через folderClient.
+// Если folder не найден → Operation.error: NotFound "Folder with id X not found" (verbatim YC).
+func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	if destFolderID == "" {
+		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+
+	op, err := operations.New(
+		"vpc",
+		fmt.Sprintf("Move network %s", id),
+		&vpcv1.MoveNetworkMetadata{NetworkId: id},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		exists, err := s.folderClient.Exists(ctx, destFolderID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+		}
+		if !exists {
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		}
+		updated, err := s.repo.SetFolderID(ctx, id, destFolderID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainNetworkToProto(updated))
+	})
+
+	return &op, nil
 }
 
 // Delete удаляет Network.

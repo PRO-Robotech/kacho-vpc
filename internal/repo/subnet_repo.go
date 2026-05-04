@@ -153,6 +153,17 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	return result, nil
 }
 
+// SetFolderID меняет folder_id у Subnet.
+func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error) {
+	q := fmt.Sprintf(`UPDATE subnets SET folder_id = $2 WHERE id = $1 RETURNING %s`, subnetCols)
+	row := r.pool.QueryRow(ctx, q, id, folderID)
+	s, err := scanSubnet(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	return s, nil
+}
+
 func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {

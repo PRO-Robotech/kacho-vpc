@@ -284,6 +284,51 @@ func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {
 	}
 }
 
+// ListOperations возвращает операции для конкретного RouteTable.
+func (s *RouteTableService) ListOperations(ctx context.Context, rtID string, p Pagination) ([]operations.Operation, string, error) {
+	if _, err := s.repo.Get(ctx, rtID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return s.opsRepo.List(ctx, operations.ListFilter{
+		ResourceID: rtID,
+		PageSize:   p.PageSize,
+		PageToken:  p.PageToken,
+	})
+}
+
+// Move инициирует перенос RouteTable в другой folder.
+func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	if destFolderID == "" {
+		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	op, err := operations.New("vpc", fmt.Sprintf("Move route table %s", id),
+		&vpcv1.MoveRouteTableMetadata{RouteTableId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		exists, err := s.folderClient.Exists(ctx, destFolderID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+		}
+		if !exists {
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		}
+		updated, err := s.repo.SetFolderID(ctx, id, destFolderID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainRouteTableToProto(updated))
+	})
+	return &op, nil
+}
+
 // Delete удаляет RouteTable.
 func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
 	if id == "" {

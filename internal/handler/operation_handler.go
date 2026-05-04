@@ -44,6 +44,9 @@ func (h *OperationHandler) Cancel(ctx context.Context, req *operationpb.CancelOp
 		if errors.Is(err, operations.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "operation %s not found", req.OperationId)
 		}
+		if errors.Is(err, operations.ErrAlreadyDone) {
+			return nil, status.Errorf(codes.FailedPrecondition, "operation %s already completed", req.OperationId)
+		}
 		return nil, err
 	}
 	op, err := h.repo.Get(ctx, req.OperationId)
