@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -95,11 +96,14 @@ func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkReq
 }
 
 // networkToProto конвертирует domain Network → proto Network.
+//
+// CreatedAt — truncate до seconds для verbatim YC parity (resource.createdAt
+// в YC всегда seconds-precision). См. YC-DIFF-TIMESTAMP-PRECISION.md.
 func networkToProto(n *domain.Network) *vpcv1.Network {
 	return &vpcv1.Network{
 		Id:                     n.ID,
 		FolderId:               n.FolderID,
-		CreatedAt:              timestamppb.New(n.CreatedAt),
+		CreatedAt:              timestamppb.New(n.CreatedAt.Truncate(time.Second)),
 		Name:                   n.Name,
 		Description:            n.Description,
 		Labels:                 n.Labels,

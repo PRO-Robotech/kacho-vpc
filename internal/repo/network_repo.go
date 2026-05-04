@@ -137,13 +137,12 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 			// Network has dependent subnets/route-tables — verbatim YC error.
 			return fmt.Errorf("%w: network is not empty", service.ErrFailedPrecondition)
 		}
-		if isInvalidUUID(err) {
-			return service.ErrNotFound
-		}
+		// 22P02 → InvalidArgument "invalid network id 'X'" (verbatim YC).
+		// pgx.ErrNoRows / unique-violation / etc. — стандартный wrapPgErr.
 		return wrapPgErr(err, "Network", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return service.ErrNotFound
+		return fmt.Errorf("%w: Network %s not found", service.ErrNotFound, id)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -120,11 +121,14 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 }
 
 // subnetToProto конвертирует domain Subnet → proto Subnet.
+//
+// CreatedAt — truncate до seconds для verbatim YC parity. См.
+// YC-DIFF-TIMESTAMP-PRECISION.md.
 func subnetToProto(s *domain.Subnet) *vpcv1.Subnet {
 	p := &vpcv1.Subnet{
 		Id:           s.ID,
 		FolderId:     s.FolderID,
-		CreatedAt:    timestamppb.New(s.CreatedAt),
+		CreatedAt:    timestamppb.New(s.CreatedAt.Truncate(time.Second)),
 		Name:         s.Name,
 		Description:  s.Description,
 		Labels:       s.Labels,

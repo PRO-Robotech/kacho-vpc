@@ -76,15 +76,10 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "name required")
-	}
-	if err := validateUUID("folder_id", req.FolderID); err != nil {
-		return nil, err
-	}
-	if err := validateUUID("network_id", req.NetworkID); err != nil {
-		return nil, err
-	}
+	// VPC Subnet принимает empty name (verbatim YC permissive policy для VPC).
+	// folder_id / network_id больше НЕ валидируются sync — async через
+	// folderClient.Exists / networkRepo.Get → NotFound (verbatim YC). См.
+	// YC-DIFF-INVALID-PARENT-CODE.md, YC-DIFF-NAME-VALIDATION.md.
 	// ZoneId — verbatim YC whitelist `ru-central1-{a,b,c,d}`. Пустой zone_id —
 	// `zone_id is required`. См. ZONE-ID-VALIDATION.md.
 	if err := corevalidate.ZoneId("zone_id", req.ZoneID); err != nil {
@@ -96,7 +91,7 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 			return nil, err
 		}
 	}
-	if err := corevalidate.Name("name", req.Name); err != nil {
+	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
 	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
@@ -132,11 +127,13 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
+		// verbatim YC text: "Folder with id <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
 
 	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
-		return nil, status.Errorf(codes.NotFound, "network %s not found", req.NetworkID)
+		// verbatim YC text: "Network <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
 	}
 
 	// SU-CIDR-OVERLAP — пересечения v4 CIDR в рамках одной VPC ловятся
@@ -243,10 +240,8 @@ func validateSubnetUpdate(req UpdateSubnetReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if req.Name == "" {
-				return invalidArg("name", "name is required")
-			}
-			if err := corevalidate.Name("name", req.Name); err != nil {
+			// VPC Subnet: empty name allowed (YC permissive policy).
+			if err := corevalidate.NameVPC("name", req.Name); err != nil {
 				return err
 			}
 		case "description":

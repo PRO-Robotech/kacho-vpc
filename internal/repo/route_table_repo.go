@@ -144,13 +144,11 @@ func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 		if isFKViolation(err) {
 			return fmt.Errorf("%w: route table is in use", service.ErrFailedPrecondition)
 		}
-		if isInvalidUUID(err) {
-			return service.ErrNotFound
-		}
+		// 22P02 → InvalidArgument "invalid routetable id 'X'" (verbatim YC).
 		return wrapPgErr(err, "RouteTable", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return service.ErrNotFound
+		return fmt.Errorf("%w: RouteTable %s not found", service.ErrNotFound, id)
 	}
 	return nil
 }

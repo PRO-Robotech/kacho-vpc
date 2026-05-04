@@ -140,13 +140,11 @@ func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 		if isFKViolation(err) {
 			return fmt.Errorf("%w: address is in use", service.ErrFailedPrecondition)
 		}
-		if isInvalidUUID(err) {
-			return service.ErrNotFound
-		}
+		// 22P02 → InvalidArgument "invalid address id 'X'" (verbatim YC).
 		return wrapPgErr(err, "Address", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return service.ErrNotFound
+		return fmt.Errorf("%w: Address %s not found", service.ErrNotFound, id)
 	}
 	return nil
 }

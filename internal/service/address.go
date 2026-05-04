@@ -90,18 +90,12 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 	if req.ExternalSpec == nil && req.InternalSpec == nil {
 		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
-	if err := validateUUID("folder_id", req.FolderID); err != nil {
+	// folder_id / subnet_id больше НЕ валидируются sync — async через
+	// folderClient.Exists / subnetRepo.Get → NotFound (verbatim YC). См.
+	// YC-DIFF-INVALID-PARENT-CODE.md.
+	// VPC Address: empty name allowed (verbatim YC permissive policy).
+	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
-	}
-	if req.InternalSpec != nil && req.InternalSpec.SubnetID != "" {
-		if err := validateUUID("address_spec.internal_ipv4_address_spec.subnet_id", req.InternalSpec.SubnetID); err != nil {
-			return nil, err
-		}
-	}
-	if req.Name != "" {
-		if err := corevalidate.Name("name", req.Name); err != nil {
-			return nil, err
-		}
 	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
 		return nil, err
@@ -136,7 +130,8 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
+		// verbatim YC text: "Folder with id <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
 
 	a := &domain.Address{
@@ -172,7 +167,8 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		if ipAddr == "" && subnetID != "" {
 			sub, serr := s.subnetRepo.Get(ctx, subnetID)
 			if serr != nil {
-				return nil, status.Errorf(codes.NotFound, "subnet %s not found", subnetID)
+				// verbatim YC text: "Subnet <X> not found".
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
 			}
 			ipAddr, err = s.allocateInternalIP(ctx, sub)
 			if err != nil {
@@ -320,10 +316,9 @@ func validateAddressUpdate(req UpdateAddressReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if req.Name != "" {
-				if err := corevalidate.Name("name", req.Name); err != nil {
-					return err
-				}
+			// VPC Address: empty name allowed (YC permissive policy).
+			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+				return err
 			}
 		case "description":
 			if err := corevalidate.Description("description", req.Description); err != nil {

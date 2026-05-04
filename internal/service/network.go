@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -65,15 +66,11 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "name required")
-	}
-	// Sync UUID-validation до Operation worker'а: garbage-UUID = invalid_argument,
-	// а не «folder not found» (см. N-CR-INVALID-UUID-mapping.md).
-	if err := validateUUID("folder_id", req.FolderID); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Name("name", req.Name); err != nil {
+	// VPC Network принимает empty name (verbatim YC: regex с empty-allowed).
+	// См. YC-DIFF-NAME-VALIDATION.md — YC permissive policy для VPC.
+	// Note: garbage-UUID folder_id больше НЕ валидируется sync — async через
+	// folderClient.Exists → NotFound (verbatim YC). См. YC-DIFF-INVALID-PARENT-CODE.md.
+	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
 	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
@@ -109,7 +106,8 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
+		// verbatim YC text: "Folder with id <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
 
 	n := &domain.Network{
@@ -194,10 +192,8 @@ func validateNetworkUpdate(req UpdateNetworkReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if req.Name == "" {
-				return invalidArg("name", "name is required")
-			}
-			if err := corevalidate.Name("name", req.Name); err != nil {
+			// VPC Network: empty name allowed (YC permissive policy).
+			if err := corevalidate.NameVPC("name", req.Name); err != nil {
 				return err
 			}
 		case "description":
@@ -277,25 +273,41 @@ func domainNetworkToProto(n *domain.Network) *vpcv1.Network {
 // mapRepoErr переводит domain-ошибки репозитория в gRPC-статусы.
 // errors.Is используется потому, что repo может оборачивать sentinel через %w
 // (например, ErrFailedPrecondition + контекст "network is not empty").
+//
+// Sentinel-prefix (`failed precondition: `, `not found`, ...) удаляется при
+// преобразовании в gRPC-сообщение, чтобы клиент видел verbatim YC text без
+// internal-обёртки. См. YC-DIFF-CIDR-ERROR-SHAPE.md.
 func mapRepoErr(err error) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, ErrNotFound) {
-		return status.Error(codes.NotFound, err.Error())
+		return status.Error(codes.NotFound, stripSentinel(err, ErrNotFound))
 	}
 	if errors.Is(err, ErrAlreadyExists) {
-		return status.Error(codes.AlreadyExists, err.Error())
+		return status.Error(codes.AlreadyExists, stripSentinel(err, ErrAlreadyExists))
 	}
 	if errors.Is(err, ErrFailedPrecondition) {
-		return status.Error(codes.FailedPrecondition, err.Error())
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, ErrFailedPrecondition))
 	}
 	if errors.Is(err, ErrInvalidArg) {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, stripSentinel(err, ErrInvalidArg))
 	}
 	if errors.Is(err, ErrInternal) {
 		// Generic Internal без leak'а pgx-текста.
 		return status.Error(codes.Internal, "internal database error")
 	}
 	return err
+}
+
+// stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »),
+// чтобы выдать клиенту verbatim text без internal-обёртки sentinel-ошибки.
+// Если err == sentinel или контекст не добавлен, возвращает sentinel.Error().
+func stripSentinel(err, sentinel error) string {
+	msg := err.Error()
+	prefix := sentinel.Error() + ": "
+	if rest, ok := strings.CutPrefix(msg, prefix); ok {
+		return rest
+	}
+	return msg
 }

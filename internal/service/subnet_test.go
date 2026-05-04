@@ -48,6 +48,7 @@ func TestSubnetService_Create_OK(t *testing.T) {
 		FolderID:     "f1",
 		Name:         "sub1",
 		NetworkID:    net.ID,
+		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
@@ -73,9 +74,11 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
 
 	op, err := svc.Create(context.Background(), CreateSubnetReq{
-		FolderID:  "f1",
-		Name:      "sub1",
-		NetworkID: "nonexistent",
+		FolderID:     "f1",
+		Name:         "sub1",
+		NetworkID:    "nonexistent",
+		ZoneID:       "ru-central1-a",
+		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 
@@ -86,18 +89,21 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 	assert.NotNil(t, savedOp.Error) // должна быть ошибка NotFound
 }
 
-func TestSubnetService_Update_CidrBlocks(t *testing.T) {
+func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
+	// SU-CIDR-IM-1: v4_cidr_blocks immutable after Subnet.Create. Любая
+	// попытка изменить через update_mask → InvalidArgument до запуска
+	// Operation worker'а. См. SU-CIDR-IM-1-mutable-cidr.md.
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
 
-	// Создаём подсеть
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:     "f1",
 		Name:         "sub1",
 		NetworkID:    net.ID,
+		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	time.Sleep(100 * time.Millisecond)
@@ -107,19 +113,18 @@ func TestSubnetService_Update_CidrBlocks(t *testing.T) {
 	require.Len(t, subs, 1)
 	subID := subs[0].ID
 
-	// Update с новыми CIDRs
-	updOp, err := svc.Update(context.Background(), UpdateSubnetReq{
+	// Попытка Update с новыми CIDRs должна провалиться синхронно.
+	_, err := svc.Update(context.Background(), UpdateSubnetReq{
 		SubnetID:     subID,
 		Name:         "sub1",
 		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
 		UpdateMask:   []string{"v4_cidr_blocks"},
 	})
-	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
 
-	savedOp, _ := or.Get(context.Background(), updOp.ID)
-	assert.True(t, savedOp.Done)
-
+	// Проверяем что CIDR-блоки не изменились.
 	sub, _ := svc.Get(context.Background(), subID)
-	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, sub.V4CidrBlocks)
+	assert.Equal(t, []string{"10.0.0.0/24"}, sub.V4CidrBlocks)
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -125,11 +126,14 @@ func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTa
 }
 
 // routeTableToProto конвертирует domain RouteTable → proto RouteTable.
+//
+// CreatedAt — truncate до seconds для verbatim YC parity. См.
+// YC-DIFF-TIMESTAMP-PRECISION.md.
 func routeTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
 	p := &vpcv1.RouteTable{
 		Id:          rt.ID,
 		FolderId:    rt.FolderID,
-		CreatedAt:   timestamppb.New(rt.CreatedAt),
+		CreatedAt:   timestamppb.New(rt.CreatedAt.Truncate(time.Second)),
 		Name:        rt.Name,
 		Description: rt.Description,
 		Labels:      rt.Labels,

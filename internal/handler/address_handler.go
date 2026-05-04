@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -115,11 +116,14 @@ func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressReq
 }
 
 // addressToProto конвертирует domain Address → proto Address.
+//
+// CreatedAt — truncate до seconds для verbatim YC parity. См.
+// YC-DIFF-TIMESTAMP-PRECISION.md.
 func addressToProto(a *domain.Address) *vpcv1.Address {
 	p := &vpcv1.Address{
 		Id:                 a.ID,
 		FolderId:           a.FolderID,
-		CreatedAt:          timestamppb.New(a.CreatedAt),
+		CreatedAt:          timestamppb.New(a.CreatedAt.Truncate(time.Second)),
 		Name:               a.Name,
 		Description:        a.Description,
 		Labels:             a.Labels,

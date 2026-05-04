@@ -72,16 +72,11 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "name required")
-	}
-	if err := validateUUID("folder_id", req.FolderID); err != nil {
-		return nil, err
-	}
-	if err := validateUUID("network_id", req.NetworkID); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Name("name", req.Name); err != nil {
+	// VPC RouteTable принимает empty name (verbatim YC permissive policy).
+	// folder_id / network_id больше НЕ валидируются sync — async через
+	// folderClient.Exists / networkRepo.Get → NotFound (verbatim YC). См.
+	// YC-DIFF-INVALID-PARENT-CODE.md, YC-DIFF-NAME-VALIDATION.md.
+	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
 	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
@@ -123,11 +118,13 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "folder %s not found", req.FolderID)
+		// verbatim YC text: "Folder with id <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
 
 	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
-		return nil, status.Errorf(codes.NotFound, "network %s not found", req.NetworkID)
+		// verbatim YC text: "Network <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
 	}
 
 	rt := &domain.RouteTable{
@@ -207,10 +204,8 @@ func validateRouteTableUpdate(req UpdateRouteTableReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if req.Name == "" {
-				return invalidArg("name", "name is required")
-			}
-			if err := corevalidate.Name("name", req.Name); err != nil {
+			// VPC RouteTable: empty name allowed (YC permissive policy).
+			if err := corevalidate.NameVPC("name", req.Name); err != nil {
 				return err
 			}
 		case "description":

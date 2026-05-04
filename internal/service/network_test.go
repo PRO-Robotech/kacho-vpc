@@ -29,8 +29,10 @@ func TestNetworkService_Create_ValidationError(t *testing.T) {
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
-	// Пустое name
-	_, err = svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1"})
+	// Пустое name теперь допускается (YC permissive policy для VPC) — empty
+	// name проходит sync-валидацию. Поэтому проверяем имя с invalid-pattern,
+	// например начинающееся с цифры.
+	_, err = svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "1bad"})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
