@@ -120,9 +120,10 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	if isExclusionViolation(err) {
 		// SU-CIDR-OVERLAP race-protection: service checkCIDRDisjoint могла
 		// пропустить параллельный Create, но EXCLUDE constraint в БД его
-		// поймал. Маппим на InvalidArgument с понятным сообщением.
+		// поймал. Маппим на FailedPrecondition (verbatim YC: code:9 для
+		// "Subnet CIDRs can not overlap"). См. YC-DIFF-CIDR-OVERLAP-CODE.md.
 		return nil, fmt.Errorf("%w: v4 CIDR overlaps existing subnet in this network",
-			service.ErrInvalidArg)
+			service.ErrFailedPrecondition)
 	}
 	if err != nil {
 		return nil, wrapPgErr(err, "Subnet", s.Name)
