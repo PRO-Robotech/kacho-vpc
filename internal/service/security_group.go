@@ -223,6 +223,137 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 	return &op, nil
 }
 
+// UpdateRulesReq — параметры UpdateRules: атомарно удалить правила deletionRuleIDs
+// и добавить additionRuleSpecs (присвоит новые ID).
+type UpdateRulesReq struct {
+	SecurityGroupID    string
+	DeletionRuleIDs    []string
+	AdditionRuleSpecs  []domain.SecurityGroupRule
+}
+
+// UpdateRules заменяет набор правил SG атомарно через Operation.
+//
+// YC verbatim: result — Operation, response — обновлённый SG.
+// Sync-валидация: каждое правило (direction, protocol, ports, cidr или sgRef).
+func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesReq) (*operations.Operation, error) {
+	if req.SecurityGroupID == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	for i, r := range req.AdditionRuleSpecs {
+		if err := validateSGRule(fmt.Sprintf("addition_rule_specs[%d]", i), r); err != nil {
+			return nil, err
+		}
+	}
+	op, err := operations.New(ids.PrefixOperationVPC,
+		fmt.Sprintf("Update rules of security group %s", req.SecurityGroupID),
+		&vpcv1.UpdateSecurityGroupMetadata{SecurityGroupId: req.SecurityGroupID},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		add := assignRuleIDs(req.AdditionRuleSpecs)
+		updated, err := s.repo.UpdateRules(ctx, req.SecurityGroupID, req.DeletionRuleIDs, add)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainSGToProto(updated))
+	})
+	return &op, nil
+}
+
+// UpdateRuleReq — параметры UpdateRule: обновить description/labels единичного rule.
+type UpdateRuleReq struct {
+	SecurityGroupID string
+	RuleID          string
+	Description     string
+	Labels          map[string]string
+	UpdateMask      []string
+}
+
+// UpdateRule обновляет description/labels единичного правила.
+func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq) (*operations.Operation, error) {
+	if req.SecurityGroupID == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	if req.RuleID == "" {
+		return nil, status.Error(codes.InvalidArgument, "rule_id required")
+	}
+	if err := corevalidate.Description("description", req.Description); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+		return nil, err
+	}
+	op, err := operations.New(ids.PrefixOperationVPC,
+		fmt.Sprintf("Update rule %s of security group %s", req.RuleID, req.SecurityGroupID),
+		&vpcv1.UpdateSecurityGroupRuleMetadata{
+			SecurityGroupId: req.SecurityGroupID,
+			RuleId:          req.RuleID,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		updated, err := s.repo.UpdateRule(ctx, req.SecurityGroupID, req.RuleID, req.Description, req.Labels, req.UpdateMask)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		// response shape — SecurityGroupRule per proto, но реальное YC отдаёт
+		// SecurityGroupRule. Извлекаем нужное правило из обновлённой SG.
+		for _, r := range updated.Rules {
+			if r.ID == req.RuleID {
+				rp := &vpcv1.SecurityGroupRule{
+					Id:             r.ID,
+					Description:    r.Description,
+					Labels:         r.Labels,
+					Direction:      sgDirectionToProto(r.Direction),
+					ProtocolName:   r.ProtocolName,
+					ProtocolNumber: r.ProtocolNumber,
+				}
+				if r.FromPort != 0 || r.ToPort != 0 {
+					rp.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
+				}
+				if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
+					rp.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
+						CidrBlocks: &vpcv1.CidrBlocks{
+							V4CidrBlocks: r.V4CidrBlocks,
+							V6CidrBlocks: r.V6CidrBlocks,
+						},
+					}
+				}
+				return anypb.New(rp)
+			}
+		}
+		// Fallback: SG без обновлённого rule
+		return anypb.New(domainSGToProto(updated))
+	})
+	return &op, nil
+}
+
+// validateSGRule — sync-валидация правила.
+func validateSGRule(field string, r domain.SecurityGroupRule) error {
+	if r.Direction != "INGRESS" && r.Direction != "EGRESS" {
+		return invalidArg(field+".direction", "direction must be INGRESS or EGRESS")
+	}
+	if err := corevalidate.Description(field+".description", r.Description); err != nil {
+		return err
+	}
+	for i, c := range r.V4CidrBlocks {
+		if err := validateCIDRPrefix(fmt.Sprintf("%s.cidr_blocks.v4_cidr_blocks[%d]", field, i), c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Delete удаляет SG. Default SG нельзя удалить (вернёт FAILED_PRECONDITION).
 func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
 	if id == "" {

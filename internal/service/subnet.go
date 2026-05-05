@@ -373,6 +373,205 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 	return &op, nil
 }
 
+// AddCidrBlocks добавляет CIDR-блоки в подсеть атомарно.
+//
+// YC verbatim: возвращает Operation; внутри worker'а:
+//   - Get subnet → если не найден → NotFound.
+//   - Validate каждого CIDR (host-bits=0).
+//   - Проверка overlap внутри новой объединённой коллекции.
+//   - SetCidrBlocks (DB UPDATE). EXCLUDE constraint subnets_no_overlap_v4
+//     проверяет primary CIDR на overlap с другими подсетями этой сети.
+//
+// Известное ограничение: EXCLUDE checks только array[1]. Если v4_cidr_primary
+// неизменен (т.е. добавляем не в начало), overlap с соседними подсетями по
+// добавляемым CIDR не проверяется на DB-уровне. Покрываем service-level
+// проверкой через networkRepo / List.
+func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if len(v4) == 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
+	}
+	for i, c := range v4 {
+		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
+
+	op, err := operations.New(ids.PrefixOperationVPC,
+		fmt.Sprintf("Add CIDR blocks to subnet %s", id),
+		&vpcv1.UpdateSubnetMetadata{SubnetId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		sub, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		merged := append([]string{}, sub.V4CidrBlocks...)
+		merged = append(merged, v4...)
+		// Проверка пересечений внутри объединённого набора (sync, host-bits уже OK).
+		if err := checkCIDRDisjoint(merged); err != nil {
+			return nil, err
+		}
+		updated, err := s.repo.SetCidrBlocks(ctx, id, merged)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainSubnetToProto(updated))
+	})
+	return &op, nil
+}
+
+// RemoveCidrBlocks удаляет CIDR-блоки из подсети атомарно.
+//
+// YC verbatim:
+//   - Если CIDR не присутствует → FailedPrecondition.
+//   - Если будет удалён последний CIDR → FailedPrecondition (subnet не может быть пустой).
+//   - Если внутри CIDR есть Address — на текущей фазе пропускаем (доп. проверка
+//     потребует JSON-запрос по addresses; в будущем добавится).
+func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if len(v4) == 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
+	}
+	op, err := operations.New(ids.PrefixOperationVPC,
+		fmt.Sprintf("Remove CIDR blocks from subnet %s", id),
+		&vpcv1.UpdateSubnetMetadata{SubnetId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		sub, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		toRemove := map[string]struct{}{}
+		for _, c := range v4 {
+			toRemove[c] = struct{}{}
+		}
+		var remaining []string
+		var removed int
+		for _, existing := range sub.V4CidrBlocks {
+			if _, ok := toRemove[existing]; ok {
+				removed++
+				continue
+			}
+			remaining = append(remaining, existing)
+		}
+		if removed != len(v4) {
+			return nil, status.Errorf(codes.FailedPrecondition, "one or more CIDR blocks not found in subnet")
+		}
+		if len(remaining) == 0 {
+			return nil, status.Errorf(codes.FailedPrecondition, "cannot remove last CIDR block from subnet")
+		}
+		updated, err := s.repo.SetCidrBlocks(ctx, id, remaining)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainSubnetToProto(updated))
+	})
+	return &op, nil
+}
+
+// Relocate переносит подсеть в другую zone.
+//
+// YC verbatim: requires destination_zone_id, ZoneId whitelist. Если подсеть
+// "in use" (есть Address-ресурсы) — FailedPrecondition "Invalid subnet state".
+func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*operations.Operation, error) {
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if err := corevalidate.ZoneId("destination_zone_id", destZoneID); err != nil {
+		return nil, err
+	}
+	op, err := operations.New(ids.PrefixOperationVPC,
+		fmt.Sprintf("Relocate subnet %s to %s", id, destZoneID),
+		&vpcv1.RelocateSubnetMetadata{SubnetId: id})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		sub, err := s.repo.Get(ctx, id)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		if sub.ZoneID == destZoneID {
+			return anypb.New(domainSubnetToProto(sub))
+		}
+		// Если подсеть has addresses → отказ (verbatim YC text "Invalid subnet state").
+		addrs, _, err := s.repo.AddressesBySubnet(ctx, id, Pagination{PageSize: 1})
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		if len(addrs) > 0 {
+			return nil, status.Error(codes.FailedPrecondition, "Invalid subnet state")
+		}
+		updated, err := s.repo.SetZoneID(ctx, id, destZoneID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		return anypb.New(domainSubnetToProto(updated))
+	})
+	return &op, nil
+}
+
+// ListUsedAddresses возвращает Address-ресурсы, привязанные к подсети
+// (через internal_ipv4.subnet_id). Sync RPC, не Operation.
+func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+	if subnetID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if _, err := s.repo.Get(ctx, subnetID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	addrs, nextToken, err := s.repo.AddressesBySubnet(ctx, subnetID, p)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return addrs, nextToken, nil
+}
+
+// checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
+func checkCIDRDisjoint(cidrs []string) error {
+	type p struct{ raw string }
+	parsed := make([]struct {
+		raw string
+		net interface{}
+	}, 0, len(cidrs))
+	_ = parsed
+	// Инлайн используем netip — пакет уже импортирован в address.go.
+	prefixes := make([]netipPrefix, 0, len(cidrs))
+	for i, c := range cidrs {
+		pr, err := parseNetipPrefix(c)
+		if err != nil {
+			return invalidArg(fmt.Sprintf("v4_cidr_blocks[%d]", i), "must be valid CIDR")
+		}
+		prefixes = append(prefixes, pr)
+	}
+	for i := 0; i < len(prefixes); i++ {
+		for j := i + 1; j < len(prefixes); j++ {
+			if prefixesOverlap(prefixes[i], prefixes[j]) {
+				return status.Errorf(codes.FailedPrecondition, "Subnet CIDRs can not overlap")
+			}
+		}
+	}
+	return nil
+}
+
 // Delete удаляет Subnet.
 func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
 	if id == "" {

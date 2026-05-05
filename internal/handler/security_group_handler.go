@@ -97,6 +97,39 @@ func (h *SecurityGroupHandler) Update(ctx context.Context, req *vpcv1.UpdateSecu
 	return operationToProto(op), nil
 }
 
+func (h *SecurityGroupHandler) UpdateRules(ctx context.Context, req *vpcv1.UpdateSecurityGroupRulesRequest) (*operationpb.Operation, error) {
+	updReq := svc.UpdateRulesReq{
+		SecurityGroupID: req.SecurityGroupId,
+		DeletionRuleIDs: req.DeletionRuleIds,
+	}
+	for _, rs := range req.AdditionRuleSpecs {
+		updReq.AdditionRuleSpecs = append(updReq.AdditionRuleSpecs, ruleSpecFromProto(rs))
+	}
+	op, err := h.svc.UpdateRules(ctx, updReq)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *SecurityGroupHandler) UpdateRule(ctx context.Context, req *vpcv1.UpdateSecurityGroupRuleRequest) (*operationpb.Operation, error) {
+	var mask []string
+	if req.UpdateMask != nil {
+		mask = req.UpdateMask.Paths
+	}
+	op, err := h.svc.UpdateRule(ctx, svc.UpdateRuleReq{
+		SecurityGroupID: req.SecurityGroupId,
+		RuleID:          req.RuleId,
+		Description:     req.Description,
+		Labels:          req.Labels,
+		UpdateMask:      mask,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
 func (h *SecurityGroupHandler) Delete(ctx context.Context, req *vpcv1.DeleteSecurityGroupRequest) (*operationpb.Operation, error) {
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")

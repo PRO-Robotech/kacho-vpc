@@ -39,7 +39,7 @@ func TestOperationHandler_Get_NotFound(t *testing.T) {
 func TestOperationHandler_Get_OK(t *testing.T) {
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h_net := NewNetworkHandler(networkSvc)
 
 	op, err := h_net.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "net1"})

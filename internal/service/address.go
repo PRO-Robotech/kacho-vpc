@@ -125,6 +125,40 @@ func (s *AddressService) validateInternalIPInSubnet(ctx context.Context, subnetI
 	)
 }
 
+// GetByValue возвращает Address по его IP-значению (external или internal).
+//
+// YC verbatim:
+//   - oneof address: external_ipv4_address или internal_ipv4_address.
+//   - oneof scope (опционально): subnet_id (для уточнения).
+//   - При не-существовании → NotFound.
+func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error) {
+	if externalIP == "" && internalIP == "" {
+		return nil, invalidArg("address", "address (external_ipv4_address or internal_ipv4_address) is required")
+	}
+	a, err := s.repo.GetByValue(ctx, externalIP, internalIP, subnetID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return a, nil
+}
+
+// ListBySubnet возвращает Address-ы, привязанные к указанной подсети.
+//
+// Использует subnetRepo.AddressesBySubnet (joining через internal_ipv4.subnet_id).
+func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+	if subnetID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if _, err := s.subnetRepo.Get(ctx, subnetID); err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	addrs, nextToken, err := s.subnetRepo.AddressesBySubnet(ctx, subnetID, p)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	return addrs, nextToken, nil
+}
+
 // Get возвращает Address по ID.
 func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, error) {
 	a, err := s.repo.Get(ctx, id)

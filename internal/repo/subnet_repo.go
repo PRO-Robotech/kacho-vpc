@@ -190,6 +190,112 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	return result, nil
 }
 
+// SetCidrBlocks обновляет v4_cidr_blocks у Subnet атомарно (для AddCidrBlocks/RemoveCidrBlocks).
+// EXCLUDE constraint subnets_no_overlap_v4 проверяет primary CIDR (array[1]) на
+// пересечение с другими подсетями той же сети.
+func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4 []string) (*domain.Subnet, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2 WHERE id = $1 RETURNING %s`, subnetCols)
+	row := tx.QueryRow(ctx, q, id,
+		pgtype.Array[string]{Elements: v4, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v4)), LowerBound: 1}}},
+	)
+	s, err := scanSubnet(row)
+	if isExclusionViolation(err) {
+		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", service.ErrFailedPrecondition)
+	}
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	return s, nil
+}
+
+// SetZoneID меняет zone_id у Subnet (для Relocate).
+func (r *SubnetRepo) SetZoneID(ctx context.Context, id, zoneID string) (*domain.Subnet, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := fmt.Sprintf(`UPDATE subnets SET zone_id = $2 WHERE id = $1 RETURNING %s`, subnetCols)
+	row := tx.QueryRow(ctx, q, id, zoneID)
+	s, err := scanSubnet(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Subnet", id)
+	}
+	return s, nil
+}
+
+// AddressesBySubnet возвращает Address-ресурсы, привязанные к данному subnet
+// через internal_ipv4.subnet_id. Используется для ListUsedAddresses /
+// ListBySubnet (см. AddressService).
+func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p service.Pagination) ([]*domain.Address, string, error) {
+	pageSize, err := validate.PageSize("page_size", p.PageSize)
+	if err != nil {
+		return nil, "", err
+	}
+	args := []any{subnetID}
+	argIdx := 2
+	tokenCond := ""
+	if p.PageToken != "" {
+		ts, id, err := decodePageToken(p.PageToken)
+		if err != nil {
+			return nil, "", invalidPageTokenErr(err)
+		}
+		tokenCond = fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", argIdx, argIdx+1)
+		args = append(args, ts, id)
+		argIdx += 2
+	}
+	q := fmt.Sprintf(`SELECT %s FROM addresses
+	  WHERE internal_ipv4 IS NOT NULL
+	    AND internal_ipv4->>'subnet_id' = $1
+	    %s
+	  ORDER BY created_at ASC, id ASC
+	  LIMIT $%d`, addressCols, tokenCond, argIdx)
+	args = append(args, pageSize+1)
+
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, "", wrapPgErr(err, "Address", "")
+	}
+	defer rows.Close()
+	var result []*domain.Address
+	for rows.Next() {
+		a, err := scanAddress(rows)
+		if err != nil {
+			return nil, "", wrapPgErr(err, "Address", "")
+		}
+		result = append(result, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", wrapPgErr(err, "Address", "")
+	}
+	var nextToken string
+	if int64(len(result)) > pageSize {
+		last := result[pageSize-1]
+		nextToken = encodePageToken(last.CreatedAt, last.ID)
+		result = result[:pageSize]
+	}
+	return result, nextToken, nil
+}
+
 // SetFolderID меняет folder_id у Subnet.
 func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error) {
 	tx, err := r.pool.Begin(ctx)

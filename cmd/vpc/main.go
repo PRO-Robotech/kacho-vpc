@@ -109,6 +109,7 @@ func runServe(cfg config.Config) error {
 
 	// SG / Gateway / PrivateLink — НЕ регистрируем:
 	// клиенты получат UNIMPLEMENTED от grpc-рефлексии/маршрутизации.
+	// gRPC reflection уже включён в grpcsrv.NewServer (corelib).
 
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.

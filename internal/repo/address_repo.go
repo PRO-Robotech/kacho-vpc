@@ -221,6 +221,42 @@ func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetByValue возвращает Address по конкретному IP (external или internal).
+// Если задан subnetID — фильтрует по нему.
+//
+// Поведение verbatim YC: внутри одной подсети IP уникален, поэтому LIMIT 1.
+// При отсутствии возвращает ErrNotFound.
+func (r *AddressRepo) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error) {
+	args := []any{}
+	conds := []string{}
+	argIdx := 1
+	if externalIP != "" {
+		conds = append(conds, fmt.Sprintf("external_ipv4->>'address' = $%d", argIdx))
+		args = append(args, externalIP)
+		argIdx++
+	}
+	if internalIP != "" {
+		conds = append(conds, fmt.Sprintf("internal_ipv4->>'address' = $%d", argIdx))
+		args = append(args, internalIP)
+		argIdx++
+	}
+	if len(conds) == 0 {
+		return nil, service.ErrInvalidArg
+	}
+	where := "(" + strings.Join(conds, " OR ") + ")"
+	if subnetID != "" {
+		where = fmt.Sprintf(`%s AND internal_ipv4->>'subnet_id' = $%d`, where, argIdx)
+		args = append(args, subnetID)
+	}
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE %s LIMIT 1`, addressCols, where)
+	row := r.pool.QueryRow(ctx, q, args...)
+	a, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", "")
+	}
+	return a, nil
+}
+
 // ExistsIP проверяет, занят ли IP-адрес (в external или internal).
 func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 	var count int

@@ -69,6 +69,39 @@ func (r *mockSubnetRepoForSvc) Delete(_ context.Context, id string) error {
 	delete(r.data, id)
 	return nil
 }
+func (r *mockSubnetRepoForSvc) SetFolderID(_ context.Context, id, folderID string) (*domain.Subnet, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	s.FolderID = folderID
+	return s, nil
+}
+func (r *mockSubnetRepoForSvc) SetCidrBlocks(_ context.Context, id string, v4 []string) (*domain.Subnet, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	s.V4CidrBlocks = v4
+	return s, nil
+}
+func (r *mockSubnetRepoForSvc) SetZoneID(_ context.Context, id, zoneID string) (*domain.Subnet, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	s.ZoneID = zoneID
+	return s, nil
+}
+func (r *mockSubnetRepoForSvc) AddressesBySubnet(_ context.Context, _ string, _ svc.Pagination) ([]*domain.Address, string, error) {
+	return nil, "", nil
+}
 
 type mockRouteTableRepoForSvc struct {
 	mu   sync.Mutex
@@ -119,6 +152,16 @@ func (r *mockRouteTableRepoForSvc) Delete(_ context.Context, id string) error {
 	delete(r.data, id)
 	return nil
 }
+func (r *mockRouteTableRepoForSvc) SetFolderID(_ context.Context, id, folderID string) (*domain.RouteTable, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rt, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	rt.FolderID = folderID
+	return rt, nil
+}
 
 // ---- Subnet handler tests ----
 
@@ -162,6 +205,7 @@ func TestSubnetHandler_Create_OK(t *testing.T) {
 		FolderId:     "f1",
 		Name:         "sub1",
 		NetworkId:    netID,
+		ZoneId:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)

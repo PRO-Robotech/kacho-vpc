@@ -36,6 +36,32 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 	return addressToProto(a), nil
 }
 
+func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRequest) (*vpcv1.Address, error) {
+	externalIP := req.GetExternalIpv4Address()
+	internalIP := req.GetInternalIpv4Address()
+	subnetID := req.GetSubnetId()
+	a, err := h.svc.GetByValue(ctx, externalIP, internalIP, subnetID)
+	if err != nil {
+		return nil, err
+	}
+	return addressToProto(a), nil
+}
+
+func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySubnetRequest) (*vpcv1.ListAddressesBySubnetResponse, error) {
+	addrs, nextToken, err := h.svc.ListBySubnet(ctx, req.SubnetId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListAddressesBySubnetResponse{NextPageToken: nextToken}
+	for _, a := range addrs {
+		resp.Addresses = append(resp.Addresses, addressToProto(a))
+	}
+	return resp, nil
+}
+
 func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
 	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
 		FolderID: req.FolderId,

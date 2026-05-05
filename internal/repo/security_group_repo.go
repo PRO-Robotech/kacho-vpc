@@ -193,6 +193,122 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// UpdateRules атомарно меняет набор правил SG: удаляет правила с id ∈ deleteIDs
+// и добавляет новые add. Возвращает обновлённый SG.
+func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroup, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Загрузить текущий список rules
+	var rulesJSON []byte
+	err = tx.QueryRow(ctx, `SELECT rules FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON)
+	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	var rules []domain.SecurityGroupRule
+	if rulesJSON != nil {
+		_ = json.Unmarshal(rulesJSON, &rules)
+	}
+	// фильтруем удаляемые
+	if len(deleteIDs) > 0 {
+		toDel := make(map[string]struct{}, len(deleteIDs))
+		for _, id := range deleteIDs {
+			toDel[id] = struct{}{}
+		}
+		filtered := rules[:0]
+		for _, r := range rules {
+			if _, drop := toDel[r.ID]; drop {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		rules = filtered
+	}
+	// добавляем новые
+	rules = append(rules, add...)
+	newRulesJSON, _ := json.Marshal(rules)
+
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 RETURNING %s`, sgCols)
+	row := tx.QueryRow(ctx, q, sgID, newRulesJSON)
+	sg, err := scanSG(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	return sg, nil
+}
+
+// UpdateRule обновляет описание/labels единичного правила в SG.
+// Возвращает SG с обновлённым правилом.
+func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var rulesJSON []byte
+	err = tx.QueryRow(ctx, `SELECT rules FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON)
+	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	var rules []domain.SecurityGroupRule
+	if rulesJSON != nil {
+		_ = json.Unmarshal(rulesJSON, &rules)
+	}
+	found := false
+	applyMask := len(mask) > 0
+	maskSet := map[string]struct{}{}
+	for _, m := range mask {
+		maskSet[m] = struct{}{}
+	}
+	for i := range rules {
+		if rules[i].ID != ruleID {
+			continue
+		}
+		found = true
+		if !applyMask {
+			rules[i].Description = description
+			rules[i].Labels = labels
+		} else {
+			if _, ok := maskSet["description"]; ok {
+				rules[i].Description = description
+			}
+			if _, ok := maskSet["labels"]; ok {
+				rules[i].Labels = labels
+			}
+		}
+		break
+	}
+	if !found {
+		return nil, fmt.Errorf("%w: SecurityGroupRule %s not found in SecurityGroup %s",
+			service.ErrNotFound, ruleID, sgID)
+	}
+	newRulesJSON, _ := json.Marshal(rules)
+
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 RETURNING %s`, sgCols)
+	row := tx.QueryRow(ctx, q, sgID, newRulesJSON)
+	sg, err := scanSG(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+	}
+	return sg, nil
+}
+
 func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

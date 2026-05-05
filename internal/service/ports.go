@@ -60,6 +60,15 @@ type SubnetRepo interface {
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error)
+	// SetCidrBlocks атомарно обновляет v4_cidr_blocks (для AddCidrBlocks/RemoveCidrBlocks).
+	// Триггеры EXCLUDE проверяют overlap по primary CIDR.
+	SetCidrBlocks(ctx context.Context, id string, v4 []string) (*domain.Subnet, error)
+	// SetZoneID меняет zone_id у подсети (для Relocate).
+	SetZoneID(ctx context.Context, id, zoneID string) (*domain.Subnet, error)
+	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети
+	// (через internal_ipv4.subnet_id). Использовалось ListUsedAddresses и
+	// AddressService.ListBySubnet.
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error)
 }
 
 // AddressRepo — port-интерфейс репозитория адресов.
@@ -73,6 +82,9 @@ type AddressRepo interface {
 	ExistsIP(ctx context.Context, ip string) (bool, error)
 	// SetFolderID меняет folder_id ресурса.
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error)
+	// GetByValue возвращает Address по конкретному IP (external или internal).
+	// scope — опционально subnet_id (для уточнения внутри одной подсети).
+	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error)
 }
 
 // SecurityGroupFilter — фильтр для списка SG.
@@ -90,6 +102,12 @@ type SecurityGroupRepo interface {
 	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error)
 	Delete(ctx context.Context, id string) error
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error)
+	// UpdateRules атомарно заменяет набор правил SG: удаляет правила с
+	// id ∈ deleteIDs и добавляет правила из add (с auto-id если пусто).
+	// Возвращает обновлённый SG с актуальным списком правил.
+	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroup, error)
+	// UpdateRule обновляет description/labels единичного правила в SG.
+	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error)
 }
 
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.

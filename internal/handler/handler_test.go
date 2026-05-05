@@ -81,6 +81,17 @@ func (r *mockNetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *mockNetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Network, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	n.FolderID = folderID
+	return n, nil
+}
+
 // ---- mock OpsRepo ----
 
 type mockOpsRepo struct {
@@ -157,7 +168,7 @@ func (c *mockFolderClient) Exists(_ context.Context, _ string) (bool, error) {
 func TestNetworkHandler_Get_InvalidArg(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h := NewNetworkHandler(networkSvc)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: ""})
@@ -169,7 +180,7 @@ func TestNetworkHandler_Get_InvalidArg(t *testing.T) {
 func TestNetworkHandler_Get_NotFound(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h := NewNetworkHandler(networkSvc)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: ids.NewUID()})
@@ -181,7 +192,7 @@ func TestNetworkHandler_Get_NotFound(t *testing.T) {
 func TestNetworkHandler_Create_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h := NewNetworkHandler(networkSvc)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{
@@ -200,7 +211,7 @@ func TestNetworkHandler_Create_OK(t *testing.T) {
 func TestNetworkHandler_List_Empty(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h := NewNetworkHandler(networkSvc)
 
 	resp, err := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
@@ -211,7 +222,7 @@ func TestNetworkHandler_List_Empty(t *testing.T) {
 func TestNetworkHandler_Delete_InvalidArg(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
 	h := NewNetworkHandler(networkSvc)
 
 	_, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkRequest{NetworkId: ""})

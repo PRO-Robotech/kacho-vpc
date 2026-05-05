@@ -147,6 +147,53 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 	return operationToProto(op), nil
 }
 
+func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.AddCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.RemoveCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *SubnetHandler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetRequest) (*operationpb.Operation, error) {
+	op, err := h.svc.Relocate(ctx, req.SubnetId, req.DestinationZoneId)
+	if err != nil {
+		return nil, err
+	}
+	return operationToProto(op), nil
+}
+
+func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUsedAddressesRequest) (*vpcv1.ListUsedAddressesResponse, error) {
+	addrs, nextToken, err := h.svc.ListUsedAddresses(ctx, req.SubnetId, svc.Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListUsedAddressesResponse{NextPageToken: nextToken}
+	for _, a := range addrs {
+		ua := &vpcv1.UsedAddress{
+			IpVersion: vpcv1.IpVersion(a.IpVersion),
+		}
+		if a.InternalIpv4 != nil {
+			ua.Address = a.InternalIpv4.Address
+		} else if a.ExternalIpv4 != nil {
+			ua.Address = a.ExternalIpv4.Address
+		}
+		resp.Addresses = append(resp.Addresses, ua)
+	}
+	return resp, nil
+}
+
 // subnetToProto конвертирует domain Subnet → proto Subnet.
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
