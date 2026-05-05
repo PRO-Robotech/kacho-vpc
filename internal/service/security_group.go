@@ -306,33 +306,9 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		// response shape — SecurityGroupRule per proto, но реальное YC отдаёт
-		// SecurityGroupRule. Извлекаем нужное правило из обновлённой SG.
-		for _, r := range updated.Rules {
-			if r.ID == req.RuleID {
-				rp := &vpcv1.SecurityGroupRule{
-					Id:             r.ID,
-					Description:    r.Description,
-					Labels:         r.Labels,
-					Direction:      sgDirectionToProto(r.Direction),
-					ProtocolName:   r.ProtocolName,
-					ProtocolNumber: r.ProtocolNumber,
-				}
-				if r.FromPort != 0 || r.ToPort != 0 {
-					rp.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
-				}
-				if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
-					rp.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
-						CidrBlocks: &vpcv1.CidrBlocks{
-							V4CidrBlocks: r.V4CidrBlocks,
-							V6CidrBlocks: r.V6CidrBlocks,
-						},
-					}
-				}
-				return anypb.New(rp)
-			}
-		}
-		// Fallback: SG без обновлённого rule
+		// Response — parent SecurityGroup (verbatim YC CLI 1.x compat).
+		// CLI hardcodes expectation на SecurityGroup, не SecurityGroupRule.
+		// См. finding SG-UPDATERULE-RESPONSE-TYPE-MISMATCH.md.
 		return anypb.New(domainSGToProto(updated))
 	})
 	return &op, nil
