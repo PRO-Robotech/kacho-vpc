@@ -110,6 +110,37 @@ type SecurityGroupRepo interface {
 	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error)
 }
 
+// GatewayFilter — фильтр для списка NAT Gateways.
+type GatewayFilter struct {
+	FolderID string
+	Filter   string
+}
+
+// GatewayRepo — port-интерфейс репозитория Gateways.
+type GatewayRepo interface {
+	Get(ctx context.Context, id string) (*domain.Gateway, error)
+	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.Gateway, string, error)
+	Insert(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error)
+	Update(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error)
+	Delete(ctx context.Context, id string) error
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.Gateway, error)
+}
+
+// PrivateEndpointFilter — фильтр для списка PrivateEndpoints.
+type PrivateEndpointFilter struct {
+	FolderID string
+	Filter   string
+}
+
+// PrivateEndpointRepo — port-интерфейс репозитория PrivateEndpoints.
+type PrivateEndpointRepo interface {
+	Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error)
+	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpoint, string, error)
+	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error)
+	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error)
+	Delete(ctx context.Context, id string) error
+}
+
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.
 type RouteTableRepo interface {
 	Get(ctx context.Context, id string) (*domain.RouteTable, error)

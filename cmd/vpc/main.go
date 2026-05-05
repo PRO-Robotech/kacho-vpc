@@ -22,6 +22,7 @@ import (
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/config"
@@ -88,6 +89,8 @@ func runServe(cfg config.Config) error {
 	addressRepo := repo.NewAddressRepo(pool)
 	routeTableRepo := repo.NewRouteTableRepo(pool)
 	sgRepo := repo.NewSecurityGroupRepo(pool)
+	gatewayRepo := repo.NewGatewayRepo(pool)
+	peRepo := repo.NewPrivateEndpointRepo(pool)
 
 	// Services.
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
@@ -95,16 +98,20 @@ func runServe(cfg config.Config) error {
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
 	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
+	gatewaySvc := service.NewGatewayService(gatewayRepo, folderClient, opsRepo)
+	peSvc := service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo)
 
 	// gRPC server.
 	grpcSrv := grpcsrv.NewServer()
 
-	// Регистрируем 4 реализованных сервиса.
+	// Регистрируем все публичные сервисы.
 	vpcv1.RegisterNetworkServiceServer(grpcSrv, handler.NewNetworkHandler(networkSvc))
 	vpcv1.RegisterSubnetServiceServer(grpcSrv, handler.NewSubnetHandler(subnetSvc))
 	vpcv1.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addressSvc))
 	vpcv1.RegisterRouteTableServiceServer(grpcSrv, handler.NewRouteTableHandler(routeTableSvc))
 	vpcv1.RegisterSecurityGroupServiceServer(grpcSrv, handler.NewSecurityGroupHandler(sgSvc))
+	vpcv1.RegisterGatewayServiceServer(grpcSrv, handler.NewGatewayHandler(gatewaySvc))
+	pepb.RegisterPrivateEndpointServiceServer(grpcSrv, handler.NewPrivateEndpointHandler(peSvc))
 	operationpb.RegisterOperationServiceServer(grpcSrv, handler.NewOperationHandler(opsRepo))
 
 	// SG / Gateway / PrivateLink — НЕ регистрируем:
