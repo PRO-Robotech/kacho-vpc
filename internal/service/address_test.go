@@ -124,6 +124,93 @@ func TestAddressService_Create_Internal_WithSubnet(t *testing.T) {
 	assert.Equal(t, sub.ID, addrs[0].InternalIpv4.SubnetID)
 }
 
+// Sync-валидация: explicit IP вне CIDR subnet → InvalidArgument до Operation.
+// См. EXPLICIT-IP-CIDR-VALIDATION.md.
+func TestAddressService_Create_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+	sub := makeSubnet(sr, ids.NewUID()) // 10.0.0.0/24
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+
+	_, err := svc.Create(context.Background(), CreateAddressReq{
+		FolderID: "f1",
+		InternalSpec: &InternalAddrSpec{
+			SubnetID: sub.ID,
+			Address:  "192.168.99.100", // вне 10.0.0.0/24
+		},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Contains(t, st.Message(), "10.0.0.0/24")
+}
+
+// Sync-валидация: explicit IP внутри CIDR subnet — Operation success.
+func TestAddressService_Create_Internal_ExplicitIP_InCIDR(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+	sub := makeSubnet(sr, ids.NewUID()) // 10.0.0.0/24
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+
+	op, err := svc.Create(context.Background(), CreateAddressReq{
+		FolderID: "f1",
+		InternalSpec: &InternalAddrSpec{
+			SubnetID: sub.ID,
+			Address:  "10.0.0.50",
+		},
+	})
+	require.NoError(t, err)
+	time.Sleep(100 * time.Millisecond)
+	savedOp, _ := or.Get(context.Background(), op.ID)
+	assert.True(t, savedOp.Done)
+	assert.Nil(t, savedOp.Error)
+}
+
+// Если subnet не найден sync-ом — валидация пропускается, NotFound будет
+// async через doCreate (verbatim YC, см. YC-DIFF-INVALID-PARENT-CODE.md).
+func TestAddressService_Create_Internal_ExplicitIP_SubnetNotFound_Async(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+
+	op, err := svc.Create(context.Background(), CreateAddressReq{
+		FolderID: "f1",
+		InternalSpec: &InternalAddrSpec{
+			SubnetID: "e9bnonexistentxxxxxx",
+			Address:  "192.168.99.100",
+		},
+	})
+	require.NoError(t, err)
+	time.Sleep(100 * time.Millisecond)
+	savedOp, _ := or.Get(context.Background(), op.ID)
+	assert.True(t, savedOp.Done)
+	require.NotNil(t, savedOp.Error)
+	assert.Equal(t, int32(codes.NotFound), savedOp.Error.Code)
+}
+
+// Sync-валидация: invalid IP-формат → InvalidArgument.
+func TestAddressService_Create_Internal_ExplicitIP_BadFormat(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+	sub := makeSubnet(sr, ids.NewUID())
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+
+	_, err := svc.Create(context.Background(), CreateAddressReq{
+		FolderID: "f1",
+		InternalSpec: &InternalAddrSpec{
+			SubnetID: sub.ID,
+			Address:  "not-an-ip",
+		},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
 func TestAddressService_Update_DeletionProtection(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()

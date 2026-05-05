@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -79,6 +81,50 @@ func NewAddressService(repo AddressRepo, subnetRepo SubnetRepo, folderClient Fol
 	return &AddressService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
 
+// validateInternalIPInSubnet проверяет sync-ом, что explicit IP лежит в CIDR
+// одной из v4_cidr_blocks указанной subnet. Если subnet не найден — пропуск
+// (NotFound будет async через doCreate, как и для всех остальных FK; verbatim
+// YC). Любая другая ошибка чтения subnetRepo → Internal: pass-through.
+func (s *AddressService) validateInternalIPInSubnet(ctx context.Context, subnetID, address string) error {
+	sub, err := s.subnetRepo.Get(ctx, subnetID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			// Subnet 404 — async; не нарушаем YC-DIFF-INVALID-PARENT-CODE.
+			return nil
+		}
+		return mapRepoErr(err)
+	}
+	if len(sub.V4CidrBlocks) == 0 {
+		return invalidArg(
+			"internal_ipv4_address_spec.address",
+			"subnet has no v4 cidr block; cannot validate explicit address",
+		)
+	}
+	addr, err := netip.ParseAddr(address)
+	if err != nil {
+		return invalidArg(
+			"internal_ipv4_address_spec.address",
+			"address is not a valid IP",
+		)
+	}
+	for _, raw := range sub.V4CidrBlocks {
+		cidr, err := netip.ParsePrefix(raw)
+		if err != nil {
+			// Внутренняя ошибка: subnet с невалидным CIDR — нечего считать
+			// match-ем, но и валидацию пропустить нельзя (это бы дало false
+			// positive). Маркируем как Internal.
+			return status.Errorf(codes.Internal, "subnet has invalid cidr block %q", raw)
+		}
+		if cidr.Contains(addr) {
+			return nil
+		}
+	}
+	return invalidArg(
+		"internal_ipv4_address_spec.address",
+		fmt.Sprintf("address %s is not within subnet cidr %s", address, sub.V4CidrBlocks[0]),
+	)
+}
+
 // Get возвращает Address по ID.
 func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, error) {
 	a, err := s.repo.Get(ctx, id)
@@ -127,6 +173,18 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 			"external_ipv4_address_spec.requirements.outgoing_smtp_capability",
 			req.ExternalSpec.Requirements.OutgoingSmtpCapability,
 		); err != nil {
+			return nil, err
+		}
+	}
+
+	// Sync-проверка: explicit IP (`internal_ipv4_address_spec.address`) должен
+	// принадлежать CIDR-блоку указанной subnet. Если subnet не найден — sync
+	// валидация пропускается (NotFound будет async, как и для остальных
+	// FK — verbatim YC, см. YC-DIFF-INVALID-PARENT-CODE.md). Если IP вне CIDR
+	// — возвращаем sync InvalidArgument: иначе адрес попадает в БД и пишется
+	// в NetBox, минуя любые FK, что приводит к мусору в IPAM.
+	if req.InternalSpec != nil && req.InternalSpec.SubnetID != "" && req.InternalSpec.Address != "" {
+		if err := s.validateInternalIPInSubnet(ctx, req.InternalSpec.SubnetID, req.InternalSpec.Address); err != nil {
 			return nil, err
 		}
 	}
