@@ -18,6 +18,61 @@ import (
 // Operation envelope для всех ресурсов. Сценарии — из Postman master collection
 // (NET-*, SUB-*, ADR-*, RT-*, SG-*, GW-*, PE-*).
 
+// ---- Mock PE repo ----
+
+type mockPERepo struct {
+	mu   sync.Mutex
+	data map[string]*domain.PrivateEndpoint
+}
+
+func newMockPERepo() *mockPERepo {
+	return &mockPERepo{data: make(map[string]*domain.PrivateEndpoint)}
+}
+
+func (r *mockPERepo) Get(_ context.Context, id string) (*domain.PrivateEndpoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return p, nil
+}
+
+func (r *mockPERepo) List(_ context.Context, f PrivateEndpointFilter, _ Pagination) ([]*domain.PrivateEndpoint, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.PrivateEndpoint
+	for _, p := range r.data {
+		if f.FolderID != "" && p.FolderID != f.FolderID {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, "", nil
+}
+
+func (r *mockPERepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[p.ID] = p
+	return p, nil
+}
+
+func (r *mockPERepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[p.ID] = p
+	return p, nil
+}
+
+func (r *mockPERepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.data, id)
+	return nil
+}
+
 // ---- Mock SG repo ----
 
 type mockSGRepo struct {
@@ -39,8 +94,20 @@ func (r *mockSGRepo) Get(_ context.Context, id string) (*domain.SecurityGroup, e
 	return sg, nil
 }
 
-func (r *mockSGRepo) List(_ context.Context, _ SecurityGroupFilter, _ Pagination) ([]*domain.SecurityGroup, string, error) {
-	return nil, "", nil
+func (r *mockSGRepo) List(_ context.Context, f SecurityGroupFilter, _ Pagination) ([]*domain.SecurityGroup, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.SecurityGroup
+	for _, sg := range r.data {
+		if f.FolderID != "" && sg.FolderID != f.FolderID {
+			continue
+		}
+		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
+			continue
+		}
+		out = append(out, sg)
+	}
+	return out, "", nil
 }
 
 func (r *mockSGRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
@@ -116,8 +183,17 @@ func (r *mockGatewayRepo) Get(_ context.Context, id string) (*domain.Gateway, er
 	return g, nil
 }
 
-func (r *mockGatewayRepo) List(_ context.Context, _ GatewayFilter, _ Pagination) ([]*domain.Gateway, string, error) {
-	return nil, "", nil
+func (r *mockGatewayRepo) List(_ context.Context, f GatewayFilter, _ Pagination) ([]*domain.Gateway, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.Gateway
+	for _, g := range r.data {
+		if f.FolderID != "" && g.FolderID != f.FolderID {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out, "", nil
 }
 
 func (r *mockGatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
@@ -647,4 +723,96 @@ func TestRouteTableService_List_Empty(t *testing.T) {
 	rts, _, err := svc.List(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Empty(t, rts)
+}
+
+// ---- PrivateEndpointService — full coverage ----
+
+func makePEService() (*PrivateEndpointService, *mockOpsRepo) {
+	or := newMockOpsRepo()
+	return NewPrivateEndpointService(newMockPERepo(), &mockFolderClient{exists: true}, newMockNetworkRepo(), newMockSubnetRepo(), or), or
+}
+
+func TestPrivateEndpointService_Get_NotFound(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Get(context.Background(), ids.NewUID())
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+}
+
+func TestPrivateEndpointService_List_Empty(t *testing.T) {
+	svc, _ := makePEService()
+	pes, _, err := svc.List(context.Background(), PrivateEndpointFilter{FolderID: "f1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, pes)
+}
+
+func TestPrivateEndpointService_Create_Validates(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Create(context.Background(), CreatePrivateEndpointReq{Name: "pe"})
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestPrivateEndpointService_Create_OK(t *testing.T) {
+	or := newMockOpsRepo()
+	nr := newMockNetworkRepo()
+	net := makeNetwork(nr)
+	sr := newMockSubnetRepo()
+	sub := makeSubnet(sr, net.ID)
+	svc := NewPrivateEndpointService(newMockPERepo(), &mockFolderClient{exists: true}, nr, sr, or)
+
+	op, err := svc.Create(context.Background(), CreatePrivateEndpointReq{
+		FolderID:    "f1",
+		Name:        "pe1",
+		NetworkID:   net.ID,
+		SubnetID:    sub.ID,
+		ServiceType: "dns",
+	})
+	require.NoError(t, err)
+	saved := awaitOpDone(t, or, op.ID)
+	assert.True(t, saved.Done)
+	assert.Nil(t, saved.Error)
+}
+
+func TestPrivateEndpointService_Update_RequiresID(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{})
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestPrivateEndpointService_Update_BadName(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
+		PrivateEndpointID: ids.NewUID(),
+		Name:              "1bad-starts-with-digit",
+		UpdateMask:        []string{"name"},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestPrivateEndpointService_Update_UnknownMask(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
+		PrivateEndpointID: ids.NewUID(),
+		UpdateMask:        []string{"unknown_field"},
+	})
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestPrivateEndpointService_Delete_RequiresID(t *testing.T) {
+	svc, _ := makePEService()
+	_, err := svc.Delete(context.Background(), "")
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+func TestPrivateEndpointService_ListOperations_NotFound(t *testing.T) {
+	svc, _ := makePEService()
+	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
 }

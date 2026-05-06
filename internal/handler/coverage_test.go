@@ -44,8 +44,20 @@ func (r *mockSGRepoForSvc) Get(_ context.Context, id string) (*domain.SecurityGr
 	return sg, nil
 }
 
-func (r *mockSGRepoForSvc) List(_ context.Context, _ svc.SecurityGroupFilter, _ svc.Pagination) ([]*domain.SecurityGroup, string, error) {
-	return nil, "", nil
+func (r *mockSGRepoForSvc) List(_ context.Context, f svc.SecurityGroupFilter, _ svc.Pagination) ([]*domain.SecurityGroup, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.SecurityGroup
+	for _, sg := range r.data {
+		if f.FolderID != "" && sg.FolderID != f.FolderID {
+			continue
+		}
+		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
+			continue
+		}
+		out = append(out, sg)
+	}
+	return out, "", nil
 }
 
 func (r *mockSGRepoForSvc) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
@@ -121,8 +133,17 @@ func (r *mockGatewayRepoForSvc) Get(_ context.Context, id string) (*domain.Gatew
 	return g, nil
 }
 
-func (r *mockGatewayRepoForSvc) List(_ context.Context, _ svc.GatewayFilter, _ svc.Pagination) ([]*domain.Gateway, string, error) {
-	return nil, "", nil
+func (r *mockGatewayRepoForSvc) List(_ context.Context, f svc.GatewayFilter, _ svc.Pagination) ([]*domain.Gateway, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.Gateway
+	for _, g := range r.data {
+		if f.FolderID != "" && g.FolderID != f.FolderID {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out, "", nil
 }
 
 func (r *mockGatewayRepoForSvc) Insert(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
