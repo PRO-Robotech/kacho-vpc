@@ -34,13 +34,19 @@ const catchupBatchSize = 100
 type InternalWatchHandler struct {
 	vpcv1.UnimplementedInternalWatchServiceServer
 	pool *pgxpool.Pool
+	dsn  string
 	log  *slog.Logger
 }
 
 // NewInternalWatchHandler создаёт handler.
-// pool — pgxpool DB kacho_vpc; LISTEN-соединение acquired per-stream.
-func NewInternalWatchHandler(pool *pgxpool.Pool, log *slog.Logger) *InternalWatchHandler {
-	return &InternalWatchHandler{pool: pool, log: log}
+//
+// pool — pgxpool DB kacho_vpc, используется для catchup-SELECT'ов.
+// dsn — отдельный connection string для dedicated LISTEN-соединения
+// (открывается per-stream через pgx.Connect, не уходит в pool). Это даёт
+// полную изоляцию и снимает риск "грязного" conn в пуле при abnormal exit.
+// См. TODO #15.
+func NewInternalWatchHandler(pool *pgxpool.Pool, dsn string, log *slog.Logger) *InternalWatchHandler {
+	return &InternalWatchHandler{pool: pool, dsn: dsn, log: log}
 }
 
 // Watch реализует server-stream подписки.
@@ -67,26 +73,32 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 		"from_sequence_no", cursor,
 		"kinds", kinds)
 
-	// Dedicated connection: LISTEN не работает на pooled connection
-	// (NOTIFY message routed to specific conn, не к pool).
-	conn, err := h.pool.Acquire(ctx)
+	// Dedicated pgx.Conn вне пула — гарантированная изоляция LISTEN-сессии.
+	// При abnormal exit (panic, server kill) Close() из defer не выполнится, но
+	// сам conn закроется TCP'шно — pool затронут не будет (TODO #15 closed).
+	conn, err := pgx.Connect(ctx, h.dsn)
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "acquire conn: %v", err)
+		return status.Errorf(codes.Unavailable, "connect: %v", err)
 	}
-	defer conn.Release()
+	defer func() {
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = conn.Close(closeCtx)
+		cancelClose()
+	}()
 
 	// LISTEN на trigger-канал; идентификатор — literal, не из user-input.
 	if _, err := conn.Exec(ctx, "LISTEN vpc_outbox"); err != nil {
 		return status.Errorf(codes.Internal, "listen: %v", err)
 	}
+	// UNLISTEN не обязателен (conn будет закрыт), но оставлен для symmetry.
 	defer func() {
-		// best-effort UNLISTEN перед Release; ошибки игнорим — соединение
-		// либо закрывается, либо вернётся в pool с UNLISTEN-state.
-		_, _ = conn.Exec(context.Background(), "UNLISTEN vpc_outbox")
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = conn.Exec(closeCtx, "UNLISTEN vpc_outbox")
+		cancelClose()
 	}()
 
 	// 1. Initial catchup.
-	if newCursor, err := h.streamSince(ctx, conn.Conn(), cursor, kinds, stream); err != nil {
+	if newCursor, err := h.streamSince(ctx, conn, cursor, kinds, stream); err != nil {
 		return err
 	} else {
 		cursor = newCursor
@@ -101,7 +113,7 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 			return nil
 		}
 		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		_, err := conn.Conn().WaitForNotification(waitCtx)
+		_, err := conn.WaitForNotification(waitCtx)
 		cancel()
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -119,7 +131,7 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 
 		// 3. Re-read since cursor (несколько NOTIFY могут coalesce — читаем
 		// все пропущенные events).
-		if newCursor, err := h.streamSince(ctx, conn.Conn(), cursor, kinds, stream); err != nil {
+		if newCursor, err := h.streamSince(ctx, conn, cursor, kinds, stream); err != nil {
 			return err
 		} else {
 			cursor = newCursor

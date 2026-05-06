@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -114,7 +113,7 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 }
 
 func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON, _ := json.Marshal(s.Labels)
+	labelsJSON := mustMarshalJSON(s.Labels)
 	dhcpJSON := marshalDhcp(s.DhcpOptions)
 
 	tx, err := r.pool.Begin(ctx)
@@ -158,7 +157,7 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 }
 
 func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON, _ := json.Marshal(s.Labels)
+	labelsJSON := mustMarshalJSON(s.Labels)
 	dhcpJSON := marshalDhcp(s.DhcpOptions)
 
 	tx, err := r.pool.Begin(ctx)
@@ -361,8 +360,8 @@ func scanSubnet(row scannable) (*domain.Subnet, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &s.Labels)
+	if err := unmarshalJSONB(labelsJSON, &s.Labels, "Subnet.labels"); err != nil {
+		return nil, err
 	}
 	if v4.Valid {
 		s.V4CidrBlocks = v4.Elements
@@ -375,9 +374,10 @@ func scanSubnet(row scannable) (*domain.Subnet, error) {
 	}
 	if dhcpJSON != nil {
 		var d domain.DhcpOptions
-		if err := json.Unmarshal(dhcpJSON, &d); err == nil {
-			s.DhcpOptions = &d
+		if err := unmarshalJSONB(dhcpJSON, &d, "Subnet.dhcp_options"); err != nil {
+			return nil, err
 		}
+		s.DhcpOptions = &d
 	}
 	return &s, nil
 }
@@ -386,7 +386,7 @@ func marshalDhcp(d *domain.DhcpOptions) []byte {
 	if d == nil {
 		return nil
 	}
-	b, _ := json.Marshal(d)
+	b := mustMarshalJSON(d)
 	return b
 }
 

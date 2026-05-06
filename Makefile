@@ -17,7 +17,7 @@ vet:
 	go vet ./...
 
 lint:
-	golangci-lint run ./... || true
+	golangci-lint run ./...
 
 sync-migrations:
 	cp ../kacho-corelib/migrations/common/*.sql migrations/

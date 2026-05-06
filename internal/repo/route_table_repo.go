@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -113,7 +112,7 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 }
 
 func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON, _ := json.Marshal(rt.Labels)
+	labelsJSON := mustMarshalJSON(rt.Labels)
 	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
 
 	tx, err := r.pool.Begin(ctx)
@@ -145,7 +144,7 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 }
 
 func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON, _ := json.Marshal(rt.Labels)
+	labelsJSON := mustMarshalJSON(rt.Labels)
 	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
 
 	tx, err := r.pool.Begin(ctx)
@@ -238,11 +237,11 @@ func scanRouteTable(row scannable) (*domain.RouteTable, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &rt.Labels)
+	if err := unmarshalJSONB(labelsJSON, &rt.Labels, "RouteTable.labels"); err != nil {
+		return nil, err
 	}
-	if routesJSON != nil {
-		_ = json.Unmarshal(routesJSON, &rt.StaticRoutes)
+	if err := unmarshalJSONB(routesJSON, &rt.StaticRoutes, "RouteTable.static_routes"); err != nil {
+		return nil, err
 	}
 	return &rt, nil
 }
@@ -251,6 +250,6 @@ func marshalStaticRoutes(routes []domain.StaticRoute) []byte {
 	if routes == nil {
 		return []byte("[]")
 	}
-	b, _ := json.Marshal(routes)
+	b := mustMarshalJSON(routes)
 	return b
 }

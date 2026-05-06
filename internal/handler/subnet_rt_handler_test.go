@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -211,8 +210,7 @@ func TestSubnetHandler_Create_OK(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
 
-	time.Sleep(100 * time.Millisecond)
-	saved, _ := or.Get(context.Background(), op.Id)
+	saved := awaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 }
 
@@ -291,8 +289,7 @@ func TestRouteTableHandler_Create_OK(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
 
-	time.Sleep(100 * time.Millisecond)
-	saved, _ := or.Get(context.Background(), op.Id)
+	saved := awaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 }
 

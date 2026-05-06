@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestNetworkService_Get_NotFound(t *testing.T) {
@@ -39,12 +39,12 @@ func TestNetworkService_Create_ValidationError(t *testing.T) {
 }
 
 func TestNetworkService_Create_FolderNotFound(t *testing.T) {
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: false}, newMockOpsRepo())
+	or := newMockOpsRepo()
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: false}, or)
 	op, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1"})
 	require.NoError(t, err) // Operation создаётся, ошибка внутри goroutine
 	require.NotNil(t, op)
-	// Ждём завершения goroutine
-	time.Sleep(50 * time.Millisecond)
+	awaitOpDone(t, or, op.ID)
 }
 
 func TestNetworkService_Create_OK(t *testing.T) {
@@ -55,14 +55,8 @@ func TestNetworkService_Create_OK(t *testing.T) {
 	op, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1", Description: "desc"})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
-	assert.False(t, op.Done) // async — ещё не done
 
-	// Ждём async goroutine
-	time.Sleep(100 * time.Millisecond)
-
-	// Проверяем что Operation завершена успешно
-	saved, err := or.Get(context.Background(), op.ID)
-	require.NoError(t, err)
+	saved := awaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
@@ -83,6 +77,32 @@ func TestNetworkService_Delete_ValidationError(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
+// TestNetworkService_Delete_ResponseIsEmpty проверяет TODO #1 + #29:
+// Operation.response для Delete должен быть google.protobuf.Empty, не Metadata.
+// Защищает от регрессии (исторически кладали DeleteNetworkMetadata в response).
+func TestNetworkService_Delete_ResponseIsEmpty(t *testing.T) {
+	nr := newMockNetworkRepo()
+	or := newMockOpsRepo()
+	svc := NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
+
+	createOp, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "del-resp-test"})
+	require.NoError(t, err)
+	awaitOpDone(t, or, createOp.ID)
+
+	nets, _, _ := svc.List(context.Background(), NetworkFilter{FolderID: "f1"}, Pagination{})
+	require.Len(t, nets, 1)
+
+	delOp, err := svc.Delete(context.Background(), nets[0].ID)
+	require.NoError(t, err)
+	saved := awaitOpDone(t, or, delOp.ID)
+	require.Nil(t, saved.Error)
+	require.NotNil(t, saved.Response)
+
+	var empty emptypb.Empty
+	err = saved.Response.UnmarshalTo(&empty)
+	require.NoError(t, err, "Delete response must be google.protobuf.Empty (proto-options contract)")
+}
+
 func TestNetworkService_Update_MaskApplication(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
@@ -92,11 +112,7 @@ func TestNetworkService_Update_MaskApplication(t *testing.T) {
 	// Создаём сеть
 	createOp, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1"})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-
-	// Получаем id из metadata
-	savedOp, err := or.Get(context.Background(), createOp.ID)
-	require.NoError(t, err)
+	savedOp := awaitOpDone(t, or, createOp.ID)
 	require.NotNil(t, savedOp.Metadata)
 
 	// Находим созданную сеть через List
@@ -113,10 +129,7 @@ func TestNetworkService_Update_MaskApplication(t *testing.T) {
 		UpdateMask:  []string{"name"},
 	})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-
-	savedUpdOp, err := or.Get(context.Background(), updOp.ID)
-	require.NoError(t, err)
+	savedUpdOp := awaitOpDone(t, or, updOp.ID)
 	assert.True(t, savedUpdOp.Done)
 
 	// Проверяем что только name обновилось (description не изменилась из-за маски)

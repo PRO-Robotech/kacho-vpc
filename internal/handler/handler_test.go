@@ -117,11 +117,36 @@ func (r *mockOpsRepo) Get(_ context.Context, id string) (*operations.Operation, 
 	if !ok {
 		return nil, operations.ErrNotFound
 	}
-	return op, nil
+	// Возвращаем shallow-копию — чтобы caller не читал shared-state
+	// после Release lock'a (race с MarkDone/MarkError).
+	cp := *op
+	return &cp, nil
 }
 
 func (r *mockOpsRepo) List(_ context.Context, _ operations.ListFilter) ([]operations.Operation, string, error) {
 	return nil, "", nil
+}
+
+// awaitOpDone — детерминированно ждёт завершения worker-горутины (см. TODO #10
+// в kacho-vpc/TODO.md). Падает через 2s.
+func awaitOpDone(t testingT, r *mockOpsRepo, opID string) *operations.Operation {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		op, err := r.Get(context.Background(), opID)
+		if err == nil && op.Done {
+			return op
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation %s did not finish within 2s", opID)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+type testingT interface {
+	Helper()
+	Fatalf(format string, args ...any)
 }
 
 func (r *mockOpsRepo) MarkDone(_ context.Context, id string, resp *anypb.Any) error {
@@ -202,9 +227,7 @@ func TestNetworkHandler_Create_OK(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
 
-	time.Sleep(100 * time.Millisecond)
-
-	saved, _ := or.Get(context.Background(), op.Id)
+	saved := awaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 }
 

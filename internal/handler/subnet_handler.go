@@ -183,6 +183,10 @@ func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUs
 	for _, a := range addrs {
 		ua := &vpcv1.UsedAddress{
 			IpVersion: vpcv1.IpVersion(a.IpVersion),
+			// References на текущей фазе пуст — peer-сервисы (compute / loadbalancer)
+			// сами могут резолвить IP→resource через свои API. Когда добавится
+			// общий ref-tracking (cross-service ownership index), будет заполнено.
+			References: nil,
 		}
 		if a.InternalIpv4 != nil {
 			ua.Address = a.InternalIpv4.Address

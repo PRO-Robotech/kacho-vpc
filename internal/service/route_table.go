@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
@@ -351,7 +352,7 @@ func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&vpcv1.DeleteRouteTableMetadata{RouteTableId: id})
+		return anypb.New(&emptypb.Empty{})
 	})
 
 	return &op, nil

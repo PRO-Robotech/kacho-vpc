@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -108,7 +107,7 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 }
 
 func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON, _ := json.Marshal(n.Labels)
+	labelsJSON := mustMarshalJSON(n.Labels)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -138,7 +137,7 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 }
 
 func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON, _ := json.Marshal(n.Labels)
+	labelsJSON := mustMarshalJSON(n.Labels)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -239,8 +238,8 @@ func scanNetwork(row scannable) (*domain.Network, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &n.Labels)
+	if err := unmarshalJSONB(labelsJSON, &n.Labels, "Network.labels"); err != nil {
+		return nil, err
 	}
 	return &n, nil
 }

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
@@ -66,7 +67,7 @@ func (s *GatewayService) Create(ctx context.Context, req CreateGatewayReq) (*ope
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
+	if err := corevalidate.NameGateway("name", req.Name); err != nil {
 		return nil, err
 	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
@@ -177,7 +178,7 @@ func validateGatewayUpdate(req UpdateGatewayReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := corevalidate.NameGateway("name", req.Name); err != nil {
 				return err
 			}
 		case "description":
@@ -239,7 +240,7 @@ func (s *GatewayService) Delete(ctx context.Context, id string) (*operations.Ope
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&vpcv1.DeleteGatewayMetadata{GatewayId: id})
+		return anypb.New(&emptypb.Empty{})
 	})
 	return &op, nil
 }

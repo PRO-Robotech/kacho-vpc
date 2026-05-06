@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -108,7 +107,7 @@ func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p servi
 }
 
 func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON, _ := json.Marshal(g.Labels)
+	labelsJSON := mustMarshalJSON(g.Labels)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -138,7 +137,7 @@ func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Ga
 }
 
 func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON, _ := json.Marshal(g.Labels)
+	labelsJSON := mustMarshalJSON(g.Labels)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -229,8 +228,8 @@ func scanGateway(row scannable) (*domain.Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &g.Labels)
+	if err := unmarshalJSONB(labelsJSON, &g.Labels, "Gateway.labels"); err != nil {
+		return nil, err
 	}
 	return &g, nil
 }

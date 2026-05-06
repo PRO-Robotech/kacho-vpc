@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -108,8 +107,8 @@ func (r *PrivateEndpointRepo) List(ctx context.Context, f service.PrivateEndpoin
 }
 
 func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	labelsJSON, _ := json.Marshal(pe.Labels)
-	dnsJSON, _ := json.Marshal(pe.DnsOptions)
+	labelsJSON := mustMarshalJSON(pe.Labels)
+	dnsJSON := mustMarshalJSON(pe.DnsOptions)
 	if dnsJSON == nil {
 		dnsJSON = []byte("{}")
 	}
@@ -146,8 +145,8 @@ func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndp
 }
 
 func (r *PrivateEndpointRepo) Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	labelsJSON, _ := json.Marshal(pe.Labels)
-	dnsJSON, _ := json.Marshal(pe.DnsOptions)
+	labelsJSON := mustMarshalJSON(pe.Labels)
+	dnsJSON := mustMarshalJSON(pe.DnsOptions)
 	if dnsJSON == nil {
 		dnsJSON = []byte("{}")
 	}
@@ -220,11 +219,11 @@ func scanPrivateEndpoint(row scannable) (*domain.PrivateEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &pe.Labels)
+	if err := unmarshalJSONB(labelsJSON, &pe.Labels, "PrivateEndpoint.labels"); err != nil {
+		return nil, err
 	}
-	if dnsJSON != nil {
-		_ = json.Unmarshal(dnsJSON, &pe.DnsOptions)
+	if err := unmarshalJSONB(dnsJSON, &pe.DnsOptions, "PrivateEndpoint.dns_options"); err != nil {
+		return nil, err
 	}
 	if networkID != nil {
 		pe.NetworkID = *networkID

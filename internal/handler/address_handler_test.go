@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -237,8 +236,7 @@ func TestAddressHandler_Create_External_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.Id)
 
-	time.Sleep(100 * time.Millisecond)
-	saved, _ := or.Get(context.Background(), op.Id)
+	saved := awaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }

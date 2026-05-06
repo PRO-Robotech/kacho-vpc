@@ -3,9 +3,11 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-corelib/filter"
@@ -113,8 +115,8 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 }
 
 func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON, _ := json.Marshal(sg.Labels)
-	rulesJSON, _ := json.Marshal(sg.Rules)
+	labelsJSON := mustMarshalJSON(sg.Labels)
+	rulesJSON := mustMarshalJSON(sg.Rules)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -143,8 +145,8 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 }
 
 func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON, _ := json.Marshal(sg.Labels)
-	rulesJSON, _ := json.Marshal(sg.Rules)
+	labelsJSON := mustMarshalJSON(sg.Labels)
+	rulesJSON := mustMarshalJSON(sg.Rules)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -195,6 +197,11 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 
 // UpdateRules атомарно меняет набор правил SG: удаляет правила с id ∈ deleteIDs
 // и добавляет новые add. Возвращает обновлённый SG.
+//
+// Optimistic concurrency: SELECT захватывает текущий resource_version, UPDATE
+// проверяет его в WHERE. Concurrent UpdateRules → один из вызовов получит
+// 0 rows → ErrFailedPrecondition "concurrent modification, please retry"
+// (защита от lost-update, см. TODO #22).
 func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -202,15 +209,21 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Загрузить текущий список rules
+	// Загрузить текущий список rules + xmin (txid версия row для optimistic CC).
+	// xmin — Postgres system column, меняется на каждый UPDATE; не требует
+	// дополнительной колонки в схеме (security_groups не имеет resource_version,
+	// в отличие от Network/Subnet/RT — миграция 0008 не добавила K8s-style envelope).
 	var rulesJSON []byte
-	err = tx.QueryRow(ctx, `SELECT rules FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON)
+	var rowXmin string
+	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)
 	if err != nil {
 		return nil, wrapPgErr(err, "SecurityGroup", sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
-		_ = json.Unmarshal(rulesJSON, &rules)
+		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", service.ErrInternal, sgID, err)
+		}
 	}
 	// фильтруем удаляемые
 	if len(deleteIDs) > 0 {
@@ -229,12 +242,17 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 	}
 	// добавляем новые
 	rules = append(rules, add...)
-	newRulesJSON, _ := json.Marshal(rules)
+	newRulesJSON := mustMarshalJSON(rules)
 
-	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 RETURNING %s`, sgCols)
-	row := tx.QueryRow(ctx, q, sgID, newRulesJSON)
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, sgCols)
+	row := tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)
 	sg, err := scanSG(row)
 	if err != nil {
+		// pgx.ErrNoRows → concurrent modification (xmin не совпал).
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
+				service.ErrFailedPrecondition, sgID)
+		}
 		return nil, wrapPgErr(err, "SecurityGroup", sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
@@ -248,6 +266,9 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 
 // UpdateRule обновляет описание/labels единичного правила в SG.
 // Возвращает SG с обновлённым правилом.
+//
+// Optimistic concurrency: см. UpdateRules. Concurrent UpdateRule на ту же SG →
+// FailedPrecondition "concurrent modification, please retry".
 func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -256,13 +277,16 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var rulesJSON []byte
-	err = tx.QueryRow(ctx, `SELECT rules FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON)
+	var rowXmin string
+	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)
 	if err != nil {
 		return nil, wrapPgErr(err, "SecurityGroup", sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
-		_ = json.Unmarshal(rulesJSON, &rules)
+		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", service.ErrInternal, sgID, err)
+		}
 	}
 	found := false
 	applyMask := len(mask) > 0
@@ -292,12 +316,16 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 		return nil, fmt.Errorf("%w: SecurityGroupRule %s not found in SecurityGroup %s",
 			service.ErrNotFound, ruleID, sgID)
 	}
-	newRulesJSON, _ := json.Marshal(rules)
+	newRulesJSON := mustMarshalJSON(rules)
 
-	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 RETURNING %s`, sgCols)
-	row := tx.QueryRow(ctx, q, sgID, newRulesJSON)
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, sgCols)
+	row := tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)
 	sg, err := scanSG(row)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
+				service.ErrFailedPrecondition, sgID)
+		}
 		return nil, wrapPgErr(err, "SecurityGroup", sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
@@ -344,11 +372,11 @@ func scanSG(row scannable) (*domain.SecurityGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &sg.Labels)
+	if err := unmarshalJSONB(labelsJSON, &sg.Labels, "SecurityGroup.labels"); err != nil {
+		return nil, err
 	}
-	if rulesJSON != nil {
-		_ = json.Unmarshal(rulesJSON, &sg.Rules)
+	if err := unmarshalJSONB(rulesJSON, &sg.Rules, "SecurityGroup.rules"); err != nil {
+		return nil, err
 	}
 	return &sg, nil
 }

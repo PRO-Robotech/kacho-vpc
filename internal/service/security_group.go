@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
@@ -176,6 +177,9 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
+	if err := validateSGUpdate(req); err != nil {
+		return nil, err
+	}
 	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Update security group %s", req.SecurityGroupID),
 		&vpcv1.UpdateSecurityGroupMetadata{SecurityGroupId: req.SecurityGroupID},
@@ -314,6 +318,52 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 	return &op, nil
 }
 
+// validateSGUpdate — sync-проверка update_mask и значений (как в Network/Subnet).
+//
+// Decision table (для каждого поля в mask):
+//   - name        → corevalidate.NameVPC (permissive: empty + uppercase + underscore).
+//   - description → ≤256 chars utf-8.
+//   - labels      → ≤64 пары, key/value verbatim YC.
+//   - rule_specs  → каждое правило проходит validateSGRule.
+//
+// Поле, не упомянутое в mask, не валидируется (= unchanged). Unknown field в
+// update_mask → InvalidArgument (corevalidate.UpdateMask).
+func validateSGUpdate(req UpdateSecurityGroupReq) error {
+	known := map[string]struct{}{
+		"name": {}, "description": {}, "labels": {}, "rule_specs": {},
+	}
+	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
+		return err
+	}
+	updates := req.UpdateMask
+	if len(updates) == 0 {
+		updates = []string{"name", "description", "labels"}
+	}
+	for _, f := range updates {
+		switch f {
+		case "name":
+			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+				return err
+			}
+		case "description":
+			if err := corevalidate.Description("description", req.Description); err != nil {
+				return err
+			}
+		case "labels":
+			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+				return err
+			}
+		case "rule_specs":
+			for i, r := range req.RuleSpecs {
+				if err := validateSGRule(fmt.Sprintf("rule_specs[%d]", i), r); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // validateSGRule — sync-валидация правила.
 func validateSGRule(field string, r domain.SecurityGroupRule) error {
 	if r.Direction != "INGRESS" && r.Direction != "EGRESS" {
@@ -358,7 +408,7 @@ func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operatio
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&vpcv1.DeleteSecurityGroupMetadata{SecurityGroupId: id})
+		return anypb.New(&emptypb.Empty{})
 	})
 	return &op, nil
 }

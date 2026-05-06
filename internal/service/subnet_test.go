@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,9 +53,7 @@ func TestSubnetService_Create_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -82,9 +79,7 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.NotNil(t, savedOp.Error) // должна быть ошибка NotFound
 }
@@ -106,8 +101,7 @@ func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
-	time.Sleep(100 * time.Millisecond)
-	_ = createOp
+	awaitOpDone(t, or, createOp.ID)
 
 	subs, _, _ := svc.List(context.Background(), SubnetFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, subs, 1)

@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -108,7 +107,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 }
 
 func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON, _ := json.Marshal(a.Labels)
+	labelsJSON := mustMarshalJSON(a.Labels)
 	extJSON := marshalExternalIPv4(a.ExternalIpv4)
 	intJSON := marshalInternalIPv4(a.InternalIpv4)
 
@@ -142,7 +141,7 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 }
 
 func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON, _ := json.Marshal(a.Labels)
+	labelsJSON := mustMarshalJSON(a.Labels)
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -291,20 +290,22 @@ func scanAddress(row scannable) (*domain.Address, error) {
 	a.Type = domain.AddressType(addrType)
 	a.IpVersion = domain.IpVersion(ipVersion)
 
-	if labelsJSON != nil {
-		_ = json.Unmarshal(labelsJSON, &a.Labels)
+	if err := unmarshalJSONB(labelsJSON, &a.Labels, "Address.labels"); err != nil {
+		return nil, err
 	}
 	if extJSON != nil {
 		var ext domain.ExternalIpv4Spec
-		if err := json.Unmarshal(extJSON, &ext); err == nil {
-			a.ExternalIpv4 = &ext
+		if err := unmarshalJSONB(extJSON, &ext, "Address.external_ipv4"); err != nil {
+			return nil, err
 		}
+		a.ExternalIpv4 = &ext
 	}
 	if intJSON != nil {
 		var intSpec domain.InternalIpv4Spec
-		if err := json.Unmarshal(intJSON, &intSpec); err == nil {
-			a.InternalIpv4 = &intSpec
+		if err := unmarshalJSONB(intJSON, &intSpec, "Address.internal_ipv4"); err != nil {
+			return nil, err
 		}
+		a.InternalIpv4 = &intSpec
 	}
 	return &a, nil
 }
@@ -313,7 +314,7 @@ func marshalExternalIPv4(e *domain.ExternalIpv4Spec) []byte {
 	if e == nil {
 		return nil
 	}
-	b, _ := json.Marshal(e)
+	b := mustMarshalJSON(e)
 	return b
 }
 
@@ -321,6 +322,6 @@ func marshalInternalIPv4(i *domain.InternalIpv4Spec) []byte {
 	if i == nil {
 		return nil
 	}
-	b, _ := json.Marshal(i)
+	b := mustMarshalJSON(i)
 	return b
 }

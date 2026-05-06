@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,9 +54,7 @@ func TestAddressService_Create_External_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -84,9 +81,7 @@ func TestAddressService_Create_External_NoAutoAlloc(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -112,9 +107,7 @@ func TestAddressService_Create_Internal_WithSubnet(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -162,8 +155,7 @@ func TestAddressService_Create_Internal_ExplicitIP_InCIDR(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 }
@@ -184,8 +176,7 @@ func TestAddressService_Create_Internal_ExplicitIP_SubnetNotFound_Async(t *testi
 		},
 	})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	require.NotNil(t, savedOp.Error)
 	assert.Equal(t, int32(codes.NotFound), savedOp.Error.Code)
@@ -221,8 +212,7 @@ func TestAddressService_Update_DeletionProtection(t *testing.T) {
 		FolderID:     "f1",
 		ExternalSpec: &ExternalAddrSpec{Address: "203.0.113.50"},
 	})
-	time.Sleep(100 * time.Millisecond)
-	_ = createOp
+	awaitOpDone(t, or, createOp.ID)
 
 	addrs, _, _ := svc.List(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
@@ -234,8 +224,7 @@ func TestAddressService_Update_DeletionProtection(t *testing.T) {
 		UpdateMask:         []string{"deletion_protection"},
 	})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-	savedOp, _ := or.Get(context.Background(), updOp.ID)
+	savedOp := awaitOpDone(t, or, updOp.ID)
 	assert.True(t, savedOp.Done)
 
 	a, _ := svc.Get(context.Background(), addrID)

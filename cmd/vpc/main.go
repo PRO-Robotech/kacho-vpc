@@ -114,14 +114,12 @@ func runServe(cfg config.Config) error {
 	pepb.RegisterPrivateEndpointServiceServer(grpcSrv, handler.NewPrivateEndpointHandler(peSvc))
 	operationpb.RegisterOperationServiceServer(grpcSrv, handler.NewOperationHandler(opsRepo))
 
-	// SG / Gateway / PrivateLink — НЕ регистрируем:
-	// клиенты получат UNIMPLEMENTED от grpc-рефлексии/маршрутизации.
 	// gRPC reflection уже включён в grpcsrv.NewServer (corelib).
 
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
 	internalSrv := grpcsrv.NewServer()
-	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, logger.With("component", "internal-watch")))
+	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch")))
 	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressHandler(pool, logger.With("component", "internal-address")))
 
 	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)

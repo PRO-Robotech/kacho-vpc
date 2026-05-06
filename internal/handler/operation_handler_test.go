@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +44,7 @@ func TestOperationHandler_Get_OK(t *testing.T) {
 	op, err := h_net.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "net1"})
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
+	awaitOpDone(t, or, op.Id)
 
 	h := NewOperationHandler(or)
 	gotten, err := h.Get(context.Background(), &operationpb.GetOperationRequest{OperationId: op.Id})

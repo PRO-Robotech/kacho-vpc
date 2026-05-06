@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
@@ -84,6 +85,10 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	// `zone_id is required`. См. ZONE-ID-VALIDATION.md.
 	if err := corevalidate.ZoneId("zone_id", req.ZoneID); err != nil {
 		return nil, err
+	}
+	// Proto contract: v4_cidr_blocks [(required) = true]. См. subnet_service.proto:214.
+	if len(req.V4CidrBlocks) == 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
 	}
 	// SU-CIDR-2: host-bits в v4CidrBlocks (например `10.0.0.5/24`) → InvalidArgument.
 	for i, c := range req.V4CidrBlocks {
@@ -547,13 +552,6 @@ func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, 
 
 // checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
 func checkCIDRDisjoint(cidrs []string) error {
-	type p struct{ raw string }
-	parsed := make([]struct {
-		raw string
-		net interface{}
-	}, 0, len(cidrs))
-	_ = parsed
-	// Инлайн используем netip — пакет уже импортирован в address.go.
 	prefixes := make([]netipPrefix, 0, len(cidrs))
 	for i, c := range cidrs {
 		pr, err := parseNetipPrefix(c)
@@ -594,7 +592,7 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&vpcv1.DeleteSubnetMetadata{SubnetId: id})
+		return anypb.New(&emptypb.Empty{})
 	})
 
 	return &op, nil

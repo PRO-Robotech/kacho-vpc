@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,9 +43,7 @@ func TestRouteTableService_Create_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), op.ID)
+	savedOp := awaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -70,8 +67,7 @@ func TestRouteTableService_Update_StaticRoutes(t *testing.T) {
 		Name:      "rt1",
 		NetworkID: net.ID,
 	})
-	time.Sleep(100 * time.Millisecond)
-	_ = createOp
+	awaitOpDone(t, or, createOp.ID)
 
 	rts, _, _ := svc.List(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, rts, 1)
@@ -86,9 +82,7 @@ func TestRouteTableService_Update_StaticRoutes(t *testing.T) {
 		UpdateMask: []string{"static_routes"},
 	})
 	require.NoError(t, err)
-	time.Sleep(100 * time.Millisecond)
-
-	savedOp, _ := or.Get(context.Background(), updOp.ID)
+	savedOp := awaitOpDone(t, or, updOp.ID)
 	assert.True(t, savedOp.Done)
 
 	rt, _ := svc.Get(context.Background(), rtID)

@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
 
       - name: Download deps
         run: go mod download
@@ -32,5 +32,75 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test (unit, short mode for CI without Docker)
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+          args: --timeout=5m
+
+      - name: Test (unit, short mode)
         run: go test ./... -race -cover -short -timeout 120s
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:dind
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout kacho-corelib
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-corelib
+          path: ../kacho-corelib
+
+      - name: Checkout kacho-proto
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-proto
+          path: ../kacho-proto
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download deps
+        run: go mod download
+
+      - name: Test (integration via testcontainers, no -short)
+        run: go test ./internal/repo/... -race -cover -timeout 300s
+
+  newman:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      - name: Stand up local Kachō (docker compose)
+        run: |
+          # TODO: replace with actual compose path. Newman job требует поднятого
+          # стенда: kacho-deploy/docker-compose или kind. Пока — placeholder.
+          echo "TODO: compose up — see kacho-deploy/Makefile dev-up"
+
+      - name: Run RO + LIGHT suites against local
+        if: false  # disabled until compose-up step is wired
+        run: |
+          cd newman
+          ./scripts/run.sh --env local --suite ro --no-precleanup
+          ./scripts/run.sh --env local --suite light --no-precleanup --no-rebuild
+
+      - name: Upload Newman reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-reports
+          path: newman/out/last-run-*.json

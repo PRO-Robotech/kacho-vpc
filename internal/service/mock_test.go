@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"sync"
+	"time"
 
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -386,11 +387,67 @@ func (r *mockOpsRepo) Get(_ context.Context, id string) (*operations.Operation, 
 	if !ok {
 		return nil, operations.ErrNotFound
 	}
-	return op, nil
+	// Возвращаем shallow-копию — чтобы caller не читал shared-state
+	// после Release lock'a (race с MarkDone/MarkError из worker-горутины).
+	cp := *op
+	return &cp, nil
 }
 
 func (r *mockOpsRepo) List(_ context.Context, _ operations.ListFilter) ([]operations.Operation, string, error) {
 	return nil, "", nil
+}
+
+// awaitOpDone ждёт завершения worker-горутины (Operation.Done == true).
+// Заменяет ранее использованный фиксированный time.Sleep — детерминированно
+// и быстрее. Падает с require.Fail если не дождались за 2s. См. TODO #10.
+func awaitOpDone(t testingT, r *mockOpsRepo, opID string) *operations.Operation {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		op, err := r.Get(context.Background(), opID)
+		if err == nil && op.Done {
+			return op
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation %s did not finish within 2s", opID)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// awaitAllOpsDone ждёт пока все ops в repo станут Done. Удобно когда тест не
+// сохраняет конкретный opID, но хочет быть уверен что все async-горутины
+// завершены. Падает через 2s.
+func awaitAllOpsDone(t testingT, r *mockOpsRepo) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r.mu.Lock()
+		allDone := true
+		var stuckID string
+		for id, op := range r.ops {
+			if !op.Done {
+				allDone = false
+				stuckID = id
+				break
+			}
+		}
+		r.mu.Unlock()
+		if allDone {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("operation %s did not finish within 2s", stuckID)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// testingT — минимальный интерфейс из *testing.T, нужный awaitOpDone.
+// Принимаем интерфейс чтобы избежать импорта testing в production-build.
+type testingT interface {
+	Helper()
+	Fatalf(format string, args ...any)
 }
 
 func (r *mockOpsRepo) MarkDone(_ context.Context, id string, resp *anypb.Any) error {
