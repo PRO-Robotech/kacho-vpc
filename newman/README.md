@@ -61,7 +61,7 @@ Kachō VPC QA Suite (unified)
 Каждый unified `NET-*` кейс самодостаточен внутри `{{_suiteFolderId}}` — ничего не создаёт
 в обёртке Org/Cloud, не имеет per-request skip-маркеров.
 
-Полный design-документ: `../../kacho-workspace/docs/superpowers/specs/2026-05-05-vpc-newman-unification-design.md`.
+Полный design-документ: `../../../docs/superpowers/specs/2026-05-05-vpc-newman-unification-design.md`.
 
 ## Подготовка стенда
 

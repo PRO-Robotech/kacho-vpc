@@ -2,7 +2,7 @@
 
 VPC-сервис Kachō: control-plane для Network, Subnet, Address, RouteTable,
 SecurityGroup, Gateway, PrivateEndpoint. Цель — verbatim parity с YC VPC API
-(см. `CLAUDE.md` §1, sub-phase 0.3 в `kacho-workspace/docs/specs/`).
+(см. `CLAUDE.md` §1, sub-phase 0.3 в `../../docs/specs/`).
 
 ## Quick start (локальный стенд)
 
@@ -82,9 +82,9 @@ KACHO_VPC_DB_PASSWORD=secret bin/kacho-vpc migrate status
 
 ## Spec & decision records
 
-- Acceptance: `kacho-workspace/docs/specs/sub-phase-0.3-vpc-acceptance.md`
-- Roadmap: `kacho-workspace/docs/specs/04-roadmap-and-phasing.md`
-- Workspace правила: `../kacho-workspace/CLAUDE.md`
+- Acceptance: `../../docs/specs/sub-phase-0.3-vpc-acceptance.md`
+- Roadmap: `../../docs/specs/04-roadmap-and-phasing.md`
+- Workspace правила: `../../CLAUDE.md`
 - Outstanding tech-debt: `./TODO.md`
 
 ## Subagents (project-level в `.claude/agents/`)

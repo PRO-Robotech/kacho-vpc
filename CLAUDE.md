@@ -1,7 +1,9 @@
 # kacho-vpc — CLAUDE.md
 
-VPC-специфичный CLAUDE.md, дополняющий общий `kacho-workspace/CLAUDE.md`. Этот
-файл — обязательный контекст при работе из `kacho-vpc/` и любых его подпапок.
+VPC-специфичный CLAUDE.md, дополняющий общий workspace `CLAUDE.md` (лежит в
+корне `kacho-workspace/`, подцепляется автоматически через parent-walkup
+discovery Claude Code). Этот файл — обязательный контекст при работе из
+`project/kacho-vpc/` и любых его подпапок.
 
 ## 1. Что это за сервис
 
@@ -503,11 +505,11 @@ Seq против YC — отдельный nightly job с секретным IAM
 
 ## 16. Ссылки
 
-- Workspace правила: `../kacho-workspace/CLAUDE.md`
-- Acceptance документ: `../kacho-workspace/docs/specs/sub-phase-0.3-vpc-acceptance.md`
+- Workspace правила: `../../CLAUDE.md`
+- Acceptance документ: `../../docs/specs/sub-phase-0.3-vpc-acceptance.md`
 - Proto: `../kacho-proto/proto/kacho/cloud/vpc/v1/`
 - Outstanding TODO: `./TODO.md`
-- Spec data model: `../kacho-workspace/docs/specs/02-data-model-and-conventions.md`
+- Spec data model: `../../docs/specs/02-data-model-and-conventions.md`
 
 ## 17. VPC-specific subagents
 
