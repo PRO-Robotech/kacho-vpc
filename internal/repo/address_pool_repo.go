@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -432,11 +431,11 @@ func scanAddressPool(row pgx.Row) (*domain.AddressPool, error) {
 		p.ZoneID = *zoneIDPtr
 	}
 	p.Kind = domain.AddressPoolKind(kindByte)
-	if len(labelsJSON) > 0 {
-		_ = json.Unmarshal(labelsJSON, &p.Labels)
+	if err := unmarshalJSONB(labelsJSON, &p.Labels, "address_pools.labels"); err != nil {
+		return nil, err
 	}
-	if len(selectorJSON) > 0 {
-		_ = json.Unmarshal(selectorJSON, &p.SelectorLabels)
+	if err := unmarshalJSONB(selectorJSON, &p.SelectorLabels, "address_pools.selector_labels"); err != nil {
+		return nil, err
 	}
 	return &p, nil
 }

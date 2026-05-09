@@ -68,8 +68,8 @@ func (r *CloudPoolSelectorRepo) Get(ctx context.Context, cloudID string) (*domai
 	out.CloudID = cloudID
 	out.SetAt = setAt
 	out.SetBy = setBy
-	if len(js) > 0 {
-		_ = json.Unmarshal(js, &out.Selector)
+	if err := unmarshalJSONB(js, &out.Selector, "cloud_pool_selector.selector"); err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
