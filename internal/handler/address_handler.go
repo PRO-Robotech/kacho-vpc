@@ -33,6 +33,9 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
 	return addressToProto(a), nil
 }
 

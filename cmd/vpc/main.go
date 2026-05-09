@@ -129,7 +129,13 @@ func runServe(cfg config.Config) error {
 	networkSvc.SetSGRepo(sgRepo)
 
 	// gRPC server.
-	grpcSrv := grpcsrv.NewServer()
+	// gRPC server с tenant-interceptor (scaffold под IAM/AuthZ).
+	// Сейчас reads metadata; future — JWT claims. Handler'ы используют
+	// AssertFolderOwnership(ctx, resource.FolderID) для AuthZ check.
+	grpcSrv := grpcsrv.NewServer(
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor()),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor()),
+	)
 
 	// Регистрируем все публичные сервисы.
 	vpcv1.RegisterNetworkServiceServer(grpcSrv, handler.NewNetworkHandler(networkSvc))
@@ -145,7 +151,10 @@ func runServe(cfg config.Config) error {
 
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
-	internalSrv := grpcsrv.NewServer()
+	internalSrv := grpcsrv.NewServer(
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor()),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor()),
+	)
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
 	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
 	// (legacy SetInternalIP в handler.InternalAddressHandler + AllocateInternal/External в

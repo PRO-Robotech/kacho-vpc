@@ -33,6 +33,9 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	return subnetToProto(sub), nil
 }
 

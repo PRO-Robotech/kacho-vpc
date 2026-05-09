@@ -33,6 +33,13 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 	if err != nil {
 		return nil, err
 	}
+	// AuthZ: caller обязан иметь access к folder, владеющему ресурсом.
+	// При AuthN-noop (anonymous) HasFolderAccess возвращает true (empty
+	// FolderIDs = full access) — backward compat. С IAM token caller
+	// получит PermissionDenied для cross-folder.
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	return networkToProto(n), nil
 }
 
