@@ -14,7 +14,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -163,7 +162,7 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 // (для prefix length < 31). Использует crypto/rand для unpredictable allocation.
 func pickRandomIPv4(cidr netip.Prefix) (string, error) {
 	if !cidr.Addr().Is4() {
-		return "", fmt.Errorf("not ipv4")
+		return "", ErrInvalidIPv4
 	}
 	bits := cidr.Bits()
 	hostBits := 32 - bits

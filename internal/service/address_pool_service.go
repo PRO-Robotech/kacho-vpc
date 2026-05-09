@@ -100,19 +100,19 @@ func (s *AddressPoolService) List(ctx context.Context, f AddressPoolFilter, p Pa
 
 // UpdatePoolReq — частичное обновление; nil-пойнтеры/false-flags = no-op.
 type UpdatePoolReq struct {
-	ID                       string
-	Name                     *string
-	Description              *string
-	ReplaceLabels            bool
-	Labels                   map[string]string
-	ReplaceCIDR              bool
-	CIDRBlocks               []string
-	UpdateIsDefault          bool
-	IsDefault                bool
-	ReplaceSelectorLabels    bool
-	SelectorLabels           map[string]string
-	UpdateSelectorPriority   bool
-	SelectorPriority         int32
+	ID                     string
+	Name                   *string
+	Description            *string
+	ReplaceLabels          bool
+	Labels                 map[string]string
+	ReplaceCIDR            bool
+	CIDRBlocks             []string
+	UpdateIsDefault        bool
+	IsDefault              bool
+	ReplaceSelectorLabels  bool
+	SelectorLabels         map[string]string
+	UpdateSelectorPriority bool
+	SelectorPriority       int32
 }
 
 func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*domain.AddressPool, error) {
@@ -195,18 +195,18 @@ func (s *AddressPoolService) UnbindAddressOverride(ctx context.Context, addressI
 
 // ResolvedPool — результат cascade-резолва, с указанием через какой шаг матчилось.
 type ResolvedPool struct {
-	Pool             *domain.AddressPool
-	MatchedVia       string            // "address_override" | "network_default" | "label_selector" | "zone_default" | "global_default"
-	MatchedSelector  map[string]string // populated only for label_selector
+	Pool            *domain.AddressPool
+	MatchedVia      string            // "address_override" | "network_default" | "label_selector" | "zone_default" | "global_default"
+	MatchedSelector map[string]string // populated only for label_selector
 }
 
 // ResolvePoolForAddress — полный 5-step cascade:
 //
-//   1. address_pool_address_override        (explicit per-address)
-//   2. address_pool_network_default         (explicit per-network; для internal IP)
-//   3. cloud-label-selector ⊆ pool.selector_labels  (admin Cloud labels)
-//   4. zone-default                         (is_default=true для zone+kind)
-//   5. global-default                       (is_default=true для zone IS NULL и kind)
+//  1. address_pool_address_override        (explicit per-address)
+//  2. address_pool_network_default         (explicit per-network; для internal IP)
+//  3. cloud-label-selector ⊆ pool.selector_labels  (admin Cloud labels)
+//  4. zone-default                         (is_default=true для zone+kind)
+//  5. global-default                       (is_default=true для zone IS NULL и kind)
 //
 // Используется AllocateExternalIP. Если ни один шаг не дал результата —
 // возвращает ErrNotFound (caller возвращает FailedPrecondition / ResourceExhausted).
@@ -310,7 +310,7 @@ func (s *AddressPoolService) resolveWithRunnerUp(
 		return &ResolvedPool{Pool: pool, MatchedVia: "global_default"}, nil, nil
 	}
 
-	return nil, nil, fmt.Errorf("no address pool resolved for address %s (network %s)", addressID, networkID)
+	return nil, nil, fmt.Errorf("%w for address %s (network %s)", ErrPoolNotResolved, addressID, networkID)
 }
 
 func nilOrSecond(matches []*domain.AddressPool) *ResolvedPool {

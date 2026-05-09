@@ -9,10 +9,10 @@ Trail-документ применения Go-скилов к kacho-vpc + св�
 | golang-naming | ✅ | group-1 | package/struct/interface naming |
 | golang-modernize | ✅ | group-1 | go-modernize linter pass |
 | golang-lint | ✅ | group-1 | golangci-lint config + fix |
-| golang-continuous-integration | ⏳ | TBD | GitHub Actions workflow |
-| golang-error-handling | ⏳ | TBD | wrap discipline, sentinels |
-| golang-context | ⏳ | TBD | ctx propagation audit |
-| golang-safety | ⏳ | TBD | nil-checks, defer in loops |
+| golang-continuous-integration | ✅ | group-2 | .github/workflows/ci.yml + dependabot |
+| golang-error-handling | ✅ | group-3 | sentinel: ErrPoolNotResolved, ErrInvalidIPv4 |
+| golang-context | ✅ | group-3 | clean: no context.TODO in prod |
+| golang-safety | ✅ | group-3 | clean: no defer-in-loop, no nil-deref pattern |
 | golang-concurrency | ⏳ | TBD | goroutine ownership, leaks |
 | golang-data-structures | ⏳ | TBD | slices, maps capacity |
 | golang-design-patterns | ⏳ | TBD | functional options, lifecycle |

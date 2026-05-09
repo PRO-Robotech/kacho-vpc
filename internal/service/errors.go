@@ -20,3 +20,11 @@ var ErrFailedPrecondition = errors.New("failed precondition")
 // ErrInternal — generic-ошибка для неклассифицированных DB-проблем. Маппится
 // на gRPC Internal с фиксированным сообщением, чтобы не leak'ать pgx-текст.
 var ErrInternal = errors.New("internal database error")
+
+// ErrPoolNotResolved — ни один шаг IPAM cascade не дал результат.
+// Маппится в FailedPrecondition. Тестируется через errors.Is.
+var ErrPoolNotResolved = errors.New("no address pool resolved")
+
+// ErrInvalidIPv4 — попытка allocate IP из не-IPv4 CIDR.
+// Маппится в InvalidArgument.
+var ErrInvalidIPv4 = errors.New("not ipv4")
