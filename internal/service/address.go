@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
@@ -321,14 +322,17 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	// Inline IPAM allocation (Phase-2: kacho-vpc-controllers упразднён).
 	// Если client не передал explicit IP — выделяем здесь же в worker'е.
 	// Idempotent: если IP уже выставлен — Allocate* возвращает существующий.
+	//
+	// Atomicity: Insert уже committed; при allocate-failure compensating
+	// Delete возвращает Address к не-существующему состоянию. Без этого
+	// failed Operation оставлял dangling Address в БД (см. bug-report
+	// «при ошибке ресурс всё равно создал»).
 	if s.allocator != nil {
 		if created.ExternalIpv4 != nil && created.ExternalIpv4.Address == "" {
 			res, aerr := s.allocator.AllocateExternalIP(ctx, created.ID)
 			if aerr != nil {
-				// FailedPrecondition с "no external_ipv4 spec" не должен возникать
-				// (мы только что записали spec). Любая ошибка allocate — log + проброс.
-				return nil, status.Errorf(codes.FailedPrecondition,
-					"allocate external ip: %v", aerr)
+				s.compensatingDelete(ctx, created.ID, "external", aerr)
+				return nil, aerr
 			}
 			created.ExternalIpv4.Address = res.IP
 			created.ExternalIpv4.AddressPoolID = res.PoolID
@@ -336,13 +340,32 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		if created.InternalIpv4 != nil && created.InternalIpv4.Address == "" && created.InternalIpv4.SubnetID != "" {
 			res, aerr := s.allocator.AllocateInternalIP(ctx, created.ID)
 			if aerr != nil {
-				return nil, status.Errorf(codes.FailedPrecondition,
-					"allocate internal ip: %v", aerr)
+				s.compensatingDelete(ctx, created.ID, "internal", aerr)
+				return nil, aerr
 			}
 			created.InternalIpv4.Address = res.IP
 		}
 	}
 	return anypb.New(domainAddressToProto(created))
+}
+
+// compensatingDelete — undo Insert при failed allocate. Использует fresh
+// background ctx чтобы delete отработал даже если caller отменил orig ctx.
+// Failure delete'а — log-only: caller всё равно получает orig allocate-error,
+// orphan address будет подобран garbage-collector'ом / ручным cleanup'ом.
+func (s *AddressService) compensatingDelete(ctx context.Context, addressID, kind string, origErr error) {
+	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if delErr := s.repo.Delete(delCtx, addressID); delErr != nil {
+		slog.WarnContext(ctx, "compensating delete failed after allocate error — orphan address",
+			"address_id", addressID,
+			"kind", kind,
+			"orig_err", origErr,
+			"delete_err", delErr)
+	} else {
+		slog.InfoContext(ctx, "compensating delete after allocate failure",
+			"address_id", addressID, "kind", kind, "orig_err", origErr)
+	}
 }
 
 // Update обновляет Address.

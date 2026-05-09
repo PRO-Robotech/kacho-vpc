@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -153,12 +154,21 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 	// если 0 — это invalid pool config (IPv6, parse fail), и FailedPrecondition
 	// даёт оператору точную причину вместо вводящего в заблуждение «exhausted».
 	parsedV4Count := 0
+	totalConflicts := 0
+	skippedNonV4 := 0
+	parseFails := 0
 	for _, cidrStr := range pool.CIDRBlocks {
 		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
 		if err != nil {
+			parseFails++
+			slog.WarnContext(ctx, "allocator: skipping unparseable cidr",
+				"pool_id", pool.ID, "cidr", cidrStr, "err", err)
 			continue
 		}
 		if !cidr.Addr().Is4() {
+			skippedNonV4++
+			slog.WarnContext(ctx, "allocator: skipping non-IPv4 cidr",
+				"pool_id", pool.ID, "cidr", cidrStr)
 			continue
 		}
 		parsedV4Count++
@@ -178,10 +188,13 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
 			if err != nil {
 				if isUniqueViolation(err) {
+					totalConflicts++
 					addr.ExternalIpv4.Address = ""
 					addr.ExternalIpv4.AddressPoolID = ""
 					continue
 				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
+					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
 				return nil, err
 			}
 			return &AllocateResult{
@@ -201,10 +214,13 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
 			if err != nil {
 				if isUniqueViolation(err) {
+					totalConflicts++
 					addr.ExternalIpv4.Address = ""
 					addr.ExternalIpv4.AddressPoolID = ""
 					continue
 				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
+					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
 				return nil, err
 			}
 			return &AllocateResult{
@@ -213,6 +229,14 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 			}, nil
 		}
 	}
+	slog.WarnContext(ctx, "allocator: exhausted",
+		"pool_id", pool.ID,
+		"address_id", addressID,
+		"cidr_blocks", pool.CIDRBlocks,
+		"parsed_ipv4", parsedV4Count,
+		"skipped_non_v4", skippedNonV4,
+		"parse_fails", parseFails,
+		"unique_conflicts", totalConflicts)
 	if parsedV4Count == 0 {
 		// Pool без usable IPv4 CIDR — invalid config, не actually "exhausted".
 		// Validation в Create/Update должна это ловить, но защищаемся для
