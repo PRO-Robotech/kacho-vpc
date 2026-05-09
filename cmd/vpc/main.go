@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -175,8 +176,21 @@ func runServe(cfg config.Config) error {
 
 	go func() {
 		<-ctx.Done()
+		// 1) Stop accepting new RPC + ждать активные.
 		internalSrv.GracefulStop()
 		grpcSrv.GracefulStop()
+		// 2) Дождаться async LRO worker'ов (operations.Run). Без этого
+		//    in-flight Create/Update/Delete теряются на SIGTERM:
+		//    handler уже вернул Operation, worker крутит INSERT/Allocate,
+		//    процесс exit'ит mid-allocate → Operation.done=false навсегда.
+		//    Concurrency P0 #1 closure (зависит от kacho-corelib operations
+		//    Worker.Wait API).
+		drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := operations.Wait(drainCtx); err != nil {
+			logger.Warn("operations workers did not finish in time",
+				"err", err, "active", operations.Active())
+		}
+		cancel()
 	}()
 
 	go func() {
