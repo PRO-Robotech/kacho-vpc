@@ -60,6 +60,12 @@ const (
 // AllocateInternalIP — выделяет next-free IPv4 в subnet, который указан
 // в address.internal_ipv4.subnet_id. Idempotent: если IP уже выделен —
 // возвращает existing с AlreadyAllocated=true.
+//
+// Iterate по ВСЕМ V4CidrBlocks subnet'а (раньше брал только [0] — если
+// subnet расширили через AddCidrBlocks, второй+ prefix игнорировался и
+// первая полная CIDR давала "exhausted"). Двухфазный allocator: random
+// pick + deterministic sweep с tried-set (симметрично AllocateExternalIP),
+// устраняет false-fail на near-full subnet (см. concurrency P0 #2).
 func (a *AddressAllocator) AllocateInternalIP(ctx context.Context, addressID string) (*AllocateResult, error) {
 	addr, err := a.addrRepo.Get(ctx, addressID)
 	if err != nil {
@@ -84,30 +90,85 @@ func (a *AddressAllocator) AllocateInternalIP(ctx context.Context, addressID str
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"subnet %s has no v4_cidr_blocks", sub.ID)
 	}
-	cidr, err := netip.ParsePrefix(sub.V4CidrBlocks[0])
-	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"subnet %s invalid cidr in DB: %v", sub.ID, err)
-	}
 
-	for attempt := 0; attempt < allocateMaxAttempts; attempt++ {
-		ip, err := pickRandomIPv4(cidr)
+	parsedV4Count := 0
+	totalConflicts := 0
+	skippedNonV4 := 0
+	parseFails := 0
+	for _, cidrStr := range sub.V4CidrBlocks {
+		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
 		if err != nil {
-			return nil, status.Errorf(codes.ResourceExhausted, "subnet too small for allocation")
+			parseFails++
+			slog.WarnContext(ctx, "allocator: skipping unparseable subnet cidr",
+				"subnet_id", sub.ID, "cidr", cidrStr, "err", err)
+			continue
 		}
-		addr.InternalIpv4.Address = ip
-		updated, err := a.addrRepo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
-		if err != nil {
-			if isUniqueViolation(err) {
-				addr.InternalIpv4.Address = "" // reset for next attempt
+		if !cidr.Addr().Is4() {
+			skippedNonV4++
+			continue
+		}
+		parsedV4Count++
+		tried := make(map[string]struct{}, allocateMaxAttempts)
+		// Phase 1: random pick.
+		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
+			ip, err := pickRandomIPv4(cidr)
+			if err != nil {
+				break
+			}
+			if _, dup := tried[ip]; dup {
 				continue
 			}
-			return nil, err
+			tried[ip] = struct{}{}
+			addr.InternalIpv4.Address = ip
+			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
+					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{IP: updated.InternalIpv4.Address}, nil
 		}
-		return &AllocateResult{IP: updated.InternalIpv4.Address}, nil
+		// Phase 2: deterministic sweep.
+		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+			if _, dup := tried[candidate]; dup {
+				continue
+			}
+			tried[candidate] = struct{}{}
+			addr.InternalIpv4.Address = candidate
+			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
+					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{IP: updated.InternalIpv4.Address}, nil
+		}
+	}
+	slog.WarnContext(ctx, "allocator: subnet exhausted",
+		"subnet_id", sub.ID,
+		"address_id", addressID,
+		"cidr_blocks", sub.V4CidrBlocks,
+		"parsed_ipv4", parsedV4Count,
+		"skipped_non_v4", skippedNonV4,
+		"parse_fails", parseFails,
+		"unique_conflicts", totalConflicts)
+	if parsedV4Count == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"subnet %s has no IPv4 cidr_blocks (allocator requires IPv4)", sub.ID)
 	}
 	return nil, status.Errorf(codes.ResourceExhausted,
-		"subnet %s exhausted (failed to find free IP after %d attempts)", sub.ID, allocateMaxAttempts)
+		"subnet %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks; %d unique-conflicts)",
+		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
 }
 
 // AllocateExternalIP — резолвит pool через cascade и выделяет next-free IPv4
