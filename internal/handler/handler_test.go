@@ -188,6 +188,11 @@ func (c *mockFolderClient) Exists(_ context.Context, _ string) (bool, error) {
 	return c.exists, nil
 }
 
+// GetCloudID — mock-stub.
+func (c *mockFolderClient) GetCloudID(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 // ---- tests ----
 
 func TestNetworkHandler_Get_InvalidArg(t *testing.T) {

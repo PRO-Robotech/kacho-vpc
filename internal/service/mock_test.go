@@ -241,6 +241,23 @@ func (r *mockAddressRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetIPSpec — mock-stub (порт обязателен, для test'а возвращаем как Update).
+func (r *mockAddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if ext != nil {
+		a.ExternalIpv4 = ext
+	}
+	if intn != nil {
+		a.InternalIpv4 = intn
+	}
+	return a, nil
+}
+
 func (r *mockAddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -360,6 +377,11 @@ type mockFolderClient struct {
 
 func (c *mockFolderClient) Exists(_ context.Context, _ string) (bool, error) {
 	return c.exists, nil
+}
+
+// GetCloudID — mock-stub. По умолчанию возвращает empty (NotFound semantics).
+func (c *mockFolderClient) GetCloudID(_ context.Context, _ string) (string, error) {
+	return "", nil
 }
 
 // ---- mock OpsRepo ----

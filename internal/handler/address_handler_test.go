@@ -105,6 +105,23 @@ func (r *mockAddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*d
 	return nil, svc.ErrNotFound
 }
 
+// SetIPSpec — mock-stub.
+func (r *mockAddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return nil, svc.ErrNotFound
+	}
+	if ext != nil {
+		a.ExternalIpv4 = ext
+	}
+	if intn != nil {
+		a.InternalIpv4 = intn
+	}
+	return a, nil
+}
+
 func (r *mockAddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

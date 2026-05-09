@@ -21,7 +21,7 @@ func prefixesOverlap(a, b netipPrefix) bool {
 		return false
 	}
 	// netip.Prefix.Contains работает только с одиночным адресом, поэтому
-	// проверяем границы: один containts начало другого, либо наоборот.
+	// проверяем границы: один содержит начало другого, либо наоборот.
 	if a.Contains(b.Addr()) || b.Contains(a.Addr()) {
 		return true
 	}
