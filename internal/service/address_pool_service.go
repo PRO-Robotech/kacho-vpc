@@ -69,8 +69,23 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 		return nil, status.Error(codes.InvalidArgument, "cidr_blocks must contain at least one prefix")
 	}
 	for _, c := range req.CIDRBlocks {
-		if _, err := netip.ParsePrefix(strings.TrimSpace(c)); err != nil {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
+		}
+		// Allocator поддерживает пока только IPv4 — IPv6 CIDR проходил Create
+		// и потом давал silent ResourceExhausted на Allocate (CIDR пропускался
+		// в pickRandomIPv4/usableIPv4Sweep). Fail-fast здесь даёт явную причину.
+		if !p.Addr().Is4() {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"cidr %q: only IPv4 prefixes are supported by allocator", c)
+		}
+		// Host-bits должны быть 0 (canonical form: 198.51.100.0/24, не /5).
+		// Иначе pickRandomIPv4 строит base из adresnoy части и может выйти
+		// за пределы CIDR.
+		if p.Masked() != p {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
 		}
 	}
 	p := &domain.AddressPool{
@@ -131,8 +146,17 @@ func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*do
 	}
 	if req.ReplaceCIDR {
 		for _, c := range req.CIDRBlocks {
-			if _, err := netip.ParsePrefix(strings.TrimSpace(c)); err != nil {
+			p, err := netip.ParsePrefix(strings.TrimSpace(c))
+			if err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
+			}
+			if !p.Addr().Is4() {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"cidr %q: only IPv4 prefixes are supported by allocator", c)
+			}
+			if p.Masked() != p {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
 			}
 		}
 		cur.CIDRBlocks = req.CIDRBlocks

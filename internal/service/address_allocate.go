@@ -148,11 +148,20 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 	//          tried-set для memoization. Гарантирует closure под high-occupancy
 	//          (concurrency P0 #2 closure: устраняет ~9% false-fail на /28
 	//          при 95%+ occupancy).
+	//
+	// Diagnostic: считаем сколько CIDR'ов реально доходит до allocate-loop'а;
+	// если 0 — это invalid pool config (IPv6, parse fail), и FailedPrecondition
+	// даёт оператору точную причину вместо вводящего в заблуждение «exhausted».
+	parsedV4Count := 0
 	for _, cidrStr := range pool.CIDRBlocks {
 		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
 		if err != nil {
 			continue
 		}
+		if !cidr.Addr().Is4() {
+			continue
+		}
+		parsedV4Count++
 		tried := make(map[string]struct{}, allocateMaxAttempts)
 		// Phase 1: random pick.
 		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
@@ -204,8 +213,16 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 			}, nil
 		}
 	}
+	if parsedV4Count == 0 {
+		// Pool без usable IPv4 CIDR — invalid config, не actually "exhausted".
+		// Validation в Create/Update должна это ловить, но защищаемся для
+		// legacy-pools где validation добавлена позже их создания.
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no IPv4 cidr_blocks (allocator requires IPv4)", pool.ID)
+	}
 	return nil, status.Errorf(codes.ResourceExhausted,
-		"address pool %s exhausted (no free IP in any cidr_block)", pool.ID)
+		"address pool %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks)",
+		pool.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count)
 }
 
 // usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без
