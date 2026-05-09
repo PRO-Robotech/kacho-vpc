@@ -99,9 +99,17 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 	// Dedicated pgx.Conn вне пула — гарантированная изоляция LISTEN-сессии.
 	// При abnormal exit (panic, server kill) Close() из defer не выполнится, но
 	// сам conn закроется TCP'шно — pool затронут не будет (TODO #15 closed).
-	conn, err := pgx.Connect(ctx, h.dsn)
+	//
+	// Connect под inner timeout (2s): защита от self-DoS если Postgres
+	// перегружен. Слот semaphore удерживается ровно столько; иначе медленный
+	// Connect размазал бы 32 слота на 5+ секунд под нагрузкой → клиенты
+	// получали бы ResourceExhausted всё это время.
+	connectCtx, connectCancel := context.WithTimeout(ctx, 2*time.Second)
+	conn, err := pgx.Connect(connectCtx, h.dsn)
+	connectCancel()
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "connect: %v", err)
+		// Generic Unavailable без leak'а pgx-text (db hostname / port / sslmode).
+		return status.Error(codes.Unavailable, "watch backend unavailable")
 	}
 	defer func() {
 		closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
@@ -148,7 +156,8 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 				// timeout: продолжаем в re-poll.
 			} else {
 				// pg_notify connection drop / другое.
-				return status.Errorf(codes.Unavailable, "wait notification: %v", err)
+				// Без leak'а pgx-detail — клиент видит generic Unavailable.
+				return status.Error(codes.Unavailable, "watch notification stream lost")
 			}
 		}
 

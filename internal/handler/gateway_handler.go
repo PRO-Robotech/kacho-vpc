@@ -33,6 +33,9 @@ func (h *GatewayHandler) Get(ctx context.Context, req *vpcv1.GetGatewayRequest) 
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		return nil, err
+	}
 	return gatewayToProto(g), nil
 }
 
@@ -55,6 +58,9 @@ func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysReques
 }
 
 func (h *GatewayHandler) Create(ctx context.Context, req *vpcv1.CreateGatewayRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	gtype := ""
 	if _, ok := req.Gateway.(*vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec); ok {
 		gtype = "shared_egress"
@@ -73,6 +79,16 @@ func (h *GatewayHandler) Create(ctx context.Context, req *vpcv1.CreateGatewayReq
 }
 
 func (h *GatewayHandler) Update(ctx context.Context, req *vpcv1.UpdateGatewayRequest) (*operationpb.Operation, error) {
+	if req.GatewayId == "" {
+		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
+	}
+	g, err := h.svc.Get(ctx, req.GatewayId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -99,6 +115,13 @@ func (h *GatewayHandler) Delete(ctx context.Context, req *vpcv1.DeleteGatewayReq
 	if req.GatewayId == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
+	g, err := h.svc.Get(ctx, req.GatewayId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.GatewayId)
 	if err != nil {
 		return nil, err
@@ -107,6 +130,19 @@ func (h *GatewayHandler) Delete(ctx context.Context, req *vpcv1.DeleteGatewayReq
 }
 
 func (h *GatewayHandler) Move(ctx context.Context, req *vpcv1.MoveGatewayRequest) (*operationpb.Operation, error) {
+	if req.GatewayId == "" {
+		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
+	}
+	g, err := h.svc.Get(ctx, req.GatewayId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.GatewayId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err

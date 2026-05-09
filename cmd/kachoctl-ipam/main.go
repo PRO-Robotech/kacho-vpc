@@ -1,6 +1,7 @@
 // kachoctl-ipam — admin CLI для IPAM-операций kacho-vpc:
-//   pool create/list/get/delete + bind* + check + explain.
-//   network set-pool-selector / unset-pool-selector / get-pool-selector.
+//
+//	pool create/list/get/delete + bind* + check + explain.
+//	network set-pool-selector / unset-pool-selector / get-pool-selector.
 //
 // Подключается к internal-порту kacho-vpc (default :9091). Использование
 // внутри cluster (через port-forward) или dev-стенда.

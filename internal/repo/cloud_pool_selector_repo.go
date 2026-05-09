@@ -50,10 +50,10 @@ func (r *CloudPoolSelectorRepo) Set(ctx context.Context, cloudID string, selecto
 
 func (r *CloudPoolSelectorRepo) Get(ctx context.Context, cloudID string) (*domain.CloudPoolSelector, error) {
 	var (
-		out     domain.CloudPoolSelector
-		js      []byte
-		setAt   time.Time
-		setBy   string
+		out   domain.CloudPoolSelector
+		js    []byte
+		setAt time.Time
+		setBy string
 	)
 	err := r.pool.QueryRow(ctx, `
 		SELECT selector, set_at, set_by

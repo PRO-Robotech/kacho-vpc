@@ -27,8 +27,8 @@ type AddressPool struct {
 type AddressPoolKind int16
 
 const (
-	AddressPoolKindUnspecified AddressPoolKind = 0
-	AddressPoolKindExternalPublic AddressPoolKind = 1
-	AddressPoolKindExternalTest   AddressPoolKind = 2
+	AddressPoolKindUnspecified      AddressPoolKind = 0
+	AddressPoolKindExternalPublic   AddressPoolKind = 1
+	AddressPoolKindExternalTest     AddressPoolKind = 2
 	AddressPoolKindReservedInternal AddressPoolKind = 100
 )

@@ -247,28 +247,44 @@ func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
 
 // pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast addresses
 // (для prefix length < 31). Использует crypto/rand для unpredictable allocation.
+//
+// Edge cases (R8 fix /31 off-by-one):
+//   - /32 (hostBits=0): единственный адрес — base.
+//   - /31 (hostBits=1): оба адреса валидны (point-to-point) — base+0 или base+1.
+//     Раньше offset считался как `rand%2 + 1` → возвращал base+1 или base+2,
+//     второй вариант ВЫХОДИЛ за CIDR (UNIQUE-constraint в БД не валидирует
+//     CIDR-membership → IP реально аллокировался снаружи pool.cidr).
+//   - /≤30 (hostBits≥2): пропускаем .0 (network) и .last (broadcast) →
+//     offset в [1, maxHosts].
 func pickRandomIPv4(cidr netip.Prefix) (string, error) {
 	if !cidr.Addr().Is4() {
 		return "", ErrInvalidIPv4
 	}
 	bits := cidr.Bits()
 	hostBits := 32 - bits
-	if hostBits == 0 {
-		// /32 — единственный адрес.
-		return cidr.Addr().String(), nil
-	}
-	maxHosts := uint32(1<<hostBits) - 2 // .0 / .last исключаем
-	if maxHosts == 0 {
-		// /31 — точка-точка, оба адреса валидны.
-		maxHosts = 2
-	}
-	var randBytes [4]byte
-	if _, err := rand.Read(randBytes[:]); err != nil {
-		return "", err
-	}
-	offset := binary.BigEndian.Uint32(randBytes[:])%maxHosts + 1
 	base := cidr.Addr().As4()
 	baseInt := binary.BigEndian.Uint32(base[:])
+	var offset uint32
+	switch hostBits {
+	case 0:
+		// /32 — единственный адрес.
+		return cidr.Addr().String(), nil
+	case 1:
+		// /31 — оба валидны: offset ∈ {0, 1}.
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:]) % 2
+	default:
+		// /≤30 — пропускаем network/broadcast: offset ∈ [1, 2^hostBits - 2].
+		maxHosts := uint32(1<<hostBits) - 2
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:])%maxHosts + 1
+	}
 	var ipBytes [4]byte
 	binary.BigEndian.PutUint32(ipBytes[:], baseInt+offset)
 	return net.IP(ipBytes[:]).String(), nil

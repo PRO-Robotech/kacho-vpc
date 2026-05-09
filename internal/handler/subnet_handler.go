@@ -58,6 +58,9 @@ func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest)
 }
 
 func (h *SubnetHandler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateSubnetReq{
 		FolderID:     req.FolderId,
 		Name:         req.Name,
@@ -85,6 +88,13 @@ func (h *SubnetHandler) Create(ctx context.Context, req *vpcv1.CreateSubnetReque
 func (h *SubnetHandler) Update(ctx context.Context, req *vpcv1.UpdateSubnetRequest) (*operationpb.Operation, error) {
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -132,6 +142,19 @@ func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubne
 }
 
 func (h *SubnetHandler) Move(ctx context.Context, req *vpcv1.MoveSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.SubnetId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -143,6 +166,13 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.SubnetId)
 	if err != nil {
 		return nil, err
@@ -151,6 +181,16 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 }
 
 func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.AddCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
 	if err != nil {
 		return nil, err
@@ -159,6 +199,16 @@ func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetC
 }
 
 func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.RemoveCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
 	if err != nil {
 		return nil, err
@@ -167,6 +217,16 @@ func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveS
 }
 
 func (h *SubnetHandler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Relocate(ctx, req.SubnetId, req.DestinationZoneId)
 	if err != nil {
 		return nil, err

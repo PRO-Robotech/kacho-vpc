@@ -20,19 +20,24 @@ import (
 //
 // Используется handler'ами как `return internalMapErr(ctx-tag, err)`. Sentinel
 // service-errors классифицируются; raw pgErr → generic Internal без leak'а.
+//
+// R8 fix M1: для sentinel branch'ей возвращаем sentinel.Error() без wrap-tail.
+// Иначе `fmt.Errorf("get address: %w: row %v", ErrNotFound, pgErr.Detail)` →
+// `err.Error()` отдаст «get address: not found: row {hostname=db-1,...}» →
+// pgx-leak через NotFound branch.
 func internalMapErr(tag string, err error) error {
 	if err == nil {
 		return nil
 	}
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		return status.Error(codes.NotFound, err.Error())
+		return status.Error(codes.NotFound, service.ErrNotFound.Error())
 	case errors.Is(err, service.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, err.Error())
+		return status.Error(codes.AlreadyExists, service.ErrAlreadyExists.Error())
 	case errors.Is(err, service.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, err.Error())
+		return status.Error(codes.FailedPrecondition, service.ErrFailedPrecondition.Error())
 	case errors.Is(err, service.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, service.ErrInvalidArg.Error())
 	}
 	// Уже-сформированный gRPC status (не Unknown) пробрасываем — например
 	// status.Error из самого service-слоя.

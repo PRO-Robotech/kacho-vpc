@@ -132,9 +132,11 @@ func runServe(cfg config.Config) error {
 	// gRPC server с tenant-interceptor (scaffold под IAM/AuthZ).
 	// Сейчас reads metadata; future — JWT claims. Handler'ы используют
 	// AssertFolderOwnership(ctx, resource.FolderID) для AuthZ check.
+	// requireAdmin=false: публичный listener, anonymous + folder-scoped tenant
+	// допустимы; admin-flag не enforce'ится.
 	grpcSrv := grpcsrv.NewServer(
-		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor()),
-		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor()),
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(false)),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(false)),
 	)
 
 	// Регистрируем все публичные сервисы.
@@ -151,9 +153,13 @@ func runServe(cfg config.Config) error {
 
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
+	// requireAdmin=true: с IAM-токеном на listener'е допустимы только caller'ы
+	// с admin-claim'ом. Anonymous-mode (нет AuthN) — backward-compat (interceptor
+	// принимает). NetworkPolicy в helm закрывает port на уровне k8s; admin-check
+	// — defense-in-depth внутри.
 	internalSrv := grpcsrv.NewServer(
-		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor()),
-		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor()),
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(true)),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true)),
 	)
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
 	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
@@ -183,7 +189,14 @@ func runServe(cfg config.Config) error {
 		"public_port", cfg.GrpcPort,
 		"internal_port", cfg.InternalGrpcPort)
 
+	// shutdownDone закрывается после полного дрейна (GracefulStop + LRO worker'ов).
+	// Без этого канала горутина детачилась бы — Serve() возвращал бы сразу после
+	// GracefulStop, runServe → main → os.Exit обрывал бы in-flight LRO worker'ов
+	// до того как Wait успел дождаться. Теперь runServe блокируется на shutdownDone
+	// перед возвратом — fix P0 регрессии R7→R8.
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		// 1) Stop accepting new RPC + ждать активные.
 		internalSrv.GracefulStop()
@@ -195,11 +208,11 @@ func runServe(cfg config.Config) error {
 		//    Concurrency P0 #1 closure (зависит от kacho-corelib operations
 		//    Worker.Wait API).
 		drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		if err := operations.Wait(drainCtx); err != nil {
 			logger.Warn("operations workers did not finish in time",
 				"err", err, "active", operations.Active())
 		}
-		cancel()
 	}()
 
 	go func() {
@@ -208,7 +221,11 @@ func runServe(cfg config.Config) error {
 		}
 	}()
 
-	return grpcSrv.Serve(listener)
+	serveErr := grpcSrv.Serve(listener)
+	// Блокируемся до полного drain'а LRO worker'ов перед возвратом из runServe
+	// (иначе main → os.Exit обрывает worker'ов).
+	<-shutdownDone
+	return serveErr
 }
 
 func runMigrate(cfg config.Config, direction string) {

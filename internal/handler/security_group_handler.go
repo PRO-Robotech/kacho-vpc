@@ -33,6 +33,9 @@ func (h *SecurityGroupHandler) Get(ctx context.Context, req *vpcv1.GetSecurityGr
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	return sgToProto(sg), nil
 }
 
@@ -55,6 +58,9 @@ func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurity
 }
 
 func (h *SecurityGroupHandler) Create(ctx context.Context, req *vpcv1.CreateSecurityGroupRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateSecurityGroupReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -75,6 +81,13 @@ func (h *SecurityGroupHandler) Create(ctx context.Context, req *vpcv1.CreateSecu
 func (h *SecurityGroupHandler) Update(ctx context.Context, req *vpcv1.UpdateSecurityGroupRequest) (*operationpb.Operation, error) {
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -98,6 +111,16 @@ func (h *SecurityGroupHandler) Update(ctx context.Context, req *vpcv1.UpdateSecu
 }
 
 func (h *SecurityGroupHandler) UpdateRules(ctx context.Context, req *vpcv1.UpdateSecurityGroupRulesRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	updReq := svc.UpdateRulesReq{
 		SecurityGroupID: req.SecurityGroupId,
 		DeletionRuleIDs: req.DeletionRuleIds,
@@ -113,6 +136,16 @@ func (h *SecurityGroupHandler) UpdateRules(ctx context.Context, req *vpcv1.Updat
 }
 
 func (h *SecurityGroupHandler) UpdateRule(ctx context.Context, req *vpcv1.UpdateSecurityGroupRuleRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -134,6 +167,13 @@ func (h *SecurityGroupHandler) Delete(ctx context.Context, req *vpcv1.DeleteSecu
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.SecurityGroupId)
 	if err != nil {
 		return nil, err
@@ -142,6 +182,19 @@ func (h *SecurityGroupHandler) Delete(ctx context.Context, req *vpcv1.DeleteSecu
 }
 
 func (h *SecurityGroupHandler) Move(ctx context.Context, req *vpcv1.MoveSecurityGroupRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.SecurityGroupId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err

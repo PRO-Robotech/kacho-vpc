@@ -14,6 +14,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -94,21 +95,57 @@ func AssertFolderOwnership(ctx context.Context, folderID string) error {
 // Когда подключится IAM — этот interceptor заменится на JWT-validating
 // interceptor который извлекает folders/admin claims из token. Downstream
 // API (TenantFromCtx, AssertFolderOwnership) не изменится.
-func TenantUnaryInterceptor() grpc.UnaryServerInterceptor {
+//
+// requireAdmin=true (для internal :9091 listener) — отвергает caller'а без
+// admin-flag PermissionDenied. Anonymous-mode (нет AuthN) автоматически
+// admin=true → backward-compat. С IAM token — Internal RPC доступны только
+// service-account'ам с admin-claim'ом.
+func TenantUnaryInterceptor(requireAdmin bool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		t := tenantFromMetadata(ctx)
+		if requireAdmin {
+			if err := assertAdminAccess(t, info.FullMethod); err != nil {
+				return nil, err
+			}
+		}
 		ctx = context.WithValue(ctx, tenantCtxKey{}, t)
 		return handler(ctx, req)
 	}
 }
 
 // TenantStreamInterceptor — то же для server-stream RPC (для Watch).
-func TenantStreamInterceptor() grpc.StreamServerInterceptor {
+func TenantStreamInterceptor(requireAdmin bool) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		t := tenantFromMetadata(ss.Context())
+		if requireAdmin {
+			if err := assertAdminAccess(t, info.FullMethod); err != nil {
+				return err
+			}
+		}
 		ctx := context.WithValue(ss.Context(), tenantCtxKey{}, t)
 		return handler(srv, &wrappedStream{ServerStream: ss, ctx: ctx})
 	}
+}
+
+// assertAdminAccess — internal :9091 listener gate. Отвергает не-admin caller'а.
+// Anonymous (нет AuthN) → admin=true автоматически (backward-compat).
+// Имя метода используется для audit.
+func assertAdminAccess(t TenantCtx, fullMethod string) error {
+	// Anonymous mode (no metadata) → нет AuthN, нет AuthZ — backward-compat.
+	if t.Actor == "" && len(t.FolderIDs) == 0 && !t.Admin {
+		return nil
+	}
+	// AuthN включён, но caller не admin — это RPC только для admin.
+	if !t.Admin {
+		// Дополнительная защита: если method не /Internal* — вернём NotFound,
+		// чтобы не светить структуру (admin-only listener вообще не должен
+		// показывать наличие internal сервисов).
+		if !strings.Contains(fullMethod, "/Internal") {
+			return status.Error(codes.NotFound, "not found")
+		}
+		return status.Error(codes.PermissionDenied, "Permission denied")
+	}
+	return nil
 }
 
 type wrappedStream struct {

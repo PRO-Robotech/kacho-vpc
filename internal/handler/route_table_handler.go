@@ -33,6 +33,9 @@ func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableReq
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
+	}
 	return routeTableToProto(rt), nil
 }
 
@@ -55,6 +58,9 @@ func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTables
 }
 
 func (h *RouteTableHandler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateRouteTableReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -84,6 +90,13 @@ func (h *RouteTableHandler) Create(ctx context.Context, req *vpcv1.CreateRouteTa
 func (h *RouteTableHandler) Update(ctx context.Context, req *vpcv1.UpdateRouteTableRequest) (*operationpb.Operation, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -134,6 +147,19 @@ func (h *RouteTableHandler) ListOperations(ctx context.Context, req *vpcv1.ListR
 }
 
 func (h *RouteTableHandler) Move(ctx context.Context, req *vpcv1.MoveRouteTableRequest) (*operationpb.Operation, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.RouteTableId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -144,6 +170,13 @@ func (h *RouteTableHandler) Move(ctx context.Context, req *vpcv1.MoveRouteTableR
 func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTableRequest) (*operationpb.Operation, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.RouteTableId)
 	if err != nil {

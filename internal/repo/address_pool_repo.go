@@ -299,9 +299,15 @@ func (r *AddressPoolRepo) CountAddressesByPool(ctx context.Context, poolID strin
 }
 
 // CountAddressesByPoolPerCIDR — для каждого CIDR pool'а считаем allocated IPs.
-// Single-roundtrip: один SELECT с unnest($cidrs) + LEFT JOIN addresses через
-// inet-оператор `<<`. Раньше было N+1 (по запросу на каждый CIDR) — заменено
-// одним запросом с GROUP BY (concurrency P0 #4 closure).
+// Single-roundtrip: один SELECT с unnest WITH ORDINALITY + LEFT JOIN addresses
+// через inet-оператор `<<`. Раньше было N+1 — заменено одним запросом с GROUP
+// BY (concurrency P0 #4 closure).
+//
+// Используем ORDINALITY и индексируем результат по позиции, а не по
+// canonical-form CIDR-text: иначе при storage `198.51.100.0/24` vs Postgres-
+// canonical вид то же самое, но при не-canonical (`198.51.100.5/24`) ключи
+// расходятся → caller получает phantom-zero для своего raw-input ключа
+// (R7 regression: «canonicalization mismatch»).
 func (r *AddressPoolRepo) CountAddressesByPoolPerCIDR(ctx context.Context, poolID string) (map[string]int64, error) {
 	pool, err := r.Get(ctx, poolID)
 	if err != nil {
@@ -312,36 +318,35 @@ func (r *AddressPoolRepo) CountAddressesByPoolPerCIDR(ctx context.Context, poolI
 		return out, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-SELECT c.cidr::text, COALESCE(count(a.id) FILTER (
+SELECT c.idx, COALESCE(count(a.id) FILTER (
     WHERE coalesce(a.external_ipv4 ->> 'address','') <> ''
-      AND a.external_ipv4 ->> 'address_pool_id' = $1
       AND (a.external_ipv4 ->> 'address')::inet << c.cidr
 ), 0) AS n
-FROM unnest($2::cidr[]) AS c(cidr)
+FROM unnest($2::cidr[]) WITH ORDINALITY AS c(cidr, idx)
 LEFT JOIN addresses a ON a.external_ipv4 ->> 'address_pool_id' = $1
-GROUP BY c.cidr
+GROUP BY c.idx
 `, poolID, pool.CIDRBlocks)
 	if err != nil {
 		return nil, wrapPgErr(err, "AddressPool", poolID)
 	}
 	defer rows.Close()
+	// Индексируем по 1-based ordinality (Postgres convention). Возвращаем
+	// caller'у ключи в том же raw-string виде, что в pool.CIDRBlocks — без
+	// канонизации.
+	counts := make(map[int]int64, len(pool.CIDRBlocks))
 	for rows.Next() {
-		var cidr string
+		var idx int
 		var n int64
-		if err := rows.Scan(&cidr, &n); err != nil {
+		if err := rows.Scan(&idx, &n); err != nil {
 			return nil, wrapPgErr(err, "AddressPool", poolID)
 		}
-		out[cidr] = n
+		counts[idx] = n
 	}
 	if err := rows.Err(); err != nil {
 		return nil, wrapPgErr(err, "AddressPool", poolID)
 	}
-	// Postgres canonicalizes "198.51.100.0/24" identically; но если pool.CIDRBlocks
-	// хранит спецификации без canonical form, добавим missing keys как 0.
-	for _, c := range pool.CIDRBlocks {
-		if _, ok := out[c]; !ok {
-			out[c] = 0
-		}
+	for i, c := range pool.CIDRBlocks {
+		out[c] = counts[i+1] // ORDINALITY is 1-based; missing → zero (LEFT JOIN guarantees row)
 	}
 	return out, nil
 }

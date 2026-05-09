@@ -62,6 +62,10 @@ func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksReques
 }
 
 func (h *NetworkHandler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (*operationpb.Operation, error) {
+	// AuthZ: caller обязан иметь access к destination folder.
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Create(ctx, svc.CreateNetworkReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -75,6 +79,17 @@ func (h *NetworkHandler) Create(ctx context.Context, req *vpcv1.CreateNetworkReq
 }
 
 func (h *NetworkHandler) Update(ctx context.Context, req *vpcv1.UpdateNetworkRequest) (*operationpb.Operation, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// AuthZ: sync repo.Get + folder check до старта Operation.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -165,6 +180,20 @@ func (h *NetworkHandler) ListOperations(ctx context.Context, req *vpcv1.ListNetw
 }
 
 func (h *NetworkHandler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest) (*operationpb.Operation, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// AuthZ: caller должен владеть и source-folder'ом (текущим), и destination'ом.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.NetworkId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -175,6 +204,13 @@ func (h *NetworkHandler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest
 func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (*operationpb.Operation, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.NetworkId)
 	if err != nil {

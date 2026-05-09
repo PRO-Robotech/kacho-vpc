@@ -33,6 +33,9 @@ func (h *PrivateEndpointHandler) Get(ctx context.Context, req *pe.GetPrivateEndp
 	if err != nil {
 		return nil, err
 	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
+	}
 	return privateEndpointToProto(got), nil
 }
 
@@ -59,6 +62,9 @@ func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEn
 }
 
 func (h *PrivateEndpointHandler) Create(ctx context.Context, req *pe.CreatePrivateEndpointRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	r := svc.CreatePrivateEndpointReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -92,6 +98,16 @@ func (h *PrivateEndpointHandler) Create(ctx context.Context, req *pe.CreatePriva
 }
 
 func (h *PrivateEndpointHandler) Update(ctx context.Context, req *pe.UpdatePrivateEndpointRequest) (*operationpb.Operation, error) {
+	if req.PrivateEndpointId == "" {
+		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
+	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -118,6 +134,13 @@ func (h *PrivateEndpointHandler) Update(ctx context.Context, req *pe.UpdatePriva
 func (h *PrivateEndpointHandler) Delete(ctx context.Context, req *pe.DeletePrivateEndpointRequest) (*operationpb.Operation, error) {
 	if req.PrivateEndpointId == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
+	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.PrivateEndpointId)
 	if err != nil {

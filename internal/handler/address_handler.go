@@ -84,6 +84,9 @@ func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesReque
 }
 
 func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateAddressReq{
 		FolderID:           req.FolderId,
 		Name:               req.Name,
@@ -120,6 +123,13 @@ func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressReq
 func (h *AddressHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressRequest) (*operationpb.Operation, error) {
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -159,6 +169,19 @@ func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddr
 }
 
 func (h *AddressHandler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest) (*operationpb.Operation, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.AddressId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -169,6 +192,13 @@ func (h *AddressHandler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest
 func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (*operationpb.Operation, error) {
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.AddressId)
 	if err != nil {

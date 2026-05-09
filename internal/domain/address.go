@@ -41,7 +41,7 @@ type AddressRequirements struct {
 
 // InternalIpv4Spec — параметры внутреннего IPv4-адреса.
 type InternalIpv4Spec struct {
-	Address  string `json:"address"`   // например 10.0.0.X
+	Address  string `json:"address"` // например 10.0.0.X
 	SubnetID string `json:"subnet_id"`
 }
 
