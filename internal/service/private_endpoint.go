@@ -12,8 +12,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreatePrivateEndpointReq — запрос на создание PrivateEndpoint.
@@ -149,7 +149,7 @@ func (s *PrivateEndpointService) doCreate(ctx context.Context, peID string, req 
 	}
 	created, err := s.repo.Insert(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainPrivateEndpointToProto(created))
 }
@@ -183,7 +183,7 @@ func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEn
 		applyPrivateEndpointMask(got, req)
 		updated, err := s.repo.Update(ctx, got)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
 		return anypb.New(domainPrivateEndpointToProto(updated))
 	})

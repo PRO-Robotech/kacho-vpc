@@ -13,8 +13,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreateGatewayReq — запрос на создание NAT gateway.
@@ -121,7 +121,7 @@ func (s *GatewayService) doCreate(ctx context.Context, gwID string, req CreateGa
 	}
 	created, err := s.repo.Insert(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainGatewayToProto(created))
 }
@@ -161,7 +161,7 @@ func (s *GatewayService) doUpdate(ctx context.Context, req UpdateGatewayReq) (*a
 	applyGatewayMask(g, req)
 	updated, err := s.repo.Update(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainGatewayToProto(updated))
 }

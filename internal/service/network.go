@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -437,40 +435,5 @@ func domainNetworkToProto(n *domain.Network) *vpcv1.Network {
 // errors.Is используется потому, что repo может оборачивать sentinel через %w
 // (например, ErrFailedPrecondition + контекст "network is not empty").
 //
-// Sentinel-prefix (`failed precondition: `, `not found`, ...) удаляется при
-// преобразовании в gRPC-сообщение, чтобы клиент видел verbatim YC text без
-// internal-обёртки. См. YC-DIFF-CIDR-ERROR-SHAPE.md.
-func mapRepoErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, ErrNotFound) {
-		return status.Error(codes.NotFound, stripSentinel(err, ErrNotFound))
-	}
-	if errors.Is(err, ErrAlreadyExists) {
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ErrAlreadyExists))
-	}
-	if errors.Is(err, ErrFailedPrecondition) {
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ErrFailedPrecondition))
-	}
-	if errors.Is(err, ErrInvalidArg) {
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ErrInvalidArg))
-	}
-	if errors.Is(err, ErrInternal) {
-		// Generic Internal без leak'а pgx-текста.
-		return status.Error(codes.Internal, "internal database error")
-	}
-	return err
-}
-
-// stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »),
-// чтобы выдать клиенту verbatim text без internal-обёртки sentinel-ошибки.
-// Если err == sentinel или контекст не добавлен, возвращает sentinel.Error().
-func stripSentinel(err, sentinel error) string {
-	msg := err.Error()
-	prefix := sentinel.Error() + ": "
-	if rest, ok := strings.CutPrefix(msg, prefix); ok {
-		return rest
-	}
-	return msg
-}
+// mapRepoErr / stripSentinel переехали в maperr.go (ранее был только тут,
+// что давало неявную зависимость network.go ↔ все service-файлы).

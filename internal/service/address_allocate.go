@@ -116,7 +116,10 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 		}, nil
 	}
 
-	resolved, err := a.pools.ResolvePoolForAddress(ctx, addressID)
+	// ResolvePoolForAddressObj переиспользует уже-полученный addr — устраняет
+	// double-Get в request-path (cascade resolve внутри иначе делает повторный
+	// addrRepo.Get для того же id).
+	resolved, err := a.pools.ResolvePoolForAddressObj(ctx, addr)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -187,10 +190,13 @@ func pickRandomIPv4(cidr netip.Prefix) (string, error) {
 	return net.IP(ipBytes[:]).String(), nil
 }
 
-// isUniqueViolation — распознаёт UNIQUE-violation как от raw pgErr
-// (substring-match), так и от repo-обёртки через sentinel ErrAlreadyExists.
-// Без второй ветки allocator после wrapPgErr в SetIPSpec вылетал из retry-loop
-// с raw "already exists" вместо ResourceExhausted.
+// isUniqueViolation распознаёт UNIQUE-violation для retry-loop в allocate.
+//
+// Принципиальный путь: repo через wrapPgErr оборачивает SQLSTATE 23505 в
+// ErrAlreadyExists — это и есть contract repo↔service. Substring-fallback
+// оставлен для случаев когда какой-то новый repo может вернуть raw pgErr
+// без обёртки (defensive). Constraint-specific имена удалены — service не
+// должен знать DB-schema.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
@@ -198,13 +204,9 @@ func isUniqueViolation(err error) bool {
 	if errors.Is(err, ErrAlreadyExists) {
 		return true
 	}
+	// Defensive fallback: общие признаки UNIQUE-violation без leak'а
+	// constraint-имён в service-layer.
 	msg := err.Error()
-	return contains(msg, "duplicate key value") ||
-		contains(msg, "SQLSTATE 23505") ||
-		contains(msg, "addresses_external_ip_uniq") ||
-		contains(msg, "addresses_internal_subnet_ip_uniq") ||
-		contains(msg, "addresses_external_pool_ip_uniq") ||
-		contains(msg, "already exists")
+	return strings.Contains(msg, "SQLSTATE 23505") ||
+		strings.Contains(msg, "duplicate key value")
 }
-
-func contains(s, sub string) bool { return strings.Contains(s, sub) }

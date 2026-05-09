@@ -14,8 +14,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreateRouteTableReq — запрос на создание таблицы маршрутизации.
@@ -140,7 +140,7 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 	}
 	created, err := s.repo.Insert(ctx, rt)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainRouteTableToProto(created))
 }
@@ -185,7 +185,7 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 
 	updated, err := s.repo.Update(ctx, rt)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainRouteTableToProto(updated))
 }

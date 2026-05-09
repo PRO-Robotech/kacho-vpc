@@ -125,7 +125,7 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 		}
 		created, err := s.repo.Insert(ctx, sg)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
 		return anypb.New(domainSGToProto(created))
 	})
@@ -167,7 +167,7 @@ func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, fold
 	}
 	created, err := s.repo.Insert(ctx, sg)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return created, nil
 }
@@ -220,7 +220,7 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 		}
 		updated, err := s.repo.Update(ctx, sg)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
 		return anypb.New(domainSGToProto(updated))
 	})
@@ -230,9 +230,9 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 // UpdateRulesReq — параметры UpdateRules: атомарно удалить правила deletionRuleIDs
 // и добавить additionRuleSpecs (присвоит новые ID).
 type UpdateRulesReq struct {
-	SecurityGroupID    string
-	DeletionRuleIDs    []string
-	AdditionRuleSpecs  []domain.SecurityGroupRule
+	SecurityGroupID   string
+	DeletionRuleIDs   []string
+	AdditionRuleSpecs []domain.SecurityGroupRule
 }
 
 // UpdateRules заменяет набор правил SG атомарно через Operation.

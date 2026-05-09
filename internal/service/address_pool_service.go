@@ -215,6 +215,29 @@ func (s *AddressPoolService) ResolvePoolForAddress(ctx context.Context, addressI
 	return res, err
 }
 
+// ResolvePoolForAddressObj — то же что ResolvePoolForAddress, но принимает
+// уже полученный *domain.Address. Избегает повторного s.addrRepo.Get(addressID)
+// в hot path AllocateExternalIP, который сам уже сделал Get.
+func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr *domain.Address) (*ResolvedPool, error) {
+	res, _, err := s.resolveWithRunnerUpFor(ctx, addr, "", domain.AddressPoolKindExternalPublic)
+	return res, err
+}
+
+// resolveWithRunnerUpFor — общая логика с уже полученным addr (или nil).
+// Если addr != nil — пропускает s.addrRepo.Get внутри.
+func (s *AddressPoolService) resolveWithRunnerUpFor(
+	ctx context.Context,
+	addr *domain.Address,
+	networkIDOverride string,
+	kindHint domain.AddressPoolKind,
+) (*ResolvedPool, *ResolvedPool, error) {
+	if addr == nil {
+		// Совместимый путь — без addressID и без preloaded addr.
+		return s.resolveWithRunnerUp(ctx, "", networkIDOverride, kindHint)
+	}
+	return s.doResolve(ctx, addr.ID, addr, networkIDOverride, kindHint)
+}
+
 // resolveWithRunnerUp — общая логика резолва, опционально вычисляет runner-up
 // (для ExplainResolution). networkID может быть передан явно (hypothetical
 // resolve когда address ещё не существует); если addressID непуст — он имеет
@@ -231,6 +254,18 @@ func (s *AddressPoolService) resolveWithRunnerUp(
 	addressID, networkIDOverride string,
 	kindHint domain.AddressPoolKind,
 ) (*ResolvedPool, *ResolvedPool, error) {
+	return s.doResolve(ctx, addressID, nil, networkIDOverride, kindHint)
+}
+
+// doResolve — единая реализация cascade. Если preloadedAddr != nil — переиспользуется
+// без дополнительного s.addrRepo.Get (устраняет double-Get в hot path).
+func (s *AddressPoolService) doResolve(
+	ctx context.Context,
+	addressID string,
+	preloadedAddr *domain.Address,
+	networkIDOverride string,
+	kindHint domain.AddressPoolKind,
+) (*ResolvedPool, *ResolvedPool, error) {
 
 	// Step 1: address_override.
 	if addressID != "" {
@@ -245,13 +280,18 @@ func (s *AddressPoolService) resolveWithRunnerUp(
 	}
 
 	// Resolve network_id, zone_id, folder_id из address-spec.
+	// Используем preloadedAddr если есть; иначе делаем Get.
 	networkID := networkIDOverride
 	zoneID := ""
 	folderID := ""
 	if addressID != "" {
-		a, err := s.addrRepo.Get(ctx, addressID)
-		if err != nil {
-			return nil, nil, err
+		a := preloadedAddr
+		if a == nil {
+			fetched, err := s.addrRepo.Get(ctx, addressID)
+			if err != nil {
+				return nil, nil, err
+			}
+			a = fetched
 		}
 		folderID = a.FolderID
 		if a.ExternalIpv4 != nil && a.ExternalIpv4.ZoneID != "" {
