@@ -42,6 +42,7 @@ type NetworkService struct {
 	subnetRepo     SubnetRepo
 	routeTableRepo RouteTableRepo
 	sgService      *SecurityGroupService // для создания default SG (может быть nil в тестах)
+	sgRepo         SecurityGroupRepo     // для inline default-SG creation в worker'е (Phase-2: kacho-vpc-controllers упразднён)
 	folderClient   FolderClient
 	opsRepo        operations.Repo
 }
@@ -64,6 +65,11 @@ func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo R
 		opsRepo:        opsRepo,
 	}
 }
+
+// SetSGRepo wires SG repo для inline default-SG creation. Должно вызываться
+// composition root после конструирования (mirror SetAllocator в AddressService).
+// Если nil — default SG не создаётся (legacy behaviour).
+func (s *NetworkService) SetSGRepo(r SecurityGroupRepo) { s.sgRepo = r }
 
 // ListSubnets возвращает подсети, принадлежащие данной сети.
 // Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).
@@ -184,12 +190,48 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 	}
 	created, err := s.repo.Insert(ctx, n)
 	if err != nil {
-		return nil, err
+		// Маппим service.ErrAlreadyExists (UNIQUE folder_id+name, миграция 0018)
+		// и прочие в gRPC status — иначе worker положит raw error с code=Unknown.
+		return nil, mapRepoErr(err)
 	}
 
-	// Pure: НЕ создаём default SG здесь. Это делает kacho-vpc-controllers
-	// (default-sg reconciler-loop) асинхронно. См.
-	// POST-PROCESSING-IN-CONTROLLERS.md.
+	// Inline default SG (Phase-2: kacho-vpc-controllers упразднён).
+	// Verbatim YC defaults: 2 правила INGRESS+EGRESS, protocol ANY, cidr 0.0.0.0/0.
+	if s.sgRepo != nil {
+		shortNet := created.ID
+		if len(shortNet) > 8 {
+			shortNet = shortNet[:8]
+		}
+		sg := &domain.SecurityGroup{
+			ID:                ids.NewID(ids.PrefixSecurityGroup),
+			FolderID:          created.FolderID,
+			NetworkID:         created.ID,
+			CreatedAt:         time.Now().UTC(),
+			Name:              "default-sg-" + shortNet,
+			Description:       "Default security group (auto-created by kacho-vpc)",
+			Status:            "ACTIVE",
+			DefaultForNetwork: true,
+			Rules: []domain.SecurityGroupRule{
+				{Direction: "INGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+				{Direction: "EGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+			},
+		}
+		createdSG, sgErr := s.sgRepo.Insert(ctx, sg)
+		if sgErr != nil {
+			// SG creation failed — Network уже создан. Log warn, не падаем
+			// (admin может создать default SG руками через public API).
+			// Возвращаем network без default_security_group_id.
+			return anypb.New(domainNetworkToProto(created))
+		}
+		// Bind SG как default через NetworkRepo.Update.
+		created.DefaultSecurityGroupID = createdSG.ID
+		updated, uerr := s.repo.Update(ctx, created)
+		if uerr == nil {
+			return anypb.New(domainNetworkToProto(updated))
+		}
+		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
+		return anypb.New(domainNetworkToProto(created))
+	}
 	return anypb.New(domainNetworkToProto(created))
 }
 

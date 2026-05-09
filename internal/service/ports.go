@@ -85,6 +85,10 @@ type AddressRepo interface {
 	// GetByValue возвращает Address по конкретному IP (external или internal).
 	// scope — опционально subnet_id (для уточнения внутри одной подсети).
 	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error)
+	// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 (JSONB-spec)
+	// + emit outbox-event Address.UPDATED. Используется AddressAllocator.
+	// Передавайте nil для поля, которое не нужно менять; оба nil — no-op.
+	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.Address, error)
 }
 
 // SecurityGroupFilter — фильтр для списка SG.
@@ -152,9 +156,14 @@ type RouteTableRepo interface {
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error)
 }
 
-// FolderClient — port для проверки существования Folder.
+// FolderClient — port для проверки существования Folder и lookup'а cloud_id.
 type FolderClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
+	// GetCloudID возвращает cloud_id для Folder. Используется в IPAM-cascade
+	// (cloud-pool-selector lookup). Empty string + nil error если folder не
+	// существует на стороне backend (NotFound пропускается, т.к. caller сам
+	// решает что делать).
+	GetCloudID(ctx context.Context, folderID string) (string, error)
 }
 
 // SubnetClient — port для проверки существования Subnet (используется другими сервисами).

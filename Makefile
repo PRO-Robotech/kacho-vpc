@@ -1,11 +1,18 @@
-BINARY := kacho-vpc
-CMD     := ./cmd/vpc
-IMAGE   := kacho-vpc:dev
+BINARY         := kacho-vpc
+CMD            := ./cmd/vpc
+IPAM_BINARY    := kachoctl-ipam
+IPAM_CMD       := ./cmd/kachoctl-ipam
+IMAGE          := kacho-vpc:dev
 
-.PHONY: build test vet lint docker sync-migrations generate
+.PHONY: build build-all build-ipam test vet lint docker sync-migrations generate
 
 build:
 	CGO_ENABLED=0 go build -o bin/$(BINARY) $(CMD)
+
+build-ipam:
+	CGO_ENABLED=0 go build -o bin/$(IPAM_BINARY) $(IPAM_CMD)
+
+build-all: build build-ipam
 
 test:
 	go test ./... -race -cover -timeout 300s

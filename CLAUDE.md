@@ -503,7 +503,193 @@ Seq против YC — отдельный nightly job с секретным IAM
    `"... deletion_protection enabled"` (`333c535`).
 10. **page_size валидируется**, page_token garbage → `InvalidArgument` (`5d16961`).
 
-## 16. Ссылки
+## 16. IPAM (built-in, internal-only)
+
+С миграций 0014/0015/0016 IPAM встроен в kacho-vpc. Внешняя зависимость
+от NetBox убрана. Этот раздел описывает архитектуру.
+
+### 16.1 Resources
+
+- **AddressPool** (миграция 0015 + 0019/0020/0021) — **глобальный
+  infrastructure-ресурс** (как Region/Zone). Не привязан к Org/Cloud/Folder —
+  пулы общие на всю инсталляцию. Admin-only resource, **нет в публичном VPC
+  API** (verbatim YC: такого resource в YC нет; kacho-only). Управляется через
+  `kacho.cloud.vpc.v1.InternalAddressPoolService` gRPC; exposed на
+  cluster-internal порту 9091 + проброшен через api-gateway REST mux на
+  `/vpc/v1/addressPools/...` (для UI/admin-tooling). На external TLS endpoint
+  (`api.kacho.local:443`, advertised для `yc` CLI) этот path **не должен быть
+  доступен** — внутренние служебные сущности наружу не публикуются.
+  - Поля: `id`, `name`, `description`, `labels`, `cidr_blocks`,
+    `kind` (EXTERNAL_PUBLIC/EXTERNAL_TEST/RESERVED_INTERNAL), `zone_id` (FK
+    к `zones`, NULL = глобальный пул), `is_default`, **`selector_labels`**,
+    **`selector_priority`**.
+  - **Нет** `folder_id` (миграция 0021 убрала). Address из любого folder в
+    указанной zone берёт IP из единого глобального pool этой zone.
+  - В пределах `(zone_id, kind)` допускается ровно один `is_default=true`
+    (DB-level partial UNIQUE с `COALESCE(zone_id, '')`, миграция 0020).
+  - **Region/Zone** (миграция 0019) — first-class сущности (таблицы `regions`,
+    `zones`), тоже глобальные admin-only ресурсы. Seed: `ru-central1` с зонами
+    `ru-central1-{a,b,d}`. AddressPool привязан к **zone**, не к region.
+    `Address.external_ipv4_spec.zone_id` хранит zone — match идёт напрямую
+    (никаких regionFromZone-преобразований). Управление: gRPC
+    `InternalRegionService` / `InternalZoneService` (порт 9091) +
+    `/vpc/v1/regions` / `/vpc/v1/zones` через api-gateway REST mux. На external
+    TLS endpoint **не публикуются** (см. CLAUDE.md workspace §запрет 6).
+
+### 16.x Публикация admin-only ресурсов
+
+Three admin-only ресурса (Region, Zone, AddressPool) проброшены через
+`api-gateway` REST mux на cluster-internal listener для UI и admin-tooling.
+**Требование:** на external TLS endpoint (advertised `api.kacho.local:443`
+для `yc` CLI и других внешних клиентов) эти пути НЕ ДОЛЖНЫ быть доступны.
+
+Текущая реализация: api-gateway имеет два listener'а — plain `:8080` (cluster
+ingress / UI) и опциональный TLS `:TLS_LISTEN_ADDR` (для yc-CLI compat). Оба
+сейчас обслуживают один и тот же mux. Когда TLS-listener будет включён в
+production-конфиге, нужно прикрутить admin-paths block на TLS-listener.
+Реализация: middleware на TLS-cmux, отвечающий 404 на пути:
+- `/vpc/v1/regions*`
+- `/vpc/v1/zones*`
+- `/vpc/v1/addressPools*`
+- `/vpc/v1/networks/*/addressPoolBinding`
+- `/vpc/v1/addresses/*/addressPoolOverride`
+
+При добавлении новых admin-only RPC — обновить этот список.
+
+### 16.y Куда добавлять новые admin-RPC
+
+Если admin-UI требует данные/действия, которых нет в публичном (verbatim-YC) API:
+
+1. **НЕ расширять публичный сервис** (`NetworkService`, `SubnetService`,
+   `AddressService`, `AddressPoolService` — последний у нас уже internal,
+   но шаблон тот же). Это сломает verbatim-YC parity и засветит admin
+   функционал на external TLS endpoint.
+2. Добавлять новый RPC в **существующий `Internal*` сервис** соответствующего
+   домена (например, `InternalAddressPoolService.GetUtilization` — admin
+   observability для уже internal-only ресурса).
+3. Если подходящего internal-сервиса нет — создать новый
+   `internal_<domain>_service.proto` с `kacho-only`-disclaimer'ом в
+   header-комментарии.
+4. Аннотировать `google.api.http` для REST доступа из UI.
+5. Зарегистрировать в `kacho-api-gateway/internal/restmux/mux.go` под блоком
+   `if vpcInternalAddr != ""` — это автоматически попадает только на
+   cluster-internal listener.
+6. На external TLS endpoint этот путь НЕ должен быть доступен — добавить в
+   список §16.x при включении production-TLS-фильтра.
+
+- **NetworkPoolSelector** (миграция 0016, отдельная таблица
+  `network_pool_selector`) — admin-controlled routing-labels for Network.
+  **Не путать** с `Network.labels` (public YC API field):
+  - `Network.labels` — user-controlled, для поиска ресурса.
+  - `NetworkPoolSelector.selector` — admin-controlled, для системного pool
+    routing. Хранится отдельно (не загрязняет flat-schema networks).
+  - Управляется через `InternalNetworkService.{Set,Unset,Get}PoolSelector`.
+
+### 16.2 Cascade резолва pool при `AllocateExternalIP`
+
+```
+1. address_pool_address_override[address_id]                  (explicit per-address)
+2. address_pool_network_default[network_id]                   (explicit per-network)
+3. label-selector match через NetworkPoolSelector:
+     SELECT id FROM address_pools
+       WHERE selector_labels @> $network_selector       -- pool ⊇ network (containment)
+         AND selector_labels <> '{}'
+         AND (zone_id = $address_zone OR zone_id IS NULL)
+         AND kind = $kind
+       ORDER BY
+         (jsonb_object_size(selector_labels) - $network_size) ASC,  -- diff: точнее = выигрывает
+         selector_priority DESC                                       -- explicit tie-break
+       LIMIT 1;
+4. zone_default        (is_default=true для zone+kind)
+5. global_default      (is_default=true для zone IS NULL и kind)
+```
+
+### 16.3 Match-семантика (нормативно)
+
+**Inverse vs k8s NodeSelector**: `network_pool_selector ⊆ pool.selector_labels`
+(pool описывает **whitelist разрешённых labels**). Если у network есть label,
+не упомянутый в pool — она **не** match'ается с этим pool через label-cascade.
+Это **safe-by-default**: неучтённая комбинация labels попадает в default-pool,
+а не в специальный через subset-trick.
+
+| Pool requires | Network selector | Match? |
+|---|---|---|
+| `{tier=premium}` | `{tier=premium}` | ✅ |
+| `{tier=premium}` | `{tier=premium, customer=acme}` | ❌ (customer не упомянут в pool) |
+| `{tier=premium, customer=acme}` | `{tier=premium}` | ✅ (network ⊆ pool) |
+| `{tier=premium, customer=acme}` | `{tier=premium, customer=acme, env=prod}` | ❌ (env не упомянут) |
+
+### 16.4 Tie-break при equal-diff и equal-priority
+
+**Resolve order undefined.** Postgres вернёт первую row в physical order.
+Это сознательный design choice — admin отвечает за избежание ambiguity.
+
+Используйте `kachoctl ipam check` (или `InternalAddressPoolService.Check` RPC)
+для обнаружения ambiguous конфигураций — возвращает list of warnings.
+
+Пример ambiguous:
+```
+2 pools share identical (zone_id, kind, selector_labels, selector_priority):
+  pool apl-xxx "premium-base"   selector={tier=premium} priority=100
+  pool apl-yyy "premium-clone"  selector={tier=premium} priority=100
+→ resolve order undefined; set distinct selector_priority to disambiguate.
+```
+
+### 16.5 Allocate flow
+
+`InternalAddressService.AllocateExternalIP(address_id)`:
+1. Lookup address.
+2. Idempotency: если `external_ipv4.address` уже заполнен — return existing
+   с `already_allocated=true`.
+3. `ResolvePoolForAddress` (см. cascade выше).
+4. Linear sweep по `pool.cidr_blocks`: random IP + Update address с retry на
+   UNIQUE-violation (constraint `addresses_external_pool_ip_uniq`,
+   миграция 0015).
+5. Return allocated IP + `pool_id` (для observability — какой pool сработал).
+
+### 16.6 Архитектурные правила
+
+- AddressPool — **internal-only**. Не выставлять через api-gateway.
+- AllocateInternalIP / AllocateExternalIP — **internal-only**. Используются
+  controller'ами и (в будущем) встроенным worker'ом kacho-vpc для inline
+  allocation в request-path.
+- POST-PROCESSING-IN-CONTROLLERS.md остаётся в силе для текущей фазы
+  (controller дёргает Allocate-RPC после outbox-event'а). Inline-allocation в
+  service-слое — Phase 1.x cleanup (упразднение controller'а, см. RFC).
+
+### 16.7 Admin workflow
+
+```bash
+# 1. Создать default-pool на zone (глобальный, без --folder)
+kachoctl ipam pool create \
+  --kind EXTERNAL_PUBLIC \
+  --zone-id ru-central1-a \
+  --cidr 198.51.100.0/24 \
+  --is-default \
+  --name default-zone-a
+
+# 2. Создать специальный pool для tier=premium (тоже глобальный)
+kachoctl ipam pool create \
+  --kind EXTERNAL_PUBLIC \
+  --zone-id ru-central1-a \
+  --cidr 203.0.113.0/24 \
+  --selector tier=premium \
+  --priority 100 \
+  --name premium-pool
+
+# 3. Привязать сеть к premium routing через admin-controlled selector:
+kachoctl ipam network set-pool-selector \
+  --network <network-id> \
+  --selector tier=premium
+
+# 4. Ad-hoc проверка: «куда попадёт этот network?»
+kachoctl ipam explain --network <network-id>
+
+# 5. Аудит ambiguous конфигураций
+kachoctl ipam check
+```
+
+## 17. Ссылки
 
 - Workspace правила: `../../CLAUDE.md`
 - Acceptance документ: `../../docs/specs/sub-phase-0.3-vpc-acceptance.md`
@@ -511,7 +697,7 @@ Seq против YC — отдельный nightly job с секретным IAM
 - Outstanding TODO: `./TODO.md`
 - Spec data model: `../../docs/specs/02-data-model-and-conventions.md`
 
-## 17. VPC-specific subagents
+## 18. VPC-specific subagents
 
 Помимо общих 13 агентов (acceptance-author/reviewer, proto-sync, ...),
 в `.claude/agents/` есть 4 VPC-специализированных:

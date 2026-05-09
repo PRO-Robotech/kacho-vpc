@@ -170,6 +170,47 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 	return result, nil
 }
 
+// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 JSONB-spec.
+// Передавайте nil для поля, которое не нужно менять.
+func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+	if ext == nil && intn == nil {
+		return r.Get(ctx, id)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := `UPDATE addresses SET `
+	args := []any{id}
+	switch {
+	case ext != nil && intn == nil:
+		q += `external_ipv4 = $2::jsonb`
+		args = append(args, mustMarshalJSON(ext))
+	case ext == nil && intn != nil:
+		q += `internal_ipv4 = $2::jsonb`
+		args = append(args, mustMarshalJSON(intn))
+	default:
+		q += `external_ipv4 = $2::jsonb, internal_ipv4 = $3::jsonb`
+		args = append(args, mustMarshalJSON(ext), mustMarshalJSON(intn))
+	}
+	q += ` WHERE id = $1 RETURNING ` + addressCols
+
+	row := tx.QueryRow(ctx, q, args...)
+	a, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	return a, nil
+}
+
 // SetFolderID меняет folder_id у Address.
 func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error) {
 	tx, err := r.pool.Begin(ctx)

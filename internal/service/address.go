@@ -75,12 +75,21 @@ type AddressService struct {
 	subnetRepo   SubnetRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
+	// allocator — inline IPAM (Phase-2 cleanup: kacho-vpc-controllers удалён).
+	// Может быть nil в test-setup'ах (тогда IP остаётся пустым; legacy behaviour).
+	allocator *AddressAllocator
 }
 
 // NewAddressService создаёт AddressService.
 func NewAddressService(repo AddressRepo, subnetRepo SubnetRepo, folderClient FolderClient, opsRepo operations.Repo) *AddressService {
 	return &AddressService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
+
+// SetAllocator wires inline IPAM allocator. Должно вызываться composition root
+// после конструирования AddressPoolService (циклическая зависимость
+// AddressService ↔ AddressAllocator → AddressPoolService → ... → AddressRepo,
+// поэтому через setter).
+func (s *AddressService) SetAllocator(a *AddressAllocator) { s.allocator = a }
 
 // validateInternalIPInSubnet проверяет sync-ом, что explicit IP лежит в CIDR
 // одной из v4_cidr_blocks указанной subnet. Если subnet не найден — пропуск
@@ -303,6 +312,31 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	created, err := s.repo.Insert(ctx, a)
 	if err != nil {
 		return nil, err
+	}
+
+	// Inline IPAM allocation (Phase-2: kacho-vpc-controllers упразднён).
+	// Если client не передал explicit IP — выделяем здесь же в worker'е.
+	// Idempotent: если IP уже выставлен — Allocate* возвращает существующий.
+	if s.allocator != nil {
+		if created.ExternalIpv4 != nil && created.ExternalIpv4.Address == "" {
+			res, aerr := s.allocator.AllocateExternalIP(ctx, created.ID)
+			if aerr != nil {
+				// FailedPrecondition с "no external_ipv4 spec" не должен возникать
+				// (мы только что записали spec). Любая ошибка allocate — log + проброс.
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"allocate external ip: %v", aerr)
+			}
+			created.ExternalIpv4.Address = res.IP
+			created.ExternalIpv4.AddressPoolID = res.PoolID
+		}
+		if created.InternalIpv4 != nil && created.InternalIpv4.Address == "" && created.InternalIpv4.SubnetID != "" {
+			res, aerr := s.allocator.AllocateInternalIP(ctx, created.ID)
+			if aerr != nil {
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"allocate internal ip: %v", aerr)
+			}
+			created.InternalIpv4.Address = res.IP
+		}
 	}
 	return anypb.New(domainAddressToProto(created))
 }

@@ -21,6 +21,15 @@
 | 27 | subnet_repo Update обновляет immutable v4_cidr   | Low      | deferred   |
 | 28 | Тесты на concurrent UpdateRules                  | Low      | deferred   |
 | 29 | Тесты на Delete response type = Empty            | Low      | done       |
+| 30 | NetBox-integration убрать; IPAM встроить в kacho-vpc | High | **done** |
+| 31 | AddressPool resource (internal-only)              | High     | **done** (proto, migration 0015, service, repo, handler, wire-up) |
+| 32 | Pool selectors + cascade resolve + Check/Explain  | High     | **done** (migration 0016, service ResolvePoolForAddress, internal RPC) |
+| 33 | kachoctl-ipam admin CLI                           | Medium   | **done** (cmd/kachoctl-ipam/) |
+| 34 | Seed default-pool в dev-стенде                    | Low      | **done** (kacho-deploy `make seed-ipam`) |
+| 35 | Newman regression: AddressPool RPC suite          | Medium   | pending — internal API не маршрутизируется через api-gateway, прогон через grpcurl, не Newman |
+| 36 | Inline allocation в request-path (упразднить controller) | Medium | deferred — open RFC; см. 16.6 в CLAUDE.md |
+| 37 | SetInternalIP deprecation в proto comment        | Low      | pending |
+| 38 | E2E test для cascade resolve all 5 steps          | Medium   | pending |
 
 Status legend: pending / in_progress / done / partial / deferred / wontfix
 

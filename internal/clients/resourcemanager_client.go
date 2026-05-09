@@ -39,3 +39,19 @@ func (c *FolderClient) Exists(ctx context.Context, folderID string) (bool, error
 	})
 	return exists, err
 }
+
+// GetCloudID возвращает cloud_id для Folder. Используется в IPAM-cascade
+// (cloud-pool-selector lookup для external Address). Возвращает ErrNotFound
+// если folder не существует.
+func (c *FolderClient) GetCloudID(ctx context.Context, folderID string) (string, error) {
+	var cloudID string
+	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
+		f, rerr := c.cli.Get(ctx, &rmv1.GetFolderRequest{FolderId: folderID})
+		if rerr != nil {
+			return rerr
+		}
+		cloudID = f.GetCloudId()
+		return nil
+	})
+	return cloudID, err
+}

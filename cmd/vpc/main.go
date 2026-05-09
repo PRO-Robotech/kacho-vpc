@@ -91,6 +91,11 @@ func runServe(cfg config.Config) error {
 	sgRepo := repo.NewSecurityGroupRepo(pool)
 	gatewayRepo := repo.NewGatewayRepo(pool)
 	peRepo := repo.NewPrivateEndpointRepo(pool)
+	addressPoolRepo := repo.NewAddressPoolRepo(pool)
+	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
+	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
+	regionRepo := repo.NewRegionRepo(pool)
+	zoneRepo := repo.NewZoneRepo(pool)
 
 	// Services.
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
@@ -100,6 +105,16 @@ func runServe(cfg config.Config) error {
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
 	gatewaySvc := service.NewGatewayService(gatewayRepo, folderClient, opsRepo)
 	peSvc := service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo)
+	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient)
+	addressAllocator := service.NewAddressAllocator(addressRepo, subnetRepo, addressPoolSvc)
+	networkInternalSvc := service.NewNetworkInternal(networkRepo, sgRepo)
+	regionSvc := service.NewRegionService(regionRepo)
+	zoneSvc := service.NewZoneService(zoneRepo, regionRepo)
+
+	// Inline IPAM allocation в request-path (Phase-2: kacho-vpc-controllers упразднён).
+	addressSvc.SetAllocator(addressAllocator)
+	// Inline default-SG creation в request-path NetworkService.doCreate.
+	networkSvc.SetSGRepo(sgRepo)
 
 	// gRPC server.
 	grpcSrv := grpcsrv.NewServer()
@@ -120,7 +135,19 @@ func runServe(cfg config.Config) error {
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
 	internalSrv := grpcsrv.NewServer()
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch")))
-	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressHandler(pool, logger.With("component", "internal-address")))
+	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
+	// (legacy SetInternalIP в handler.InternalAddressHandler + AllocateInternal/External в
+	// handler.InternalAddressAllocateHandler). gRPC требует ОДНУ имплементацию на сервис, поэтому
+	// объединяем через композитный adapter.
+	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressCompositeHandler(
+		handler.NewInternalAddressHandler(pool, logger.With("component", "internal-address")),
+		handler.NewInternalAddressAllocateHandler(addressAllocator),
+	))
+	vpcv1.RegisterInternalAddressPoolServiceServer(internalSrv, handler.NewInternalAddressPoolHandler(addressPoolSvc))
+	vpcv1.RegisterInternalNetworkServiceServer(internalSrv, handler.NewInternalNetworkHandler(networkInternalSvc))
+	vpcv1.RegisterInternalCloudServiceServer(internalSrv, handler.NewInternalCloudHandler(addressPoolSvc))
+	vpcv1.RegisterInternalRegionServiceServer(internalSrv, handler.NewInternalRegionHandler(regionSvc))
+	vpcv1.RegisterInternalZoneServiceServer(internalSrv, handler.NewInternalZoneHandler(zoneSvc))
 
 	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)
 	if err != nil {
