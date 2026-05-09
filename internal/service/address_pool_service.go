@@ -150,7 +150,27 @@ func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*do
 	return s.pools.Update(ctx, cur)
 }
 
+// Delete pool'а запрещён, если из него выделены IP (есть Address с
+// external_ipv4.address_pool_id = id и непустым address). FK constraint
+// невозможен (адрес ссылается через JSONB, не через колонку) —
+// service-level guard обязателен. Closes: pool-delete-leaves-orphan-
+// addresses bug.
+//
+// Bindings (network_default / address_override) удаляются автоматически
+// через ON DELETE RESTRICT FK — они блокируют delete. Caller должен
+// сначала Unbind.
 func (s *AddressPoolService) Delete(ctx context.Context, id string) error {
+	if _, err := s.pools.Get(ctx, id); err != nil {
+		return err
+	}
+	n, err := s.pools.CountAddressesByPool(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return status.Errorf(codes.FailedPrecondition,
+			"AddressPool %s is not empty (%d allocated addresses); release IPs first", id, n)
+	}
 	return s.pools.Delete(ctx, id)
 }
 

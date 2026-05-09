@@ -102,6 +102,18 @@ func (r *RegionRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// CountZones — сколько Zone привязано к региону. Используется для
+// FailedPrecondition в RegionService.Delete (cascade delete запрещён —
+// admin обязан сначала снести zones).
+func (r *RegionRepo) CountZones(ctx context.Context, regionID string) (int64, error) {
+	var n int64
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM zones WHERE region_id = $1`, regionID).Scan(&n)
+	if err != nil {
+		return 0, wrapPgErr(err, "Region", regionID)
+	}
+	return n, nil
+}
+
 // -- Zone --
 
 type ZoneRepo struct{ pool *pgxpool.Pool }
@@ -201,4 +213,22 @@ func (r *ZoneRepo) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: Zone %s", service.ErrNotFound, id)
 	}
 	return nil
+}
+
+// CountDependents — сколько ресурсов ссылается на zone (address_pools,
+// subnets, addresses через external_ipv4_spec.zone_id). Используется
+// в ZoneService.Delete для FailedPrecondition (subnets.zone_id и addresses
+// JSONB-zone не имеют FK constraint — service-level guard обязателен).
+func (r *ZoneRepo) CountDependents(ctx context.Context, zoneID string) (service.ZoneDeps, error) {
+	var d service.ZoneDeps
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM address_pools WHERE zone_id = $1),
+			(SELECT count(*) FROM subnets WHERE zone_id = $1),
+			(SELECT count(*) FROM addresses WHERE external_ipv4 ->> 'zone_id' = $1)
+	`, zoneID)
+	if err := row.Scan(&d.AddressPools, &d.Subnets, &d.Addresses); err != nil {
+		return d, wrapPgErr(err, "Zone", zoneID)
+	}
+	return d, nil
 }

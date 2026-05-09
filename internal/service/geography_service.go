@@ -19,6 +19,14 @@ type RegionRepo interface {
 	Insert(ctx context.Context, v *domain.Region) (*domain.Region, error)
 	Update(ctx context.Context, v *domain.Region) (*domain.Region, error)
 	Delete(ctx context.Context, id string) error
+	CountZones(ctx context.Context, regionID string) (int64, error)
+}
+
+// ZoneDeps — счётчики зависимых ресурсов для FailedPrecondition в Delete.
+type ZoneDeps struct {
+	AddressPools int64
+	Subnets      int64
+	Addresses    int64
 }
 
 // ZoneRepo — port-интерфейс репозитория Zone.
@@ -28,6 +36,7 @@ type ZoneRepo interface {
 	Insert(ctx context.Context, v *domain.Zone) (*domain.Zone, error)
 	Update(ctx context.Context, v *domain.Zone) (*domain.Zone, error)
 	Delete(ctx context.Context, id string) error
+	CountDependents(ctx context.Context, zoneID string) (ZoneDeps, error)
 }
 
 // -- Region service --
@@ -62,7 +71,22 @@ func (s *RegionService) Update(ctx context.Context, id, name string) (*domain.Re
 	return s.repo.Update(ctx, cur)
 }
 
+// Delete региона запрещён, если в нём остались Zone — admin обязан
+// сначала снести зоны (cascade delete не применяем сознательно: zone
+// может содержать Address'ы и Subnet'ы из разных folder'ов). Verbatim
+// YC: FailedPrecondition с пояснением сколько зависимых ресурсов.
 func (s *RegionService) Delete(ctx context.Context, id string) error {
+	if _, err := s.repo.Get(ctx, id); err != nil {
+		return err
+	}
+	n, err := s.repo.CountZones(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return status.Errorf(codes.FailedPrecondition,
+			"Region %s is not empty (has %d zones); delete zones first", id, n)
+	}
 	return s.repo.Delete(ctx, id)
 }
 
@@ -107,6 +131,23 @@ func (s *ZoneService) Update(ctx context.Context, id, name string) (*domain.Zone
 	return s.zones.Update(ctx, cur)
 }
 
+// Delete зоны запрещён, если на неё ссылаются address_pools / subnets /
+// addresses (`external_ipv4_spec.zone_id`). FK constraint есть только
+// для address_pools.zone_id; subnets.zone_id и addresses-JSONB-zone не
+// имеют FK — service-level guard обязателен (closed: zone-delete-leaves-
+// dangling-resources bug).
 func (s *ZoneService) Delete(ctx context.Context, id string) error {
+	if _, err := s.zones.Get(ctx, id); err != nil {
+		return err
+	}
+	deps, err := s.zones.CountDependents(ctx, id)
+	if err != nil {
+		return err
+	}
+	if deps.AddressPools+deps.Subnets+deps.Addresses > 0 {
+		return status.Errorf(codes.FailedPrecondition,
+			"Zone %s is not empty (address_pools=%d, subnets=%d, addresses=%d); delete dependents first",
+			id, deps.AddressPools, deps.Subnets, deps.Addresses)
+	}
 	return s.zones.Delete(ctx, id)
 }
