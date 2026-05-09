@@ -36,7 +36,9 @@ func mapRepoErr(err error) error {
 	}
 	// Если err уже gRPC-status (например из самого service-слоя через
 	// status.Errorf) — пробрасываем как есть.
-	if _, ok := status.FromError(err); ok {
+	// status.FromError возвращает (status, true) даже для не-status err
+	// (с code=Unknown) — поэтому проверяем code != Unknown.
+	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		return err
 	}
 	// Defensive: raw error из repo без обёртки → не leak'аем текст,

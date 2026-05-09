@@ -67,9 +67,13 @@ func mapAllocErr(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	// allocator already returns gRPC status errors for FailedPrecondition /
-	// ResourceExhausted; pass through.
-	if _, ok := status.FromError(err); ok {
+	// ResourceExhausted; pass through (status.FromError возвращает (status, true)
+	// и для не-status err с Unknown code — поэтому проверяем code != Unknown).
+	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		return err
 	}
-	return status.Error(codes.Internal, err.Error())
+	// Defensive: не leak'аем raw err.Error() (может содержать pgx-text с
+	// hostname/db/query). Generic Internal без leak'а — info-leak vector
+	// закрыт симметрично mapRepoErr.
+	return status.Error(codes.Internal, "internal allocator error")
 }

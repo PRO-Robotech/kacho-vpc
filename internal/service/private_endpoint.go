@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
@@ -262,7 +263,9 @@ func (s *PrivateEndpointService) Delete(ctx context.Context, id string) (*operat
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&pe.DeletePrivateEndpointMetadata{PrivateEndpointId: id})
+		// proto-options: response = google.protobuf.Empty (verbatim YC).
+		// Metadata уже передана при operations.New выше; в response — Empty.
+		return anypb.New(&emptypb.Empty{})
 	})
 	return &op, nil
 }

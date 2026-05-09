@@ -218,24 +218,16 @@ func (s *AddressPoolService) ResolvePoolForAddress(ctx context.Context, addressI
 // ResolvePoolForAddressObj — то же что ResolvePoolForAddress, но принимает
 // уже полученный *domain.Address. Избегает повторного s.addrRepo.Get(addressID)
 // в hot path AllocateExternalIP, который сам уже сделал Get.
+//
+// Fail-fast на nil: caller должен передать valid addr; nil-fallback на
+// hypothetical resolve без addressID был бы silent degradation
+// (теряем cascade Step 1 + folder-id для Step 3).
 func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr *domain.Address) (*ResolvedPool, error) {
-	res, _, err := s.resolveWithRunnerUpFor(ctx, addr, "", domain.AddressPoolKindExternalPublic)
-	return res, err
-}
-
-// resolveWithRunnerUpFor — общая логика с уже полученным addr (или nil).
-// Если addr != nil — пропускает s.addrRepo.Get внутри.
-func (s *AddressPoolService) resolveWithRunnerUpFor(
-	ctx context.Context,
-	addr *domain.Address,
-	networkIDOverride string,
-	kindHint domain.AddressPoolKind,
-) (*ResolvedPool, *ResolvedPool, error) {
 	if addr == nil {
-		// Совместимый путь — без addressID и без preloaded addr.
-		return s.resolveWithRunnerUp(ctx, "", networkIDOverride, kindHint)
+		return nil, status.Error(codes.InvalidArgument, "ResolvePoolForAddressObj: addr is required (use ResolvePoolForAddress for ID-only path)")
 	}
-	return s.doResolve(ctx, addr.ID, addr, networkIDOverride, kindHint)
+	res, _, err := s.doResolve(ctx, addr.ID, addr, "", domain.AddressPoolKindExternalPublic)
+	return res, err
 }
 
 // resolveWithRunnerUp — общая логика резолва, опционально вычисляет runner-up
