@@ -39,9 +39,15 @@ type TenantCtx struct {
 }
 
 // HasFolderAccess — может ли caller трогать ресурс из folder'а.
-// Empty FolderIDs (или Admin=true) даёт full access. Production-mode
-// guard на уровне interceptor отфильтровывает anonymous callers до того,
-// как этот метод вызовется.
+//
+// Empty FolderIDs БЕЗ admin-claim'а в production-mode — это **anonymous**:
+// в этом случае возврат false (production-mode interceptor отфильтрует
+// caller'а раньше). Backward-compat (dev-mode) даёт `true` чтобы
+// существующие тесты/CI без AuthN продолжали работать.
+//
+// Эта функция сама не различает dev/production — она возвращает true
+// для (Admin || empty FolderIDs); production-mode guard в interceptor
+// делает fail-closed reject до того, как handler вызовет HasFolderAccess.
 func (t TenantCtx) HasFolderAccess(folderID string) bool {
 	if t.Admin || len(t.FolderIDs) == 0 {
 		return true
@@ -50,10 +56,20 @@ func (t TenantCtx) HasFolderAccess(folderID string) bool {
 	return ok
 }
 
-// IsAnonymous — true если caller не предъявил никакой identity-header'ов.
-// Used by production-mode fail-closed guard.
+// IsAnonymous — true если caller не предъявил identity, влияющую на AuthZ
+// решение: ни Admin-claim, ни FolderIDs.
+//
+// Actor сам по себе **не** делает caller'а authorized — это audit-only
+// поле. Раньше IsAnonymous требовал Actor=="" — это создавало bypass:
+// caller отправляет `x-kacho-actor: anything`, без folder/admin → не
+// anonymous → production-mode guard пропускает → HasFolderAccess
+// (empty FolderIDs) returns true → cross-tenant полный доступ
+// (round 9 critical bypass).
+//
+// Сейчас: anonymous = "нет authorization claims" вообще; Actor —
+// orthogonal audit-trail.
 func (t TenantCtx) IsAnonymous() bool {
-	return t.Actor == "" && len(t.FolderIDs) == 0 && !t.Admin
+	return !t.Admin && len(t.FolderIDs) == 0
 }
 
 // TenantFromCtx извлекает TenantCtx из context. Если interceptor не
@@ -148,19 +164,25 @@ func TenantStreamInterceptor(requireAdmin, productionMode bool) grpc.StreamServe
 }
 
 // assertAdminAccess — internal :9091 listener gate. Отвергает не-admin caller'а.
-// Anonymous (нет AuthN) → admin=true автоматически (backward-compat).
-// Имя метода используется для audit.
+// Anonymous (нет AuthN) → пропускается в dev-mode (backward-compat); в
+// production-mode anonymous уже отвергнут вышестоящим productionMode-guard'ом.
+//
+// Имя метода используется для:
+//   - audit: какой /Internal* RPC хочет admin
+//   - paranoia: для не-/Internal* method вернуть NotFound (не светить структуру)
 func assertAdminAccess(t TenantCtx, fullMethod string) error {
-	// Anonymous mode (no metadata) → нет AuthN, нет AuthZ — backward-compat.
-	if t.Actor == "" && len(t.FolderIDs) == 0 && !t.Admin {
+	// Anonymous mode (no metadata) → нет AuthN, нет AuthZ — backward-compat dev.
+	if t.IsAnonymous() {
 		return nil
 	}
 	// AuthN включён, но caller не admin — это RPC только для admin.
 	if !t.Admin {
-		// Дополнительная защита: если method не /Internal* — вернём NotFound,
-		// чтобы не светить структуру (admin-only listener вообще не должен
-		// показывать наличие internal сервисов).
-		if !strings.Contains(fullMethod, "/Internal") {
+		// Дополнительная защита: если method не /Internal* family — вернём
+		// NotFound, чтобы не светить структуру (admin-only listener вообще
+		// не должен показывать наличие internal сервисов).
+		// HasPrefix вместо Contains — безопаснее против будущих сервисов
+		// со словом "Internal" в произвольной позиции.
+		if !strings.HasPrefix(fullMethod, "/kacho.cloud.vpc.v1.Internal") {
 			return status.Error(codes.NotFound, "not found")
 		}
 		return status.Error(codes.PermissionDenied, "Permission denied")

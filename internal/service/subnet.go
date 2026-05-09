@@ -65,7 +65,11 @@ func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, err
 }
 
 // List возвращает список подсетей.
+// folder_id обязателен (R10 #C1 closure).
 func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

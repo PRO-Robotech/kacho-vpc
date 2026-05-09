@@ -31,7 +31,9 @@ func (h *OperationHandler) Get(ctx context.Context, req *operationpb.GetOperatio
 		if errors.Is(err, operations.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "operation %s not found", req.OperationId)
 		}
-		return nil, err
+		// Generic Internal без leak'а pgx-detail (R9 M1 closure: раньше
+		// raw err уходил в response с hostname/dsn в тексте).
+		return nil, status.Error(codes.Internal, "operation get failed")
 	}
 	return operationToProto(op), nil
 }
@@ -47,11 +49,14 @@ func (h *OperationHandler) Cancel(ctx context.Context, req *operationpb.CancelOp
 		if errors.Is(err, operations.ErrAlreadyDone) {
 			return nil, status.Errorf(codes.FailedPrecondition, "operation %s already completed", req.OperationId)
 		}
-		return nil, err
+		return nil, status.Error(codes.Internal, "operation cancel failed")
 	}
 	op, err := h.repo.Get(ctx, req.OperationId)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, operations.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "operation %s not found", req.OperationId)
+		}
+		return nil, status.Error(codes.Internal, "operation reload after cancel failed")
 	}
 	return operationToProto(op), nil
 }

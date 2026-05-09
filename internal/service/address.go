@@ -179,7 +179,11 @@ func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, e
 }
 
 // List возвращает список адресов.
+// folder_id обязателен (R10 #C1 closure).
 func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.Address, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

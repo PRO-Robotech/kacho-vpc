@@ -69,7 +69,11 @@ func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.Pr
 }
 
 // List возвращает список PrivateEndpoints.
+// folder_id обязателен (R10 #C1 closure).
 func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpoint, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

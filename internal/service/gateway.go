@@ -58,7 +58,11 @@ func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, e
 }
 
 // List возвращает список Gateways.
+// folder_id обязателен (R10 #C1 closure).
 func (s *GatewayService) List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.Gateway, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

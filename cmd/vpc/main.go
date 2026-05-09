@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -132,19 +133,35 @@ func runServe(cfg config.Config) error {
 	// production-mode fail-closed guard: KACHO_VPC_AUTH_MODE=production →
 	// anonymous caller отвергается с PermissionDenied сразу. Защита от
 	// misconfigured deploy без IAM sidecar (security M5 closure).
-	productionMode := cfg.AuthMode == "production" || cfg.AuthMode == "production-strict"
-	if cfg.AuthMode == "production-strict" {
+	//
+	// Whitelist values — typo `prod` или `PRODUCTION` НЕ должен silently
+	// пройти как dev (R10 footgun closure F-1).
+	var productionMode bool
+	switch cfg.AuthMode {
+	case "dev":
+		productionMode = false
+	case "production":
+		productionMode = true
+		logger.Warn("AuthMode=production: anonymous callers will be rejected (M5 fail-closed)")
+	case "production-strict":
+		productionMode = true
 		// Strict: дополнительно валидируем что cross-service плоскость безопасна.
 		if !cfg.ResourceManagerTLS {
 			return fmt.Errorf("production-strict mode: KACHO_VPC_RESOURCE_MANAGER_TLS=true required")
 		}
-		if cfg.DBSSLMode == "" || cfg.DBSSLMode == "disable" {
-			return fmt.Errorf("production-strict mode: KACHO_VPC_DB_SSLMODE must not be 'disable'")
+		// Whitelist sslmode (R10 F-3): `prefer`/`allow` допускают TLS-fallback
+		// к plaintext под MITM → не безопасно.
+		switch cfg.DBSSLMode {
+		case "require", "verify-ca", "verify-full":
+			// OK
+		default:
+			return fmt.Errorf("production-strict mode: KACHO_VPC_DB_SSLMODE must be one of require|verify-ca|verify-full (got %q)", cfg.DBSSLMode)
 		}
+		logger.Warn("AuthMode=production-strict: anonymous rejected + TLS+SSL strictly validated")
+	default:
+		return fmt.Errorf("unknown KACHO_VPC_AUTH_MODE=%q (allowed: dev, production, production-strict)", cfg.AuthMode)
 	}
-	if productionMode {
-		logger.Warn("AuthMode=production: anonymous callers will be rejected (M5 fail-closed)")
-	} else {
+	if !productionMode {
 		// Dev defaults — обращаем внимание operator'а на insecure config.
 		if !cfg.ResourceManagerTLS {
 			logger.Warn("KACHO_VPC_RESOURCE_MANAGER_TLS=false — cross-service gRPC plaintext (dev only)")
@@ -242,7 +259,10 @@ func runServe(cfg config.Config) error {
 	}()
 
 	go func() {
-		if err := internalSrv.Serve(internalListener); err != nil {
+		// Serve возвращает grpc.ErrServerStopped на graceful shutdown — это
+		// штатный exit, не Error. Без фильтра каждый clean shutdown эмитит
+		// Error-log → шум в alerting (R9 minor closure).
+		if err := internalSrv.Serve(internalListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			logger.Error("internal grpc server stopped", "err", err)
 		}
 	}()

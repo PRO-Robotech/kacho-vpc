@@ -21,7 +21,10 @@ type AddressHandler struct {
 	subnetSvc *svc.SubnetService // для AuthZ pre-check на ListBySubnet
 }
 
-// NewAddressHandler создаёт AddressHandler.
+// NewAddressHandler создаёт AddressHandler. subnet может быть nil только
+// в unit-тестах (handler nil-safe в ListBySubnet); production composition
+// root в cmd/vpc/main.go обязан передать non-nil — иначе ListBySubnet
+// AuthZ check будет skip'нут (R10 fail-fast hardening — см. M3 carry-over).
 func NewAddressHandler(s *svc.AddressService, subnet *svc.SubnetService) *AddressHandler {
 	return &AddressHandler{svc: s, subnetSvc: subnet}
 }
@@ -49,10 +52,11 @@ func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressBy
 		return nil, err
 	}
 	// AuthZ: post-fetch check (нельзя проверить до lookup'а — RPC резолвит
-	// IP→Address). Caller без folder-access получит PermissionDenied вместо
-	// данных. Защищает IP-scan IDOR (R8 M6).
+	// IP→Address). Маскируем под NotFound вместо PermissionDenied чтобы
+	// не leak'нуть существование IP в чужом folder'е (R10 m4 closure +
+	// verbatim YC parity: not-owned-not-existing).
 	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
-		return nil, err
+		return nil, status.Error(codes.NotFound, "Address not found")
 	}
 	return addressToProto(a), nil
 }

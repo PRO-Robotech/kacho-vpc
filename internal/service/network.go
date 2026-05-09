@@ -125,7 +125,14 @@ func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, e
 }
 
 // List возвращает список сетей в folder с пагинацией.
+//
+// folder_id обязателен (verbatim YC: oneof container с exactly_one). Без
+// service-level enforcement repo тихо пропускал бы WHERE folder_id и
+// возвращал кросс-folder enumeration — closed R10 critical (#C1).
 func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.Network, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

@@ -61,7 +61,11 @@ func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTa
 }
 
 // List возвращает список таблиц маршрутизации.
+// folder_id обязателен (R10 #C1 closure).
 func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 

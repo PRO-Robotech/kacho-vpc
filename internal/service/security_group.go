@@ -65,7 +65,11 @@ func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.Secu
 }
 
 // List возвращает список SG.
+// folder_id обязателен (R10 #C1 closure).
 func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroup, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
