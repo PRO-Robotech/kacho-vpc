@@ -119,7 +119,7 @@ func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 
 func TestAddressHandler_Move_Validates(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -127,14 +127,14 @@ func TestAddressHandler_Move_Validates(t *testing.T) {
 
 func TestAddressHandler_GetByValue_Empty(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.GetByValue(context.Background(), &vpcv1.GetAddressByValueRequest{})
 	require.Error(t, err)
 }
 
 func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewUID()})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -607,7 +607,7 @@ func TestGatewayHandler_MoveDelete(t *testing.T) {
 
 func TestAddressHandler_FullFlow(t *testing.T) {
 	addrSvc, or := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	createOp, _ := h.Create(context.Background(), &vpcv1.CreateAddressRequest{
 		FolderId: "f1",

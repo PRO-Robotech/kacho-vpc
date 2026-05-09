@@ -209,7 +209,7 @@ func (r *mockSubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ svc.Pa
 
 func TestAddressHandler_Get_InvalidArg(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetAddressRequest{AddressId: ""})
 	require.Error(t, err)
@@ -219,7 +219,7 @@ func TestAddressHandler_Get_InvalidArg(t *testing.T) {
 
 func TestAddressHandler_Get_NotFound(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetAddressRequest{AddressId: ids.NewUID()})
 	require.Error(t, err)
@@ -229,7 +229,7 @@ func TestAddressHandler_Get_NotFound(t *testing.T) {
 
 func TestAddressHandler_List_Empty(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	resp, err := h.List(context.Background(), &vpcv1.ListAddressesRequest{FolderId: "f1"})
 	require.NoError(t, err)
@@ -238,7 +238,7 @@ func TestAddressHandler_List_Empty(t *testing.T) {
 
 func TestAddressHandler_Create_External_OK(t *testing.T) {
 	addrSvc, or := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateAddressRequest{
 		FolderId: "f1",
@@ -260,7 +260,7 @@ func TestAddressHandler_Create_External_OK(t *testing.T) {
 
 func TestAddressHandler_Delete_InvalidArg(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	_, err := h.Delete(context.Background(), &vpcv1.DeleteAddressRequest{AddressId: ""})
 	require.Error(t, err)

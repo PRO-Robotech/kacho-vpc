@@ -40,6 +40,9 @@ func (h *GatewayHandler) Get(ctx context.Context, req *vpcv1.GetGatewayRequest) 
 }
 
 func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysRequest) (*vpcv1.ListGatewaysResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	gws, nextToken, err := h.svc.List(ctx, svc.GatewayFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -153,6 +156,13 @@ func (h *GatewayHandler) Move(ctx context.Context, req *vpcv1.MoveGatewayRequest
 func (h *GatewayHandler) ListOperations(ctx context.Context, req *vpcv1.ListGatewayOperationsRequest) (*vpcv1.ListGatewayOperationsResponse, error) {
 	if req.GatewayId == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
+	}
+	g, err := h.svc.Get(ctx, req.GatewayId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.GatewayId, svc.Pagination{
 		PageToken: req.PageToken,

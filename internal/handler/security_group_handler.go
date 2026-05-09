@@ -40,6 +40,9 @@ func (h *SecurityGroupHandler) Get(ctx context.Context, req *vpcv1.GetSecurityGr
 }
 
 func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	sgs, nextToken, err := h.svc.List(ctx, svc.SecurityGroupFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -205,6 +208,13 @@ func (h *SecurityGroupHandler) Move(ctx context.Context, req *vpcv1.MoveSecurity
 func (h *SecurityGroupHandler) ListOperations(ctx context.Context, req *vpcv1.ListSecurityGroupOperationsRequest) (*vpcv1.ListSecurityGroupOperationsResponse, error) {
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.SecurityGroupId, svc.Pagination{
 		PageToken: req.PageToken,

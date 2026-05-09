@@ -40,6 +40,9 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 }
 
 func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	subs, nextToken, err := h.svc.List(ctx, svc.SubnetFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -126,6 +129,13 @@ func (h *SubnetHandler) Update(ctx context.Context, req *vpcv1.UpdateSubnetReque
 func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubnetOperationsRequest) (*vpcv1.ListSubnetOperationsResponse, error) {
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -235,6 +245,16 @@ func (h *SubnetHandler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetR
 }
 
 func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUsedAddressesRequest) (*vpcv1.ListUsedAddressesResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	addrs, nextToken, err := h.svc.ListUsedAddresses(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,

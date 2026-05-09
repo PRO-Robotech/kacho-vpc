@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -128,6 +129,31 @@ func runServe(cfg config.Config) error {
 	// Inline default-SG creation в request-path NetworkService.doCreate.
 	networkSvc.SetSGRepo(sgRepo)
 
+	// production-mode fail-closed guard: KACHO_VPC_AUTH_MODE=production →
+	// anonymous caller отвергается с PermissionDenied сразу. Защита от
+	// misconfigured deploy без IAM sidecar (security M5 closure).
+	productionMode := cfg.AuthMode == "production" || cfg.AuthMode == "production-strict"
+	if cfg.AuthMode == "production-strict" {
+		// Strict: дополнительно валидируем что cross-service плоскость безопасна.
+		if !cfg.ResourceManagerTLS {
+			return fmt.Errorf("production-strict mode: KACHO_VPC_RESOURCE_MANAGER_TLS=true required")
+		}
+		if cfg.DBSSLMode == "" || cfg.DBSSLMode == "disable" {
+			return fmt.Errorf("production-strict mode: KACHO_VPC_DB_SSLMODE must not be 'disable'")
+		}
+	}
+	if productionMode {
+		logger.Warn("AuthMode=production: anonymous callers will be rejected (M5 fail-closed)")
+	} else {
+		// Dev defaults — обращаем внимание operator'а на insecure config.
+		if !cfg.ResourceManagerTLS {
+			logger.Warn("KACHO_VPC_RESOURCE_MANAGER_TLS=false — cross-service gRPC plaintext (dev only)")
+		}
+		if cfg.DBSSLMode == "" || cfg.DBSSLMode == "disable" {
+			logger.Warn("KACHO_VPC_DB_SSLMODE=disable — DB plaintext (dev only)")
+		}
+	}
+
 	// gRPC server.
 	// gRPC server с tenant-interceptor (scaffold под IAM/AuthZ).
 	// Сейчас reads metadata; future — JWT claims. Handler'ы используют
@@ -135,14 +161,14 @@ func runServe(cfg config.Config) error {
 	// requireAdmin=false: публичный listener, anonymous + folder-scoped tenant
 	// допустимы; admin-flag не enforce'ится.
 	grpcSrv := grpcsrv.NewServer(
-		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(false)),
-		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(false)),
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(false, productionMode)),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(false, productionMode)),
 	)
 
 	// Регистрируем все публичные сервисы.
 	vpcv1.RegisterNetworkServiceServer(grpcSrv, handler.NewNetworkHandler(networkSvc))
 	vpcv1.RegisterSubnetServiceServer(grpcSrv, handler.NewSubnetHandler(subnetSvc))
-	vpcv1.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addressSvc))
+	vpcv1.RegisterAddressServiceServer(grpcSrv, handler.NewAddressHandler(addressSvc, subnetSvc))
 	vpcv1.RegisterRouteTableServiceServer(grpcSrv, handler.NewRouteTableHandler(routeTableSvc))
 	vpcv1.RegisterSecurityGroupServiceServer(grpcSrv, handler.NewSecurityGroupHandler(sgSvc))
 	vpcv1.RegisterGatewayServiceServer(grpcSrv, handler.NewGatewayHandler(gatewaySvc))
@@ -158,8 +184,8 @@ func runServe(cfg config.Config) error {
 	// принимает). NetworkPolicy в helm закрывает port на уровне k8s; admin-check
 	// — defense-in-depth внутри.
 	internalSrv := grpcsrv.NewServer(
-		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(true)),
-		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true)),
+		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(true, productionMode)),
+		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true, productionMode)),
 	)
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
 	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
@@ -222,6 +248,12 @@ func runServe(cfg config.Config) error {
 	}()
 
 	serveErr := grpcSrv.Serve(listener)
+	// Если grpcSrv.Serve вернул из-за abnormal listener-exit (kernel закрыл
+	// socket, OOM, listener.Close() извне) — SIGTERM не пришёл, shutdown-горутина
+	// заблокирована на <-ctx.Done(). cancel() будит её → она делает GracefulStop
+	// + operations.Wait → закрывает shutdownDone. Без этого `<-shutdownDone`
+	// зависал бы навсегда (deadlock R8 m1).
+	cancel()
 	// Блокируемся до полного drain'а LRO worker'ов перед возвратом из runServe
 	// (иначе main → os.Exit обрывает worker'ов).
 	<-shutdownDone

@@ -39,13 +39,21 @@ type TenantCtx struct {
 }
 
 // HasFolderAccess — может ли caller трогать ресурс из folder'а.
-// Empty FolderIDs (или Admin=true) даёт full access.
+// Empty FolderIDs (или Admin=true) даёт full access. Production-mode
+// guard на уровне interceptor отфильтровывает anonymous callers до того,
+// как этот метод вызовется.
 func (t TenantCtx) HasFolderAccess(folderID string) bool {
 	if t.Admin || len(t.FolderIDs) == 0 {
 		return true
 	}
 	_, ok := t.FolderIDs[folderID]
 	return ok
+}
+
+// IsAnonymous — true если caller не предъявил никакой identity-header'ов.
+// Used by production-mode fail-closed guard.
+func (t TenantCtx) IsAnonymous() bool {
+	return t.Actor == "" && len(t.FolderIDs) == 0 && !t.Admin
 }
 
 // TenantFromCtx извлекает TenantCtx из context. Если interceptor не
@@ -100,9 +108,17 @@ func AssertFolderOwnership(ctx context.Context, folderID string) error {
 // admin-flag PermissionDenied. Anonymous-mode (нет AuthN) автоматически
 // admin=true → backward-compat. С IAM token — Internal RPC доступны только
 // service-account'ам с admin-claim'ом.
-func TenantUnaryInterceptor(requireAdmin bool) grpc.UnaryServerInterceptor {
+//
+// productionMode=true — fail-closed гейт: anonymous caller → PermissionDenied
+// сразу. Включается через KACHO_VPC_AUTH_MODE=production. Защита от
+// misconfigured deploy без IAM sidecar (security M5 closure).
+func TenantUnaryInterceptor(requireAdmin, productionMode bool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		t := tenantFromMetadata(ctx)
+		if productionMode && t.IsAnonymous() {
+			return nil, status.Error(codes.PermissionDenied,
+				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
+		}
 		if requireAdmin {
 			if err := assertAdminAccess(t, info.FullMethod); err != nil {
 				return nil, err
@@ -114,9 +130,13 @@ func TenantUnaryInterceptor(requireAdmin bool) grpc.UnaryServerInterceptor {
 }
 
 // TenantStreamInterceptor — то же для server-stream RPC (для Watch).
-func TenantStreamInterceptor(requireAdmin bool) grpc.StreamServerInterceptor {
+func TenantStreamInterceptor(requireAdmin, productionMode bool) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		t := tenantFromMetadata(ss.Context())
+		if productionMode && t.IsAnonymous() {
+			return status.Error(codes.PermissionDenied,
+				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
+		}
 		if requireAdmin {
 			if err := assertAdminAccess(t, info.FullMethod); err != nil {
 				return err

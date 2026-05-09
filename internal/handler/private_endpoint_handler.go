@@ -44,6 +44,9 @@ func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEn
 	if c, ok := req.Container.(*pe.ListPrivateEndpointsRequest_FolderId); ok {
 		folderID = c.FolderId
 	}
+	if err := AssertFolderOwnership(ctx, folderID); err != nil {
+		return nil, err
+	}
 	endpoints, nextToken, err := h.svc.List(ctx, svc.PrivateEndpointFilter{
 		FolderID: folderID,
 		Filter:   req.Filter,
@@ -152,6 +155,13 @@ func (h *PrivateEndpointHandler) Delete(ctx context.Context, req *pe.DeletePriva
 func (h *PrivateEndpointHandler) ListOperations(ctx context.Context, req *pe.ListPrivateEndpointOperationsRequest) (*pe.ListPrivateEndpointOperationsResponse, error) {
 	if req.PrivateEndpointId == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
+	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.PrivateEndpointId, svc.Pagination{
 		PageToken: req.PageToken,

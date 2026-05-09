@@ -40,6 +40,9 @@ func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableReq
 }
 
 func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	rts, nextToken, err := h.svc.List(ctx, svc.RouteTableFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -131,6 +134,13 @@ func (h *RouteTableHandler) Update(ctx context.Context, req *vpcv1.UpdateRouteTa
 func (h *RouteTableHandler) ListOperations(ctx context.Context, req *vpcv1.ListRouteTableOperationsRequest) (*vpcv1.ListRouteTableOperationsResponse, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.RouteTableId, svc.Pagination{
 		PageToken: req.PageToken,

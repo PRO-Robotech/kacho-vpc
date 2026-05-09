@@ -3,10 +3,7 @@ package handler
 
 import (
 	"context"
-	"errors"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -151,24 +148,8 @@ func zoneToProto(v *domain.Zone) *vpcv1.Zone {
 	}
 }
 
+// mapGeoErr — admin-handler error mapping для Region/Zone admin RPC.
+// Делегирует internalMapErr (R8 M1 sibling closure).
 func mapGeoErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, service.ErrNotFound) {
-		return status.Error(codes.NotFound, err.Error())
-	}
-	if errors.Is(err, service.ErrAlreadyExists) {
-		return status.Error(codes.AlreadyExists, err.Error())
-	}
-	if errors.Is(err, service.ErrFailedPrecondition) {
-		return status.Error(codes.FailedPrecondition, err.Error())
-	}
-	if errors.Is(err, service.ErrInvalidArg) {
-		return status.Error(codes.InvalidArgument, err.Error())
-	}
-	if _, ok := status.FromError(err); ok {
-		return err
-	}
-	return status.Error(codes.Internal, err.Error())
+	return internalMapErr("geography admin error", err)
 }

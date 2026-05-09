@@ -44,6 +44,11 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 }
 
 func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
+	// AuthZ: caller обязан иметь access к запрошенному folder. Anonymous
+	// (FolderIDs={}) пропускается; AuthN tenant без access → PermissionDenied.
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	nets, nextToken, err := h.svc.List(ctx, svc.NetworkFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -111,6 +116,14 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
+	// AuthZ: child list — caller обязан владеть parent network'ом.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	subs, nextToken, err := h.svc.ListSubnets(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -128,6 +141,13 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.ListNetworkSecurityGroupsRequest) (*vpcv1.ListNetworkSecurityGroupsResponse, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	sgs, nextToken, err := h.svc.ListSecurityGroups(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -147,6 +167,13 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	rts, nextToken, err := h.svc.ListRouteTables(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -164,6 +191,13 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 func (h *NetworkHandler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkOperationsRequest) (*vpcv1.ListNetworkOperationsResponse, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,

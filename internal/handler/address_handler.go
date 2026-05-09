@@ -17,12 +17,13 @@ import (
 // AddressHandler реализует vpcv1.AddressServiceServer.
 type AddressHandler struct {
 	vpcv1.UnimplementedAddressServiceServer
-	svc *svc.AddressService
+	svc       *svc.AddressService
+	subnetSvc *svc.SubnetService // для AuthZ pre-check на ListBySubnet
 }
 
 // NewAddressHandler создаёт AddressHandler.
-func NewAddressHandler(s *svc.AddressService) *AddressHandler {
-	return &AddressHandler{svc: s}
+func NewAddressHandler(s *svc.AddressService, subnet *svc.SubnetService) *AddressHandler {
+	return &AddressHandler{svc: s, subnetSvc: subnet}
 }
 
 func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) (*vpcv1.Address, error) {
@@ -47,10 +48,30 @@ func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressBy
 	if err != nil {
 		return nil, err
 	}
+	// AuthZ: post-fetch check (нельзя проверить до lookup'а — RPC резолвит
+	// IP→Address). Caller без folder-access получит PermissionDenied вместо
+	// данных. Защищает IP-scan IDOR (R8 M6).
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
 	return addressToProto(a), nil
 }
 
 func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySubnetRequest) (*vpcv1.ListAddressesBySubnetResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	// AuthZ: child list — caller обязан владеть parent subnet'ом.
+	// subnetSvc может быть nil только в unit-тестах (см. NewAddressHandler).
+	if h.subnetSvc != nil {
+		sub, err := h.subnetSvc.Get(ctx, req.SubnetId)
+		if err != nil {
+			return nil, err
+		}
+		if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+			return nil, err
+		}
+	}
 	addrs, nextToken, err := h.svc.ListBySubnet(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -66,6 +87,9 @@ func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddres
 }
 
 func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -153,6 +177,13 @@ func (h *AddressHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressReq
 func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddressOperationsRequest) (*vpcv1.ListAddressOperationsResponse, error) {
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.AddressId, svc.Pagination{
 		PageToken: req.PageToken,

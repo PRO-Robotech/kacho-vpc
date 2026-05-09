@@ -38,6 +38,18 @@ type Config struct {
 	// resource-manager (security P0 closure: иначе in-cluster MITM может
 	// подделать FolderClient.GetCloudID/Exists).
 	ResourceManagerTLS bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_TLS" default:"false"`
+
+	// AuthMode — управление fail-closed гейтом перед IAM merge.
+	//   `dev` (default) — anonymous-mode разрешён, interceptor пропускает
+	//                     callers без AuthN-headers как admin (backward-compat).
+	//   `production`    — fail-closed: каждый запрос обязан иметь не-пустой
+	//                     TenantCtx (Actor + (Admin или FolderIDs)). Anonymous
+	//                     → PermissionDenied. Защита от misconfigured prod-deploy
+	//                     где IAM sidecar/reverse-proxy auth забыт — иначе
+	//                     anonymous = root по всему сервису (security M5).
+	//   `production-strict` — то же + дополнительно требует
+	//                         ResourceManagerTLS=true && DBSSLMode!=disable.
+	AuthMode string `envconfig:"KACHO_VPC_AUTH_MODE" default:"dev"`
 }
 
 // DSN возвращает PostgreSQL DSN строку с настраиваемым sslmode.
