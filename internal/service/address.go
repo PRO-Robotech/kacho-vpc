@@ -15,8 +15,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreateAddressReq — запрос на создание адреса.
@@ -311,7 +311,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 
 	created, err := s.repo.Insert(ctx, a)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 
 	// Inline IPAM allocation (Phase-2: kacho-vpc-controllers упразднён).
@@ -382,7 +382,7 @@ func (s *AddressService) doUpdate(ctx context.Context, req UpdateAddressReq) (*a
 
 	updated, err := s.repo.Update(ctx, a)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainAddressToProto(updated))
 }

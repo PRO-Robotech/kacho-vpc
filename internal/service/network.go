@@ -15,8 +15,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreateNetworkReq — запрос на создание сети.
@@ -277,7 +277,9 @@ func (s *NetworkService) doUpdate(ctx context.Context, req UpdateNetworkReq) (*a
 
 	updated, err := s.repo.Update(ctx, n)
 	if err != nil {
-		return nil, err
+		// mapRepoErr: sentinel→gRPC. Без обёртки worker отдавал бы
+		// raw "already exists" в Operation.error (verbatim YC parity break).
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainNetworkToProto(updated))
 }

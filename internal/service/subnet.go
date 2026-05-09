@@ -13,8 +13,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // CreateSubnetReq — запрос на создание подсети.
@@ -219,7 +219,7 @@ func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*any
 
 	updated, err := s.repo.Update(ctx, sub)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return anypb.New(domainSubnetToProto(updated))
 }
