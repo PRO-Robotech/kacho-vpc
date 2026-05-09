@@ -52,3 +52,15 @@ func BenchmarkIsUniqueViolation(b *testing.B) {
 		_ = isUniqueViolation(err)
 	}
 }
+
+// BenchmarkUsableIPv4Sweep — sweep enumeration для allocator Phase 2
+// (deterministic fallback после random-phase). На /28 (14 IP) полный sweep —
+// max 24 IP по cap'у, 0-allocation expected на каждый IP кроме результата.
+func BenchmarkUsableIPv4Sweep(b *testing.B) {
+	cidr := netip.MustParsePrefix("198.51.100.0/28")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = usableIPv4Sweep(cidr, 24)
+	}
+}

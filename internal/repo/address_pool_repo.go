@@ -299,24 +299,49 @@ func (r *AddressPoolRepo) CountAddressesByPool(ctx context.Context, poolID strin
 }
 
 // CountAddressesByPoolPerCIDR — для каждого CIDR pool'а считаем allocated IPs.
-// Использует inet-операции Postgres: address << cidr (содержится в).
+// Single-roundtrip: один SELECT с unnest($cidrs) + LEFT JOIN addresses через
+// inet-оператор `<<`. Раньше было N+1 (по запросу на каждый CIDR) — заменено
+// одним запросом с GROUP BY (concurrency P0 #4 closure).
 func (r *AddressPoolRepo) CountAddressesByPoolPerCIDR(ctx context.Context, poolID string) (map[string]int64, error) {
 	pool, err := r.Get(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]int64, len(pool.CIDRBlocks))
-	for _, c := range pool.CIDRBlocks {
+	if len(pool.CIDRBlocks) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT c.cidr::text, COALESCE(count(a.id) FILTER (
+    WHERE coalesce(a.external_ipv4 ->> 'address','') <> ''
+      AND a.external_ipv4 ->> 'address_pool_id' = $1
+      AND (a.external_ipv4 ->> 'address')::inet << c.cidr
+), 0) AS n
+FROM unnest($2::cidr[]) AS c(cidr)
+LEFT JOIN addresses a ON a.external_ipv4 ->> 'address_pool_id' = $1
+GROUP BY c.cidr
+`, poolID, pool.CIDRBlocks)
+	if err != nil {
+		return nil, wrapPgErr(err, "AddressPool", poolID)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cidr string
 		var n int64
-		err := r.pool.QueryRow(ctx,
-			`SELECT count(*) FROM addresses
-			 WHERE external_ipv4 ->> 'address_pool_id' = $1
-			   AND coalesce(external_ipv4 ->> 'address', '') <> ''
-			   AND (external_ipv4 ->> 'address')::inet << $2::cidr`, poolID, c).Scan(&n)
-		if err != nil {
+		if err := rows.Scan(&cidr, &n); err != nil {
 			return nil, wrapPgErr(err, "AddressPool", poolID)
 		}
-		out[c] = n
+		out[cidr] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgErr(err, "AddressPool", poolID)
+	}
+	// Postgres canonicalizes "198.51.100.0/24" identically; но если pool.CIDRBlocks
+	// хранит спецификации без canonical form, добавим missing keys как 0.
+	for _, c := range pool.CIDRBlocks {
+		if _, ok := out[c]; !ok {
+			out[c] = 0
+		}
 	}
 	return out, nil
 }

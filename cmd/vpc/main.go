@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"log"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
@@ -75,7 +77,16 @@ func runServe(cfg config.Config) error {
 	opsRepo := operations.NewRepo(pool, "public")
 
 	// gRPC клиент к resource-manager.
-	rmConn, err := grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Security: TLS опциональный через KACHO_VPC_RESOURCE_MANAGER_TLS=true
+	// (закрывает in-cluster MITM на FolderClient.Exists/GetCloudID — security
+	// P0). По умолчанию insecure для backward-compat dev-стенда.
+	var rmCreds credentials.TransportCredentials
+	if cfg.ResourceManagerTLS {
+		rmCreds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	} else {
+		rmCreds = insecure.NewCredentials()
+	}
+	rmConn, err := grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(rmCreds))
 	if err != nil {
 		return err
 	}
@@ -134,7 +145,7 @@ func runServe(cfg config.Config) error {
 	// Internal gRPC server — отдельный порт, не виден через api-gateway.
 	// Регистрируем InternalWatchService + InternalAddressService для kacho-vpc-controllers.
 	internalSrv := grpcsrv.NewServer()
-	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch")))
+	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
 	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
 	// (legacy SetInternalIP в handler.InternalAddressHandler + AllocateInternal/External в
 	// handler.InternalAddressAllocateHandler). gRPC требует ОДНУ имплементацию на сервис, поэтому

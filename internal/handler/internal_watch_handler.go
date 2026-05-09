@@ -33,20 +33,30 @@ const catchupBatchSize = 100
 // InternalWatchHandler реализует vpcv1.InternalWatchServiceServer.
 type InternalWatchHandler struct {
 	vpcv1.UnimplementedInternalWatchServiceServer
-	pool *pgxpool.Pool
-	dsn  string
-	log  *slog.Logger
+	pool       *pgxpool.Pool
+	dsn        string
+	log        *slog.Logger
+	streamSlot chan struct{} // semaphore: cap = max concurrent streams
 }
 
 // NewInternalWatchHandler создаёт handler.
 //
 // pool — pgxpool DB kacho_vpc, используется для catchup-SELECT'ов.
 // dsn — отдельный connection string для dedicated LISTEN-соединения
-// (открывается per-stream через pgx.Connect, не уходит в pool). Это даёт
-// полную изоляцию и снимает риск "грязного" conn в пуле при abnormal exit.
-// См. TODO #15.
-func NewInternalWatchHandler(pool *pgxpool.Pool, dsn string, log *slog.Logger) *InternalWatchHandler {
-	return &InternalWatchHandler{pool: pool, dsn: dsn, log: log}
+// (открывается per-stream через pgx.Connect, не уходит в pool).
+// maxStreams — лимит одновременных Watch-streams (защита от Postgres
+// connection-pool exhaustion одним buggy/looping клиентом). Если 0 —
+// fallback 32 (см. config.WatchMaxStreams).
+func NewInternalWatchHandler(pool *pgxpool.Pool, dsn string, log *slog.Logger, maxStreams int) *InternalWatchHandler {
+	if maxStreams <= 0 {
+		maxStreams = 32
+	}
+	return &InternalWatchHandler{
+		pool:       pool,
+		dsn:        dsn,
+		log:        log,
+		streamSlot: make(chan struct{}, maxStreams),
+	}
 }
 
 // Watch реализует server-stream подписки.
@@ -66,6 +76,19 @@ func NewInternalWatchHandler(pool *pgxpool.Pool, dsn string, log *slog.Logger) *
 //   - DB transient: возвращаем Internal без leak'а pgx-сообщения в текст.
 func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.InternalWatchService_WatchServer) error {
 	ctx := stream.Context()
+
+	// Acquire stream slot — non-blocking: если все слоты заняты, отвечаем
+	// ResourceExhausted сразу, не задерживаем клиента. Защита от DoS:
+	// один buggy client (или admin UI с тысячью stale-tabs) не может выпить
+	// connection pool под LISTEN.
+	select {
+	case h.streamSlot <- struct{}{}:
+		defer func() { <-h.streamSlot }()
+	default:
+		return status.Error(codes.ResourceExhausted,
+			"too many concurrent watch streams (limit reached)")
+	}
+
 	cursor := req.GetFromSequenceNo()
 	kinds := req.GetKinds()
 
@@ -88,7 +111,7 @@ func (h *InternalWatchHandler) Watch(req *vpcv1.WatchRequest, stream vpcv1.Inter
 
 	// LISTEN на trigger-канал; идентификатор — literal, не из user-input.
 	if _, err := conn.Exec(ctx, "LISTEN vpc_outbox"); err != nil {
-		return status.Errorf(codes.Internal, "listen: %v", err)
+		return internalMapErr("watch listen failed", err)
 	}
 	// UNLISTEN не обязателен (conn будет закрыт), но оставлен для symmetry.
 	defer func() {
@@ -172,7 +195,7 @@ func (h *InternalWatchHandler) streamSince(
 			if errors.Is(err, context.Canceled) {
 				return cursor, nil
 			}
-			return cursor, status.Errorf(codes.Internal, "query outbox: %v", err)
+			return cursor, internalMapErr("query outbox", err)
 		}
 
 		count := 0
@@ -183,7 +206,7 @@ func (h *InternalWatchHandler) streamSince(
 			var createdAt time.Time
 			if err := rows.Scan(&seq, &kind, &id, &eventType, &payloadJSON, &createdAt); err != nil {
 				rows.Close()
-				return cursor, status.Errorf(codes.Internal, "scan outbox: %v", err)
+				return cursor, internalMapErr("scan outbox", err)
 			}
 
 			payloadStruct, err := jsonBytesToStruct(payloadJSON)
@@ -209,7 +232,7 @@ func (h *InternalWatchHandler) streamSince(
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
-			return cursor, status.Errorf(codes.Internal, "rows iter: %v", err)
+			return cursor, internalMapErr("outbox iter", err)
 		}
 
 		if count < catchupBatchSize {

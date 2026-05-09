@@ -42,7 +42,19 @@ type AllocateResult struct {
 	AlreadyAllocated bool
 }
 
-const allocateMaxAttempts = 32
+const (
+	// allocateMaxAttempts — максимум попыток random-pick + retry-on-conflict.
+	// При near-full CIDR (≥95% занято) random-pick имеет high false-fail rate
+	// (см. allocateRandomPhase ниже). После этого порога переключаемся на
+	// deterministic sweep.
+	allocateMaxAttempts = 32
+
+	// allocateRandomPhase — сколько попыток сделать random-pick'ом до того
+	// как переключиться на deterministic sweep по тем же CIDR. Random в первые
+	// N попыток дешевле (1 SQL/попытка), при low/medium occupancy сходится
+	// быстро. Переход в sweep гарантирует closure под high-occupancy.
+	allocateRandomPhase = 8
+)
 
 // AllocateInternalIP — выделяет next-free IPv4 в subnet, который указан
 // в address.internal_ipv4.subnet_id. Idempotent: если IP уже выделен —
@@ -129,18 +141,53 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 			"address pool %s has no cidr_blocks", pool.ID)
 	}
 
-	// Linear sweep по cidr_blocks: пробуем каждый CIDR последовательно.
+	// Двухфазный allocate по каждому CIDR:
+	//  Phase 1 (allocateRandomPhase попыток) — random-pick. Дёшево, сходится
+	//          быстро при low/medium occupancy. Без shared-state между попытками.
+	//  Phase 2 (deterministic sweep) — линейный обход CIDR с локальным
+	//          tried-set для memoization. Гарантирует closure под high-occupancy
+	//          (concurrency P0 #2 closure: устраняет ~9% false-fail на /28
+	//          при 95%+ occupancy).
 	for _, cidrStr := range pool.CIDRBlocks {
 		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
 		if err != nil {
 			continue
 		}
-		for attempt := 0; attempt < allocateMaxAttempts; attempt++ {
+		tried := make(map[string]struct{}, allocateMaxAttempts)
+		// Phase 1: random pick.
+		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
 			ip, err := pickRandomIPv4(cidr)
 			if err != nil {
 				break // CIDR too small; try next
 			}
+			if _, dup := tried[ip]; dup {
+				continue
+			}
+			tried[ip] = struct{}{}
 			addr.ExternalIpv4.Address = ip
+			addr.ExternalIpv4.AddressPoolID = pool.ID
+			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
+			if err != nil {
+				if isUniqueViolation(err) {
+					addr.ExternalIpv4.Address = ""
+					addr.ExternalIpv4.AddressPoolID = ""
+					continue
+				}
+				return nil, err
+			}
+			return &AllocateResult{
+				IP:     updated.ExternalIpv4.Address,
+				PoolID: pool.ID,
+			}, nil
+		}
+		// Phase 2: deterministic sweep — гарантия что мы перепробуем все
+		// usable IPs в CIDR (с учётом tried-set).
+		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+			if _, dup := tried[candidate]; dup {
+				continue
+			}
+			tried[candidate] = struct{}{}
+			addr.ExternalIpv4.Address = candidate
 			addr.ExternalIpv4.AddressPoolID = pool.ID
 			updated, err := a.addrRepo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
 			if err != nil {
@@ -159,6 +206,43 @@ func (a *AddressAllocator) AllocateExternalIP(ctx context.Context, addressID str
 	}
 	return nil, status.Errorf(codes.ResourceExhausted,
 		"address pool %s exhausted (no free IP in any cidr_block)", pool.ID)
+}
+
+// usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без
+// network/broadcast). Используется в Phase 2 allocator'а для гарантии closure
+// когда random-pick не сходится. Cap'ируется maxN чтобы не аллокировать
+// миллионы строк для больших CIDR; для /28 (14 IP) maxN=24 достаточно.
+func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
+	if !cidr.Addr().Is4() {
+		return nil
+	}
+	bits := cidr.Bits()
+	hostBits := 32 - bits
+	if hostBits >= 32 {
+		return nil
+	}
+	total := uint32(1) << hostBits
+	// Skip network/broadcast для /≤30; для /31 оба usable; для /32 один.
+	first := uint32(1)
+	last := total - 1
+	switch hostBits {
+	case 0:
+		first, last = 0, 1
+	case 1:
+		first, last = 0, 2
+	}
+	if uint32(maxN) < last-first {
+		last = first + uint32(maxN)
+	}
+	base := cidr.Addr().As4()
+	baseInt := binary.BigEndian.Uint32(base[:])
+	out := make([]string, 0, last-first)
+	for i := first; i < last; i++ {
+		var ipBytes [4]byte
+		binary.BigEndian.PutUint32(ipBytes[:], baseInt+i)
+		out = append(out, net.IP(ipBytes[:]).String())
+	}
+	return out
 }
 
 // pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast addresses

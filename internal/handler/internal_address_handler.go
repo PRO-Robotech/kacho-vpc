@@ -68,18 +68,18 @@ func (h *InternalAddressHandler) SetInternalIP(ctx context.Context, req *vpcv1.S
 
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "begin tx: %v", err)
+		return nil, internalMapErr("begin tx", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Lock the row to avoid races between two controller-replicas reconciling
 	// the same Address concurrently.
 	var (
-		intRaw     []byte
-		folderID   string
-		addrID     string
-		name       string
-		desc       string
+		intRaw   []byte
+		folderID string
+		addrID   string
+		name     string
+		desc     string
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT id, folder_id, name, description, internal_ipv4
@@ -91,7 +91,7 @@ func (h *InternalAddressHandler) SetInternalIP(ctx context.Context, req *vpcv1.S
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Errorf(codes.NotFound, "Address %s not found", req.AddressId)
 		}
-		return nil, status.Errorf(codes.Internal, "read address: %v", err)
+		return nil, internalMapErr("read address", err)
 	}
 	if intRaw == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
@@ -101,7 +101,7 @@ func (h *InternalAddressHandler) SetInternalIP(ctx context.Context, req *vpcv1.S
 
 	var current map[string]any
 	if err := json.Unmarshal(intRaw, &current); err != nil {
-		return nil, status.Errorf(codes.Internal, "decode internal_ipv4: %v", err)
+		return nil, internalMapErr("decode address spec", err)
 	}
 	currentIP, _ := current["address"].(string)
 	if currentIP == req.Ip {
@@ -123,7 +123,7 @@ func (h *InternalAddressHandler) SetInternalIP(ctx context.Context, req *vpcv1.S
 		  AND COALESCE(internal_ipv4->>'address', '') = ''
 	`, req.AddressId, req.Ip)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "update address: %v", err)
+		return nil, internalMapErr("update address", err)
 	}
 	if tag.RowsAffected() == 0 {
 		// Кто-то нас обогнал между SELECT FOR UPDATE и UPDATE (теоретически
@@ -142,11 +142,11 @@ func (h *InternalAddressHandler) SetInternalIP(ctx context.Context, req *vpcv1.S
 		"internal_ipv4": map[string]any{"address": req.Ip, "subnet_id": current["subnet_id"]},
 	}
 	if err := outbox.Emit(ctx, tx, "vpc_outbox", "Address", addrID, "UPDATED", payload); err != nil {
-		return nil, status.Errorf(codes.Internal, "emit outbox: %v", err)
+		return nil, internalMapErr("emit outbox", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return nil, status.Errorf(codes.Internal, "commit: %v", err)
+		return nil, internalMapErr("commit tx", err)
 	}
 	h.log.Info("internal ip set", "address_id", addrID, "ip", req.Ip)
 	return &vpcv1.SetInternalIPResponse{}, nil
