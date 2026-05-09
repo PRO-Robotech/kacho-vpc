@@ -205,14 +205,11 @@ func runServe(cfg config.Config) error {
 		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true, productionMode)),
 	)
 	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
-	// InternalAddressService — оба handler'а реализуют один и тот же gRPC service-interface
-	// (legacy SetInternalIP в handler.InternalAddressHandler + AllocateInternal/External в
-	// handler.InternalAddressAllocateHandler). gRPC требует ОДНУ имплементацию на сервис, поэтому
-	// объединяем через композитный adapter.
-	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressCompositeHandler(
-		handler.NewInternalAddressHandler(pool, logger.With("component", "internal-address")),
-		handler.NewInternalAddressAllocateHandler(addressAllocator),
-	))
+	// InternalAddressService: только Allocate* RPC (SetInternalIP удалён,
+	// composite-shim снесён). Если старые callers ещё дёргают SetInternalIP,
+	// они получат Unimplemented через UnimplementedInternalAddressServiceServer
+	// embedding.
+	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressAllocateHandler(addressAllocator))
 	vpcv1.RegisterInternalAddressPoolServiceServer(internalSrv, handler.NewInternalAddressPoolHandler(addressPoolSvc))
 	vpcv1.RegisterInternalNetworkServiceServer(internalSrv, handler.NewInternalNetworkHandler(networkInternalSvc))
 	vpcv1.RegisterInternalCloudServiceServer(internalSrv, handler.NewInternalCloudHandler(addressPoolSvc))

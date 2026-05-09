@@ -1,11 +1,13 @@
 // Package handler — internal_address_allocate_handler.go реализует
-// расширения kacho.cloud.vpc.v1.InternalAddressService:
+// kacho.cloud.vpc.v1.InternalAddressService:
 //   - AllocateInternalIP — atomic IPAM allocation для internal IP в subnet.
 //   - AllocateExternalIP — atomic allocation из cascade-резолвленного pool.
 //
-// Старый SetInternalIP остаётся в internal_address_handler.go. Этот файл
-// разделяет concerns между legacy direct-update (SetInternalIP) и новой
-// IPAM-allocation (Allocate*).
+// Legacy SetInternalIP RPC удалён (см. удалённые internal_address_handler.go
+// + internal_address_composite_handler.go). Если старый stub'нутый proto
+// generated code всё ещё содержит метод — он автоматически возвращает
+// codes.Unimplemented через UnimplementedInternalAddressServiceServer
+// embedding.
 package handler
 
 import (
@@ -19,10 +21,9 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// InternalAddressAllocateHandler — расширения InternalAddressService.
-// SetInternalIP остаётся в InternalAddressHandler (legacy). Новые методы
-// AllocateInternal/External — здесь, через service-layer (AddressAllocator).
+// InternalAddressAllocateHandler — InternalAddressService implementation.
 type InternalAddressAllocateHandler struct {
+	vpcv1.UnimplementedInternalAddressServiceServer
 	allocator *service.AddressAllocator
 }
 
