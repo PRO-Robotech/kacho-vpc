@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -63,34 +67,25 @@ type UpdateAddressReq struct {
 	UpdateMask         []string
 }
 
-// AddressService — бизнес-логика управления IP-адресами.
+// AddressService — бизнес-логика управления IP-адресами + inline IPAM.
 //
-// Сервис pure: НЕ генерирует IP, НЕ дёргает random/network. Если клиент
-// не указал ip-адрес — поле остаётся пустым; внешний controller
-// (`kacho-vpc-controllers`, allocator-loop) затем UPDATE-нёт address с
-// аллоцированным IP.
-//
-// См. POST-PROCESSING-IN-CONTROLLERS.md (architecture-decision).
+// Allocate*IP методы (см. ниже в этом файле) выделяют IP в request-path
+// атомарно через UNIQUE constraints на addresses (external_ip_uniq /
+// internal_subnet_ip_uniq) с bounded retry. Если pools == nil — Allocate*
+// возвращают Unavailable (test-setup без IPAM).
 type AddressService struct {
 	repo         AddressRepo
 	subnetRepo   SubnetRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
-	// allocator — inline IPAM (Phase-2 cleanup: kacho-vpc-controllers удалён).
-	// Может быть nil в test-setup'ах (тогда IP остаётся пустым; legacy behaviour).
-	allocator *AddressAllocator
+	pools        *AddressPoolService // inline IPAM; nil → Allocate* недоступны
 }
 
-// NewAddressService создаёт AddressService.
-func NewAddressService(repo AddressRepo, subnetRepo SubnetRepo, folderClient FolderClient, opsRepo operations.Repo) *AddressService {
-	return &AddressService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo}
+// NewAddressService создаёт AddressService с inline IPAM (pools может быть nil
+// в test-setup'ах — тогда IP в Create-результате остаётся пустым).
+func NewAddressService(repo AddressRepo, subnetRepo SubnetRepo, folderClient FolderClient, opsRepo operations.Repo, pools *AddressPoolService) *AddressService {
+	return &AddressService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo, pools: pools}
 }
-
-// SetAllocator wires inline IPAM allocator. Должно вызываться composition root
-// после конструирования AddressPoolService (циклическая зависимость
-// AddressService ↔ AddressAllocator → AddressPoolService → ... → AddressRepo,
-// поэтому через setter).
-func (s *AddressService) SetAllocator(a *AddressAllocator) { s.allocator = a }
 
 // validateInternalIPInSubnet проверяет sync-ом, что explicit IP лежит в CIDR
 // одной из v4_cidr_blocks указанной subnet. Если subnet не найден — пропуск
@@ -282,8 +277,8 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	if req.ExternalSpec != nil {
 		a.Type = domain.AddressTypeExternal
 		a.IpVersion = domain.IpVersionIPv4
-		// Pure: записываем то, что пришло от клиента; если address пустой —
-		// его аллоцирует kacho-vpc-controllers (allocator-loop).
+		// Записываем то, что пришло от клиента; если address пустой —
+		// inline allocator выделит IP ниже (см. блок `if s.pools != nil`).
 		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
 			Address: req.ExternalSpec.Address,
 			ZoneID:  req.ExternalSpec.ZoneID,
@@ -319,17 +314,12 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		return nil, mapRepoErr(err)
 	}
 
-	// Inline IPAM allocation (Phase-2: kacho-vpc-controllers упразднён).
-	// Если client не передал explicit IP — выделяем здесь же в worker'е.
-	// Idempotent: если IP уже выставлен — Allocate* возвращает существующий.
-	//
-	// Atomicity: Insert уже committed; при allocate-failure compensating
-	// Delete возвращает Address к не-существующему состоянию. Без этого
-	// failed Operation оставлял dangling Address в БД (см. bug-report
-	// «при ошибке ресурс всё равно создал»).
-	if s.allocator != nil {
+	// Inline IPAM allocation. Idempotent: если IP уже выставлен — Allocate*
+	// возвращает существующий. На allocate-failure делаем compensating delete,
+	// иначе failed Operation оставит dangling Address в БД.
+	if s.pools != nil {
 		if created.ExternalIpv4 != nil && created.ExternalIpv4.Address == "" {
-			res, aerr := s.allocator.AllocateExternalIP(ctx, created.ID)
+			res, aerr := s.AllocateExternalIP(ctx, created.ID)
 			if aerr != nil {
 				s.compensatingDelete(ctx, created.ID, "external", aerr)
 				return nil, aerr
@@ -338,7 +328,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 			created.ExternalIpv4.AddressPoolID = res.PoolID
 		}
 		if created.InternalIpv4 != nil && created.InternalIpv4.Address == "" && created.InternalIpv4.SubnetID != "" {
-			res, aerr := s.allocator.AllocateInternalIP(ctx, created.ID)
+			res, aerr := s.AllocateInternalIP(ctx, created.ID)
 			if aerr != nil {
 				s.compensatingDelete(ctx, created.ID, "internal", aerr)
 				return nil, aerr
@@ -603,3 +593,380 @@ func domainAddressToProto(a *domain.Address) *vpcv1.Address {
 	}
 	return p
 }
+// AllocateResult — результат allocate-операций.
+type AllocateResult struct {
+	IP               string
+	PoolID           string // только для external; "" для internal
+	AlreadyAllocated bool
+}
+
+const (
+	// allocateMaxAttempts — максимум попыток random-pick + retry-on-conflict.
+	// При near-full CIDR (≥95% занято) random-pick имеет high false-fail rate
+	// (см. allocateRandomPhase ниже). После этого порога переключаемся на
+	// deterministic sweep.
+	allocateMaxAttempts = 32
+
+	// allocateRandomPhase — сколько попыток сделать random-pick'ом до того
+	// как переключиться на deterministic sweep по тем же CIDR. Random в первые
+	// N попыток дешевле (1 SQL/попытка), при low/medium occupancy сходится
+	// быстро. Переход в sweep гарантирует closure под high-occupancy.
+	allocateRandomPhase = 8
+)
+
+// AllocateInternalIP — выделяет next-free IPv4 в subnet, который указан
+// в address.internal_ipv4.subnet_id. Idempotent: если IP уже выделен —
+// возвращает existing с AlreadyAllocated=true.
+//
+// Iterate по ВСЕМ V4CidrBlocks subnet'а (раньше брал только [0] — если
+// subnet расширили через AddCidrBlocks, второй+ prefix игнорировался и
+// первая полная CIDR давала "exhausted"). Двухфазный allocator: random
+// pick + deterministic sweep с tried-set (симметрично AllocateExternalIP),
+// устраняет false-fail на near-full subnet (см. concurrency P0 #2).
+func (s *AddressService) AllocateInternalIP(ctx context.Context, addressID string) (*AllocateResult, error) {
+	addr, err := s.repo.Get(ctx, addressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr.InternalIpv4 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no internal_ipv4 spec", addressID)
+	}
+	if addr.InternalIpv4.Address != "" {
+		return &AllocateResult{IP: addr.InternalIpv4.Address, AlreadyAllocated: true}, nil
+	}
+	if addr.InternalIpv4.SubnetID == "" {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s internal_ipv4.subnet_id is empty", addressID)
+	}
+	sub, err := s.subnetRepo.Get(ctx, addr.InternalIpv4.SubnetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sub.V4CidrBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"subnet %s has no v4_cidr_blocks", sub.ID)
+	}
+
+	parsedV4Count := 0
+	totalConflicts := 0
+	skippedNonV4 := 0
+	parseFails := 0
+	for _, cidrStr := range sub.V4CidrBlocks {
+		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
+		if err != nil {
+			parseFails++
+			slog.WarnContext(ctx, "allocator: skipping unparseable subnet cidr",
+				"subnet_id", sub.ID, "cidr", cidrStr, "err", err)
+			continue
+		}
+		if !cidr.Addr().Is4() {
+			skippedNonV4++
+			continue
+		}
+		parsedV4Count++
+		tried := make(map[string]struct{}, allocateMaxAttempts)
+		// Phase 1: random pick.
+		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
+			ip, err := pickRandomIPv4(cidr)
+			if err != nil {
+				break
+			}
+			if _, dup := tried[ip]; dup {
+				continue
+			}
+			tried[ip] = struct{}{}
+			addr.InternalIpv4.Address = ip
+			updated, err := s.repo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
+					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{IP: updated.InternalIpv4.Address}, nil
+		}
+		// Phase 2: deterministic sweep.
+		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+			if _, dup := tried[candidate]; dup {
+				continue
+			}
+			tried[candidate] = struct{}{}
+			addr.InternalIpv4.Address = candidate
+			updated, err := s.repo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
+					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{IP: updated.InternalIpv4.Address}, nil
+		}
+	}
+	slog.WarnContext(ctx, "allocator: subnet exhausted",
+		"subnet_id", sub.ID,
+		"address_id", addressID,
+		"cidr_blocks", sub.V4CidrBlocks,
+		"parsed_ipv4", parsedV4Count,
+		"skipped_non_v4", skippedNonV4,
+		"parse_fails", parseFails,
+		"unique_conflicts", totalConflicts)
+	if parsedV4Count == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"subnet %s has no IPv4 cidr_blocks (allocator requires IPv4)", sub.ID)
+	}
+	return nil, status.Errorf(codes.ResourceExhausted,
+		"subnet %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks; %d unique-conflicts)",
+		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
+}
+
+// AllocateExternalIP — резолвит pool через cascade и выделяет next-free IPv4
+// из его cidr_blocks. Idempotent.
+func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID string) (*AllocateResult, error) {
+	addr, err := s.repo.Get(ctx, addressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr.ExternalIpv4 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no external_ipv4 spec", addressID)
+	}
+	if addr.ExternalIpv4.Address != "" {
+		return &AllocateResult{
+			IP:               addr.ExternalIpv4.Address,
+			PoolID:           addr.ExternalIpv4.AddressPoolID,
+			AlreadyAllocated: true,
+		}, nil
+	}
+
+	// ResolvePoolForAddressObj переиспользует уже-полученный addr — устраняет
+	// double-Get в request-path (cascade resolve внутри иначе делает повторный
+	// addrRepo.Get для того же id).
+	resolved, err := s.pools.ResolvePoolForAddressObj(ctx, addr)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
+	}
+	pool := resolved.Pool
+	if len(pool.CIDRBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no cidr_blocks", pool.ID)
+	}
+
+	// Двухфазный allocate по каждому CIDR:
+	//  Phase 1 (allocateRandomPhase попыток) — random-pick. Дёшево, сходится
+	//          быстро при low/medium occupancy. Без shared-state между попытками.
+	//  Phase 2 (deterministic sweep) — линейный обход CIDR с локальным
+	//          tried-set для memoization. Гарантирует closure под high-occupancy
+	//          (concurrency P0 #2 closure: устраняет ~9% false-fail на /28
+	//          при 95%+ occupancy).
+	//
+	// Diagnostic: считаем сколько CIDR'ов реально доходит до allocate-loop'а;
+	// если 0 — это invalid pool config (IPv6, parse fail), и FailedPrecondition
+	// даёт оператору точную причину вместо вводящего в заблуждение «exhausted».
+	parsedV4Count := 0
+	totalConflicts := 0
+	skippedNonV4 := 0
+	parseFails := 0
+	for _, cidrStr := range pool.CIDRBlocks {
+		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
+		if err != nil {
+			parseFails++
+			slog.WarnContext(ctx, "allocator: skipping unparseable cidr",
+				"pool_id", pool.ID, "cidr", cidrStr, "err", err)
+			continue
+		}
+		if !cidr.Addr().Is4() {
+			skippedNonV4++
+			slog.WarnContext(ctx, "allocator: skipping non-IPv4 cidr",
+				"pool_id", pool.ID, "cidr", cidrStr)
+			continue
+		}
+		parsedV4Count++
+		tried := make(map[string]struct{}, allocateMaxAttempts)
+		// Phase 1: random pick.
+		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
+			ip, err := pickRandomIPv4(cidr)
+			if err != nil {
+				break // CIDR too small; try next
+			}
+			if _, dup := tried[ip]; dup {
+				continue
+			}
+			tried[ip] = struct{}{}
+			addr.ExternalIpv4.Address = ip
+			addr.ExternalIpv4.AddressPoolID = pool.ID
+			updated, err := s.repo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.ExternalIpv4.Address = ""
+					addr.ExternalIpv4.AddressPoolID = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
+					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{
+				IP:     updated.ExternalIpv4.Address,
+				PoolID: pool.ID,
+			}, nil
+		}
+		// Phase 2: deterministic sweep — гарантия что мы перепробуем все
+		// usable IPs в CIDR (с учётом tried-set).
+		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+			if _, dup := tried[candidate]; dup {
+				continue
+			}
+			tried[candidate] = struct{}{}
+			addr.ExternalIpv4.Address = candidate
+			addr.ExternalIpv4.AddressPoolID = pool.ID
+			updated, err := s.repo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.ExternalIpv4.Address = ""
+					addr.ExternalIpv4.AddressPoolID = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
+					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
+				return nil, err
+			}
+			return &AllocateResult{
+				IP:     updated.ExternalIpv4.Address,
+				PoolID: pool.ID,
+			}, nil
+		}
+	}
+	slog.WarnContext(ctx, "allocator: exhausted",
+		"pool_id", pool.ID,
+		"address_id", addressID,
+		"cidr_blocks", pool.CIDRBlocks,
+		"parsed_ipv4", parsedV4Count,
+		"skipped_non_v4", skippedNonV4,
+		"parse_fails", parseFails,
+		"unique_conflicts", totalConflicts)
+	if parsedV4Count == 0 {
+		// Pool без usable IPv4 CIDR — invalid config, не actually "exhausted".
+		// Validation в Create/Update должна это ловить, но защищаемся для
+		// legacy-pools где validation добавлена позже их создания.
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no IPv4 cidr_blocks (allocator requires IPv4)", pool.ID)
+	}
+	return nil, status.Errorf(codes.ResourceExhausted,
+		"address pool %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks)",
+		pool.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count)
+}
+
+// usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без
+// network/broadcast). Используется в Phase 2 allocator'а для гарантии closure
+// когда random-pick не сходится. Cap'ируется maxN чтобы не аллокировать
+// миллионы строк для больших CIDR; для /28 (14 IP) maxN=24 достаточно.
+func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
+	if !cidr.Addr().Is4() {
+		return nil
+	}
+	bits := cidr.Bits()
+	hostBits := 32 - bits
+	if hostBits >= 32 {
+		return nil
+	}
+	total := uint32(1) << hostBits
+	// Skip network/broadcast для /≤30; для /31 оба usable; для /32 один.
+	first := uint32(1)
+	last := total - 1
+	switch hostBits {
+	case 0:
+		first, last = 0, 1
+	case 1:
+		first, last = 0, 2
+	}
+	if uint32(maxN) < last-first {
+		last = first + uint32(maxN)
+	}
+	base := cidr.Addr().As4()
+	baseInt := binary.BigEndian.Uint32(base[:])
+	out := make([]string, 0, last-first)
+	for i := first; i < last; i++ {
+		var ipBytes [4]byte
+		binary.BigEndian.PutUint32(ipBytes[:], baseInt+i)
+		out = append(out, net.IP(ipBytes[:]).String())
+	}
+	return out
+}
+
+// pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast addresses
+// (для prefix length < 31). Использует crypto/rand для unpredictable allocation.
+//
+// Edge cases (R8 fix /31 off-by-one):
+//   - /32 (hostBits=0): единственный адрес — base.
+//   - /31 (hostBits=1): оба адреса валидны (point-to-point) — base+0 или base+1.
+//     Раньше offset считался как `rand%2 + 1` → возвращал base+1 или base+2,
+//     второй вариант ВЫХОДИЛ за CIDR (UNIQUE-constraint в БД не валидирует
+//     CIDR-membership → IP реально аллокировался снаружи pool.cidr).
+//   - /≤30 (hostBits≥2): пропускаем .0 (network) и .last (broadcast) →
+//     offset в [1, maxHosts].
+func pickRandomIPv4(cidr netip.Prefix) (string, error) {
+	if !cidr.Addr().Is4() {
+		return "", ErrInvalidIPv4
+	}
+	bits := cidr.Bits()
+	hostBits := 32 - bits
+	base := cidr.Addr().As4()
+	baseInt := binary.BigEndian.Uint32(base[:])
+	var offset uint32
+	switch hostBits {
+	case 0:
+		// /32 — единственный адрес.
+		return cidr.Addr().String(), nil
+	case 1:
+		// /31 — оба валидны: offset ∈ {0, 1}.
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:]) % 2
+	default:
+		// /≤30 — пропускаем network/broadcast: offset ∈ [1, 2^hostBits - 2].
+		maxHosts := uint32(1<<hostBits) - 2
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:])%maxHosts + 1
+	}
+	var ipBytes [4]byte
+	binary.BigEndian.PutUint32(ipBytes[:], baseInt+offset)
+	return net.IP(ipBytes[:]).String(), nil
+}
+
+// isUniqueViolation распознаёт UNIQUE-violation для retry-loop в allocate.
+//
+// Принципиальный путь: repo через wrapPgErr оборачивает SQLSTATE 23505 в
+// ErrAlreadyExists — это и есть contract repo↔service. Substring-fallback
+// оставлен для случаев когда какой-то новый repo может вернуть raw pgErr
+// без обёртки (defensive). Constraint-specific имена удалены — service не
+// должен знать DB-schema.
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrAlreadyExists) {
+		return true
+	}
+	// Defensive fallback: общие признаки UNIQUE-violation без leak'а
+	// constraint-имён в service-layer.
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 23505") ||
+		strings.Contains(msg, "duplicate key value")
+}
+

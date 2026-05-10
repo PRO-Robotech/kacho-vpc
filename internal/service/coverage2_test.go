@@ -154,7 +154,7 @@ func TestAddressService_Update_FullPATCH(t *testing.T) {
 	or := newMockOpsRepo()
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateAddressReq{
 		FolderID:     "f1",

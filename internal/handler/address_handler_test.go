@@ -20,7 +20,7 @@ func makeAddressService() (*svc.AddressService, *mockOpsRepo) {
 	ar := &mockAddressRepo{data: make(map[string]*domain.Address)}
 	sr := &mockSubnetRepo{data: make(map[string]*domain.Subnet)}
 	or := newMockOpsRepo()
-	return svc.NewAddressService(ar, sr, &mockFolderClient{exists: true}, or), or
+	return svc.NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil), or
 }
 
 type mockAddressRepo struct {

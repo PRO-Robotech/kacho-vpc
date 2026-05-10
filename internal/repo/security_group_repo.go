@@ -211,8 +211,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 
 	// Загрузить текущий список rules + xmin (txid версия row для optimistic CC).
 	// xmin — Postgres system column, меняется на каждый UPDATE; не требует
-	// дополнительной колонки в схеме (security_groups не имеет resource_version,
-	// в отличие от Network/Subnet/RT — миграция 0008 не добавила K8s-style envelope).
+	// дополнительной колонки в схеме.
 	var rulesJSON []byte
 	var rowXmin string
 	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)

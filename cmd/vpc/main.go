@@ -115,18 +115,15 @@ func runServe(cfg config.Config) error {
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
 	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
-	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
 	gatewaySvc := service.NewGatewayService(gatewayRepo, folderClient, opsRepo)
 	peSvc := service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo)
 	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient)
-	addressAllocator := service.NewAddressAllocator(addressRepo, subnetRepo, addressPoolSvc)
+	addressSvc := service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc)
 	networkInternalSvc := service.NewNetworkInternal(networkRepo, sgRepo)
 	regionSvc := service.NewRegionService(regionRepo)
 	zoneSvc := service.NewZoneService(zoneRepo, regionRepo)
 
-	// Inline IPAM allocation в request-path (Phase-2: kacho-vpc-controllers упразднён).
-	addressSvc.SetAllocator(addressAllocator)
 	// Inline default-SG creation в request-path NetworkService.doCreate.
 	networkSvc.SetSGRepo(sgRepo)
 
@@ -209,7 +206,7 @@ func runServe(cfg config.Config) error {
 	// composite-shim снесён). Если старые callers ещё дёргают SetInternalIP,
 	// они получат Unimplemented через UnimplementedInternalAddressServiceServer
 	// embedding.
-	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressAllocateHandler(addressAllocator))
+	vpcv1.RegisterInternalAddressServiceServer(internalSrv, handler.NewInternalAddressAllocateHandler(addressSvc))
 	vpcv1.RegisterInternalAddressPoolServiceServer(internalSrv, handler.NewInternalAddressPoolHandler(addressPoolSvc))
 	vpcv1.RegisterInternalNetworkServiceServer(internalSrv, handler.NewInternalNetworkHandler(networkInternalSvc))
 	vpcv1.RegisterInternalCloudServiceServer(internalSrv, handler.NewInternalCloudHandler(addressPoolSvc))

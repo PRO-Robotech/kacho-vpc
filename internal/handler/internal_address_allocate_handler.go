@@ -24,18 +24,18 @@ import (
 // InternalAddressAllocateHandler — InternalAddressService implementation.
 type InternalAddressAllocateHandler struct {
 	vpcv1.UnimplementedInternalAddressServiceServer
-	allocator *service.AddressAllocator
+	addressSvc *service.AddressService
 }
 
-func NewInternalAddressAllocateHandler(a *service.AddressAllocator) *InternalAddressAllocateHandler {
-	return &InternalAddressAllocateHandler{allocator: a}
+func NewInternalAddressAllocateHandler(s *service.AddressService) *InternalAddressAllocateHandler {
+	return &InternalAddressAllocateHandler{addressSvc: s}
 }
 
 func (h *InternalAddressAllocateHandler) AllocateInternalIP(ctx context.Context, req *vpcv1.AllocateInternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	res, err := h.allocator.AllocateInternalIP(ctx, req.GetAddressId())
+	res, err := h.addressSvc.AllocateInternalIP(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, mapAllocErr(err)
 	}
@@ -49,7 +49,7 @@ func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context,
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	res, err := h.allocator.AllocateExternalIP(ctx, req.GetAddressId())
+	res, err := h.addressSvc.AllocateExternalIP(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, mapAllocErr(err)
 	}

@@ -40,7 +40,7 @@ type NetworkService struct {
 	subnetRepo     SubnetRepo
 	routeTableRepo RouteTableRepo
 	sgService      *SecurityGroupService // для создания default SG (может быть nil в тестах)
-	sgRepo         SecurityGroupRepo     // для inline default-SG creation в worker'е (Phase-2: kacho-vpc-controllers упразднён)
+	sgRepo         SecurityGroupRepo     // для inline default-SG creation в worker'е
 	folderClient   FolderClient
 	opsRepo        operations.Repo
 }
@@ -65,8 +65,7 @@ func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo R
 }
 
 // SetSGRepo wires SG repo для inline default-SG creation. Должно вызываться
-// composition root после конструирования (mirror SetAllocator в AddressService).
-// Если nil — default SG не создаётся (legacy behaviour).
+// composition root после конструирования. Если nil — default SG не создаётся.
 func (s *NetworkService) SetSGRepo(r SecurityGroupRepo) { s.sgRepo = r }
 
 // ListSubnets возвращает подсети, принадлежащие данной сети.
@@ -200,8 +199,7 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 		return nil, mapRepoErr(err)
 	}
 
-	// Inline default SG (Phase-2: kacho-vpc-controllers упразднён).
-	// Verbatim YC defaults: 2 правила INGRESS+EGRESS, protocol ANY, cidr 0.0.0.0/0.
+	// Inline default SG. Verbatim YC defaults: 2 правила INGRESS+EGRESS, protocol ANY, cidr 0.0.0.0/0.
 	if s.sgRepo != nil {
 		shortNet := created.ID
 		if len(shortNet) > 8 {

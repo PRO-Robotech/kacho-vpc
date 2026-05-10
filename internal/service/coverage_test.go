@@ -376,7 +376,7 @@ func TestSubnetService_Delete_RequiresID(t *testing.T) {
 
 func TestAddressService_Move_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -387,7 +387,7 @@ func TestAddressService_Move_Validates(t *testing.T) {
 
 func TestAddressService_Delete_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Delete(context.Background(), "")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -395,14 +395,14 @@ func TestAddressService_Delete_RequiresID(t *testing.T) {
 
 func TestAddressService_GetByValue_Empty(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.GetByValue(context.Background(), "", "", "")
 	require.Error(t, err)
 }
 
 func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, _, err := svc.ListBySubnet(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -410,7 +410,7 @@ func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
 
 func TestAddressService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -701,7 +701,7 @@ func TestSubnetService_ListOperations_NotFound(t *testing.T) {
 
 func TestAddressService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Get(context.Background(), ids.NewUID())
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
