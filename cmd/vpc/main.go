@@ -114,7 +114,7 @@ func runServe(cfg config.Config) error {
 	// Services.
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
 	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo)
-	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo)
+	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, zoneRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
 	gatewaySvc := service.NewGatewayService(gatewayRepo, folderClient, opsRepo)
 	peSvc := service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo)

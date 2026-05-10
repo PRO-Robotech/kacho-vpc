@@ -82,6 +82,8 @@ KACHO_VPC_DB_PASSWORD=secret bin/kacho-vpc migrate status
 
 ## Spec & decision records
 
+- **Архитектурный документ (итоговый)**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — самодостаточное описание от C0 до пошагового воспроизведения
+- Detailed arch docs: [`docs/architecture/`](docs/architecture/) (00-06 + 09)
 - Acceptance: `../../docs/specs/sub-phase-0.3-vpc-acceptance.md`
 - Roadmap: `../../docs/specs/04-roadmap-and-phasing.md`
 - Workspace правила: `../../CLAUDE.md`

@@ -21,7 +21,7 @@ func TestSubnetService_Update_NameOnly(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -50,7 +50,7 @@ func TestSubnetService_Update_FullPATCH(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -84,7 +84,7 @@ func TestSubnetService_Update_BadName(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -103,7 +103,7 @@ func TestSubnetService_Update_BadName(t *testing.T) {
 
 func TestSubnetService_Update_UnknownMask(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Update(context.Background(), UpdateSubnetReq{
 		SubnetID:   "sub-X",
 		UpdateMask: []string{"unknown_field"},

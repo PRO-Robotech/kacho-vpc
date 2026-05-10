@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -10,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
@@ -48,11 +51,40 @@ type SubnetService struct {
 	networkRepo  NetworkRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
+	zoneReg      ZoneRegistry
 }
 
 // NewSubnetService создаёт SubnetService.
-func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *SubnetService {
-	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo}
+//
+// zoneReg — port для валидации `zone_id` через таблицу `zones` (источник
+// истины вместо удалённого hardcode `ru-central1-{a,b,c,d}` в corelib).
+func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo, zoneReg ZoneRegistry) *SubnetService {
+	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo, zoneReg: zoneReg}
+}
+
+// validateZoneID — sync-валидация zone_id: required + existence в БД.
+//
+// Возвращает gRPC InvalidArgument с FieldViolation для пустого значения
+// (`<field> is required`) или несуществующей зоны (`<field> must be one
+// of: <list>` с динамическим перечислением зарегистрированных зон).
+// Любая другая ошибка БД → mapRepoErr.
+func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string) error {
+	if err := corevalidate.ZoneId(field, zoneID); err != nil {
+		return err
+	}
+	if s.zoneReg == nil {
+		return nil // безопасный fallback для тестов без zoneReg
+	}
+	_, err := s.zoneReg.Get(ctx, zoneID)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrNotFound) {
+		ids, _ := s.zoneReg.ListIDs(ctx)
+		msg := field + " must be one of: " + strings.Join(ids, ", ")
+		return coreerrors.InvalidArgument().AddFieldViolation(field, msg).Err()
+	}
+	return mapRepoErr(err)
 }
 
 // Get возвращает Subnet по ID.
@@ -85,9 +117,9 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	// folder_id / network_id больше НЕ валидируются sync — async через
 	// folderClient.Exists / networkRepo.Get → NotFound (verbatim YC). См.
 	// YC-DIFF-INVALID-PARENT-CODE.md, YC-DIFF-NAME-VALIDATION.md.
-	// ZoneId — verbatim YC whitelist `ru-central1-{a,b,c,d}`. Пустой zone_id —
-	// `zone_id is required`. См. ZONE-ID-VALIDATION.md.
-	if err := corevalidate.ZoneId("zone_id", req.ZoneID); err != nil {
+	// ZoneId: required + existence в таблице `zones` (без hardcoded whitelist;
+	// допустимые значения формируются динамически из БД).
+	if err := s.validateZoneID(ctx, "zone_id", req.ZoneID); err != nil {
 		return nil, err
 	}
 	// Proto contract: v4_cidr_blocks [(required) = true]. См. subnet_service.proto:214.
@@ -495,13 +527,14 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 
 // Relocate переносит подсеть в другую zone.
 //
-// YC verbatim: requires destination_zone_id, ZoneId whitelist. Если подсеть
-// "in use" (есть Address-ресурсы) — FailedPrecondition "Invalid subnet state".
+// YC verbatim: requires destination_zone_id, ZoneId existence-check через
+// БД. Если подсеть "in use" (есть Address-ресурсы) — FailedPrecondition
+// "Invalid subnet state".
 func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*operations.Operation, error) {
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if err := corevalidate.ZoneId("destination_zone_id", destZoneID); err != nil {
+	if err := s.validateZoneID(ctx, "destination_zone_id", destZoneID); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC,

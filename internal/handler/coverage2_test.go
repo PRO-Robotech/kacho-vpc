@@ -73,7 +73,7 @@ func (r *mockPERepoForSvc) Delete(_ context.Context, id string) error {
 func TestSubnetHandler_Move_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -82,7 +82,7 @@ func TestSubnetHandler_Move_Validates(t *testing.T) {
 func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.AddCidrBlocks(context.Background(), &vpcv1.AddSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -91,7 +91,7 @@ func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.RemoveCidrBlocks(context.Background(), &vpcv1.RemoveSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -100,7 +100,7 @@ func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.Relocate(context.Background(), &vpcv1.RelocateSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -109,7 +109,7 @@ func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.ListUsedAddresses(context.Background(), &vpcv1.ListUsedAddressesRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -422,7 +422,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	netID := ids.NewUID()
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{

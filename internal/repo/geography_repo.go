@@ -215,6 +215,29 @@ func (r *ZoneRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListIDs возвращает идентификаторы всех зарегистрированных зон.
+// Используется SubnetService для динамического сообщения
+// `zone_id must be one of: ...` при невалидном значении.
+func (r *ZoneRepo) ListIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id FROM zones ORDER BY id ASC`)
+	if err != nil {
+		return nil, wrapPgErr(err, "Zone", "")
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, wrapPgErr(err, "Zone", "")
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgErr(err, "Zone", "")
+	}
+	return out, nil
+}
+
 // CountDependents — сколько ресурсов ссылается на zone (address_pools,
 // subnets, addresses через external_ipv4_spec.zone_id). Используется
 // в ZoneService.Delete для FailedPrecondition (subnets.zone_id и addresses

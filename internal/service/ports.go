@@ -170,3 +170,19 @@ type FolderClient interface {
 type SubnetExistsChecker interface {
 	GetSubnet(ctx context.Context, id string) (*domain.Subnet, error)
 }
+
+// ZoneRegistry — port для проверки существования зоны (таблица `zones`).
+//
+// Используется SubnetService для валидации `zone_id` в `Create` и `Relocate`:
+// списка допустимых zone-id больше нет в хардкоде (раньше был whitelist
+// `ru-central1-{a,b,c,d}` в kacho-corelib/validate). Источник истины — БД.
+//
+// Get возвращает ErrNotFound для несуществующей зоны.
+// ListIDs возвращает идентификаторы всех зарегистрированных зон — нужен
+// для формирования динамического сообщения `must be one of: ...`. Без
+// пагинации (зон в системе — единицы; даже при росте до десятков
+// fits in single SELECT).
+type ZoneRegistry interface {
+	Get(ctx context.Context, id string) (*domain.Zone, error)
+	ListIDs(ctx context.Context) ([]string, error)
+}

@@ -168,7 +168,7 @@ func TestSubnetHandler_Get_InvalidArg(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetSubnetRequest{SubnetId: ""})
@@ -181,7 +181,7 @@ func TestSubnetHandler_Get_NotFound(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	_, err := h.Get(context.Background(), &vpcv1.GetSubnetRequest{SubnetId: ids.NewUID()})
@@ -197,7 +197,7 @@ func TestSubnetHandler_Create_OK(t *testing.T) {
 	// Создаём сеть чтобы subnet service нашёл её
 	netID := ids.NewUID()
 	nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
@@ -218,7 +218,7 @@ func TestSubnetHandler_List_Empty(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
@@ -230,7 +230,7 @@ func TestSubnetHandler_Delete_InvalidArg(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	_, err := h.Delete(context.Background(), &vpcv1.DeleteSubnetRequest{SubnetId: ""})

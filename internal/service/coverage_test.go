@@ -280,7 +280,7 @@ func TestSubnetService_Create_RequiredCidr(t *testing.T) {
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
-	svc := NewSubnetService(newMockSubnetRepo(), nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), nr, &mockFolderClient{exists: true}, or, nil)
 
 	_, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:  "f1",
@@ -299,7 +299,7 @@ func TestSubnetService_Create_BadCidr(t *testing.T) {
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
-	svc := NewSubnetService(newMockSubnetRepo(), nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), nr, &mockFolderClient{exists: true}, or, nil)
 
 	_, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -311,7 +311,7 @@ func TestSubnetService_Create_BadCidr(t *testing.T) {
 
 func TestSubnetService_Move_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -322,7 +322,7 @@ func TestSubnetService_Move_Validates(t *testing.T) {
 
 func TestSubnetService_AddCidrBlocks_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.AddCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -336,7 +336,7 @@ func TestSubnetService_AddCidrBlocks_Validates(t *testing.T) {
 
 func TestSubnetService_RemoveCidrBlocks_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.RemoveCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -347,10 +347,13 @@ func TestSubnetService_RemoveCidrBlocks_Validates(t *testing.T) {
 
 func TestSubnetService_Relocate_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	zones := newMockZoneRegistry("ru-central1-a", "ru-central1-b")
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, zones)
 	_, err := svc.Relocate(context.Background(), "", "ru-central1-b")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
+	// Несуществующая zone отвергается с InvalidArgument (existence-check через
+	// mockZoneRegistry — заменяет удалённый hardcode whitelist в corelib).
 	_, err = svc.Relocate(context.Background(), ids.NewUID(), "invalid-zone")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -358,7 +361,7 @@ func TestSubnetService_Relocate_Validates(t *testing.T) {
 
 func TestSubnetService_ListUsedAddresses_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, _, err := svc.ListUsedAddresses(context.Background(), "", Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -366,7 +369,7 @@ func TestSubnetService_ListUsedAddresses_RequiresID(t *testing.T) {
 
 func TestSubnetService_Delete_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Delete(context.Background(), "")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -675,7 +678,7 @@ func TestNetworkService_ListRouteTables_NotFound(t *testing.T) {
 
 func TestSubnetService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, err := svc.Get(context.Background(), ids.NewUID())
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -683,7 +686,7 @@ func TestSubnetService_Get_NotFound(t *testing.T) {
 
 func TestSubnetService_List_Empty(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	subs, _, err := svc.List(context.Background(), SubnetFilter{FolderID: "f1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Empty(t, subs)
@@ -691,7 +694,7 @@ func TestSubnetService_List_Empty(t *testing.T) {
 
 func TestSubnetService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil)
 	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())

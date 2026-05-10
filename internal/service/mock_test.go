@@ -506,3 +506,28 @@ func (r *mockOpsRepo) Cancel(_ context.Context, id string) error {
 	op.Done = true
 	return nil
 }
+
+// mockZoneRegistry — in-memory реализация ZoneRegistry для unit-тестов.
+// known — zone_id, которые считаются существующими в таблице `zones`.
+type mockZoneRegistry struct {
+	known []string
+}
+
+func newMockZoneRegistry(ids ...string) *mockZoneRegistry {
+	return &mockZoneRegistry{known: ids}
+}
+
+func (m *mockZoneRegistry) Get(_ context.Context, id string) (*domain.Zone, error) {
+	for _, k := range m.known {
+		if k == id {
+			return &domain.Zone{ID: id}, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *mockZoneRegistry) ListIDs(_ context.Context) ([]string, error) {
+	out := make([]string, len(m.known))
+	copy(out, m.known)
+	return out, nil
+}

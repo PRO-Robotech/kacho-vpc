@@ -234,7 +234,7 @@ func TestNetworkHandler_ListOperations_RequiresID(t *testing.T) {
 func TestSubnetHandler_Update_InvalidArg(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.Update(context.Background(), &vpcv1.UpdateSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -243,7 +243,7 @@ func TestSubnetHandler_Update_InvalidArg(t *testing.T) {
 func TestSubnetHandler_ListOperations_RequiresID(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListSubnetOperationsRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
