@@ -12,6 +12,7 @@ func operationToProto(op *operations.Operation) *operationpb.Operation {
 		Id:          op.ID,
 		Description: op.Description,
 		CreatedAt:   timestamppb.New(op.CreatedAt),
+		CreatedBy:   op.CreatedBy,
 		ModifiedAt:  timestamppb.New(op.ModifiedAt),
 		Done:        op.Done,
 		Metadata:    op.Metadata,
