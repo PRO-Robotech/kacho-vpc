@@ -109,6 +109,8 @@ jobs:
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-resource-manager, ref: main, path: kacho-resource-manager }
       - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-compute, ref: main, path: kacho-compute }   # kacho-deploy ci-up собирает kacho-compute:dev
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-api-gateway, ref: main, path: kacho-api-gateway }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-yc-shim, path: kacho-yc-shim }
