@@ -113,8 +113,14 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 }
 
 func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON := mustMarshalJSON(s.Labels)
-	dhcpJSON := marshalDhcp(s.DhcpOptions)
+	labelsJSON, err := marshalJSONB(s.Labels, "Subnet.labels")
+	if err != nil {
+		return nil, err
+	}
+	dhcpJSON, err := marshalDhcp(s.DhcpOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -157,8 +163,14 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 }
 
 func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON := mustMarshalJSON(s.Labels)
-	dhcpJSON := marshalDhcp(s.DhcpOptions)
+	labelsJSON, err := marshalJSONB(s.Labels, "Subnet.labels")
+	if err != nil {
+		return nil, err
+	}
+	dhcpJSON, err := marshalDhcp(s.DhcpOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -385,12 +397,11 @@ func scanSubnet(row scannable) (*domain.Subnet, error) {
 	return &s, nil
 }
 
-func marshalDhcp(d *domain.DhcpOptions) []byte {
+func marshalDhcp(d *domain.DhcpOptions) ([]byte, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
-	b := mustMarshalJSON(d)
-	return b
+	return marshalJSONB(d, "Subnet.dhcp_options")
 }
 
 func nullableStr(s string) *string {

@@ -93,8 +93,14 @@ func (r *AddressPoolRepo) List(ctx context.Context, f service.AddressPoolFilter,
 }
 
 func (r *AddressPoolRepo) Insert(ctx context.Context, p *domain.AddressPool) (*domain.AddressPool, error) {
-	labels := mustMarshalJSON(p.Labels)
-	selector := mustMarshalJSON(p.SelectorLabels)
+	labels, err := marshalJSONB(p.Labels, "AddressPool.labels")
+	if err != nil {
+		return nil, err
+	}
+	selector, err := marshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -124,8 +130,14 @@ func (r *AddressPoolRepo) Insert(ctx context.Context, p *domain.AddressPool) (*d
 }
 
 func (r *AddressPoolRepo) Update(ctx context.Context, p *domain.AddressPool) (*domain.AddressPool, error) {
-	labels := mustMarshalJSON(p.Labels)
-	selector := mustMarshalJSON(p.SelectorLabels)
+	labels, err := marshalJSONB(p.Labels, "AddressPool.labels")
+	if err != nil {
+		return nil, err
+	}
+	selector, err := marshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -206,7 +218,10 @@ func (r *AddressPoolRepo) FindBySelectorMatch(ctx context.Context, networkSelect
 	if limit <= 0 {
 		limit = 1
 	}
-	selectorJSON := mustMarshalJSON(networkSelector)
+	selectorJSON, err := marshalJSONB(networkSelector, "AddressPool.selector_labels")
+	if err != nil {
+		return nil, err
+	}
 	q := `
 SELECT id, name, description, labels, cidr_blocks, kind, zone_id, is_default,
        selector_labels, selector_priority, created_at, modified_at

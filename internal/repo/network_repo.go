@@ -107,7 +107,10 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 }
 
 func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON := mustMarshalJSON(n.Labels)
+	labelsJSON, err := marshalJSONB(n.Labels, "Network.labels")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -137,7 +140,10 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 }
 
 func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON := mustMarshalJSON(n.Labels)
+	labelsJSON, err := marshalJSONB(n.Labels, "Network.labels")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

@@ -112,8 +112,14 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 }
 
 func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON := mustMarshalJSON(rt.Labels)
-	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
+	labelsJSON, err := marshalJSONB(rt.Labels, "RouteTable.labels")
+	if err != nil {
+		return nil, err
+	}
+	routesJSON, err := marshalStaticRoutes(rt.StaticRoutes)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -144,8 +150,14 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 }
 
 func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON := mustMarshalJSON(rt.Labels)
-	routesJSON := marshalStaticRoutes(rt.StaticRoutes)
+	labelsJSON, err := marshalJSONB(rt.Labels, "RouteTable.labels")
+	if err != nil {
+		return nil, err
+	}
+	routesJSON, err := marshalStaticRoutes(rt.StaticRoutes)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -246,10 +258,9 @@ func scanRouteTable(row scannable) (*domain.RouteTable, error) {
 	return &rt, nil
 }
 
-func marshalStaticRoutes(routes []domain.StaticRoute) []byte {
+func marshalStaticRoutes(routes []domain.StaticRoute) ([]byte, error) {
 	if routes == nil {
-		return []byte("[]")
+		return []byte("[]"), nil
 	}
-	b := mustMarshalJSON(routes)
-	return b
+	return marshalJSONB(routes, "RouteTable.static_routes")
 }

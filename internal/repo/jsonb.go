@@ -7,23 +7,23 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// mustMarshalJSON сериализует v в JSON, паникует при ошибке.
+// marshalJSONB сериализует v в JSONB-байты для записи в БД. Возвращает обёрнутую
+// service.ErrInternal при ошибке (json.Marshal failure).
 //
 // Для domain-типов VPC (map[string]string labels, []domain.SecurityGroupRule,
 // *domain.DhcpOptions, []domain.StaticRoute, ExternalIpv4Spec, InternalIpv4Spec,
-// *domain.DnsOptions) json.Marshal не может вернуть ошибку — типы содержат только
-// stdlib-типы без channel/func/cyclic-ref. Если ошибка всё-таки возникнет — это
-// invariant violation в domain, не recoverable в repo-layer.
-//
-// Это явное "fail loud" вместо silent `_` (см. TODO #11). Если в будущем добавим
-// тип, который теоретически может marshal-fail (например *anypb.Any с cyclic
-// proto), переделаем на error-returning форму через marshalJSONB.
-func mustMarshalJSON(v any) []byte {
+// *domain.DnsOptions) json.Marshal на практике не возвращает ошибку — типы
+// содержат только stdlib-типы без channel/func/cyclic-ref. Но мы всё равно
+// пробрасываем ошибку наверх (а не паникуем, см. TODO #24): если в будущем
+// добавится тип, который теоретически может marshal-fail (например *anypb.Any с
+// cyclic proto), сбой превращается в обычную INTERNAL-ошибку repo-метода, а не
+// в panic. Это парная форма к unmarshalJSONB.
+func marshalJSONB(v any, field string) ([]byte, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("repo: json.Marshal failed for %T: %v (invariant violation)", v, err))
+		return nil, fmt.Errorf("%w: marshal JSONB %s: %v", service.ErrInternal, field, err)
 	}
-	return b
+	return b, nil
 }
 
 // unmarshalJSONB десериализует JSONB-байты из БД в target. Возвращает обёрнутую
