@@ -391,6 +391,8 @@ make test
 python3 tests/newman/scripts/gen.py            # перегенерить коллекции из cases/*.py
 tests/newman/scripts/run.sh                    # все сервисы целиком; --service network для одного
 tests/newman/scripts/run-incremental.sh        # ПО ОДНОМУ кейсу за раз + зачистка после каждого (quota-safe; --resume / --cleanup-only)
+# против реального YC (parity-аудит — всё ≠ YC = баг): node tests/newman/scripts/yc-proxy.js & ;
+#   ENV=tests/newman/environments/yc.postman_environment.json SERVICES='<8 public, без internal-*>' tests/newman/scripts/run-incremental.sh
 ```
 
 ## 14. Тесты
@@ -436,11 +438,12 @@ tests/newman/
 │  └─ internal-pool.py / internal-region-zone.py / internal-cloud.py         — admin/IPAM RPC
 ├─ collections/                 — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису) — НЕ править руками
 │  └─ {…}.postman_collection.json
-├─ environments/local.postman_environment.json   — local stand (port-forward 18080)
+├─ environments/{local,yc}.postman_environment.json   — local stand (18080) / реальный YC (через yc-proxy :18081)
 ├─ scripts/
 │  ├─ gen.py                    — генератор коллекций из cases/*.py
 │  ├─ run.sh                    — прогон одного / всех сервисов целиком (newman + JSON reporter → out/)
-│  └─ run-incremental.{sh,js}   — прогон по одному кейсу за раз + зачистка ресурсов (quota-safe; --resume / --cleanup-only)
+│  ├─ run-incremental.{sh,js}   — прогон по одному кейсу за раз + зачистка ресурсов (quota-safe; --resume / --cleanup-only; env SERVICES=...)
+│  └─ yc-proxy.js               — reverse-proxy для прогона против реального YC (vpc.api / operation.api + Bearer из `yc iam create-token`)
 ├─ docs/
 │  ├─ TAXONOMY.md               — классы кейсов + naming convention (CRUD/VAL/NEG/BVA/CONF/STATE/...)
 │  ├─ TEST-PLAN.md              — карта покрытия (RPC × класс)

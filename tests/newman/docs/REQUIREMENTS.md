@@ -102,18 +102,21 @@
 - **Impact**: ловля concurrency-регрессий до prod.
 - **Owner**: `tests/newman/cases/concurrency.py` (новый file).
 
-### REQ-008 — Differential conformance suite (--env yc)
+### REQ-008 — Differential conformance suite против реального YC — `partial`
 
 - **Type**: missing-feature
 - **Priority**: P0 для production cut
 - **Driver**: TESTING-PRODUCT §11.5 — verbatim YC parity
-- **Description**: newman env-файл `yc.postman_environment.json` + run.sh
-  flag `--env yc`. Все CRUD/NEG кейсы прогоняются и в kacho, и в YC,
-  responses сравниваются byte-level. Расхождения → PARITY.md (pending или
-  kacho-only).
-- **Rationale**: единственный способ гарантировать verbatim-parity.
-- **Impact**: high-confidence release readiness.
-- **Owner**: `tests/newman/` v2.
+- **Сделано**: `environments/yc.postman_environment.json` + `scripts/yc-proxy.js` (локальный
+  reverse-proxy: `/vpc/v1/*`→`vpc.api`, `/operations/*`→`operation.api`, подставляет Bearer
+  `yc iam create-token`) → `ENV=environments/yc.postman_environment.json SERVICES='<8 public>'
+  ./scripts/run-incremental.sh` гоняет сьюту против реального YC по одному кейсу за раз с
+  зачисткой ресурсов. Упавшие кейсы = расхождения kacho↔YC (политика: всё, что ≠ YC, — баг → GitHub Issue).
+- **Осталось**: (1) `internal-*` кейсы (45) тут не гоняются — в YC API этих RPC нет; (2) кейсы
+  ассертят *наше* поведение → при расхождении надо и фиксить impl под YC, и переписывать ассерт
+  кейса под YC-поведение; (3) автоматическая byte-level diff-классификация (сейчас — ручной разбор
+  `out/incremental/failed/*.json`); (4) cross-folder Move-кейсы тут вырождаются (одна throwaway-folder).
+- **Owner**: `tests/newman/`.
 
 ---
 

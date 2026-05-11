@@ -20,12 +20,14 @@ tests/newman/
 ├── collections/             — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису) — НЕ править руками
 │   └── {…}.postman_collection.json
 ├── environments/
-│   └── local.postman_environment.json   — local stand (port-forward api-gateway → 18080)
+│   ├── local.postman_environment.json   — local stand (port-forward api-gateway → 18080)
+│   └── yc.postman_environment.json       — реальный Yandex Cloud (baseUrl → yc-proxy на :18081); internal-* тут не гоняем
 ├── scripts/
 │   ├── gen.py                — генератор коллекций из cases/* (Postman v2.1 JSON)
 │   ├── run.sh                — прогон одного/всех сервисов целиком (newman + JSON reporter → out/)
 │   ├── run-incremental.sh    — прогон ПО ОДНОМУ кейсу за раз + зачистка ресурсов после каждого (quota-safe, как для YC); --resume / --cleanup-only
-│   └── run-incremental.js    — драйвер (newman library API — без per-case process startup)
+│   ├── run-incremental.js    — драйвер (newman library API — без per-case process startup; env SERVICES=... ограничивает список сервисов)
+│   └── yc-proxy.js           — локальный reverse-proxy для прогона против реального YC: /vpc/v1/*→vpc.api, /operations/*→operation.api, подставляет Bearer (yc iam create-token)
 ├── docs/
 │   ├── TAXONOMY.md            — классы кейсов и naming convention
 │   ├── TEST-PLAN.md           — карта покрытия (RPC × класс)
@@ -53,9 +55,18 @@ python3 scripts/gen.py            # все сервисы; или: python3 scrip
 ./scripts/run-incremental.sh --resume               # продолжить прерванный прогон
 ./scripts/run-incremental.sh --service subnet       # один сервис
 ./scripts/run-incremental.sh --cleanup-only         # просто стереть throwaway-ресурсы в тест-папках
-#     тюнинг через env: CLEANUP_EVERY (как часто periodic-cleanup, default 25), DELAY_REQUEST (ms, default 30)
+#     тюнинг через env: CLEANUP_EVERY (как часто periodic-cleanup, default 25), DELAY_REQUEST (ms, default 30), SERVICES='svc1 svc2 ...'
 
 # Требует KACHO_VPC_DEFAULT_SG_INLINE=true (default) — иначе кейсы default-SG краснеют.
+
+# 3c. Прогон против РЕАЛЬНОГО Yandex Cloud (parity-аудит — всё, что ≠ YC, считаем багом)
+#     Нужен сконфигурированный `yc` CLI и выделенная throwaway-folder в YC (cleanup-pass стирает ВСЁ в ней).
+node scripts/yc-proxy.js &                            # локальный reverse-proxy :18081 (vpc.api / operation.api + Bearer)
+#   в environments/yc.postman_environment.json подставь свою throwaway-folder в existingFolderId/CrossId
+ENV=environments/yc.postman_environment.json \
+  SERVICES='network subnet address route-table security-group gateway private-endpoint operation' \
+  ./scripts/run-incremental.sh                        # internal-* НЕ включаем — этих IPAM-admin RPC в YC API нет
+#   результат → out/incremental/{progress.tsv, summary.txt, failed/<id>.json}; упавшие = расхождения с YC.
 ```
 
 ## Принципы (из testing-product-coach)

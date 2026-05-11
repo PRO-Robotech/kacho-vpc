@@ -37,7 +37,9 @@ const PROGRESS = path.join(OUT, 'progress.tsv');
 const SUMMARY = path.join(OUT, 'summary.txt');
 const CLEANUP_EVERY = parseInt(process.env.CLEANUP_EVERY || '25', 10);
 const DELAY_REQUEST = parseInt(process.env.DELAY_REQUEST || '30', 10);
-const ALL_SERVICES = ['network','subnet','address','route-table','security-group','gateway','private-endpoint','operation','internal-pool','internal-region-zone','internal-cloud'];
+const ALL_SERVICES_DEFAULT = ['network','subnet','address','route-table','security-group','gateway','private-endpoint','operation','internal-pool','internal-region-zone','internal-cloud'];
+// SERVICES env-override: список сервисов через пробел/запятую (напр. для YC-прогона — без internal-*)
+const ALL_SERVICES = process.env.SERVICES ? process.env.SERVICES.split(/[\s,]+/).filter(Boolean) : ALL_SERVICES_DEFAULT;
 
 const args = process.argv.slice(2);
 const RESUME = args.includes('--resume');
