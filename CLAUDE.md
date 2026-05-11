@@ -700,7 +700,9 @@ kachoctl ipam check
 ## 18. VPC-specific subagents
 
 Помимо общих 13 агентов (acceptance-author/reviewer, proto-sync, ...),
-в `.claude/agents/` есть 4 VPC-специализированных:
+в `.claude/agents/` есть VPC-специализированные:
+
+**Domain-experts (4):**
 
 - `vpc-yc-parity-auditor` — аудит verbatim YC parity (regex, error texts,
   status codes, timestamp).
@@ -710,7 +712,21 @@ kachoctl ipam check
   + InternalAddressService.
 - `vpc-newman-author` — Newman regression suites (quota-aware, 3-suite split).
 
+**Testing coaches (2):**
+
+- `testing-code-coach` (`TESTING.md`) — эталонные практики тестирования кода:
+  test pyramid, AAA, fakes vs mocks, table-driven, property-based, mutation/fuzz,
+  13 анти-паттернов, чек-листы. Применять при дизайне unit/integration/contract
+  тестов и при review test-патча. Полное knowledge body — внутри файла.
+- `testing-product-coach` (`TESTING-PRODUCT.md`) — практики тестирования продукта
+  как чёрного ящика: 11 формальных техник (ECP, BVA, decision tables, state
+  transition, pairwise, use-case, error guessing, exploratory, property-based,
+  risk-based, conformance), 14 типов тестов, метрики покрытия для black-box,
+  применение к Newman 3-suite + PARITY.md.
+
 Использовать после соответствующих этапов: yc-parity-auditor — после
 rpc-implementer перед merge; cidr-specialist — при работе над Subnet/Address
 CIDR features; outbox-watch-engineer — при изменении outbox/Watch logic;
-newman-author — при добавлении нового RPC в e2e-coverage.
+newman-author — при добавлении нового RPC в e2e-coverage; testing-code-coach —
+при review тестов кода; testing-product-coach — при дизайне Newman-кейсов
+и risk-prioritization фичи.
