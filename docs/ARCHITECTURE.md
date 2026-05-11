@@ -1138,7 +1138,7 @@ tests/newman/
 ├── scripts/
 │   ├── gen.py                   — генератор коллекций из cases/* (источник истины — cases/)
 │   └── run.sh                   — прогон одного/всех сервисов → out/{svc}.json + out/summary.txt
-├── docs/                        — TAXONOMY / TEST-PLAN / CASES-INDEX / BUG-MAP / REQUIREMENTS / RESULTS
+├── docs/                        — TAXONOMY / TEST-PLAN / CASES-INDEX / REQUIREMENTS / RESULTS (баги — в TODO.md)
 └── out/                         — newman raw output (gitignored snap-логи)
 ```
 

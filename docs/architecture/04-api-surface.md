@@ -86,7 +86,7 @@ GET    /vpc/v1/endpoints/{private_endpoint_id}/operations
 ```
 
 > ⚠️ REST-пути неоднородны (наследие proto-аннотаций, см. FINDING-002 в
-> `tests/newman/docs/BUG-MAP.md`): child-list `security_groups`/`route_tables` —
+> `TODO.md` (раздел «Найденные баги»)): child-list `security_groups`/`route_tables` —
 > snake_case, top-level `routeTables`/`securityGroups`/`addressPools` — camelCase,
 > custom-методы — kebab с двоеточием (`:add-cidr-blocks`, `:move`),
 > `OperationService.Get` — `/operations/{id}` (без `/vpc/v1/`), PE — `/endpoints`.

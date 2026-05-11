@@ -71,11 +71,8 @@ kacho-only RPC проброшены через api-gateway cluster-internal mux,
 
 ## Findings
 
-| ID | Severity | Status |
-|---|---|---|
-| FINDING-001 — Update/Delete sync 404 от AuthZ | docs | intentional |
-| FINDING-002 — REST kebab/camel inconsistency | docs | documented |
-| FINDING-003 — OpsProxy 400 для unknown prefix | docs | triaged |
-| FINDING-004 — GetByValue 404 protection | cosmetic | intentional |
-| FINDING-005 — Subnet/RT/SG/GW/PE/Address нет UNIQUE (folder, name) | P0 | **fixed** (migration `0002_resource_name_unique.sql` — partial UNIQUE `(folder_id, name) WHERE name <> ''` для всех 6 ресурсов; дубль непустого name → `ALREADY_EXISTS`) |
-| FINDING-006 — PE Create no subnet validation | — | **invalid** (test error: кейс слал плоский `subnetId`, которого нет в proto — gateway его молча отбрасывал. Реальный путь `addressSpec.internalIpv4AddressSpec.subnetId` валидируется в `private_endpoint.go::doCreate` → `NOT_FOUND`. Кейс переписан: `PE-CR-NEG-SUBNET-NF` + `PE-CR-CRUD-WITH-SUBNET`) |
+Найденные баги / расхождения / informational-наблюдения — в **`../../../TODO.md`** (раздел
+«Найденные баги / наблюдения из тестов»: «Исправленные» + «Известные расхождения / informational»).
+Отдельного `BUG-MAP.md` больше нет — единый реестр в `TODO.md` (см. `kacho-vpc/CLAUDE.md` §14.4).
+Кратко на момент v16: FINDING-005 / FINDING-008 / created_at-в-Operation.response — fixed;
+FINDING-006 — invalid (ошибка теста); FINDING-001..004 / 007 / 009 — by-design / documented divergences.

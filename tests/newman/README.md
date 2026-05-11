@@ -28,7 +28,7 @@ tests/newman/
 │   ├── TAXONOMY.md          — классы кейсов и naming convention
 │   ├── TEST-PLAN.md         — карта покрытия (RPC × класс)
 │   ├── CASES-INDEX.md       — каталог уникальных паттернов кейсов
-│   ├── BUG-MAP.md           — найденные дефекты/наблюдения (FINDING-NNN)
+│   ├── TODO.md           — найденные дефекты/наблюдения (FINDING-NNN)
 │   ├── REQUIREMENTS.md      — требования к продукту из тестового анализа
 │   └── RESULTS.md           — последний прогон pass/fail + история версий + skill-mapping
 └── out/                     — newman raw output + summary.txt (gitignored snap-логи)

@@ -378,7 +378,7 @@ CASES.append(Case(
             body={"updateMask": "description", "description": "x"},
             test_script=[
                 # Документированное поведение: gateway отсекает id без 3-char
-                # VPC-префикса синхронно (см. BUG-MAP / REQUIREMENTS).
+                # VPC-префикса синхронно (см. TODO.md «Известные расхождения» / REQUIREMENTS).
                 *assert_status(404),
                 *assert_grpc_code(5, "NOT_FOUND"),
             ],

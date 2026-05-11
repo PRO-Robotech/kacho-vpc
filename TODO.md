@@ -1,7 +1,7 @@
 # TODO — outstanding tech-debt
 
 Только **открытые** пункты. Закрытые (`done`/`removed`/`reverted`) — в git-истории
-коммитов и в `tests/newman/docs/BUG-MAP.md` / `docs/architecture/09-go-skills-applied.md`.
+коммитов и в `TODO.md` (раздел «Найденные баги») / `docs/architecture/09-go-skills-applied.md`.
 Каждый пункт: **Проблема** (что не так) → **Зачем фиксить** (что это даёт) →
 **Почему отложено** (почему ещё не сделано / при каких условиях браться).
 
@@ -126,13 +126,59 @@ Status legend: `pending` / `partial` / `deferred` / `wontfix`.
 
 ---
 
+## Найденные баги / наблюдения из тестов (единый реестр)
+
+**Правило (см. `CLAUDE.md` §14):** всё, что найдено в newman / k6 / integration / unit-тестах
+(баг, расхождение с verbatim YC, observability-gap), фиксируется **здесь**, а не в отдельных
+bug-map'ах. Исправил — убираешь отсюда (фикс в коде + в commit message). Не баг / by-design /
+documented divergence — оставляешь в разделе ниже с обоснованием.
+
+### Исправленные (для истории — детали в git)
+
+- **FINDING-005** — не было UNIQUE `(folder_id, name)` для Subnet/RT/SG/GW/PE/Address
+  (только у Network). Fix: миграция `0002_resource_name_unique.sql` (partial UNIQUE `WHERE name <> ''`).
+  Commit `ee07a7e`.
+- **FINDING-008** — `ExplainResolution`/`AllocateExternalIP` на unresolvable input возвращали
+  `13 INTERNAL` вместо `9 FAILED_PRECONDITION` (`service.ErrPoolNotResolved` не классифицировался
+  в `internal_maperr.go`). Fix: добавлен case. Commit `f50413d`.
+- **FINDING-006** — *не баг, ошибка теста*: кейс слал плоский `subnetId` (нет в proto PE);
+  реальный `addressSpec.internalIpv4AddressSpec.subnetId` валидируется корректно. Кейс переписан.
+- **created_at в `Operation.response`** — service-копии конвертеров не ставили `created_at`
+  (Operation.response отдавал `null`), handler-копии ставили (truncate до секунд) → расхождение.
+  Fix: единый пакет `internal/protoconv` (всегда truncate). Commit `9823941`.
+
+### Известные расхождения / informational (не баги — by-design / documented)
+
+- **Update/Delete/Move несуществующего ресурса → sync `404`, не async `Operation`** (verbatim YC
+  делает async для Create, sync для остальных мутаций? — нет, у нас sync 404 от `AssertFolderOwnership`
+  через `repo.Get` перед созданием Operation — без знания folder_id AuthZ невозможен). Intentional;
+  задокументировано в proto-комментариях handler'ов + `docs/ARCHITECTURE.md` §4.1. (ex-FINDING-001)
+- **REST-пути неоднородны** (kebab `:add-cidr-blocks` / `:move`, snake child-list `security_groups`/`route_tables`,
+  `/operations/{id}` без `/vpc/v1/`, PE на `/endpoints`). Proto-decided (`google.api.http`); задокументировано
+  в `docs/architecture/04-api-surface.md`. (ex-FINDING-002)
+- **`OperationService.Get` с id без 3-char prefix → `400 INVALID_ARGUMENT "unknown prefix"`** (а не `404`).
+  OpsProxy в api-gateway парсит prefix для маршрутизации — fail-fast перед роутингом. Спорно (пользователю
+  `Operation X not found` ожидаемее), но архитектурно обосновано; нормализация к `404` — низкоприоритетная
+  возможность (была REQ-004 в ex-REQUIREMENTS). (ex-FINDING-003)
+- **`Address.GetByValue` несуществующего IP → `404 NOT_FOUND`** (а не `403`/`400`). Intentional —
+  info-leak prevention: cross-tenant Get и nonexistent Get дают одинаковый 404. (ex-FINDING-004)
+- **`InternalAddressPoolService.Create` без `name` → `200`, pool с `name=""`.** AddressPool — kacho-only
+  admin resource (нет verbatim-YC аналога); unnamed pool валиден (резолв по id/labels, не по name) —
+  VPC permissive name policy применима и к пулам. (ex-FINDING-007)
+- **`InternalCloudService.SetPoolSelector` не проверяет существование `cloud_id`** — idempotent upsert,
+  кросс-DB FK нет; «висячий» selector безвреден (без живых folder→cloud не зарезолвится). Proto-комментарий
+  это отражает (исправлен). Реальная валидация потребовала бы `CloudService.Exists` RPC на resource-manager —
+  не делаем (cross-repo фича). (ex-FINDING-009)
+
+---
+
 ## Снапшоты newman (audit trail, не TODO)
 
 - `tests/newman/out/*.json` — per-service JSON-reporter последнего прогона `tests/newman/scripts/run.sh`
-  (агрегируется в `tests/newman/out/summary.txt`). Текущее (v16): **11 сервисов / ~731 кейс /
+  (агрегируется в `tests/newman/out/summary.txt`). Текущее: **11 сервисов / ~731 кейс /
   3361 assertions / 0 fail** — incl. `internal-{pool,region-zone,cloud}` (admin IPAM RPC).
 - История версий + mapping техник тестирования — `tests/newman/docs/RESULTS.md`;
-  карта багов/наблюдений (FINDING-NNN) — `tests/newman/docs/BUG-MAP.md`;
-  каталог уникальных паттернов — `tests/newman/docs/CASES-INDEX.md`.
+  каталог уникальных паттернов кейсов — `tests/newman/docs/CASES-INDEX.md`.
+  (Баги/наблюдения — выше в этом файле; отдельного `TODO.md` больше нет.)
 - CI: job `newman` в `.github/workflows/ci.yaml` поднимает `kacho-deploy/ci/docker-compose.yml`
   (`make -C kacho-deploy ci-up`), сеет фикстуры, гоняет всю сьюту, fail если есть FAILED.

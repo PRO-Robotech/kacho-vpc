@@ -1,6 +1,6 @@
 ---
 name: vpc-newman-author
-description: Use when adding, modifying, or auditing newman/Postman regression cases for kacho-vpc. Knows the declarative layout under tests/newman/ (cases/*.py -> scripts/gen.py -> one Postman collection per service in collections/, run via scripts/run.sh --service <svc>), the runId/_suiteFolderId isolation contract, gen.py helper blocks (assert_*, save_from_response, poll_operation_until_done, ecp/decision-table/pagination block generators), the docs/ tracking set (TAXONOMY/TEST-PLAN/CASES-INDEX/BUG-MAP/REQUIREMENTS/RESULTS), FINDING-NNN bug-map convention, and case-class taxonomy. The old quota-aware ro/light/seq pipeline (newman_legacy/) is removed. Specific to kacho-vpc.
+description: Use when adding, modifying, or auditing newman/Postman regression cases for kacho-vpc. Knows the declarative layout under tests/newman/ (cases/*.py -> scripts/gen.py -> one Postman collection per service in collections/, run via scripts/run.sh --service <svc>), the runId/_suiteFolderId isolation contract, gen.py helper blocks (assert_*, save_from_response, poll_operation_until_done, ecp/decision-table/pagination block generators), the docs/ tracking set (TAXONOMY/TEST-PLAN/CASES-INDEX/REQUIREMENTS/RESULTS) and the rule that found bugs go to the repo-root TODO.md (no separate bug-map), and case-class taxonomy. The old quota-aware ro/light/seq pipeline (newman_legacy/) is removed. Specific to kacho-vpc.
 ---
 
 # Агент: vpc-newman-author
@@ -64,7 +64,6 @@ tests/newman/
 │  ├─ TAXONOMY.md                  — классы кейсов (CRUD/VAL/NEG/BVA/CONF/STATE/AUTHZ/FILTER/PAGE/IDM/CONC/PERF/…) + naming convention
 │  ├─ TEST-PLAN.md                 — карта покрытия (RPC × класс)
 │  ├─ CASES-INDEX.md               — каталог уникальных паттернов кейсов
-│  ├─ BUG-MAP.md                   — найденные дефекты/наблюдения (FINDING-NNN, статусы)
 │  ├─ REQUIREMENTS.md              — требования из тестового анализа
 │  └─ RESULTS.md                   — последний прогон pass/fail + история версий + skill-mapping (testing-product-coach §3/§4)
 └─ out/                            — newman raw output (gitignored snap-логи)
@@ -75,7 +74,7 @@ tests/newman/
 → результат в `tests/newman/out/summary.txt`. Каждый case — внутри своего `runId`,
 suite — внутри pre-allocated `existingFolderId`/`existingFolderCrossId` (env);
 Org/Cloud/Folder сьюта **не создаёт**. Уникальные паттерны фиксируй в `docs/CASES-INDEX.md`,
-дефекты/наблюдения — в `docs/BUG-MAP.md` как `FINDING-NNN`.
+дефекты/наблюдения — в `TODO.md` репо-корня (раздел «Найденные баги», см. `CLAUDE.md` §14.4); отдельного BUG-MAP больше нет.
 
 ## 4. Quota-aware pipeline (3 suites)
 
@@ -399,4 +398,4 @@ operation polling.
   block-генераторы `ecp_name_block`/`updatemask_decision_table`/`pagination_roundtrip`/…).
 - `tests/newman/scripts/run.sh` — прогон одного/всех сервисов (`--service <svc>`, `--delay`, `--bail`).
 - `tests/newman/docs/` — `TAXONOMY.md` (классы кейсов + naming), `TEST-PLAN.md` (RPC × класс),
-  `CASES-INDEX.md` (каталог паттернов), `BUG-MAP.md` (FINDING-NNN), `REQUIREMENTS.md`, `RESULTS.md`.
+  `CASES-INDEX.md` (каталог паттернов), `TODO.md` (FINDING-NNN), `REQUIREMENTS.md`, `RESULTS.md`.

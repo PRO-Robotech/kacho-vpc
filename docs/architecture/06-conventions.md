@@ -161,5 +161,5 @@ Zero-overhead, миграция не нужна.
 
 - `../../CLAUDE.md` — operational правила, project-level subagents.
 - `../../TODO.md` — долги (например, Delete RPC возвращают неправильный response).
-- `../../tests/newman/docs/BUG-MAP.md` — registry verbatim-YC расхождений.
+- `../../TODO.md` — registry verbatim-YC расхождений.
 - `../../tests/newman/docs/TAXONOMY.md` — class taxonomy для regression-кейсов.
