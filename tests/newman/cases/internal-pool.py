@@ -307,18 +307,18 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="IPL-EXPLAIN-UNRESOLVABLE",
-    title="ExplainResolution?networkId=<garbage> (нет global default) → текущее: INTERNAL — см. FINDING-008",
+    title="ExplainResolution?networkId=<garbage> (нет global default) → FailedPrecondition (FINDING-008 fixed)",
     classes=["NEG", "CONF"], priority="P2",
     steps=[
-        # FINDING-008: ExplainResolution с unresolvable input возвращает code:13 INTERNAL
-        # (ErrPoolNotResolved не входит в sentinel-set internalMapErr). Ожидаемо было бы
-        # FailedPrecondition (9) или NotFound (5). Кейс ассертит ФАКТИЧЕСКОЕ поведение.
+        # FINDING-008 fixed: ErrPoolNotResolved теперь классифицируется в internalMapErr →
+        # FailedPrecondition (9), а не INTERNAL (13). (Если сервис делает network-exists-check
+        # раньше cascade — возможен NotFound (5); допускаем оба, но не 13.)
         Step(name="explain-garbage", method="GET",
              path=POOLS + ":explainResolution?networkId=enpnonexistent999999",
              test_script=[
-                 "pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404, 500]));",
+                 "pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
                  "const j = pm.response.json();",
-                 "pm.test('grpc error code in {9, 5, 13}', () => pm.expect(j.code).to.be.oneOf([9, 5, 13]));",
+                 "pm.test('grpc error code in {9, 5} (не 13 INTERNAL)', () => pm.expect(j.code).to.be.oneOf([9, 5]));",
              ]),
     ],
 ))

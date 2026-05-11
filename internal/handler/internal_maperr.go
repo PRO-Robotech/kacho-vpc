@@ -36,6 +36,10 @@ func internalMapErr(tag string, err error) error {
 		return status.Error(codes.AlreadyExists, service.ErrAlreadyExists.Error())
 	case errors.Is(err, service.ErrFailedPrecondition):
 		return status.Error(codes.FailedPrecondition, service.ErrFailedPrecondition.Error())
+	case errors.Is(err, service.ErrPoolNotResolved):
+		// FINDING-008: ни один шаг IPAM cascade не дал pool — это FailedPrecondition
+		// (конфигурация пулов неполна), а не INTERNAL. Без leak'а raw-текста.
+		return status.Error(codes.FailedPrecondition, service.ErrPoolNotResolved.Error())
 	case errors.Is(err, service.ErrInvalidArg):
 		return status.Error(codes.InvalidArgument, service.ErrInvalidArg.Error())
 	}

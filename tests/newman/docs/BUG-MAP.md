@@ -1,7 +1,6 @@
 # Bug Map — newman findings
 
-Регистр **продуктовых** наблюдений из прогонов newman (v14: 685 кейсов /
-~3100 assertions, 0 fail). Найдено и **исправлено** одно расхождение со
+Регистр **продуктовых** наблюдений из прогонов newman (v16: ~731 кейсов / ~3360 assertions, 0 fail; см. RESULTS.md). Найдено и **исправлено** одно расхождение со
 спекой (FINDING-005 — отсутствие UNIQUE `(folder_id, name)` для 6 VPC-ресурсов),
 один кейс оказался ошибкой теста (FINDING-006). Остальные FINDING-NNN —
 расхождения с canonical YC pattern / documentation-gap'ы (пограничные между
@@ -137,39 +136,40 @@
   Если потом добавят `NameVPC`-валидацию — кейс ассертит `oneOf([200,400])` и не сломается.
   Действий не требуется; зафиксировано для прозрачности.
 
-### FINDING-008 — InternalAddressPoolService.ExplainResolution на unresolvable input → code 13 INTERNAL
+### FINDING-008 — ExplainResolution / AllocateExternalIP на unresolvable input → code 13 INTERNAL — FIXED
 
 - **Severity**: low (UX, не корректность)
 - **Found by**: `IPL-EXPLAIN-UNRESOLVABLE` (internal-pool)
-- **Status**: open, informational
-- **Service**: kacho-vpc · **Method**: `InternalAddressPoolService.ExplainResolution`
-- **Symptoms**: `GET /vpc/v1/addressPools:explainResolution?networkId=<unbound>` когда нет
-  global-default pool (zone IS NULL) → `{"code":13,"message":"address pool admin error"}`.
-- **Root cause**: `doResolve` возвращает `service.ErrPoolNotResolved` (новый sentinel,
-  `service/errors.go`), но `internalMapErr` его не классифицирует → default-ветка
-  `codes.Internal` с masked-текстом.
-- **Suggested fix** (не блокирует TODO #35): добавить `case errors.Is(err, service.ErrPoolNotResolved): return codes.FailedPrecondition` (или NotFound) в `internal_maperr.go`.
-  Кейс пока ассертит фактическое `oneOf([9,5,13])` — после фикса не покраснеет.
+- **Status**: **fixed** (2026-05-11)
+- **Service**: kacho-vpc · **Method**: `InternalAddressPoolService.ExplainResolution` (и `AllocateExternalIP`)
+- **Symptoms (было)**: `GET /vpc/v1/addressPools:explainResolution?networkId=<unbound>` когда нет
+  global-default pool (zone IS NULL) → `{"code":13,"message":"address pool admin error"}` —
+  `doResolve` возвращал `service.ErrPoolNotResolved`, но `internalMapErr` его не классифицировал
+  → default-ветка `codes.Internal` с masked-текстом.
+- **Fix**: в `internal/handler/internal_maperr.go` добавлен `case errors.Is(err, service.ErrPoolNotResolved):
+  return codes.FailedPrecondition` — теперь unresolvable → `9 FAILED_PRECONDITION` (sentinel-текст, без leak'а).
+  Кейс `IPL-EXPLAIN-UNRESOLVABLE` ассертит `oneOf([9,5])` (не 13).
 
 ### FINDING-009 — InternalCloudService.SetPoolSelector не проверяет существование cloud_id — informational
 
 - **Severity**: low
 - **Found by**: `CLD-SEL-SET-UNKNOWN-CLOUD` (internal-cloud)
-- **Status**: open, informational
-- **Service**: kacho-vpc · **Method**: `InternalCloudService.SetPoolSelector`
+- **Status**: open, informational — proto-комментарий исправлен (2026-05-11)
+- **Service**: kacho-vpc · **Method**: `InternalCloudService.SetPoolSelector` / `UnsetPoolSelector`
 - **Symptoms**: `POST /vpc/v1/clouds/<nonexistent>/poolSelector` → 200; row создаётся в
-  `cloud_pool_selector`. Proto-комментарий обещает «kacho-vpc только проверяет
-  существование cloud_id через FolderClient → cloud_id resolve», но `AddressPoolService.SetCloudPoolSelector`
-  делает только `cloud_id != ""`-проверку и `cloudSel.Set` (upsert) — без RM-вызова.
-- **Comment**: dangling selector безвреден (никогда не зарезолвится без живых folder→cloud),
-  но расходится с proto-контрактом. Кейс ассертит `oneOf([200,400,404])` и чистит за собой.
-  Аналогично `GetPoolSelector` на unknown cloud → `present=false` (нет existence-check, by design).
+  `cloud_pool_selector`. `AddressPoolService.SetCloudPoolSelector` делает только
+  `cloud_id != ""`-проверку и `cloudSel.Set` (upsert) — без RM-вызова.
+- **Действие**: proto-комментарий `internal_cloud_service.proto` исправлен — больше не утверждает,
+  что cloud_id валидируется (кросс-DB FK нет; «висячий» selector безвреден — без живых folder→cloud
+  он никогда не зарезолвится в cascade). Реальная валидация потребовала бы `CloudService.Exists` RPC
+  на resource-manager — не делаем (cross-repo фича, dangling selector безопасен).
+  Аналогично `GetPoolSelector` на unknown cloud → `present=false` (by design).
 
 ---
 
 ## Active bugs (severity > cosmetic)
 
-_(пусто — на момент 2026-05-11; FINDING-005 закрыт; FINDING-007/008/009 — informational)_
+_(пусто — на момент 2026-05-11; FINDING-005 и FINDING-008 закрыты; FINDING-007/009 — informational)_
 
 ---
 
@@ -191,7 +191,7 @@ _(пусто — на момент 2026-05-11; FINDING-005 закрыт; FINDING
 | Low | 0 | 0 | 0 |
 | Cosmetic | 0 | 0 | 0 |
 | **Bugs total** | **0** | **1** | **1** |
-| Findings (informational) | 7 | — | 7 (001–004, 007–009) |
+| Findings (informational) | 5 | 2 | 7 (001–004 + 009 open; 005, 008 fixed) |
 | Findings (invalid / test errors) | — | — | 1 (FINDING-006) |
 
 ---
