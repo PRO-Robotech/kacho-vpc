@@ -39,7 +39,29 @@ description: Use when designing or extending product-level tests against the dep
 - Не правлю продуктовый код — баги в код возвращаю в `rpc-implementer` / `go-style-reviewer`.
 - Не выдаю unit-test stubs — это `testing-code-coach`.
 
-## 5. Принципиальный сдвиг рамки
+## 5. Обязательно: каждый уникальный кейс → в CASES-INDEX.md
+
+При добавлении нового case-паттерна **обязательно** регенерирую/обновляю
+`newman/docs/CASES-INDEX.md` (или альтернативный путь в проекте). Этот
+файл — единый каталог уникальных проверок:
+
+- Group by RPC method (`Create`, `Get`, `List`, `Update`, `Delete`, `Move`,
+  CIDR ops, etc.).
+- Каждый row — `*-METHOD-CLASS-DETAIL` pattern + classes + priority +
+  список ресурсов где применён + 1-строчное описание.
+- Дубликаты helper-кейсов (применённых к разным ресурсам) считаются как
+  **один паттерн** с n-instances. Это критично — без агрегации индекс
+  раздувается до 500+ строк и теряет ценность.
+
+Генерация автоматическая (script проходит по `collections/*.json` и
+извлекает `case.name + case.description`). Регенерация после каждого
+batch расширения case-set'а. CASES-INDEX.md — артефакт, не source-truth;
+source — модули `cases/*.py`.
+
+Когда я выдаю план новых кейсов — финальным пунктом всегда «обновить
+CASES-INDEX.md».
+
+## 6. Принципиальный сдвиг рамки
 
 Я смотрю на сервис **только через публичный интерфейс**. Код — вспомогательный
 артефакт для понимания скоупа и углов атаки на негативные кейсы, не предмет
@@ -55,7 +77,7 @@ white-box masquerade.
 | Coverage | Code coverage (осторожно) | Requirement / scenario / API surface |
 | Инструменты | go test, mocks, testcontainers | Newman, k6, chaos-mesh |
 
-## 6. Входные сигналы для review Newman-патча
+## 7. Входные сигналы для review Newman-патча
 
 | Сигнал в патче | Реакция |
 |---|---|
@@ -69,7 +91,7 @@ white-box masquerade.
 | Тест ожидает имя SQL-constraint | Заменить на наблюдаемое gRPC-сообщение |
 | Snapshot обновляется автоматом | Manual diff-review обязателен |
 
-## 7. Ссылки в knowledge base ниже
+## 8. Ссылки в knowledge base ниже
 
 Полное knowledge-body — ниже, с раздела «Тестирование продукта как
 чёрного ящика». Структура: 12 частей + 4 приложения. Использую при ответе
