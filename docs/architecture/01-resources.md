@@ -31,17 +31,18 @@ erDiagram
 | Поле | Тип | Замечания |
 |---|---|---|
 | `id` | text PK, prefix `enp` | |
-| `folder_id` | text NOT NULL | UNIQUE(folder_id, name) — миграция 0018 |
+| `folder_id` | text NOT NULL | `networks_folder_id_name_key` UNIQUE(folder_id, name) |
 | `name` | text | NameVPC permissive |
 | `description` | text | ≤256 |
 | `labels` | jsonb | ≤64 пар |
-| `default_security_group_id` | text NULL FK→sgp | computed; устанавливается inline в `doCreate`. ON DELETE SET NULL |
-| `created_at` | tstz | проп. truncate в proto-ответе до секунд |
+| `default_security_group_id` | text NULL FK→`security_groups` | устанавливается inline в `doCreate` при `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). ON DELETE SET NULL |
+| `created_at` | tstz | в proto-ответе truncate до секунд |
 
 **Инварианты**:
-- При Create — атомарно создаётся Network + Default SG + биндинг
-  `default_security_group_id`. Раньше это был отдельный reconciler;
-  сейчас inline в worker'е (Phase 2).
+- При Create (`KACHO_VPC_DEFAULT_SG_INLINE=true`, default) — атомарно создаётся
+  Network + Default SG + биндинг `default_security_group_id` в одной TX worker'а.
+  Раньше это был отдельный reconciler в `kacho-vpc-controllers` — упразднён в Phase 2.
+  При `=false` Network создаётся без SG (для load-тестов / внешнего reconciler'а).
 - `Move` (между folder'ами) — отдельный RPC.
 - Hard-delete; FK от Subnet/RT/SG = RESTRICT.
 
@@ -52,12 +53,12 @@ erDiagram
 | Поле | Тип | Замечания |
 |---|---|---|
 | `id` | text PK, prefix `e9b` | |
-| `folder_id`, `network_id`, `zone_id` | text NOT NULL | immutable после Create |
+| `folder_id`, `network_id`, `zone_id` | text NOT NULL | immutable после Create; `subnets_folder_id_name_key` UNIQUE(folder_id, name) WHERE name<>'' (миграция 0002) |
 | `name`, `description`, `labels` | | |
 | `v4_cidr_blocks` | text[] | array, главный — `[0]` |
 | `v6_cidr_blocks` | text[] | dual-stack |
 | `v4_cidr_primary` | text computed | для EXCLUDE constraint (см. ниже) |
-| `route_table_id` | text NULL FK→rtb | optional |
+| `route_table_id` | text NULL FK→`route_tables` | optional |
 | `dhcp_options` | jsonb | domain_name (RFC 1123), dns/ntp servers |
 
 **Инварианты**:
@@ -86,7 +87,9 @@ External (folder-scoped public IP) или internal (IP в Subnet).
 | `reserved`, `used` | bool | computed на сервис-стороне |
 | `deletion_protection` | bool | sync-check перед Delete |
 
-**UNIQUE constraints** (миграции 0014/0015/0017):
+**UNIQUE constraints**:
+- `addresses_folder_id_name_key` PARTIAL UNIQUE на `(folder_id, name)`
+  WHERE name `<>` `''` (миграция `0002`) — дубль непустого `name` в folder → `ALREADY_EXISTS`.
 - `addresses_external_ip_uniq` PARTIAL UNIQUE на
   `external_ipv4 ->> 'address'` WHERE address `<>` `''` — запрещает
   дубль external IP глобально (не считая пустых allocate-pending).
@@ -105,7 +108,7 @@ Subnet'ам.
 
 | Поле | Замечания |
 |---|---|
-| `id` (`rtb`), `folder_id`, `network_id` immutable | |
+| `id` (prefix `enp`), `folder_id`, `network_id` immutable | UNIQUE(folder_id, name) WHERE name<>'' (миграция 0002) |
 | `static_routes` jsonb array | full-replace на Update |
 | `name`, `description`, `labels` | |
 
@@ -115,9 +118,9 @@ Firewall rules, привязан к Network. Один SG может быть `de
 
 | Поле | Замечания |
 |---|---|
-| `id` (`sgp`), `folder_id`, `network_id` immutable | |
+| `id` (prefix `enp`), `folder_id`, `network_id` immutable | UNIQUE(folder_id, name) WHERE name<>'' (миграция 0002) |
 | `status` | text |
-| `default_for_network` | bool — устанавливается inline при Network.Create |
+| `default_for_network` | bool — `true` у inline-создаваемой default SG (если `KACHO_VPC_DEFAULT_SG_INLINE=true`) |
 | `rules` | jsonb array (см. SgRulesEditor в UI / proto SecurityGroupRule) |
 
 **RPC специфика**:
@@ -132,7 +135,7 @@ Shared egress (NAT-style), не привязан к Network.
 
 | Поле | Замечания |
 |---|---|
-| `id` (`gtw`), `folder_id` | |
+| `id` (prefix `enp`), `folder_id` | UNIQUE(folder_id, name) WHERE name<>'' (миграция 0002) |
 | `shared_egress_gateway` | nested message |
 
 ### PrivateEndpoint
@@ -141,8 +144,9 @@ Privatelink connection: Network + Subnet → external service.
 
 | Поле | Замечания |
 |---|---|
-| `id` (`pep`), `folder_id`, `network_id`, `subnet_id` | |
-| `endpoint_address` | text |
+| `id` (prefix `enp`), `folder_id`, `network_id` | UNIQUE(folder_id, name) WHERE name<>'' (миграция 0002) |
+| `subnet_id` / `address_id` / `ip_address` | через `address_spec` oneof (`internal_ipv4_address_spec.subnet_id` или `address_id`); опциональны |
+| `service_type` | сейчас только `object_storage` |
 
 ## Internal/admin ресурсы (kacho-only, глобальные)
 

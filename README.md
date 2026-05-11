@@ -30,17 +30,20 @@ Clean Architecture (`domain → service → handler/repo/clients`); `cmd/vpc/mai
 единственный composition root. Подробности по слоям и паттернам — в
 `CLAUDE.md` §4. Service возвращает `Operation` для всех мутаций (LRO),
 выполнение worker'ом через `kacho-corelib/operations.Run`. Outbox + LISTEN/NOTIFY
-дают event stream для `kacho-vpc-controllers` (см. §4.3).
+дают event stream через `InternalWatchService` (для admin-tooling / UI; раньше
+его потреблял `kacho-vpc-controllers` — упразднён в Phase 2, IPAM-allocate и
+default-SG теперь inline в service-слое).
 
 ### Dual gRPC ports
 
 | Порт   | Сервисы                                                                           | Кто использует                       |
 |--------|-----------------------------------------------------------------------------------|--------------------------------------|
 | `9090` | NetworkService, SubnetService, AddressService, RouteTableService, SecurityGroupService, GatewayService, PrivateEndpointService, OperationService | api-gateway → внешние клиенты        |
-| `9091` | InternalWatchService, InternalAddressService                                     | kacho-vpc-controllers, kacho-compute |
+| `9091` | InternalWatchService, InternalAddressService (allocate int/ext IP), InternalAddressPoolService, InternalRegionService, InternalZoneService, InternalNetworkService, InternalCloudService | admin-tooling (`kachoctl ipam`), UI (через api-gateway internal mux), in-process inline-allocate; в будущем kacho-compute |
 
-`Internal*` сервисы не маршрутизируются через api-gateway (запрет #6 из
-workspace `CLAUDE.md`).
+`Internal*` сервисы не маршрутизируются через external TLS endpoint api-gateway
+(запрет #6 из workspace `CLAUDE.md`); часть проброшена на cluster-internal listener
+для UI/admin (`/vpc/v1/{regions,zones,addressPools,...}`).
 
 ## Контракт ошибок
 
@@ -71,9 +74,11 @@ Newman quota-aware 3-suite pipeline (RO / LIGHT / SEQ) — против local Ka
 
 ## Migrations
 
-Боевые: `internal/migrations/*.sql` (12 файлов, embed FS). `migrations/` в
-корне — staging для goose CLI. **Не редактировать применённые миграции** —
-только новый файл.
+Боевые: `internal/migrations/*.sql`, embed FS — `0001_initial.sql` (squashed
+baseline схемы; 22 исторические миграции свёрнуты в один файл) + `0002_resource_name_unique.sql`
+(partial UNIQUE `(folder_id, name)` для subnet/RT/SG/GW/PE/Address). `migrations/`
+в корне репо — staging для `make sync-migrations` (только `0001_operations.sql`
+от corelib). **Не редактировать применённые миграции** — только новый файл.
 
 ```bash
 KACHO_VPC_DB_PASSWORD=secret bin/kacho-vpc migrate up
@@ -91,8 +96,11 @@ KACHO_VPC_DB_PASSWORD=secret bin/kacho-vpc migrate status
 
 ## Subagents (project-level в `.claude/agents/`)
 
-13 общих + 4 VPC-специализированных:
+13 общих (workspace) + VPC-специализированные:
 - `vpc-yc-parity-auditor` — verbatim YC checks (texts/regex/codes/timestamps)
 - `vpc-cidr-specialist` — CIDR (host-bits, EXCLUDE, overlap, internal IP)
 - `vpc-outbox-watch-engineer` — outbox + LISTEN/NOTIFY + Internal services
 - `vpc-newman-author` — Postman/Newman regression suites
+- `testing-code-coach` — эталонные практики тестирования кода (TESTING.md)
+- `testing-product-coach` — black-box product testing техники (TESTING-PRODUCT.md)
+- `vpc-load-testing` — k6/ghz нагрузочные сценарии VPC (см. `k6/`)

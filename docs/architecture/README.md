@@ -16,7 +16,7 @@
 | 02 | [Data Flows](02-data-flows.md) | Sequence-диаграммы VPC-сценариев: Network create + default-SG, Address allocate cascade, Internal alloc, Watch outbox, Cloud-selector set |
 | 03 | [IPAM Model](03-ipam.md) | Region/Zone/Pool/CloudSelector + cascade resolve + utilization (главная нетривиальная фича) |
 | 04 | [API Surface](04-api-surface.md) | Все RPC (public 59 + internal 29), REST endpoints, верстки путей |
-| 05 | [Database](05-database.md) | Схема pg-vpc, 22 миграции, ключевые constraints (EXCLUDE для CIDR, partial UNIQUE, JSONB GIN) |
+| 05 | [Database](05-database.md) | Схема pg-vpc, миграции (`0001_initial.sql` squashed baseline + `0002_resource_name_unique.sql`), ключевые constraints (EXCLUDE для CIDR, partial UNIQUE, JSONB GIN) |
 | 06 | [Conventions & Gotchas](06-conventions.md) | VPC-specific правила, error mapping, top-10 уроков из истории фиксов |
 
 ## TL;DR — что это за сервис

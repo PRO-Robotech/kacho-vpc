@@ -1,10 +1,13 @@
 # TODO — outstanding tech-debt
 
 После 10-раундового adversarial-ревью + IPAM Phase 2 + delete-restriction
-fix + #23/#27/#37/#25 closures (этот pass).
+fix + #23/#27/#37/#25 closures + перепаковка миграций (`5581316`) +
+FINDING-005 fix (`0002_resource_name_unique.sql`).
 
-Verified Newman parity: **283 assertions / 0 failures** (snap4-local-* в
-`newman/out/`).
+Verified Newman regression: **686 кейсов / ~3120 assertions / 0 failures**
+(v15; коллекции в `newman/collections/`, генерятся из `newman/cases/*.py`
+через `newman/scripts/gen.py`; прогон — `newman/scripts/run.sh`). Требует
+`KACHO_VPC_DEFAULT_SG_INLINE=true` (default) — иначе default-SG-кейсы краснеют.
 
 ## Status table
 
@@ -128,8 +131,11 @@ overhead без real benefit. См. invariant-comment в `internal/repo/jsonb.go
 
 ## Снапшоты Newman (audit trail)
 
-- `newman/out/baseline-yc-*.json` — yc baseline
-- `newman/out/snap4-local-*.json` — финальный local после cleanup БД (**283/0 ✓**)
+- `newman/out/*.json` — per-service JSON reporter последнего прогона
+  `newman/scripts/run.sh` (агрегируется в `newman/out/summary.txt`).
+- Текущий результат: 686 кейсов / ~3120 assertions / 0 fail (v15).
+- История версий и mapping техник тестирования — `newman/docs/RESULTS.md`;
+  карта багов/наблюдений — `newman/docs/BUG-MAP.md`; каталог паттернов — `newman/docs/CASES-INDEX.md`.
 
 ---
 
@@ -139,8 +145,8 @@ overhead без real benefit. См. invariant-comment в `internal/repo/jsonb.go
   versioned modules + `go.work` для воспроизводимости релизов.
 - Anti-corruption layer между handler и proto — отложить до увеличения
   поверхности API.
-- Composition root в `runServe` (~80 строк wiring) — decompose в отдельные
-  factory-функции при следующем major refactor.
-- Two-phase setter-DI (`addressSvc.SetAllocator`, `networkSvc.SetSGRepo`)
-  — temporal coupling, исправится при разделении allocator из address-service
-  inline.
+- Composition root в `run` (`cmd/vpc/main.go`, ~80 строк wiring) — decompose
+  в отдельные factory-функции при следующем major refactor.
+- Setter-DI `networkSvc.SetSGRepo` — temporal coupling; вызывается в `cmd/vpc/main.go`
+  только при `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). AddressAllocator уже
+  inlined в `AddressService` (commit `5581316`), `SetAllocator` больше нет.

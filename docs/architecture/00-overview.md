@@ -47,10 +47,15 @@ Owns:
 | Network | VPC-сеть | `enp` |
 | Subnet | подсеть в Network, привязана к Zone | `e9b` |
 | Address | external (publicIP) или internal (IP в Subnet) | `e9b` |
-| RouteTable | static routes для Network | `rtb` |
-| SecurityGroup | firewall rules, привязан к Network | `sgp` |
-| Gateway | shared egress (NAT-style) | `gtw` |
-| PrivateEndpoint | privatelink connection | `pep` |
+| RouteTable | static routes для Network | `enp` |
+| SecurityGroup | firewall rules, привязан к Network | `enp` |
+| Gateway | shared egress (NAT-style) | `enp` |
+| PrivateEndpoint | privatelink connection | `enp` |
+
+> Префиксы — из `kacho-corelib/ids`. `Network/RouteTable/SecurityGroup/Gateway/
+> PrivateEndpoint` делят `enp` (api-gateway маршрутизирует `OperationService.Get`
+> по первым 3 символам id; для VPC-домена это `enp`). `Subnet/Address` — `e9b`.
+> `PrefixOperationVPC == PrefixNetwork == "enp"`.
 
 **Системная (kacho-only, admin, глобальная)** — то что админ управляет
 для обеспечения IP allocation:
@@ -133,7 +138,9 @@ internal/
 никаких JOIN'ов с rm-БД или внешними источниками.
 
 Особенности:
-- 22 миграции на момент написания, все в `internal/migrations/*.sql`.
+- Миграции в `internal/migrations/*.sql` (embed.FS) — `0001_initial.sql`
+  (squashed baseline, 22 исторические миграции в одном файле) +
+  `0002_resource_name_unique.sql` (partial UNIQUE `(folder_id, name)`).
 - Используем продвинутые Postgres-фичи: `EXCLUDE USING gist` (CIDR
   no-overlap), partial UNIQUE indices, computed columns, `inet/cidr`
   типы и операторы (`<<`, `>>=`), `JSONB` containment с GIN индексом

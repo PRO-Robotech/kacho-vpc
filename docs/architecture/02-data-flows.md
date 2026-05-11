@@ -29,7 +29,7 @@ sequenceDiagram
   U->>H: Create(folder_id, name, …)
   H->>S: Create
   S->>S: sync validate (NameVPC, labels, mask)
-  S->>S: ids.NewID(PrefixNetwork) → "net..."
+  S->>S: ids.NewID(PrefixNetwork) → "enp..."
   S->>DB: INSERT operation (sync, done=false)
   S-->>H: Operation{id, metadata:{networkId}}
   H-->>U: Operation
@@ -45,7 +45,7 @@ sequenceDiagram
     S->>DB: INSERT vpc_outbox (Network, CREATED) → pg_notify
     S->>DB: COMMIT
 
-    Note over S: inline default-SG (Phase-2: controllers удалены)
+    Note over S: inline default-SG — только при KACHO_VPC_DEFAULT_SG_INLINE=true (default)
     S->>S: short = first-8-chars(net_id)
     S->>DB: BEGIN
     S->>DB: INSERT security_groups (default-sg-{short}, network_id, default_for_network=true)
@@ -59,8 +59,8 @@ sequenceDiagram
 ```
 
 Особенности:
-- Раньше default-SG создавал отдельный `kacho-vpc-controllers` reconciler-loop, наблюдая outbox. **В Phase 2 удалён** — всё inline в worker'е (см. CLAUDE.md `Phase-2`).
-- Mapping: `ALREADY_EXISTS` на UNIQUE(folder_id, name) — миграция 0018.
+- Раньше default-SG создавал отдельный `kacho-vpc-controllers` reconciler-loop, наблюдая outbox. **В Phase 2 упразднён** — теперь inline в worker'е, если `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). При `=false` шаги 5-9 на диаграмме (default-SG TX) пропускаются.
+- Mapping: `ALREADY_EXISTS` на `networks_folder_id_name_key` UNIQUE(folder_id, name). Для остальных 6 ресурсов аналогичный UNIQUE добавлен миграцией `0002_resource_name_unique.sql` (partial, `WHERE name <> ''`).
 
 ---
 
@@ -76,7 +76,7 @@ sequenceDiagram
   participant DB as pg-vpc
 
   U->>S: Create(folder_id, network_id, zone_id, v4_cidr_blocks, …)
-  S->>S: sync validate:<br/>  NameVPC, ZoneId whitelist,<br/>  CIDR host-bits=0 (netip.Masked),<br/>  CIDR disjoint в массиве
+  S->>S: sync validate:<br/>  NameVPC, ZoneId (required + existence via ZoneRegistry → zones table),<br/>  CIDR host-bits=0 (netip.Masked),<br/>  CIDR disjoint в массиве
   S-->>U: Operation{subnetId}
 
   rect rgb(255,247,230)
@@ -251,8 +251,8 @@ sequenceDiagram
   participant DB as pg-vpc
 
   H->>S: Create
-  S->>Ops: New(prefix, description, metadata)
-  Ops-->>S: Operation{id:opvpc..., done:false}
+  S->>Ops: New(PrefixOperationVPC, description, metadata)
+  Ops-->>S: Operation{id:enp..., done:false}   # PrefixOperationVPC == PrefixNetwork == "enp"
   S->>DB: opsRepo.Create(op)
   S->>Ops: Run(ctx, opsRepo, opID, fn doCreate)
   Note right of S: Run = sync trigger goroutine
@@ -294,7 +294,7 @@ sequenceDiagram
   participant DB as pg-vpc
 
   Subscriber->>W: Watch(from_sequence_no)
-  W->>Conn: pool.Acquire — нужна dedicated conn для LISTEN
+  W->>Conn: pgx.Connect(MigrateDSN) — dedicated conn вне pool (для LISTEN), под inner timeout
   W->>Conn: LISTEN vpc_outbox
 
   Note over W,DB: Catch-up: события с прошлого from_seq
@@ -310,7 +310,7 @@ sequenceDiagram
     W-->>Subscriber: Event
   end
 
-  Note over W: defer UNLISTEN + Release()
+  Note over W: defer UNLISTEN + conn.Close() + release semaphore slot
 ```
 
 Триггер `vpc_outbox_notify_trg` на INSERT шлёт `pg_notify`. Без этого

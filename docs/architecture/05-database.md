@@ -7,49 +7,40 @@
 
 | Фича | Где используется | Зачем |
 |---|---|---|
-| `EXCLUDE USING gist` | `subnets_no_overlap_v4/v6` (миграция 0007) | CIDR overlap rejection на DB-level (race-free) |
-| `inet/cidr` operators (`<<`, `>>=`) | utilization counts (миграция 0022) | "сколько Address с IP внутри CIDR пула" |
-| Partial UNIQUE index | `addresses_external_ip_uniq` WHERE address `<>` `''` (0017) | дубль external IP запретить, но empty allocate-pending разрешить |
-| Partial UNIQUE index | `address_pools_zone_kind_default_uniq` WHERE is_default (0020) | один is_default=true на (zone, kind) |
-| Computed column | `subnets.v4_cidr_primary` (0007), `addresses.internal_subnet_id` (0006) | для использования в EXCLUDE / UNIQUE |
+| `EXCLUDE USING gist` | `subnets_no_overlap_v4/v6` | CIDR overlap rejection на DB-level (race-free) |
+| `inet/cidr` operators (`<<`, `>>=`) | utilization counts | "сколько Address с IP внутри CIDR пула" |
+| Partial UNIQUE index | `addresses_external_ip_uniq` WHERE address `<>` `''` | дубль external IP запретить, но empty allocate-pending разрешить |
+| Partial UNIQUE index | `<resource>_folder_id_name_key` WHERE name `<>` `''` (миграция `0002`) | дубль непустого `name` в folder запретить, пустой — разрешить |
+| Partial UNIQUE index | `address_pools_zone_kind_default_uniq` WHERE is_default | один is_default=true на (zone, kind) |
+| Computed column | `subnets.v4_cidr_primary`, `addresses.internal_subnet_id` | для использования в EXCLUDE / UNIQUE |
 | `JSONB` containment `@>` | `cloud_pool_selector` cascade Step 3 | match selector |
 | `jsonb_path_ops` GIN index | `cloud_pool_selector_gin`, `address_pools_selector_labels_gin` | быстрые `@>` запросы |
-| `LISTEN/NOTIFY` | `vpc_outbox_notify_trg` (0010) | InternalWatchService stream |
+| `LISTEN/NOTIFY` | `vpc_outbox_notify_trg` | InternalWatchService stream |
 | `xmin::text` | optimistic locking (SecurityGroup.UpdateRules) | zero-overhead version-check |
 
-## Миграции (полный список)
+## Миграции
 
-`internal/migrations/*.sql`, embed.FS, goose-стиль up/down.
+`internal/migrations/*.sql`, embed.FS (объявлено в `migrations.go`), goose-стиль up/down.
+**Физически два файла** — 22 исторические миграции свёрнуты (commit `5581316`,
+`refactor(vpc): inline AddressAllocator + squash 22 миграции`) в один baseline:
 
 | # | Файл | Что |
 |---|---|---|
-| 0001 | `operations.sql` | sync с corelib (operations table + sequence) |
-| 0002 | `networks.sql` | базовая таблица Network |
-| 0003 | `subnets.sql` | Subnet + FK на Network |
-| 0004 | `addresses.sql` | Address + JSONB internal/external |
-| 0005 | `route_tables.sql` | RouteTable + FK на Network |
-| 0006 | `addresses_subnet_fk.sql` | computed `internal_subnet_id` для UNIQUE |
-| 0007 | `subnets_cidr_exclude.sql` | **EXCLUDE USING gist** для CIDR overlap |
-| 0008 | `security_groups.sql` | SecurityGroup + FK на Network |
-| 0009 | `id_format_to_text.sql` | UUID → TEXT (verbatim YC ID format) |
-| 0010 | `vpc_outbox.sql` | outbox + LISTEN/NOTIFY trigger |
-| 0011 | `gateways.sql` | Gateway |
-| 0012 | `private_endpoints.sql` | PrivateEndpoint |
-| 0014 | `addresses_external_pool_id.sql` | Address.external_ipv4 расширен `address_pool_id` |
-| 0015 | `address_pools.sql` | AddressPool + bindings (network/address) |
-| 0016 | `address_pool_selectors.sql` | selector_labels + selector_priority + (был network_pool_selector) |
-| 0017 | `addresses_external_ip_uniq_skip_empty.sql` | partial UNIQUE WHERE address `<>` `''` |
-| 0018 | `networks_folder_name_unique.sql` | UNIQUE(folder_id, name) для Network |
-| 0019 | `regions_zones.sql` | Region+Zone first-class + seed `ru-central1` |
-| 0020 | `address_pools_zone.sql` | `region_id` (TEXT) → `zone_id` FK; partial UNIQUE на is_default |
-| 0021 | `address_pools_drop_folder.sql` | AddressPool становится глобальным (drop folder_id) |
-| 0022 | `pool_selector_to_cloud.sql` | drop network_pool_selector → cloud_pool_selector + UNIQUE(region_id, name) |
+| 0001 | `0001_initial.sql` | **squashed baseline** — все таблицы (`operations`, `networks`, `subnets`, `addresses`, `route_tables`, `security_groups`, `gateways`, `private_endpoints`, `regions`, `zones`, `address_pools`, binding-таблицы, `cloud_pool_selector`, `vpc_outbox`, `vpc_watch_cursors`), индексы, EXCLUDE/UNIQUE constraints, generated columns, outbox trigger. Id-колонки — `TEXT`. `networks_folder_id_name_key` — non-partial UNIQUE `(folder_id, name)` |
+| 0002 | `0002_resource_name_unique.sql` | partial UNIQUE `(folder_id, name) WHERE name <> ''` для `subnets`/`route_tables`/`security_groups`/`gateways`/`private_endpoints`/`addresses` (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network; см. FINDING-005 в `newman/docs/BUG-MAP.md`) |
+
+`migrations/` в корне репо — staging для `make sync-migrations` (только
+`0001_operations.sql` от corelib; источник истины не здесь, в `0001_initial.sql`
+схема `operations` уже включена).
+
+> Историческая нумерация (0001–0022 до squash) встречается ниже в схемах
+> как «(миграция 0007)» и т.п. — это происхождение конкретного DDL,
+> физически всё в `0001_initial.sql`. Актуальный state БД — в `goose_db_version`.
 
 ⚠️ Запреты:
-- НЕ редактировать применённую миграцию. Только новая.
-- НЕ изменять `0001_operations.sql` локально — синхронизируется из corelib.
-- Нумерация может прыгать (0013 был removed). Это норма; смотрим на
-  `goose_db_version` для актуального state.
+- НЕ редактировать применённую миграцию (`0001_initial.sql`, `0002_*`). Только новая.
+- НЕ изменять `0001_operations.sql` (staging-копия из corelib) — `0001_initial.sql`
+  уже содержит схему `operations`; `make sync-migrations` синхронизирует staging-копию.
 
 ## Ключевые таблицы
 
@@ -63,9 +54,15 @@ description, labels         TEXT, JSONB
 default_security_group_id   TEXT NULL FK→security_groups ON DELETE SET NULL
 created_at                  TIMESTAMPTZ
 
-UNIQUE(folder_id, name)         (миграция 0018)
+networks_folder_id_name_key  UNIQUE (folder_id, name)         -- non-partial (в baseline)
 INDEX folder_idx
 ```
+
+> Для остальных 6 ресурсов (`subnets`, `route_tables`, `security_groups`,
+> `gateways`, `private_endpoints`, `addresses`) UNIQUE на `(folder_id, name)`
+> — **partial**, `WHERE name <> ''` (миграция `0002_resource_name_unique.sql`):
+> пустой `name` допускает несколько ресурсов (verbatim YC permissive policy),
+> дубль непустого → `23505` → `ALREADY_EXISTS`.
 
 ### `subnets`
 
@@ -78,8 +75,9 @@ v4_cidr_primary                TEXT GENERATED ALWAYS AS (v4_cidr_blocks[1]) STOR
 route_table_id                 TEXT NULL FK
 dhcp_options                   JSONB
 
-EXCLUDE USING gist (network_id WITH =, v4_cidr_primary inet_ops WITH &&)  -- 0007
-EXCLUDE USING gist (network_id WITH =, v6_cidr_primary inet_ops WITH &&)
+subnets_folder_id_name_key   UNIQUE (folder_id, name) WHERE name <> ''             -- 0002
+EXCLUDE USING gist (network_id WITH =, v4_cidr_primary inet_ops WITH &&)           -- subnets_no_overlap_v4
+EXCLUDE USING gist (network_id WITH =, v6_cidr_primary inet_ops WITH &&)           -- subnets_no_overlap_v6
 ```
 
 ### `addresses`
@@ -90,13 +88,14 @@ addr_type                      smallint  (1=ext, 2=int)
 ip_version                     smallint
 external_ipv4                  JSONB     (address, zone_id, address_pool_id, requirements)
 internal_ipv4                  JSONB     (address, subnet_id)
-internal_subnet_id             TEXT GENERATED (из internal_ipv4->>'subnet_id')  -- 0006
+internal_subnet_id             TEXT GENERATED (из internal_ipv4->>'subnet_id')
 reserved, used                 BOOLEAN
 deletion_protection            BOOLEAN
 
-addresses_external_ip_uniq             UNIQUE (external_ipv4 ->> 'address') WHERE address <> ''  -- 0017
-addresses_external_pool_ip_uniq        UNIQUE (external_ipv4 ->> 'address_pool_id', address)     -- 0015
-addresses_internal_subnet_ip_uniq      UNIQUE (internal_subnet_id, internal_ipv4 ->> 'address')  -- 0006
+addresses_folder_id_name_key           UNIQUE (folder_id, name) WHERE name <> ''                 -- 0002
+addresses_external_ip_uniq             UNIQUE (external_ipv4 ->> 'address') WHERE address <> ''
+addresses_external_pool_ip_uniq        UNIQUE (external_ipv4 ->> 'address_pool_id', address)
+addresses_internal_subnet_ip_uniq      UNIQUE (internal_subnet_id, internal_ipv4 ->> 'address')
 ```
 
 ### `address_pools`

@@ -1,7 +1,7 @@
 # 04 — API Surface
 
 Полный список RPC kacho-vpc + соответствующие REST endpoints. На сегодня
-**88 RPC методов** в 12 proto-сервисах.
+**89 RPC методов** в 13 proto-сервисах (7 public verbatim-YC + 6 internal kacho-only).
 
 ## Сводка
 
@@ -50,36 +50,46 @@ GET    /vpc/v1/networks/{network_id}
 PATCH  /vpc/v1/networks/{network_id}                 → Operation
 DELETE /vpc/v1/networks/{network_id}                 → Operation
 GET    /vpc/v1/networks/{network_id}/subnets
-GET    /vpc/v1/networks/{network_id}/securityGroups
-GET    /vpc/v1/networks/{network_id}/routeTables
+GET    /vpc/v1/networks/{network_id}/security_groups   # snake_case в child-list!
+GET    /vpc/v1/networks/{network_id}/route_tables      # snake_case!
 GET    /vpc/v1/networks/{network_id}/operations
 POST   /vpc/v1/networks/{network_id}:move            → Operation
 
 # Subnet (analogously)
 GET/POST/PATCH/DELETE /vpc/v1/subnets[/{id}]
 GET    /vpc/v1/subnets/{subnet_id}/addresses         (UsedAddress[])
-POST   /vpc/v1/subnets/{subnet_id}:addCidrBlocks
-POST   /vpc/v1/subnets/{subnet_id}:removeCidrBlocks
+GET    /vpc/v1/subnets/{subnet_id}/operations
+POST   /vpc/v1/subnets/{subnet_id}:add-cidr-blocks   # kebab-case с двоеточием!
+POST   /vpc/v1/subnets/{subnet_id}:remove-cidr-blocks
 POST   /vpc/v1/subnets/{subnet_id}:relocate
+POST   /vpc/v1/subnets/{subnet_id}:move
 
 # Address
 GET/POST/PATCH/DELETE /vpc/v1/addresses[/{id}]
 GET    /vpc/v1/addresses:byValue?value=<ip>
+POST   /vpc/v1/addresses/{address_id}:move
 
-# RouteTable
+# RouteTable (top-level — camelCase routeTables)
 GET/POST/PATCH/DELETE /vpc/v1/routeTables[/{id}]
 
 # SecurityGroup
 GET/POST/PATCH/DELETE /vpc/v1/securityGroups[/{id}]
-PATCH  /vpc/v1/securityGroups/{sg_id}:updateRules
-PATCH  /vpc/v1/securityGroups/{sg_id}:updateRule
+PATCH  /vpc/v1/securityGroups/{sg_id}/rules           # UpdateRules — PATCH на /rules
+PATCH  /vpc/v1/securityGroups/{sg_id}/rules/{rule_id} # UpdateRule
 
 # Gateway
 GET/POST/PATCH/DELETE /vpc/v1/gateways[/{id}]
 
-# PrivateEndpoint
-GET/POST/PATCH/DELETE /vpc/v1/privateEndpoints[/{id}]
+# PrivateEndpoint — путь /endpoints, НЕ /privateEndpoints!
+GET/POST/PATCH/DELETE /vpc/v1/endpoints[/{id}]
+GET    /vpc/v1/endpoints/{private_endpoint_id}/operations
 ```
+
+> ⚠️ REST-пути неоднородны (наследие proto-аннотаций, см. FINDING-002 в
+> `newman/docs/BUG-MAP.md`): child-list `security_groups`/`route_tables` —
+> snake_case, top-level `routeTables`/`securityGroups`/`addressPools` — camelCase,
+> custom-методы — kebab с двоеточием (`:add-cidr-blocks`, `:move`),
+> `OperationService.Get` — `/operations/{id}` (без `/vpc/v1/`), PE — `/endpoints`.
 
 ### Admin (kacho-only, **только cluster-internal listener**)
 
@@ -146,9 +156,11 @@ service NetworkService {
 }
 ```
 
-Клиент полит `OperationService.Get(operation_id)` до `done=true`.
-api-gateway имеет in-process `opsproxy` — один URL `/operations/{id}`
-маршрутизируется по prefix ID на нужный backend (`opvpc...` → kacho-vpc).
+Клиент полит `OperationService.Get(operation_id)` до `done=true` (REST: `GET /operations/{id}`,
+**без** `/vpc/v1/` префикса). api-gateway имеет in-process `opsproxy` — один URL
+`/operations/{id}` маршрутизируется по 3-char prefix ID на нужный backend
+(`enp...` → kacho-vpc; `b1g...` → resource-manager). `PrefixOperationVPC == PrefixNetwork == "enp"`.
+Неизвестный prefix → `400 INVALID_ARGUMENT "unknown prefix"` (FINDING-003).
 
 ⚠️ **Контракт-нарушение**: все 6 Delete RPC возвращают `DeleteXxxMetadata`
 в `response`, а должны — `google.protobuf.Empty` (verbatim YC). См. TODO #1.

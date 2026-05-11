@@ -3,6 +3,9 @@
 Trail-документ применения Go-скилов к kacho-vpc + связанным репо.
 Каждая группа = отдельный commit в feature ветке. Помечается ✅/⚠️/⏭️.
 
+> **Snapshot-документ** — отражает состояние ревью на момент написания.
+> Что закрыто с тех пор — см. раздел [«Update»](#update-2026-05--что-закрыто-с-момента-ревью) в конце.
+
 | Skill | Status | Commit | Findings |
 |---|:---:|---|---|
 | golang-code-style | ✅ | group-1 | gofmt + layout pass — 10 файлов перформатированы |
@@ -148,3 +151,20 @@ Security блокированы внешними факторами:
 
 Pure-VPC код прошёл 4 round'а ужесточения и достиг senior consensus в
 2 из 4 перспектив. Дальнейший рост уровня требует cross-repo work.
+
+## Update (2026-05) — что закрыто с момента ревью
+
+| Item из reviewer-сводки | Статус |
+|---|---|
+| Concurrency P0 #3 — `pgxpool.MaxConns` не сконфигурирован | ✅ `KACHO_VPC_DB_MAX_CONNS` env (default `0` = pgx default). ⚠️ Параметр прокидывается в DSN как `pool_max_conns` **только** для pgxpool — `migrate` использует `MigrateDSN()` без него (иначе `database/sql` шлёт серверу unknown PG-param → `FATAL`; см. FINDING-007 в `newman/docs/BUG-MAP.md`) |
+| Security P0 #7 — Tenant-isolation / AuthN | частично: добавлен `KACHO_VPC_AUTH_MODE` (`dev`/`production`/`production-strict`) + `TenantUnaryInterceptor`/`TenantStreamInterceptor` + `AssertFolderOwnership`. Полноценный IAM (claims-extraction, folder-membership через RM) — всё ещё scope |
+| Security P0 #8 — `:9091` без NetworkPolicy | ✅ `networkpolicy-vpc-internal.yaml` в `kacho-deploy` umbrella chart. mTLS — ещё нет |
+| Security P0 #9 — plaintext gRPC к RM | конфигурируемо: `KACHO_VPC_RESOURCE_MANAGER_TLS` (default `false` для dev; `production-strict` требует `true`) |
+| Security P0 #10 — DB plaintext «hardcoded» | ✅ `KACHO_VPC_DB_SSLMODE` env (default `disable` для dev; `production-strict` требует не-`disable`) |
+| Architecture полишь — «Two-phase setter-DI (SetSGRepo)» | переосмыслено: `SetSGRepo` теперь вызывается в `cmd/vpc/main.go` только при `KACHO_VPC_DEFAULT_SG_INLINE=true` (флаг управляет inline default-SG; default `true`) |
+| Doc warning про destructive migrations 0007/0009 | неактуально: 22 исторические миграции свёрнуты в `0001_initial.sql` (commit `5581316`); + `0002_resource_name_unique.sql` (partial UNIQUE `(folder_id, name)`, FINDING-005 fix) |
+| Concurrency P0 #2 / #6 — allocator false-`ResourceExhausted` + bench | bench `address_allocate_bench_test.go` есть; deterministic sweep после N collision'ов — частично (двухфазный sweep→random реализован) |
+| Concurrency P0 #1 — `operations.Run` без WaitGroup/recover | ✅ закрыто в `kacho-corelib/operations/worker.go`: pkg-level registry с `sync.WaitGroup` + `recover()`; `operations.Wait(ctx)` ждёт активных worker'ов на shutdown (`cmd/vpc/main.go` вызывает `operations.Wait(30s)`) |
+
+Остаются open: mTLS на `:9091`; Prometheus/OpenTelemetry; pprof endpoint;
+integration-test run в CI; полноценный IAM (claims-extraction / folder-membership через RM).

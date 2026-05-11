@@ -11,7 +11,9 @@ Workspace-уровень — в `kacho-workspace/docs/architecture/07-convention
   - `corevalidate.NameVPC` — permissive (`^([a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)?$`, разрешает empty/uppercase/underscore).
   - `Description` ≤ 256.
   - `Labels` ≤ 64 пар, key regex.
-  - `ZoneId` whitelist (`ru-central1-{a,b,c,d}` сейчас в kacho-corelib/validate).
+  - `ZoneId` — required-only в `kacho-corelib/validate` (hardcoded whitelist убран).
+    Existence-проверка `zone_id` — sync, в `SubnetService.validateZoneID` через
+    порт `ZoneRegistry` (запрос к таблице `zones`); неизвестная зона → `InvalidArgument`.
 - CIDR: `validateCIDRPrefix` — host-bits=0 (`netip.Prefix.Masked() == prefix`).
 - DhcpOptions: `domain_name` RFC 1123, `domain_name_servers[]`/`ntp_servers[]` IP.
 - UpdateMask: known-set + immutable check.
@@ -69,14 +71,18 @@ Zero-overhead, миграция не нужна.
 | Network | `enp` | `ids.PrefixNetwork` |
 | Subnet | `e9b` | `ids.PrefixSubnet` |
 | Address | `e9b` | `ids.PrefixAddress` |
-| RouteTable | `rtb` | `ids.PrefixRouteTable` |
-| SecurityGroup | `sgp` | `ids.PrefixSecurityGroup` |
-| Gateway | `gtw` | `ids.PrefixGateway` |
-| PrivateEndpoint | `pep` | `ids.PrefixPrivateEndpoint` |
+| RouteTable | `enp` | `ids.PrefixRouteTable` |
+| SecurityGroup | `enp` | `ids.PrefixSecurityGroup` |
+| Gateway | `enp` | `ids.PrefixGateway` |
+| PrivateEndpoint | `enp` | `ids.PrefixPrivateEndpoint` |
 | AddressPool | `apl` | hardcoded в `address_pool_service.go` |
-| Operation | `opvpc` | `ids.PrefixOperationVPC` |
+| Operation (VPC) | `enp` | `ids.PrefixOperationVPC == ids.PrefixNetwork` |
 
-3 char prefix + 17-char base32. Все ID — `TEXT` (миграция 0009 ушла от UUID).
+3-char prefix + 17-char base32. Network/RouteTable/SecurityGroup/Gateway/PrivateEndpoint
+**делят `enp`** — это умышленно: api-gateway маршрутизирует `OperationService.Get(id)`
+по первым 3 символам id, и все VPC-операции должны идти в один backend (поэтому
+`PrefixOperationVPC == PrefixNetwork`). Subnet/Address используют `e9b`. Все ID — `TEXT`
+(в squashed baseline; исторически переход от UUID — миграция 0009).
 
 ## Subnet immutable fields
 
@@ -84,17 +90,24 @@ Zero-overhead, миграция не нужна.
 - В UpdateMask → `InvalidArgument "<field> is immutable after Subnet.Create"`.
 - В full-PATCH (mask пустой) → **silent ignore** (verbatim YC).
 
-## Default Security Group (inline)
+## Default Security Group (inline, опционально)
 
-При Network.Create:
+Управляется флагом `KACHO_VPC_DEFAULT_SG_INLINE` (default `true`).
+
+При `true` — Network.Create:
 1. SYNC создаётся Operation, возвращается клиенту.
 2. ASYNC в worker:
    - `repo.Insert(network)`.
    - **Inline создаётся SG** `default-sg-{first-8-chars-of-net-id}` с правилами по умолчанию.
    - `UPDATE networks SET default_security_group_id = sg.id`.
-3. Outbox emit для всех трёх событий.
+3. Outbox emit для всех трёх событий (Network.CREATED, SecurityGroup.CREATED, Network.UPDATED).
 
-При Network.Delete worker должен сначала удалить default SG (если есть), потом Network. Не-default SG препятствуют удалению (FK RESTRICT) → клиент получает `FailedPrecondition "network is not empty"`.
+При `false` — Network.Create НЕ создаёт SG (`SetSGRepo` не вызывается в `cmd/vpc/main.go`),
+`default_security_group_id` остаётся пустым; создание делегируется внешнему reconciler'у.
+Убирает 2 INSERT + 1 UPDATE из hot-path (≈ +30-40% write-throughput) — для load-тестов.
+В таком режиме newman-кейсы `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` краснеют.
+
+При Network.Delete worker сначала удаляет default SG (если есть), потом Network. Не-default SG препятствуют удалению (FK RESTRICT) → клиент получает `FailedPrecondition "network is not empty"`.
 
 ## Admin boundary
 
@@ -122,7 +135,7 @@ Zero-overhead, миграция не нужна.
 4. **CIDR host-bits=0** обязательно, sync через `netip.Prefix.Masked()`.
 5. **Subnet immutable**: `v4_cidr_blocks/v6_cidr_blocks/network_id/zone_id` — reject в mask, silent ignore в full-PATCH (`8158a84`).
 6. **Hard-delete, не soft** (`4e3e7ec`).
-7. **Default SG создаётся inline в NetworkService.doCreate** (раньше был reconciler в kacho-vpc-controllers; в Phase 2 удалён).
+7. **Default SG создаётся inline в NetworkService.doCreate** при `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). Раньше был reconciler в `kacho-vpc-controllers` — упразднён в Phase 2; флаг `=false` возвращает «без inline-SG» поведение для load-тестов / внешнего reconciler'а.
 8. **Timestamp truncate to seconds** в proto-ответе (`ac61127`, `YC-DIFF-TIMESTAMP-PRECISION`).
 9. **DeletionProtection sync-check** перед Delete — `FailedPrecondition` `"... deletion_protection enabled"` (`333c535`).
 10. **page_size валидируется**, garbage page_token → `InvalidArgument` (`5d16961`, `8de9366`).
