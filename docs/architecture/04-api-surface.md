@@ -35,7 +35,7 @@ REST mapping — `google.api.http` аннотации в proto, см. `kacho-pro
 | `InternalAddressPoolService` | 13 | CRUD пулов + bindings (network/address override) + diagnostics (Check, ExplainResolution) + observability (ListAddresses, GetUtilization) |
 | `InternalCloudService` | 3 | SetPoolSelector / Unset / Get на Cloud |
 | `InternalNetworkService` | 1 | SetDefaultSecurityGroupId (computed-field setter) |
-| `InternalAddressService` | 3 | AllocateInternalIP / AllocateExternalIP / SetIP (legacy) |
+| `InternalAddressService` | 5 | AllocateInternalIP / AllocateExternalIP + SetAddressReference / ClearAddressReference / GetAddressReference (referrer-tracking «кто использует адрес», YC-like — отражается в `Address.used` и `SubnetService.ListUsedAddresses.references[]`; вызывается kacho-compute при аллокации NIC-адресов) |
 | `InternalWatchService` | 1 | Watch outbox stream |
 
 ## REST endpoints (через api-gateway)
@@ -131,7 +131,7 @@ DELETE /vpc/v1/clouds/{cloud_id}/poolSelector
 ### Internal-only (НЕ через apiGW REST, gRPC server-to-server)
 
 ```
-InternalAddressService.AllocateInternalIP / AllocateExternalIP / SetIP
+InternalAddressService.AllocateInternalIP / AllocateExternalIP / SetAddressReference / ClearAddressReference / GetAddressReference
 InternalWatchService.Watch
 InternalNetworkService.SetDefaultSecurityGroupId
 ```

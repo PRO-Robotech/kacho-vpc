@@ -151,7 +151,7 @@ func TestSubnetService_Relocate_Validates(t *testing.T) {
 func TestSubnetService_ListUsedAddresses_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListUsedAddresses(context.Background(), "", Pagination{})
+	_, _, _, err := svc.ListUsedAddresses(context.Background(), "", Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }

@@ -346,6 +346,116 @@ func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 	return count > 0, nil
 }
 
+// ---- address references (referrer-tracking) ----
+
+// SetReference upsert'ит referrer-row для address_id и выставляет
+// addresses.used=true — всё в одной tx. ErrNotFound если address не существует.
+func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `UPDATE addresses SET used = true WHERE id = $1`, ref.AddressID)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("%w: Address %s not found", service.ErrNotFound, ref.AddressID)
+	}
+
+	const q = `
+		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (address_id) DO UPDATE
+		  SET referrer_type = EXCLUDED.referrer_type,
+		      referrer_id   = EXCLUDED.referrer_id,
+		      referrer_name = EXCLUDED.referrer_name,
+		      attached_at   = now()
+		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
+	var out domain.AddressReference
+	if err := tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "used": true}); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	return &out, nil
+}
+
+// ClearReference удаляет referrer-row адреса (no-op если нет) и выставляет
+// addresses.used=false. ErrNotFound если address не существует.
+func (r *AddressRepo) ClearReference(ctx context.Context, addressID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `UPDATE addresses SET used = false WHERE id = $1`, addressID)
+	if err != nil {
+		return wrapPgErr(err, "Address", addressID)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: Address %s not found", service.ErrNotFound, addressID)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM address_references WHERE address_id = $1`, addressID); err != nil {
+		return wrapPgErr(err, "Address", addressID)
+	}
+	if err := emitVPC(ctx, tx, "Address", addressID, "UPDATED", map[string]any{"id": addressID, "used": false}); err != nil {
+		return service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return wrapPgErr(err, "Address", addressID)
+	}
+	return nil
+}
+
+// GetReference возвращает referrer-row адреса. ErrNotFound если address
+// не существует ИЛИ у него нет referrer'а.
+func (r *AddressRepo) GetReference(ctx context.Context, addressID string) (*domain.AddressReference, error) {
+	var out domain.AddressReference
+	err := r.pool.QueryRow(ctx, `
+		SELECT address_id, referrer_type, referrer_id, referrer_name, attached_at
+		FROM address_references WHERE address_id = $1`, addressID).
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", addressID)
+	}
+	return &out, nil
+}
+
+// ReferencesForAddresses возвращает referrer-row'ы для набора address-id.
+func (r *AddressRepo) ReferencesForAddresses(ctx context.Context, addressIDs []string) (map[string]*domain.AddressReference, error) {
+	out := make(map[string]*domain.AddressReference, len(addressIDs))
+	if len(addressIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT address_id, referrer_type, referrer_id, referrer_name, attached_at
+		FROM address_references WHERE address_id = ANY($1)`, addressIDs)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", "")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ref domain.AddressReference
+		if err := rows.Scan(&ref.AddressID, &ref.ReferrerType, &ref.ReferrerID, &ref.ReferrerName, &ref.AttachedAt); err != nil {
+			return nil, wrapPgErr(err, "Address", "")
+		}
+		out[ref.AddressID] = &ref
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgErr(err, "Address", "")
+	}
+	return out, nil
+}
+
 // ---- scan helpers ----
 
 func scanAddress(row scannable) (*domain.Address, error) {

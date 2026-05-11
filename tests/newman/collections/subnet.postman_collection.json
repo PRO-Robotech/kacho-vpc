@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "e133cbef-35b1-4b6d-b575-d6a5121b61f9",
+    "_postman_id": "2f0f9598-1fe6-4d69-b548-082b5ebcdda0",
     "name": "kacho-vpc / newman / subnet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1781,8 +1781,8 @@
       ]
     },
     {
-      "name": "SUB-UPD-STATE-IMMUTABLE-CIDR — Update с mask=v4_cidr_blocks → InvalidArgument (immutable)",
-      "description": "class:STATE | class:VAL | priority:P1",
+      "name": "SUB-UPD-STATE-IMMUTABLE-CIDR — Update с mask=v4_cidr_blocks → принимается (200); YC мутирует CIDR, мы — no-op (kacho-vpc#10)",
+      "description": "class:STATE | class:CRUD | priority:P1",
       "item": [
         {
           "name": "pre-create-net",
@@ -2006,7 +2006,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"v4_cidr_blocks\", \"v4CidrBlocks\": [\"10.31.0.0/24\"]}",
+              "raw": "{\"updateMask\": \"v4CidrBlocks\", \"v4CidrBlocks\": [\"10.31.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2020,11 +2020,58 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
-                  "});"
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "poll-op",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/{{opId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "{{opId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
+                  "if (!j.done && pc < 6) {",
+                  "  pm.environment.set('_pollCount', String(pc + 1));",
+                  "  // Postman async-friendly retry: re-invoke same request name",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "  return;",
+                  "}",
+                  "pm.environment.unset('_pollCount');",
+                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
+                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
+                  "else pm.environment.unset('lastOpError');",
+                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
                 ]
               }
             }
@@ -2665,7 +2712,7 @@
       ]
     },
     {
-      "name": "SUB-REL-NEG-IN-USE — Relocate subnet с Address-ом → FailedPrecondition 'Invalid subnet state'",
+      "name": "SUB-REL-NEG-IN-USE — Relocate subnet (с Address-ом) → sync 400 FailedPrecondition 'Invalid subnet state' (kacho-vpc#10)",
       "description": "class:NEG | class:CONF | priority:P1",
       "item": [
         {
@@ -3003,93 +3050,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 9 (FAILED_PRECONDITION)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "assert-failed-precondition",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "pm.test('error code 9 (FAILED_PRECONDITION)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
-                  "pm.test('text \"Invalid subnet state\"', () => pm.expect(j.error.message).to.include('Invalid subnet state'));"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(9);",
+                  "});",
+                  "pm.test('text \"Invalid subnet state\"', () => pm.expect(pm.response.json().message).to.eql('Invalid subnet state'));"
                 ]
               }
             }
@@ -6288,8 +6254,8 @@
       ]
     },
     {
-      "name": "SUB-REL-STATE-NO-ADDRESSES-OK — Relocate subnet без Address → succeeds (zone_id обновляется)",
-      "description": "class:STATE | class:CRUD | priority:P1",
+      "name": "SUB-REL-STATE-NO-ADDRESSES-OK — Relocate subnet без Address → YC всё равно 400 'Invalid subnet state' (kacho-vpc#10; -OK исторический)",
+      "description": "class:STATE | class:NEG | priority:P1",
       "item": [
         {
           "name": "pre-create-net",
@@ -6527,94 +6493,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 9 (FAILED_PRECONDITION)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "verify-zone",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('zoneId updated', () => pm.expect(pm.response.json().zoneId).to.eql(pm.environment.get('existingZoneAltId')));"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(9);",
+                  "});",
+                  "pm.test('text \"Invalid subnet state\"', () => pm.expect(pm.response.json().message).to.eql('Invalid subnet state'));"
                 ]
               }
             }
@@ -13231,7 +13115,7 @@
       ]
     },
     {
-      "name": "SUB-GET-CONF-FULLTEXT — Get garbage → 'Subnet <id> not found' формат",
+      "name": "SUB-GET-CONF-FULLTEXT — Get garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -13268,7 +13152,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches <Resource> <id> not found', () => pm.expect(pm.response.json().message).to.match(/^Subnet enpsnapshotnonexist01 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Subnet enpsnapshotnonexist01 not found\"));"
                 ]
               }
             }
@@ -13277,7 +13161,7 @@
       ]
     },
     {
-      "name": "SUB-UPD-CONF-FULLTEXT — Update garbage → точный текст 'Subnet ... not found'",
+      "name": "SUB-UPD-CONF-FULLTEXT — Update garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -13323,7 +13207,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Subnet enpsnapshotnonexist02 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Subnet enpsnapshotnonexist02 not found\"));"
                 ]
               }
             }
@@ -13332,7 +13216,7 @@
       ]
     },
     {
-      "name": "SUB-DEL-CONF-FULLTEXT — Delete garbage → 'Subnet ... not found'",
+      "name": "SUB-DEL-CONF-FULLTEXT — Delete garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -13369,7 +13253,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Subnet enpsnapshotnonexist03 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Subnet enpsnapshotnonexist03 not found\"));"
                 ]
               }
             }
@@ -13418,8 +13302,8 @@
       ]
     },
     {
-      "name": "SUB-MV-IDM-SAME-FOLDER — Move в текущий folder → ok (idempotent), ресурс остаётся",
-      "description": "class:IDM | class:CRUD | priority:P2",
+      "name": "SUB-MV-IDM-SAME-FOLDER — Move в текущий folder → 400 'Destination folder is the same as the source'",
+      "description": "class:IDM | class:NEG | priority:P2",
       "item": [
         {
           "name": "pre-create-net",
@@ -13644,52 +13528,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "poll-move",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "verify-same-folder",
+          "name": "verify-unchanged",
           "request": {
             "method": "GET",
             "header": [
@@ -14791,7 +14642,7 @@
       ]
     },
     {
-      "name": "SUB-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 InvalidArgument",
+      "name": "SUB-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P2",
       "item": [
         {
@@ -14931,9 +14782,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -14983,7 +14836,7 @@
       ]
     },
     {
-      "name": "SUB-CR-VAL-DESC-INT-TYPE — Create с description=число → 400",
+      "name": "SUB-CR-VAL-DESC-INT-TYPE — Create с description=число → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P3",
       "item": [
         {
@@ -15123,9 +14976,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -17722,8 +17577,8 @@
       ]
     },
     {
-      "name": "SUB-CR-BVA-CIDR-28 — Create subnet с prefix /28 → ожидаемое поведение",
-      "description": "class:BVA | priority:P2",
+      "name": "SUB-CR-BVA-CIDR-28 — Create subnet с prefix /28 → 200 (минимальный размер по YC)",
+      "description": "class:BVA | class:CRUD | priority:P2",
       "item": [
         {
           "name": "pre-create-net",
@@ -17825,7 +17680,7 @@
           ]
         },
         {
-          "name": "cr-prefix",
+          "name": "cr-prefix-28",
           "request": {
             "method": "POST",
             "header": [
@@ -17861,7 +17716,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "try {",
                   "  const j = pm.response.json();",
                   "  const v = (j.id);",
@@ -17924,7 +17779,7 @@
           ]
         },
         {
-          "name": "cleanup",
+          "name": "cleanup-28",
           "request": {
             "method": "DELETE",
             "header": [
@@ -17952,12 +17807,58 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "try {",
                   "  const j = pm.response.json();",
                   "  const v = (j.id);",
                   "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
                   "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "poll-op",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/{{opId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "{{opId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
+                  "if (!j.done && pc < 6) {",
+                  "  pm.environment.set('_pollCount', String(pc + 1));",
+                  "  // Postman async-friendly retry: re-invoke same request name",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "  return;",
+                  "}",
+                  "pm.environment.unset('_pollCount');",
+                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
+                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
+                  "else pm.environment.unset('lastOpError');",
+                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
                 ]
               }
             }
@@ -18006,8 +17907,8 @@
       ]
     },
     {
-      "name": "SUB-CR-BVA-CIDR-29 — Create subnet с prefix /29 → ожидаемое поведение",
-      "description": "class:BVA | priority:P2",
+      "name": "SUB-CR-BVA-CIDR-29 — Create subnet с prefix /29 → 400 'Illegal argument Invalid network prefix /29' (verbatim YC)",
+      "description": "class:BVA | class:VAL | class:NEG | priority:P2",
       "item": [
         {
           "name": "pre-create-net",
@@ -18109,7 +18010,7 @@
           ]
         },
         {
-          "name": "cr-prefix",
+          "name": "cr-prefix-29",
           "request": {
             "method": "POST",
             "header": [
@@ -18145,103 +18046,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.metadata && j.metadata.subnetId);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('subId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cleanup",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Invalid network prefix /29'));"
                 ]
               }
             }
@@ -18290,8 +18100,8 @@
       ]
     },
     {
-      "name": "SUB-CR-BVA-CIDR-30 — Create subnet с prefix /30 → ожидаемое поведение",
-      "description": "class:BVA | priority:P2",
+      "name": "SUB-CR-BVA-CIDR-30 — Create subnet с prefix /30 → 400 'Illegal argument Invalid network prefix /30' (verbatim YC)",
+      "description": "class:BVA | class:VAL | class:NEG | priority:P2",
       "item": [
         {
           "name": "pre-create-net",
@@ -18393,7 +18203,7 @@
           ]
         },
         {
-          "name": "cr-prefix",
+          "name": "cr-prefix-30",
           "request": {
             "method": "POST",
             "header": [
@@ -18429,103 +18239,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.metadata && j.metadata.subnetId);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('subId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cleanup",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Invalid network prefix /30'));"
                 ]
               }
             }
@@ -18574,8 +18293,8 @@
       ]
     },
     {
-      "name": "SUB-CR-BVA-CIDR-31 — Create subnet с prefix /31 → ожидаемое поведение",
-      "description": "class:BVA | priority:P2",
+      "name": "SUB-CR-BVA-CIDR-31 — Create subnet с prefix /31 → 400 'Illegal argument Invalid network prefix /31' (verbatim YC)",
+      "description": "class:BVA | class:VAL | class:NEG | priority:P2",
       "item": [
         {
           "name": "pre-create-net",
@@ -18677,7 +18396,7 @@
           ]
         },
         {
-          "name": "cr-prefix",
+          "name": "cr-prefix-31",
           "request": {
             "method": "POST",
             "header": [
@@ -18713,103 +18432,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.metadata && j.metadata.subnetId);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('subId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cleanup",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Invalid network prefix /31'));"
                 ]
               }
             }
@@ -26528,7 +26156,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone=ru-central1-c prefix=/24 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone=ru-central1-d prefix=/24 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -26653,7 +26281,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"ru-central1-c\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"ru-central1-d\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -26812,7 +26440,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone=ru-central1-c prefix=/28 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone=ru-central1-d prefix=/28 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -26937,7 +26565,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"ru-central1-c\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"ru-central1-d\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -27096,7 +26724,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone=ru-central1-c prefix=/16 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone=ru-central1-d prefix=/16 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -27221,7 +26849,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"ru-central1-c\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"ru-central1-d\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"

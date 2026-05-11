@@ -40,7 +40,8 @@ kacho-only RPC проброшены через api-gateway cluster-internal mux,
 | v13 (Req/Immutable matrix + CIDR pack) | 624 | 2744 | 89 | 89% |
 | v14 (pairwise + security probes + lifecycle) | 685 | 3107 | 97 | 97% |
 | v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId) | 686 | 3120 | 97 | 97% |
-| **v16 (internal IPAM admin RPC — TODO #35: internal-pool/-region-zone/-cloud)** | **731** | **3361** | — | — |
+| v16 (internal IPAM admin RPC — TODO #35: internal-pool/-region-zone/-cloud) | 731 | 3361 | — | — |
+| **v17 (verbatim-YC alignment — kacho-vpc#7/#8/#9/#10 + kacho-api-gateway#2: sync-валидация в мутирующих RPC, Move-в-текущий-folder → 400, Subnet CIDR ≤/28, Relocate → 400, error-texts; differential vs реальный YC через `yc-proxy` + `run-incremental.sh --cases`)** | **~731** | **~3360** | — | — |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 

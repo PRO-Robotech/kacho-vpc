@@ -2,6 +2,9 @@
 // kacho.cloud.vpc.v1.InternalAddressService:
 //   - AllocateInternalIP — atomic IPAM allocation для internal IP в subnet.
 //   - AllocateExternalIP — atomic allocation из cascade-резолвленного pool.
+//   - SetAddressReference / ClearAddressReference / GetAddressReference —
+//     referrer-tracking (кто использует адрес; YC-like). Idempotent set,
+//     no-op clear, NotFound get.
 //
 // Legacy SetInternalIP RPC удалён (см. удалённые internal_address_handler.go
 // + internal_address_composite_handler.go). Если старый stub'нутый proto
@@ -13,11 +16,14 @@ package handler
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -58,6 +64,56 @@ func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context,
 		PoolId:           res.PoolID,
 		AlreadyAllocated: res.AlreadyAllocated,
 	}, nil
+}
+
+func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context, req *vpcv1.SetAddressReferenceRequest) (*vpcv1.AddressReference, error) {
+	if req.GetAddressId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	ref, err := h.addressSvc.SetAddressReference(ctx, service.SetAddressReferenceReq{
+		AddressID:    req.GetAddressId(),
+		ReferrerType: req.GetReferrerType(),
+		ReferrerID:   req.GetReferrerId(),
+		ReferrerName: req.GetReferrerName(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return addressReferenceToProto(ref), nil
+}
+
+func (h *InternalAddressAllocateHandler) ClearAddressReference(ctx context.Context, req *vpcv1.ClearAddressReferenceRequest) (*vpcv1.ClearAddressReferenceResponse, error) {
+	if req.GetAddressId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	if err := h.addressSvc.ClearAddressReference(ctx, req.GetAddressId()); err != nil {
+		return nil, err
+	}
+	return &vpcv1.ClearAddressReferenceResponse{}, nil
+}
+
+func (h *InternalAddressAllocateHandler) GetAddressReference(ctx context.Context, req *vpcv1.GetAddressReferenceRequest) (*vpcv1.AddressReference, error) {
+	if req.GetAddressId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	ref, err := h.addressSvc.GetAddressReference(ctx, req.GetAddressId())
+	if err != nil {
+		return nil, err
+	}
+	return addressReferenceToProto(ref), nil
+}
+
+func addressReferenceToProto(r *domain.AddressReference) *vpcv1.AddressReference {
+	if r == nil {
+		return nil
+	}
+	return &vpcv1.AddressReference{
+		AddressId:    r.AddressID,
+		ReferrerType: r.ReferrerType,
+		ReferrerId:   r.ReferrerID,
+		ReferrerName: r.ReferrerName,
+		AttachedAt:   timestamppb.New(r.AttachedAt.Truncate(time.Second)),
+	}
 }
 
 func mapAllocErr(err error) error {

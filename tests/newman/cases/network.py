@@ -197,8 +197,9 @@ CASES.append(Case(
             test_script=[
                 *assert_status(200),
                 "const j = pm.response.json();",
-                "pm.test('has networks array', () => pm.expect(j.networks).to.be.an('array'));",
-                "pm.test('nextPageToken is string', () => pm.expect(j.nextPageToken).to.be.a('string'));",
+                # proto3-JSON: пустое repeated поле опускается (verbatim YC). Defensive: || [].
+                "pm.test('networks is array (or omitted when empty)', () => pm.expect(j.networks || []).to.be.an('array'));",
+                "pm.test('nextPageToken is string (or omitted)', () => pm.expect(j.nextPageToken || '').to.be.a('string'));",
             ],
         ),
     ],
@@ -235,7 +236,7 @@ CASES.append(Case(
             test_script=[
                 *assert_status(200),
                 "const j = pm.response.json();",
-                "pm.test('default pagesize applied', () => pm.expect(j.networks.length).to.be.at.most(50));",
+                "pm.test('default pagesize applied', () => pm.expect((j.networks || []).length).to.be.at.most(50));",
             ],
         ),
     ],

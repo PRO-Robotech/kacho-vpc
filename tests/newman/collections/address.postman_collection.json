@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "ebcceca3-cf69-4a8c-8e79-5975f81dec85",
+    "_postman_id": "bb5f23ee-d2e9-430d-8f21-00bd2fabb935",
     "name": "kacho-vpc / newman / address",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -856,7 +856,7 @@
       ]
     },
     {
-      "name": "ADR-CR-VAL-BOTH-SPEC — Create с обоими spec (external+internal) → InvalidArgument",
+      "name": "ADR-CR-VAL-BOTH-SPEC — Create с обоими spec (external+internal) → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | priority:P0",
       "item": [
         {
@@ -1095,9 +1095,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -5924,8 +5926,8 @@
       ]
     },
     {
-      "name": "ADR-MV-IDM-SAME-FOLDER — Move в текущий folder → ok (idempotent), ресурс остаётся",
-      "description": "class:IDM | class:CRUD | priority:P2",
+      "name": "ADR-MV-IDM-SAME-FOLDER — Move в текущий folder → 400 'Destination folder is the same as the source'",
+      "description": "class:IDM | class:NEG | priority:P2",
       "item": [
         {
           "name": "create",
@@ -6051,52 +6053,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "poll-move",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "verify-same-folder",
+          "name": "verify-unchanged",
           "request": {
             "method": "GET",
             "header": [
@@ -6206,7 +6175,7 @@
       ]
     },
     {
-      "name": "ADR-GET-CONF-FULLTEXT — Get garbage → 'Address <id> not found' формат",
+      "name": "ADR-GET-CONF-FULLTEXT — Get garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -6243,7 +6212,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches <Resource> <id> not found', () => pm.expect(pm.response.json().message).to.match(/^Address enpsnapshotnonexist01 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Address enpsnapshotnonexist01 not found\"));"
                 ]
               }
             }
@@ -6252,7 +6221,7 @@
       ]
     },
     {
-      "name": "ADR-UPD-CONF-FULLTEXT — Update garbage → точный текст 'Address ... not found'",
+      "name": "ADR-UPD-CONF-FULLTEXT — Update garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -6298,7 +6267,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Address enpsnapshotnonexist02 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Address enpsnapshotnonexist02 not found\"));"
                 ]
               }
             }
@@ -6307,7 +6276,7 @@
       ]
     },
     {
-      "name": "ADR-DEL-CONF-FULLTEXT — Delete garbage → 'Address ... not found'",
+      "name": "ADR-DEL-CONF-FULLTEXT — Delete garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -6344,7 +6313,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Address enpsnapshotnonexist03 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Address enpsnapshotnonexist03 not found\"));"
                 ]
               }
             }
@@ -7128,7 +7097,7 @@
       ]
     },
     {
-      "name": "ADR-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 InvalidArgument",
+      "name": "ADR-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P2",
       "item": [
         {
@@ -7169,9 +7138,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -7181,7 +7152,7 @@
       ]
     },
     {
-      "name": "ADR-CR-VAL-DESC-INT-TYPE — Create с description=число → 400",
+      "name": "ADR-CR-VAL-DESC-INT-TYPE — Create с description=число → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P3",
       "item": [
         {
@@ -7222,9 +7193,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }

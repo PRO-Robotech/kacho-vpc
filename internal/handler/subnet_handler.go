@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
@@ -254,7 +255,7 @@ func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUs
 	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
 		return nil, err
 	}
-	addrs, nextToken, err := h.svc.ListUsedAddresses(ctx, req.SubnetId, svc.Pagination{
+	addrs, refs, nextToken, err := h.svc.ListUsedAddresses(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
 	})
@@ -265,15 +266,18 @@ func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUs
 	for _, a := range addrs {
 		ua := &vpcv1.UsedAddress{
 			IpVersion: vpcv1.IpVersion(a.IpVersion),
-			// References на текущей фазе пуст — peer-сервисы (compute / loadbalancer)
-			// сами могут резолвить IP→resource через свои API. Когда добавится
-			// общий ref-tracking (cross-service ownership index), будет заполнено.
-			References: nil,
 		}
 		if a.InternalIpv4 != nil {
 			ua.Address = a.InternalIpv4.Address
 		} else if a.ExternalIpv4 != nil {
 			ua.Address = a.ExternalIpv4.Address
+		}
+		// references[] — кто использует адрес (referrer-tracking; YC-like).
+		if ref, ok := refs[a.ID]; ok && ref != nil {
+			ua.References = []*reference.Reference{{
+				Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID},
+				Type:     reference.Reference_USED_BY,
+			}}
 		}
 		resp.Addresses = append(resp.Addresses, ua)
 	}

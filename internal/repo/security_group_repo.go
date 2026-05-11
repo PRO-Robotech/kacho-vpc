@@ -26,6 +26,16 @@ func NewSecurityGroupRepo(pool *pgxpool.Pool) *SecurityGroupRepo {
 	return &SecurityGroupRepo{pool: pool}
 }
 
+// wrapSGErr — как wrapPgErr, но для not-found использует verbatim-YC формат
+// "Security group SecurityGroup.Id(value=<id>) not found" (probe 2026-05-11,
+// kacho-vpc#10). Остальные классы ошибок — через wrapPgErr.
+func wrapSGErr(err error, id string) error {
+	if errors.Is(err, pgx.ErrNoRows) && id != "" {
+		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", service.ErrNotFound, id)
+	}
+	return wrapPgErr(err, "SecurityGroup", id)
+}
+
 const sgCols = `id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules`
 
 func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
@@ -33,7 +43,7 @@ func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*domain.Securit
 	row := r.pool.QueryRow(ctx, q, id)
 	sg, err := scanSG(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", id)
+		return nil, wrapSGErr(err, id)
 	}
 	return sg, nil
 }
@@ -94,7 +104,7 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", wrapPgErr(err, "SecurityGroup", "")
+		return nil, "", wrapSGErr(err, "")
 	}
 	defer rows.Close()
 
@@ -102,12 +112,12 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 	for rows.Next() {
 		sg, err := scanSG(rows)
 		if err != nil {
-			return nil, "", wrapPgErr(err, "SecurityGroup", "")
+			return nil, "", wrapSGErr(err, "")
 		}
 		result = append(result, sg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", wrapPgErr(err, "SecurityGroup", "")
+		return nil, "", wrapSGErr(err, "")
 	}
 
 	var nextToken string
@@ -144,13 +154,13 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 	)
 	result, err := scanSG(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sg.Name)
+		return nil, wrapSGErr(err, sg.Name)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "CREATED", securityGroupPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sg.Name)
+		return nil, wrapSGErr(err, sg.Name)
 	}
 	return result, nil
 }
@@ -178,13 +188,13 @@ func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup
 	row := tx.QueryRow(ctx, q, sg.ID, sg.Name, sg.Description, labelsJSON, rulesJSON, sg.Status)
 	result, err := scanSG(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sg.ID)
+		return nil, wrapSGErr(err, sg.ID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "UPDATED", securityGroupPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sg.ID)
+		return nil, wrapSGErr(err, sg.ID)
 	}
 	return result, nil
 }
@@ -198,16 +208,16 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 
 	tag, err := tx.Exec(ctx, `DELETE FROM security_groups WHERE id = $1`, id)
 	if err != nil {
-		return wrapPgErr(err, "SecurityGroup", id)
+		return wrapSGErr(err, id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: SecurityGroup %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", service.ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", id, "DELETED", map[string]any{"id": id}); err != nil {
 		return service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return wrapPgErr(err, "SecurityGroup", id)
+		return wrapSGErr(err, id)
 	}
 	return nil
 }
@@ -233,7 +243,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 	var rowXmin string
 	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
@@ -272,13 +282,13 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
 				service.ErrFailedPrecondition, sgID)
 		}
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	return sg, nil
 }
@@ -299,7 +309,7 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	var rowXmin string
 	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
@@ -348,13 +358,13 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
 				service.ErrFailedPrecondition, sgID)
 		}
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", sgID)
+		return nil, wrapSGErr(err, sgID)
 	}
 	return sg, nil
 }
@@ -370,13 +380,13 @@ func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string
 	row := tx.QueryRow(ctx, q, id, folderID)
 	sg, err := scanSG(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", id)
+		return nil, wrapSGErr(err, id)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "SecurityGroup", id)
+		return nil, wrapSGErr(err, id)
 	}
 	return sg, nil
 }

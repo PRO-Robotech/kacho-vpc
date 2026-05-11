@@ -394,8 +394,13 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	// Verbatim YC: destination folder existence is a sync precondition.
-	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+	// Verbatim YC: destination folder must differ from the current folder and
+	// must exist — sync preconditions (kacho-vpc#10 / #8).
+	cur, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := checkMoveDestination(ctx, s.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
 	}
 

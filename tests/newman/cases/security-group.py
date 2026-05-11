@@ -176,13 +176,13 @@ CASES.append(Case(
 
 # Расширение
 CASES.extend(crud_list_bva_block("SG", "/vpc/v1/securityGroups"))
-CASES.append(conf_not_found_text("SG", "/vpc/v1/securityGroups", "SecurityGroup"))
+CASES.append(conf_not_found_text("SG", "/vpc/v1/securityGroups", "Security group"))
 CASES.append(state_update_unknown_mask("SG", "/vpc/v1/securityGroups"))
 CASES.append(authz_move_nf("SG", "/vpc/v1/securityGroups"))
 
 CASES.append(Case(
     id="SG-UR-NEG-RULE-NF",
-    title="UpdateRule (single) несуществующего rule_id → 404 NotFound",
+    title="UpdateRule малформированного rule_id → sync 400 'Invalid rule id <id>' (verbatim YC)",
     classes=["NEG"], priority="P1",
     steps=[
         *_net_steps("ur"),
@@ -192,17 +192,13 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
-        Step(name="ur-nx", method="PATCH",
+        # verbatim YC (probe 2026-05-11, kacho-vpc#10): малформированный rule_id →
+        # синхронный 400 InvalidArgument "Invalid rule id <ruleId>" (не Operation).
+        Step(name="ur-bad-rule-id", method="PATCH",
              path="/vpc/v1/securityGroups/{{sgId}}/rules/nonexistent-rule-id",
              body={"updateMask": "description", "description": "x"},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-rule-nf", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('rule_id NotFound async (code 5)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
-             ]),
+             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                          "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Invalid rule id nonexistent-rule-id'));"]),
         Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -278,7 +274,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SG-UPD-CONF-NF-TEXT",
-    title="Update несуществующего → verbatim 'SecurityGroup ... not found' text",
+    title="Update несуществующего → verbatim 'Security group ... not found' text",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="patch-nx", method="PATCH",
@@ -286,21 +282,21 @@ CASES.append(Case(
              body={"updateMask": "description", "description": "x"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('text matches SecurityGroup ... not found', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup .* not found$/));",
+                 "pm.test('text matches Security group ... not found', () => pm.expect(pm.response.json().message).to.match(/^Security group .* not found$/));",
              ]),
     ],
 ))
 
 CASES.append(Case(
     id="SG-DEL-CONF-NF-TEXT",
-    title="Delete несуществующего → verbatim 'SecurityGroup ... not found' text",
+    title="Delete несуществующего → verbatim 'Security group ... not found' text",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="del-nx", method="DELETE",
              path="/vpc/v1/securityGroups/{{garbageVpcId}}",
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('text matches SecurityGroup ... not found', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup .* not found$/));",
+                 "pm.test('text matches Security group ... not found', () => pm.expect(pm.response.json().message).to.match(/^Security group .* not found$/));",
              ]),
     ],
 ))
@@ -430,7 +426,7 @@ for c in update_happy_per_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securit
     CASES.append(_sg_wrap("SG", "v7", c))
 
 CASES.extend(perf_baseline_block("SG", "/vpc/v1/securityGroups"))
-CASES.extend(verbatim_text_pack("SG", "SecurityGroup", "/vpc/v1/securityGroups"))
+CASES.extend(verbatim_text_pack("SG", "SecurityGroup", "/vpc/v1/securityGroups", text_template="Security group SecurityGroup.Id(value={id}) not found"))
 CASES.extend(authz_caller_headers_block("SG", "/vpc/v1/securityGroups"))
 
 CASES.append(_sg_wrap("SG", "mvself",

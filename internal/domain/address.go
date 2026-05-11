@@ -45,6 +45,16 @@ type InternalIpv4Spec struct {
 	SubnetID string `json:"subnet_id"`
 }
 
+// AddressReference — кто использует Address (YC-like referrer-tracking).
+// Один referrer на адрес. ReferrerType — "compute_instance" (расширяемо).
+type AddressReference struct {
+	AddressID    string
+	ReferrerType string
+	ReferrerID   string
+	ReferrerName string
+	AttachedAt   time.Time
+}
+
 // Address — IP-адрес (internal или external).
 type Address struct {
 	ID                 string

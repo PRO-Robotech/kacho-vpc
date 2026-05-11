@@ -155,7 +155,7 @@ CASES.append(Case(
 
 # Расширение
 CASES.extend(crud_list_bva_block("RT", "/vpc/v1/routeTables"))
-CASES.append(conf_not_found_text("RT", "/vpc/v1/routeTables", "RouteTable"))
+CASES.append(conf_not_found_text("RT", "/vpc/v1/routeTables", "Route table"))
 CASES.append(state_update_unknown_mask("RT", "/vpc/v1/routeTables"))
 CASES.append(authz_move_nf("RT", "/vpc/v1/routeTables"))
 
@@ -227,7 +227,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="RT-UPD-CONF-NF-TEXT",
-    title="Update несуществующего → verbatim 'RouteTable ... not found' text",
+    title="Update несуществующего → verbatim 'Route table ... not found' text",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="patch-nx", method="PATCH",
@@ -235,21 +235,21 @@ CASES.append(Case(
              body={"updateMask": "description", "description": "x"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('text matches RouteTable ... not found', () => pm.expect(pm.response.json().message).to.match(/^RouteTable .* not found$/));",
+                 "pm.test('text matches Route table ... not found', () => pm.expect(pm.response.json().message).to.match(/^Route table .* not found$/));",
              ]),
     ],
 ))
 
 CASES.append(Case(
     id="RT-DEL-CONF-NF-TEXT",
-    title="Delete несуществующего → verbatim 'RouteTable ... not found' text",
+    title="Delete несуществующего → verbatim 'Route table ... not found' text",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="del-nx", method="DELETE",
              path="/vpc/v1/routeTables/{{garbageVpcId}}",
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('text matches RouteTable ... not found', () => pm.expect(pm.response.json().message).to.match(/^RouteTable .* not found$/));",
+                 "pm.test('text matches Route table ... not found', () => pm.expect(pm.response.json().message).to.match(/^Route table .* not found$/));",
              ]),
     ],
 ))
@@ -323,7 +323,7 @@ for c in update_happy_per_field("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTable
     CASES.append(_rt_wrap("RT", "v7", c))
 
 CASES.extend(perf_baseline_block("RT", "/vpc/v1/routeTables"))
-CASES.extend(verbatim_text_pack("RT", "RouteTable", "/vpc/v1/routeTables"))
+CASES.extend(verbatim_text_pack("RT", "Route table", "/vpc/v1/routeTables"))
 CASES.extend(authz_caller_headers_block("RT", "/vpc/v1/routeTables"))
 
 CASES.append(_rt_wrap("RT", "mvself",
