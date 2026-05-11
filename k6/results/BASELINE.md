@@ -311,3 +311,54 @@ Horizontal scaling vpc **не помогает** — все pod'ы пишут в
 требует фундаментального redesign** (sharding или batch-INSERT). Postgres-tuning и
 horizontal scaling vpc исчерпаны. SLO p99 ≤ 50ms для Create при rate-limited
 профиле до 5000 RPS — выполняется (28ms).
+
+---
+
+## External IP allocate — interval sweep + max burst (2026-05-11)
+
+`AddressService.Create` с `external_ipv4_address_spec.zone_id` → Operation → worker:
+cascade pool-resolve (`address_override` → `network_default` skip → cloud-selector
+[`FolderClient.GetCloudID` RM gRPC round-trip, **не кешируется**] → `zone_default`) +
+двухфазный аллокатор (random pick + UNIQUE-retry на `addresses_external_pool_ip_uniq`)
++ INSERT + outbox. Прямой gRPC `vpc.kacho.svc:9090` (ghz: rate-limited через port-forward,
+max-burst — in-cluster Job). Pool: `loadtest-ext-d` `10.0.0.0/8` (16M IP, default zone `ru-central1-d`)
+— утилизация < 0.01% весь прогон, исчерпание не влияет.
+
+Конфиг: pg-vpc `synchronous_commit=off`, `fsync=on`, `shared_buffers=512MB` (умеренный tune —
+**не** UNLOGGED/fsync=off как в Network.Create-эксперименте выше); `KACHO_VPC_DEFAULT_SG_INLINE=true`;
+`KACHO_VPC_DB_MAX_CONNS` 50 (rate-sweep) и 280 (max-burst — не изменило потолок).
+
+### Interval sweep (ghz `--rps`, 40-45 с на ступень, concurrency 120-400)
+
+| Target RPS | Actual RPS (sync) | Real allocate/sec (Δ addresses) | sync p50 | sync p95 | sync p99 | worker backlog | errors |
+|---|---|---|---|---|---|---|---|
+| 1000 | 999 | ~1000 | 0.65ms | 1.20ms | **2.73ms** | 0 | 0 |
+| 2000 | 1999 | ~2000 | 1.61ms | 6.75ms | **32.7ms** | 0 | 4 Unavailable (transient) |
+| 3000 | ~2982 | ~2981 | 127ms | 153ms | **183ms** | 0 | 356 Unavailable (~0.3%) |
+| 5000 | **~3022** (capped) | ~3021 | 131ms | 155ms | **178ms** | 0 | 400 Unavailable (~0.33%) |
+
+### Max burst (in-cluster ghz Job, duration 45s, concurrency 500, connections 32, DB_MAX_CONNS=280)
+
+| Метрика | Значение |
+|---|---|
+| Requests/sec (sync) | **~3076/sec** |
+| Real allocate/sec | ~3066/sec (137 961 адресов за 45с) |
+| sync p50 / p95 / p99 / p99.9 | 156ms / 222ms / 413ms / ~600ms |
+| Errors | 495 Unavailable из ~138.5K (~0.36%) |
+| worker backlog (`operations done=false`) | **0** — воркер успевает за всем, что приняли |
+
+### Выводы
+
+- **Потолок external-IP-allocate ≈ ~3000/sec на 1 pod** — ровно ½ от Network.Create
+  (~5778/sec в logged-config / ~7000 в UNLOGGED-config). Воркер всегда успевает (backlog=0),
+  то есть упирается не пул pgx-conns (50 vs 280 — без разницы) и не воркер, а **per-allocate
+  работа async-фазы**: главный подозреваемый — `FolderClient.GetCloudID` RM gRPC round-trip
+  на каждый allocate (cascade Step 3, не кешируется) + `cloudSel.Get` SELECT; RM — 1-pod сервис
+  со своей БД, ~3K GetCloudID/sec похоже на его потолок.
+- **Хорошая latency держится до ~2000/sec** (sync p99 < 35ms ≤ SLO 50ms). На 3000+/sec
+  sync-latency деградирует до ~130-180ms (запросы стоят в очереди при concurrency >> ёмкости),
+  но throughput не падает и воркер не отстаёт.
+- **Дешёвый win**: TTL-кеш на `FolderClient.GetCloudID` (как уже сделано для `Exists`) —
+  убрал бы RM round-trip из hot-path, ожидаемо подняло бы потолок ближе к Network.Create.
+  (Сейчас не делал — не просили; кандидат на отдельный perf-PR.)
+- Для 50K/sec выводы те же, что и для Network.Create — нужен sharding (см. раздел выше).
