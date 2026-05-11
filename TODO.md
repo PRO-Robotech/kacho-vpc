@@ -105,46 +105,24 @@ Status legend: `pending` / `partial` / `deferred` / `wontfix`.
 
 ## Архитектурные рекомендации (не блокирующие)
 
-Не баги и не дыры — улучшения для следующего крупного рефактора. Сделать сейчас —
-скорее over-engineering / workspace-wide изменение, чем «фикс проблемы».
+> Сделано в этом проходе: **Anti-corruption layer / dedup конвертеров** (пакет
+> `internal/protoconv` — один конвертер на ресурс вместо `domainXToProto`+`xToProto`;
+> заодно закрыл created_at-drift в `Operation.response`), **декомпозиция composition root**
+> (`cmd/vpc/main.go`: `buildServices`/`validateAuthMode`/`dialResourceManager`/`register{Public,Internal}Services`),
+> **setter-DI** (`NetworkService.SetSGRepo` → конструкторный параметр).
 
-### `replace ../kacho-corelib` / `../kacho-proto` в `go.mod`
+### `replace ../kacho-corelib` / `../kacho-proto` в `go.mod` — `wontfix (workspace-wide migration)`
 
 - **Проблема:** локальные `replace`-директивы на соседние репо — сборка зависит от
   layout рабочей директории, релиз не воспроизводим без всего workspace на диске.
-- **Зачем менять:** versioned modules + `go.work` дают воспроизводимые сборки и явные
+- **Зачем менять (был бы):** versioned modules дают воспроизводимые сборки и явные
   версии зависимостей между сервисами.
-- **Почему отложено:** работает для polyrepo-dev-цикла; переход требует публикации
-  corelib/proto как versioned-модулей + тэгов — **workspace-wide** решение, не per-service.
-
-### Anti-corruption layer между handler и proto
-
-- **Проблема:** handler-ы напрямую конвертят proto ↔ domain; `*ToProto`-конвертеры
-  частично дублируются (service vs handler) → drift risk.
-- **Зачем менять:** один слой конверсии, нет расхождений, проще менять proto без правок
-  по всему handler-коду.
-- **Почему отложено:** при текущей поверхности API дублирование терпимо; вводить ACL до
-  роста числа ресурсов — over-engineering.
-
-### Декомпозиция composition root
-
-- **Проблема:** `cmd/vpc/main.go::run` — ~80 строк линейного wiring (repo'ы → service'ы →
-  два gRPC-сервера → регистрация handler'ов → shutdown-горутина).
-- **Зачем менять:** читаемость; меньше merge-конфликтов при добавлении ресурса; легче
-  тестировать сборку по частям.
-- **Почему отложено:** линейный wiring пока обозрим; разбивать на factory-функции — при
-  следующем major refactor (или когда добавится ещё несколько сервисов).
-
-### Setter-DI `networkSvc.SetSGRepo` — temporal coupling
-
-- **Проблема:** `NetworkService` создаётся без `sgRepo`, потом (опционально, при
-  `KACHO_VPC_DEFAULT_SG_INLINE=true`) `SetSGRepo` довешивает зависимость — два этапа
-  инициализации, легко забыть второй.
-- **Зачем менять:** конструктор должен принимать всё нужное сразу; опциональность —
-  через `nil`-параметр или отдельный конструктор.
-- **Почему отложено:** второй setter (`SetAllocator`) уже убран — аллокатор inlined в
-  `AddressService` (commit `5581316`). Оставшийся `SetSGRepo` — единственный; почистится
-  заодно с выделением default-SG-логики или при composition-root рефакторе.
+- **Почему не делаем:** это **workspace-wide migration**, не per-service фикс — требует
+  публикации `kacho-corelib`/`kacho-proto` как versioned-модулей с тэгами И дисциплины
+  тэгирования на каждый их change (которой у проекта нет). Текущий setup (`replace` в каждом
+  go.mod + `bootstrap.sh` клонирует siblings в `project/` + локальный gitignored `go.work`
+  через `kacho-workspace/go.work.example`) — осознанный выбор для polyrepo-dev-в-одном-дереве.
+  Браться вместе с релизной фазой проекта, не раньше.
 
 ---
 
