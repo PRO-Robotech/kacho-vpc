@@ -44,8 +44,17 @@ const ALL_SERVICES = process.env.SERVICES ? process.env.SERVICES.split(/[\s,]+/)
 const args = process.argv.slice(2);
 const RESUME = args.includes('--resume');
 const CLEANUP_ONLY = args.includes('--cleanup-only');
+const FAILED_ONLY = args.includes('--failed'); // прогнать только кейсы, помеченные FAIL в текущем progress.tsv (для точечного re-run после фикса)
 const svcIdx = args.indexOf('--service');
 const ONLY_SERVICE = svcIdx >= 0 ? args[svcIdx + 1] : null;
+const casesIdx = args.indexOf('--cases');
+// явный список case-id'ов: --cases C1,C2,... или env CASES="C1 C2 ..." (имеет приоритет над --service/SERVICES)
+let ONLY_CASES = null;
+{
+  const raw = (casesIdx >= 0 ? args[casesIdx + 1] : '') || process.env.CASES || '';
+  const ids = raw.split(/[\s,]+/).filter(Boolean);
+  if (ids.length) ONLY_CASES = new Set(ids);
+}
 
 fs.mkdirSync(path.join(OUT, 'failed'), { recursive: true });
 
@@ -108,12 +117,13 @@ async function remainingCount() {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // --- enumerate cases (top-level folders в каждой коллекции) ---
-function enumerateCases() {
-  const services = ONLY_SERVICE ? [ONLY_SERVICE] : ALL_SERVICES;
+// targeted = true → перебираем ВСЕ сервисы (чтобы найти любой case-id), потом отфильтруем по ONLY_CASES.
+function enumerateCases(targeted) {
+  const services = (targeted || !ONLY_SERVICE) ? ALL_SERVICES_DEFAULT : [ONLY_SERVICE];
   const cases = [];
   for (const svc of services) {
     const col = path.join(COLLECTIONS_DIR, `${svc}.postman_collection.json`);
-    if (!fs.existsSync(col)) { console.error(`[skip] нет коллекции ${svc}`); continue; }
+    if (!fs.existsSync(col)) { if (!targeted) console.error(`[skip] нет коллекции ${svc}`); continue; }
     const c = JSON.parse(fs.readFileSync(col, 'utf8'));
     for (const item of (c.item || [])) {
       const name = item.name;
@@ -157,16 +167,34 @@ function runFolder(tc) {
     process.exit(left === 0 ? 0 : 1);
   }
 
-  const cases = enumerateCases();
+  // --failed: вывести ONLY_CASES из FAIL-строк текущего progress.tsv (baseline полного прогона)
+  if (FAILED_ONLY && !ONLY_CASES) {
+    if (!fs.existsSync(PROGRESS)) { console.error(`--failed: нет ${PROGRESS} (нужен baseline-прогон)`); process.exit(2); }
+    const ids = fs.readFileSync(PROGRESS, 'utf8').split('\n').map(l => l.split('\t')).filter(p => p[1] === 'FAIL').map(p => p[0]);
+    if (!ids.length) { console.log('--failed: в progress.tsv нет FAIL — нечего перепрогонять'); process.exit(0); }
+    ONLY_CASES = new Set(ids);
+  }
+  const TARGETED = !!ONLY_CASES;
+  // в targeted-режиме пишем в отдельный progress-rerun.tsv, чтобы не затирать baseline
+  const progressFile = TARGETED ? path.join(OUT, 'progress-rerun.tsv') : PROGRESS;
+
+  let cases = enumerateCases(TARGETED);
+  if (TARGETED) {
+    const wanted = new Set(ONLY_CASES);
+    cases = cases.filter(tc => wanted.has(tc.id));
+    const got = new Set(cases.map(tc => tc.id));
+    const missing = [...wanted].filter(id => !got.has(id));
+    if (missing.length) console.error(`[targeted] не нашлось case-id'ов в коллекциях: ${missing.join(', ')}`);
+  }
   const done = new Set();
-  if (RESUME && fs.existsSync(PROGRESS)) {
+  if (!TARGETED && RESUME && fs.existsSync(PROGRESS)) {
     for (const line of fs.readFileSync(PROGRESS, 'utf8').split('\n')) { const id = line.split('\t')[0]; if (id) done.add(id); }
     console.log(`[resume] уже сделано: ${done.size}`);
   } else {
-    fs.writeFileSync(PROGRESS, '');
+    fs.writeFileSync(progressFile, '');
   }
 
-  console.log(`[incremental] ${cases.length} кейсов; env=${path.basename(ENV_FILE)}; base=${BASE}; cleanup каждые ${CLEANUP_EVERY}`);
+  console.log(`[incremental${TARGETED ? ' / targeted re-run' : ''}] ${cases.length} кейсов; env=${path.basename(ENV_FILE)}; base=${BASE}; cleanup каждые ${TARGETED ? '∞ (только до/после)' : CLEANUP_EVERY}`);
   process.stdout.write('[initial cleanup] ');
   const ic = await cleanupPass(4);
   console.log(`удалено накопленного мусора ~${ic}, осталось ${await remainingCount()}`);
@@ -185,9 +213,9 @@ function runFolder(tc) {
       // упал — мог оставить ресурсы → зачистить
       await cleanupPass(3); sinceClean = 0;
     }
-    fs.appendFileSync(PROGRESS, `${tc.id}\t${r.status}\t${r.assertions}\t${r.failed}\t${r.requests}\t${r.ms}\n`);
-    if (sinceClean >= CLEANUP_EVERY) { await cleanupPass(2); sinceClean = 0; }
-    if (nRun % 20 === 0 || r.status === 'FAIL') {
+    fs.appendFileSync(progressFile, `${tc.id}\t${r.status}\t${r.assertions}\t${r.failed}\t${r.requests}\t${r.ms}\n`);
+    if (!TARGETED && sinceClean >= CLEANUP_EVERY) { await cleanupPass(2); sinceClean = 0; }
+    if (nRun % 20 === 0 || r.status === 'FAIL' || TARGETED) {
       const el = ((Date.now() - t0) / 1000).toFixed(0);
       console.log(`[${nRun}/${cases.length}] pass=${nPass} fail=${nFail} assertions=${totA} (failed ${totF}) | ${el}s | last: ${tc.id} ${r.status}${r.status === 'FAIL' ? ' :: ' + (r.failures.map(f => f.name + ': ' + f.err).join('; ') || r.err) : ''}`);
     }
@@ -198,13 +226,13 @@ function runFolder(tc) {
 
   const el = ((Date.now() - t0) / 1000).toFixed(0);
   const summary = [
-    `===== run-incremental: ${nRun} кейсов за ${el}s =====`,
+    `===== run-incremental${TARGETED ? ' / targeted re-run' : ''}: ${nRun} кейсов за ${el}s =====`,
     `pass=${nPass}  fail=${nFail}  assertions=${totA}  failed-assertions=${totF}`,
     `тест-папки после прогона: осталось ${left} ресурсов (должно быть 0)`,
     failedCases.length ? `FAILED CASES (${failedCases.length}): ${failedCases.join(', ')}` : 'все кейсы зелёные',
-    `детали упавших — out/incremental/failed/*.json; полный прогресс — out/incremental/progress.tsv`,
+    `детали упавших — out/incremental/failed/*.json; прогресс — ${path.relative(ROOT, progressFile)}`,
   ].join('\n');
-  fs.writeFileSync(SUMMARY, summary + '\n');
+  fs.writeFileSync(TARGETED ? path.join(OUT, 'summary-rerun.txt') : SUMMARY, summary + '\n');
   console.log('\n' + summary);
   process.exit(nFail === 0 && left === 0 ? 0 : 1);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "a6add646-d650-4d51-8d69-30b0ab00193a",
+    "_postman_id": "e198b111-90c1-4e7d-a15c-acfc9d289623",
     "name": "kacho-vpc / newman / operation",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -206,7 +206,7 @@
       ]
     },
     {
-      "name": "OP-GET-NEG-NF-INVALID-PREFIX — Get opId без 3-char domain-prefix → 400 InvalidArgument 'unknown prefix'",
+      "name": "OP-GET-NEG-NF-INVALID-PREFIX — Get malformed opId → 400 InvalidArgument 'invalid operation id'",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -241,7 +241,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
                   "});",
-                  "pm.test('mentions unknown prefix', () => pm.expect(pm.response.json().message).to.include('prefix'));"
+                  "pm.test('mentions invalid operation id', () => pm.expect(pm.response.json().message).to.include('invalid operation id'));"
                 ]
               }
             }

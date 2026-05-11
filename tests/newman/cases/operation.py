@@ -26,17 +26,18 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="OP-GET-NEG-NF-INVALID-PREFIX",
-    title="Get opId без 3-char domain-prefix → 400 InvalidArgument 'unknown prefix'",
+    title="Get malformed opId → 400 InvalidArgument 'invalid operation id'",
     classes=["NEG"],
     priority="P0",
     steps=[
         Step(name="get-garbage", method="GET", path="/operations/{{garbageId}}",
              test_script=[
-                 # OpsProxy в api-gateway отвергает id без known 3-char prefix.
-                 # Документированное поведение: prefix не из {b1g, enp, bpf} → 400 InvalidArgument.
+                 # OpsProxy api-gateway отвергает синтаксически невалидный/нераспознанный operation id.
+                 # verbatim-YC (probe 2026-05-11): malformed id → 400 InvalidArgument "invalid operation id '<X>'".
+                 # См. kacho-api-gateway#2: opsproxy выровнен под YC (раньше было "operation_id has unknown prefix").
                  *assert_status(400),
                  *assert_grpc_code(3, "INVALID_ARGUMENT"),
-                 "pm.test('mentions unknown prefix', () => pm.expect(pm.response.json().message).to.include('prefix'));",
+                 "pm.test('mentions invalid operation id', () => pm.expect(pm.response.json().message).to.include('invalid operation id'));",
              ]),
     ],
 ))
