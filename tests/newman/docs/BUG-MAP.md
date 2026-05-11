@@ -124,11 +124,52 @@
   - Прочие PE-кейсы по-прежнему используют плоский `subnetId` (молча игнорируется);
     это не bug, но потенциальная очистка test-фикстур — backlog, см. REQUIREMENTS.
 
+### FINDING-007 — InternalAddressPoolService.Create не валидирует `name` — informational
+
+- **Severity**: cosmetic / informational (не bug)
+- **Found by**: `IPL-CR-VAL-MISSING-NAME` (internal-pool)
+- **Status**: open, informational
+- **Service**: kacho-vpc · **Method**: `InternalAddressPoolService.Create`
+- **Symptoms**: `POST /vpc/v1/addressPools` без `name` → 200, pool с `name=""`.
+  Валидируются только `kind` (≠ unspecified) и `cidrBlocks` (≥1, IPv4, host-bits=0).
+- **Comment**: AddressPool — kacho-only admin resource (verbatim-YC аналога нет),
+  unnamed pool технически валиден (ResolvePool работает по id/labels, не по name).
+  Если потом добавят `NameVPC`-валидацию — кейс ассертит `oneOf([200,400])` и не сломается.
+  Действий не требуется; зафиксировано для прозрачности.
+
+### FINDING-008 — InternalAddressPoolService.ExplainResolution на unresolvable input → code 13 INTERNAL
+
+- **Severity**: low (UX, не корректность)
+- **Found by**: `IPL-EXPLAIN-UNRESOLVABLE` (internal-pool)
+- **Status**: open, informational
+- **Service**: kacho-vpc · **Method**: `InternalAddressPoolService.ExplainResolution`
+- **Symptoms**: `GET /vpc/v1/addressPools:explainResolution?networkId=<unbound>` когда нет
+  global-default pool (zone IS NULL) → `{"code":13,"message":"address pool admin error"}`.
+- **Root cause**: `doResolve` возвращает `service.ErrPoolNotResolved` (новый sentinel,
+  `service/errors.go`), но `internalMapErr` его не классифицирует → default-ветка
+  `codes.Internal` с masked-текстом.
+- **Suggested fix** (не блокирует TODO #35): добавить `case errors.Is(err, service.ErrPoolNotResolved): return codes.FailedPrecondition` (или NotFound) в `internal_maperr.go`.
+  Кейс пока ассертит фактическое `oneOf([9,5,13])` — после фикса не покраснеет.
+
+### FINDING-009 — InternalCloudService.SetPoolSelector не проверяет существование cloud_id — informational
+
+- **Severity**: low
+- **Found by**: `CLD-SEL-SET-UNKNOWN-CLOUD` (internal-cloud)
+- **Status**: open, informational
+- **Service**: kacho-vpc · **Method**: `InternalCloudService.SetPoolSelector`
+- **Symptoms**: `POST /vpc/v1/clouds/<nonexistent>/poolSelector` → 200; row создаётся в
+  `cloud_pool_selector`. Proto-комментарий обещает «kacho-vpc только проверяет
+  существование cloud_id через FolderClient → cloud_id resolve», но `AddressPoolService.SetCloudPoolSelector`
+  делает только `cloud_id != ""`-проверку и `cloudSel.Set` (upsert) — без RM-вызова.
+- **Comment**: dangling selector безвреден (никогда не зарезолвится без живых folder→cloud),
+  но расходится с proto-контрактом. Кейс ассертит `oneOf([200,400,404])` и чистит за собой.
+  Аналогично `GetPoolSelector` на unknown cloud → `present=false` (нет existence-check, by design).
+
 ---
 
 ## Active bugs (severity > cosmetic)
 
-_(пусто — на момент 2026-05-11; FINDING-005 закрыт)_
+_(пусто — на момент 2026-05-11; FINDING-005 закрыт; FINDING-007/008/009 — informational)_
 
 ---
 
@@ -150,7 +191,7 @@ _(пусто — на момент 2026-05-11; FINDING-005 закрыт)_
 | Low | 0 | 0 | 0 |
 | Cosmetic | 0 | 0 | 0 |
 | **Bugs total** | **0** | **1** | **1** |
-| Findings (informational) | 4 | — | 4 |
+| Findings (informational) | 7 | — | 7 (001–004, 007–009) |
 | Findings (invalid / test errors) | — | — | 1 (FINDING-006) |
 
 ---

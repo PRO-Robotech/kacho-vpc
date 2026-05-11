@@ -1,6 +1,12 @@
 # newman — индекс уникальных кейсов
 
-686 кейсов / 218 паттернов.
+731 кейсов / 218+ паттернов.
+
+> v16 (TODO #35): + 45 кейсов для internal/admin-only IPAM RPC —
+> `internal-pool` (26: AddressPool CRUD + bindings + Check/ExplainResolution/Utilization/ListAddresses,
+> prefix `IPL-*`), `internal-region-zone` (15: Region/Zone CRUD + FK-empty-checks, prefix `RGN-*`/`ZON-*`),
+> `internal-cloud` (4: Cloud poolSelector set/get/unset, prefix `CLD-*`). Эти RPC возвращают
+> ресурсы напрямую (не Operation); таблицы паттернов ниже их не индексируют (кейсы — в `cases/internal-*.py`).
 
 ## По методам
 

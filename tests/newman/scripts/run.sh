@@ -54,7 +54,8 @@ mkdir -p out
 if [[ -n "$SERVICE" ]]; then
   run_one "$SERVICE"
 else
-  for svc in network subnet address route-table security-group gateway private-endpoint operation; do
+  for svc in network subnet address route-table security-group gateway private-endpoint operation \
+             internal-pool internal-region-zone internal-cloud; do
     run_one "$svc"
   done
 fi

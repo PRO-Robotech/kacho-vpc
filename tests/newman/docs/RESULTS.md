@@ -1,4 +1,4 @@
-# newman — финальный прогон (v15: FINDING-005 fix + PE addressSpec fix)
+# newman — финальный прогон (v16: internal IPAM admin RPC — TODO #35)
 
 ## Сводка
 
@@ -11,14 +11,24 @@
 | route-table | 91 | 434 | 0 | 309 | 91% |
 | gateway | 90 | 264 | 0 | 179 | 90% |
 | private-endpoint | 68 | 261 | 0 | 195 | 68% |
+| internal-pool | 26 | 133 | 0 | 81 | (admin) |
+| internal-region-zone | 15 | 77 | 0 | 40 | (admin) |
+| internal-cloud | 4 | 31 | 0 | 17 | (admin) |
 | operation | 4 | 16 | 0 | 7 | (n/a) |
-| **Итого** | **686** | **3120** | **0** | **2188** | **97%** среднее |
+| **Итого** | **731** | **3361** | **0** | **2326** | — |
 
-**100% PASS**, target 100/ресурс **превзойдён для 3 ресурсов**.
+**100% PASS**. v16 добавил покрытие internal/admin-only IPAM RPC
+(`InternalAddressPoolService` / `InternalRegion`/`InternalZone`/`InternalCloud`) —
+kacho-only RPC проброшены через api-gateway cluster-internal mux, возвращают
+ресурсы напрямую (не Operation). Новых FINDINGs: 3 (007/008/009 — informational,
+все «фактическое поведение задокументировано в кейсе»).
 
 > Деплоймент-замечание: suite требует `KACHO_VPC_DEFAULT_SG_INLINE=true`
 > (default) — `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` проверяют
 > авто-создание default SG. При `=false` (load-test config) эти кейсы краснеют.
+> internal-* кейсы используют seeded `ru-central1` region / `ru-central1-{a,b,c,d}`
+> zones / `default-ru-central1-a` pool как readonly-фикстуры (не трогают),
+> остальное — runId-суффиксованные throwaway-ресурсы с self-cleanup.
 
 ## Эволюция
 
@@ -29,7 +39,8 @@
 | v12 (FK RESTRICT delete) | 597 | 2616 | 85 | 85% |
 | v13 (Req/Immutable matrix + CIDR pack) | 624 | 2744 | 89 | 89% |
 | v14 (pairwise + security probes + lifecycle) | 685 | 3107 | 97 | 97% |
-| **v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId)** | **686** | **3120** | **97** | **97%** |
+| v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId) | 686 | 3120 | 97 | 97% |
+| **v16 (internal IPAM admin RPC — TODO #35: internal-pool/-region-zone/-cloud)** | **731** | **3361** | — | — |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 

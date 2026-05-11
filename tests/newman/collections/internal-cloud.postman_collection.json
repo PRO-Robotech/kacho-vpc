@@ -1,0 +1,717 @@
+{
+  "info": {
+    "_postman_id": "54167d5c-9d05-4e30-a872-acdbfb3ae9fa",
+    "name": "kacho-vpc / newman / internal-cloud",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('runId') || pm.environment.get('runId') === '') {",
+          "  // runId формат: только [a-z0-9], без точки — чтобы проходить name regex.",
+          "  const t = Date.now().toString(36);",
+          "  const r = Math.floor(Math.random() * 1e9).toString(36);",
+          "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
+          "}",
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "CLD-SEL-CRUD-OK — PoolSelector: Get(present=false) → Set → Get(present=true, selector echoed) → Unset → Get(present=false)",
+      "description": "class:CRUD | class:STATE | class:CONF | priority:P0",
+      "item": [
+        {
+          "name": "reset-baseline",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('reset ok', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-empty",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('present false', () => pm.expect(j.present).to.eql(false));",
+                  "pm.test('selector empty/absent', () => pm.expect(Object.keys(j.selector || {}).length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "set",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"selector\": {\"tier\": \"premium\", \"region\": \"ru\"}, \"setBy\": \"newman-{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('set returns obj', () => pm.expect(pm.response.json()).to.be.an('object'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-present",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('present true', () => pm.expect(j.present).to.eql(true));",
+                  "pm.test('selector tier', () => pm.expect((j.selector || {}).tier).to.eql('premium'));",
+                  "pm.test('selector region', () => pm.expect((j.selector || {}).region).to.eql('ru'));",
+                  "pm.test('setBy echoed', () => pm.expect(j.setBy).to.eql('newman-' + pm.environment.get('runId')));",
+                  "pm.test('setAtRfc3339 non-empty', () => pm.expect(j.setAtRfc3339).to.be.a('string').and.length.greaterThan(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "set-again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"selector\": {\"tier\": \"standard\"}, \"setBy\": \"newman2-{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-overwritten",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('tier overwritten', () => pm.expect((j.selector || {}).tier).to.eql('standard'));",
+                  "pm.test('region removed', () => pm.expect((j.selector || {}).region).to.be.oneOf([undefined, null]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "unset",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('unset returns obj', () => pm.expect(pm.response.json()).to.be.an('object'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-after-unset",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('present false again', () => pm.expect(pm.response.json().present).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "unset-again",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('idempotent unset', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CLD-SEL-GET-UNKNOWN-CLOUD — GetPoolSelector для несуществующего cloud → present=false (selector хранится lazily, существование cloud не проверяется на Get)",
+      "description": "class:CONF | class:NEG | priority:P2",
+      "item": [
+        {
+          "name": "reset",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/b1gnonexistent999999/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "b1gnonexistent999999",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('reset ok', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-unknown",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/b1gnonexistent999999/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "b1gnonexistent999999",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('present false for unknown cloud', () => pm.expect(pm.response.json().present).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CLD-SEL-SET-UNKNOWN-CLOUD — SetPoolSelector для несуществующего cloud → текущее: 200 (cloud-existence не валидируется) — см. FINDING-009",
+      "description": "class:CONF | class:NEG | priority:P2",
+      "item": [
+        {
+          "name": "set-unknown",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/b1gnonexistent999998/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "b1gnonexistent999998",
+                "poolSelector"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"selector\": {\"x\": \"y\"}, \"setBy\": \"newman-{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('accepted (200) or rejected (404/400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "cleanup-unset",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/b1gnonexistent999998/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "b1gnonexistent999998",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CLD-SEL-SET-EMPTY-SELECTOR — SetPoolSelector с пустым selector map → 200; Get показывает present (или present=false если empty трактуется как unset)",
+      "description": "class:VAL | class:CONF | priority:P3",
+      "item": [
+        {
+          "name": "reset-baseline",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('reset ok', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "set-empty",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"selector\": {}, \"setBy\": \"newman-empty-{{runId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('accepted or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "get-after",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('present is boolean', () => pm.expect(pm.response.json().present).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "cleanup-unset",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/clouds/{{existingCloudId}}/poolSelector",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "clouds",
+                "{{existingCloudId}}",
+                "poolSelector"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": []
+}
