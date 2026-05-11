@@ -19,20 +19,33 @@ import (
 // negative cache привёл бы к ложным "Folder not found".
 const folderExistsTTL = 30 * time.Second
 
+// folderCloudIDTTL — TTL кеша folder→cloud_id. Привязка folder к cloud в YC
+// неизменна (folder нельзя переместить в другой cloud), id не переиспользуются —
+// поэтому TTL можно длинный; держим умеренный (10 мин) на случай дрейфа.
+const folderCloudIDTTL = 10 * time.Minute
+
 // FolderClient реализует service.FolderClient через gRPC к resource-manager
-// с TTL-кешем для Exists (hot path в каждом Create/Move).
+// с TTL-кешем для Exists и GetCloudID (оба — hot path: Exists в каждом
+// Create/Move, GetCloudID в каждом external-Address allocate, IPAM cascade Step 3).
 type FolderClient struct {
 	cli rmv1.FolderServiceClient
 
-	mu     sync.RWMutex
-	exists map[string]time.Time // folderID → время до которого результат "true" валиден
+	mu       sync.RWMutex
+	exists   map[string]time.Time    // folderID → время до которого результат "true" валиден
+	cloudIDs map[string]cloudIDEntry // folderID → {cloud_id, expiry}
+}
+
+type cloudIDEntry struct {
+	cloudID string
+	exp     time.Time
 }
 
 // NewFolderClient создаёт FolderClient.
 func NewFolderClient(conn *grpc.ClientConn) *FolderClient {
 	return &FolderClient{
-		cli:    rmv1.NewFolderServiceClient(conn),
-		exists: make(map[string]time.Time),
+		cli:      rmv1.NewFolderServiceClient(conn),
+		exists:   make(map[string]time.Time),
+		cloudIDs: make(map[string]cloudIDEntry),
 	}
 }
 
@@ -74,9 +87,20 @@ func (c *FolderClient) Exists(ctx context.Context, folderID string) (bool, error
 }
 
 // GetCloudID возвращает cloud_id для Folder. Используется в IPAM-cascade
-// (cloud-pool-selector lookup для external Address). Возвращает ErrNotFound
-// если folder не существует. Не кешируется — вызывается реже чем Exists.
+// (cloud-pool-selector lookup для external Address) — на каждый external-IP
+// allocate. Положительный результат кешируется на folderCloudIDTTL: убирает
+// gRPC RTT к resource-manager из hot-path аллокатора (без кеша RM —
+// 1-pod сервис — становился потолком ~3K allocate/sec). Ошибки/пустой
+// cloud_id не кешируются.
 func (c *FolderClient) GetCloudID(ctx context.Context, folderID string) (string, error) {
+	// Cache hit?
+	c.mu.RLock()
+	e, ok := c.cloudIDs[folderID]
+	c.mu.RUnlock()
+	if ok && time.Now().Before(e.exp) {
+		return e.cloudID, nil
+	}
+
 	var cloudID string
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
 		f, rerr := c.cli.Get(ctx, &rmv1.GetFolderRequest{FolderId: folderID})
@@ -86,5 +110,13 @@ func (c *FolderClient) GetCloudID(ctx context.Context, folderID string) (string,
 		cloudID = f.GetCloudId()
 		return nil
 	})
-	return cloudID, err
+	if err != nil {
+		return "", err
+	}
+	if cloudID != "" {
+		c.mu.Lock()
+		c.cloudIDs[folderID] = cloudIDEntry{cloudID: cloudID, exp: time.Now().Add(folderCloudIDTTL)}
+		c.mu.Unlock()
+	}
+	return cloudID, nil
 }

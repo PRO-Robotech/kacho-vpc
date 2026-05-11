@@ -76,9 +76,10 @@ Gateway).
   validate.go:44`, обоснование: probe YC 2026-05-04 (`YC-DIFF-NAME-VALIDATION`).
 - [ ] **Name** (`corevalidate.Name`) — для Folder/Cloud/Gateway: strict
   `^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$` — lowercase only, длина 2..63.
-- [ ] **Gateway uses Name (strict)**, не NameVPC. Proto pattern:
-  `|[a-z]([-a-z0-9]{0,61}[a-z0-9])?` (`gateway_service.proto:154`). Текущий код
-  использует NameVPC (TODO #6) — флагай как Critical если меняешь Gateway.
+- [ ] **Gateway uses strict name**, не permissive NameVPC. Proto pattern:
+  `|[a-z]([-a-z0-9]{0,61}[a-z0-9])?` (`gateway_service.proto:154`). Текущий код —
+  `corevalidate.NameGateway` (strict: lowercase, без uppercase/underscore — соответствует
+  контракту). Флагай как Critical если кто-то меняет Gateway naming на permissive NameVPC.
 - [ ] **Empty name** — допустимо для VPC ресурсов (verbatim YC permissive policy);
   не возвращать `"name is required"` для Network/Subnet/Address.
 

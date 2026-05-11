@@ -130,7 +130,7 @@ Zero-overhead, миграция не нужна.
 ## Top-10 gotchas (из истории фиксов)
 
 1. **Не валидировать UUID/id sync** — garbage id даёт **async** NotFound, не sync InvalidArgument (verbatim YC, `ac61127`).
-2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для Network/Subnet/Address/RouteTable/SG. Gateway — strict (TODO #6).
+2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для Network/Subnet/Address/RouteTable/SG. Gateway — strict (`corevalidate.NameGateway`: lowercase, без uppercase/underscore — verbatim YC).
 3. **CIDR overlap** = `FailedPrecondition`, не `InvalidArgument` (`e015191`).
 4. **CIDR host-bits=0** обязательно, sync через `netip.Prefix.Masked()`.
 5. **Subnet immutable**: `v4_cidr_blocks/v6_cidr_blocks/network_id/zone_id` — reject в mask, silent ignore в full-PATCH (`8158a84`).

@@ -399,22 +399,27 @@ tests/newman/scripts/run.sh                    # все сервисы; --servic
 
 ### 14.1 Unit (`internal/service/*_test.go`, `internal/handler/*_test.go`)
 
-Моки port-интерфейсов через ручные `mock_test.go`. Worker-горутины
-`operations.Run` ждутся `time.Sleep(100ms)` — это TODO #10 (заменить на
-`assert.Eventually`). Запуск: `make test-short`.
+Моки port-интерфейсов — из общего пакета `internal/ports/portmock` (раньше
+каждый test-файл держал свою копию). Worker-горутины `operations.Run`
+дожидаются детерминированно через `portmock.AwaitOpDone` / `AwaitAllOpsDone`
+(poll до `Operation.Done` с дедлайном 2s — не фиксированный `time.Sleep`).
+Запуск: `make test-short` (или `go test ./... -short`).
 
 Если service-тест требует Postgres → это сигнал об утечке adapter в
 use-case. См. `go-style-reviewer §3.11`.
 
-### 14.2 Integration (`internal/repo/integration_test.go`)
+### 14.2 Integration (`internal/repo/*integration_test.go`)
 
-Testcontainers с Postgres 16. Прогоняется только локально (`make test`),
-CI пропускает через `-short` (TODO #17). Покрывает:
+Testcontainers с Postgres 16. Гоняется и локально (`make test`), и **в CI**
+— job `integration` в `.github/workflows/ci.yaml` (`go test ./internal/repo/...
+-race -count=1`; на ubuntu-runner'ах Docker есть). Покрывает:
 - Repo CRUD против реальной БД.
 - EXCLUDE constraint поведение (CIDR overlap → 23P01).
 - FK violations (Network с детьми → 23503).
 - UNIQUE violations (duplicate name → 23505).
-- Outbox emit транзакционность.
+- Outbox emit транзакционность; LISTEN/NOTIFY (`internal_watch_integration_test.go`).
+- SecurityGroup OCC через `xmin` (`security_group_occ_integration_test.go`).
+- IPAM cascade pool-resolve (`ipam_cascade_integration_test.go`).
 
 ### 14.3 E2E / Postman (`tests/newman/`)
 
@@ -483,7 +488,8 @@ integration- или unit-тестах (или при ревью/прогоне) 
 
 1. **Не валидировать UUID/id sync** — garbage id даёт async NotFound, не sync InvalidArgument (`ac61127`).
 2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для
-   Network/Subnet/Address/RouteTable/SG (но не для Gateway — там strict, см. TODO #6).
+   Network/Subnet/Address/RouteTable/SG. Gateway — отдельный strict-контракт
+   `corevalidate.NameGateway` (lowercase, без uppercase/underscore — verbatim YC).
 3. **CIDR overlap** = `FailedPrecondition`, не `InvalidArgument` (`e015191`).
 4. **CIDR host-bits = 0** обязательно, sync через netip.Masked.
 5. **Subnet immutable**: `v4_cidr_blocks/v6_cidr_blocks/network_id/zone_id` —

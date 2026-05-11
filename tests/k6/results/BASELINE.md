@@ -318,7 +318,8 @@ horizontal scaling vpc исчерпаны. SLO p99 ≤ 50ms для Create при
 
 `AddressService.Create` с `external_ipv4_address_spec.zone_id` → Operation → worker:
 cascade pool-resolve (`address_override` → `network_default` skip → cloud-selector
-[`FolderClient.GetCloudID` RM gRPC round-trip, **не кешируется**] → `zone_default`) +
+[`FolderClient.GetCloudID` RM gRPC round-trip — на момент этого прогона **без кеша**;
+позже добавлен TTL-кеш, см. «Выводы»] → `zone_default`) +
 двухфазный аллокатор (random pick + UNIQUE-retry на `addresses_external_pool_ip_uniq`)
 + INSERT + outbox. Прямой gRPC `vpc.kacho.svc:9090` (ghz: rate-limited через port-forward,
 max-burst — in-cluster Job). Pool: `loadtest-ext-d` `10.0.0.0/8` (16M IP, default zone `ru-central1-d`)
@@ -353,12 +354,14 @@ max-burst — in-cluster Job). Pool: `loadtest-ext-d` `10.0.0.0/8` (16M IP, defa
   (~5778/sec в logged-config / ~7000 в UNLOGGED-config). Воркер всегда успевает (backlog=0),
   то есть упирается не пул pgx-conns (50 vs 280 — без разницы) и не воркер, а **per-allocate
   работа async-фазы**: главный подозреваемый — `FolderClient.GetCloudID` RM gRPC round-trip
-  на каждый allocate (cascade Step 3, не кешируется) + `cloudSel.Get` SELECT; RM — 1-pod сервис
-  со своей БД, ~3K GetCloudID/sec похоже на его потолок.
+  на каждый allocate (cascade Step 3, на момент прогона без кеша) + `cloudSel.Get` SELECT;
+  RM — 1-pod сервис со своей БД, ~3K GetCloudID/sec похоже на его потолок. → закрыто TTL-кешем (см. ниже).
 - **Хорошая latency держится до ~2000/sec** (sync p99 < 35ms ≤ SLO 50ms). На 3000+/sec
   sync-latency деградирует до ~130-180ms (запросы стоят в очереди при concurrency >> ёмкости),
   но throughput не падает и воркер не отстаёт.
-- **Дешёвый win**: TTL-кеш на `FolderClient.GetCloudID` (как уже сделано для `Exists`) —
-  убрал бы RM round-trip из hot-path, ожидаемо подняло бы потолок ближе к Network.Create.
-  (Сейчас не делал — не просили; кандидат на отдельный perf-PR.)
+- **Дешёвый win — СДЕЛАНО**: TTL-кеш на `FolderClient.GetCloudID` (`folderCloudIDTTL` 10 мин,
+  симметрично кешу `Exists`) — `internal/clients/resourcemanager_client.go`. Убирает RM gRPC RTT
+  из hot-path аллокатора (folder→cloud в YC неизменно, кеш безопасен). Ожидаемо поднимает потолок
+  external-IP-allocate ближе к Network.Create; **новый замер на этом конфиге ещё не делался**
+  (цифры в таблицах выше — до кеша; пере-замерить при следующем load-прогоне).
 - Для 50K/sec выводы те же, что и для Network.Create — нужен sharding (см. раздел выше).

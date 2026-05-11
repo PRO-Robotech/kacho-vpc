@@ -160,10 +160,11 @@ service NetworkService {
 **без** `/vpc/v1/` префикса). api-gateway имеет in-process `opsproxy` — один URL
 `/operations/{id}` маршрутизируется по 3-char prefix ID на нужный backend
 (`enp...` → kacho-vpc; `b1g...` → resource-manager). `PrefixOperationVPC == PrefixNetwork == "enp"`.
-Неизвестный prefix → `400 INVALID_ARGUMENT "unknown prefix"` (FINDING-003).
+Неизвестный prefix → `400 INVALID_ARGUMENT "unknown prefix"` (intentional fail-fast
+перед роутингом; задокументировано в `TODO.md` → «известные расхождения»).
 
-⚠️ **Контракт-нарушение**: все 6 Delete RPC возвращают `DeleteXxxMetadata`
-в `response`, а должны — `google.protobuf.Empty` (verbatim YC). См. TODO #1.
+Все 6 Delete RPC возвращают `google.protobuf.Empty` в `response` (verbatim YC);
+`DeleteXxxMetadata` лежит в `Operation.metadata`, как и положено по proto-options.
 
 ## Где смотреть proto
 
