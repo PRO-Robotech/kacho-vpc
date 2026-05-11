@@ -815,3 +815,12 @@ CASES.append(Case(
                           "pm.test('Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));"]),
     ],
 ))
+
+# Exhaustive ECP/BVA расширение (до ~100 кейсов)
+CASES.extend(ecp_name_block("NET", "/vpc/v1/networks", {}))
+CASES.extend(ecp_description_block("NET", "/vpc/v1/networks", {}))
+CASES.extend(ecp_labels_block("NET", "/vpc/v1/networks", {}))
+CASES.extend(updatemask_decision_table("NET", "/vpc/v1/networks"))
+CASES.extend(filter_syntax_block("NET", "/vpc/v1/networks"))
+CASES.append(pagination_roundtrip("NET", "/vpc/v1/networks"))
+CASES.append(idempotency_block("NET", "/vpc/v1/networks", "net-idm-{{runId}}", {}))

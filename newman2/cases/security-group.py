@@ -403,3 +403,22 @@ CASES.append(Case(
              test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
     ],
 ))
+
+def _sg_wrap(prefix, suffix, inner_case):
+    uniq = inner_case.id.lower().replace("-","")[-12:]
+    return Case(
+        id=inner_case.id, title=inner_case.title, classes=inner_case.classes,
+        priority=inner_case.priority,
+        steps=[*_net_steps(uniq), *inner_case.steps, _cleanup_net()],
+    )
+
+_sg_body = {"networkId": "{{netId}}", "ruleSpecs": []}
+for c in ecp_name_block("SG", "/vpc/v1/securityGroups", _sg_body):
+    CASES.append(_sg_wrap("SG", "ecpn", c))
+for c in ecp_description_block("SG", "/vpc/v1/securityGroups", _sg_body):
+    CASES.append(_sg_wrap("SG", "ecpd", c))
+for c in ecp_labels_block("SG", "/vpc/v1/securityGroups", _sg_body):
+    CASES.append(_sg_wrap("SG", "ecpl", c))
+CASES.extend(updatemask_decision_table("SG", "/vpc/v1/securityGroups"))
+CASES.extend(filter_syntax_block("SG", "/vpc/v1/securityGroups"))
+CASES.append(pagination_roundtrip("SG", "/vpc/v1/securityGroups"))

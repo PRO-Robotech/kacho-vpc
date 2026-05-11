@@ -297,3 +297,23 @@ CASES.append(Case(
              test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
     ],
 ))
+
+# RT нужен parent network — упаковываем через _wrap_with_net аналогично subnet
+def _rt_wrap(prefix, suffix, inner_case):
+    uniq = inner_case.id.lower().replace("-","")[-12:]
+    return Case(
+        id=inner_case.id, title=inner_case.title, classes=inner_case.classes,
+        priority=inner_case.priority,
+        steps=[*_net_steps(uniq), *inner_case.steps, _cleanup_net()],
+    )
+
+_rt_body = {"networkId": "{{netId}}", "staticRoutes": []}
+for c in ecp_name_block("RT", "/vpc/v1/routeTables", _rt_body):
+    CASES.append(_rt_wrap("RT", "ecpn", c))
+for c in ecp_description_block("RT", "/vpc/v1/routeTables", _rt_body):
+    CASES.append(_rt_wrap("RT", "ecpd", c))
+for c in ecp_labels_block("RT", "/vpc/v1/routeTables", _rt_body):
+    CASES.append(_rt_wrap("RT", "ecpl", c))
+CASES.extend(updatemask_decision_table("RT", "/vpc/v1/routeTables"))
+CASES.extend(filter_syntax_block("RT", "/vpc/v1/routeTables"))
+CASES.append(pagination_roundtrip("RT", "/vpc/v1/routeTables"))

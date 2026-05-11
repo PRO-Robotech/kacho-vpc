@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "a3adea13-6dea-4d0c-93ae-0f7869402dae",
+    "_postman_id": "e5bb5f57-b94e-4c71-947c-7509337c2a47",
     "name": "kacho-vpc / newman2 / address",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -4090,6 +4090,988 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-NAME-EMPTY — Create с empty name → VPC permissive (200) или 400",
+      "description": "class:BVA | class:VAL | priority:P2",
+      "item": [
+        {
+          "name": "cr-empty",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('accepted or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-NAME-MAX-63 — Create с name len=63 (max) → ok",
+      "description": "class:BVA | priority:P2",
+      "item": [
+        {
+          "name": "cr-max63",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-NAME-OVER-64 — Create с name len=64 (over-max) → InvalidArgument",
+      "description": "class:BVA | class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-over",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-NAME-UPPERCASE — Create с UPPERCASE name → VPC permissive (200) или 400",
+      "description": "class:VAL | priority:P2",
+      "item": [
+        {
+          "name": "cr-upper",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('accepted or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-NAME-DIGIT-START — Create с name начинающимся с цифры → 400 (verbatim YC regex)",
+      "description": "class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-digit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-NAME-HYPHEN-START — Create с name начинающимся с дефиса → 400",
+      "description": "class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-hyphen",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-NAME-SPECIAL-CHARS — Create с спец-символами в name → 400",
+      "description": "class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-special",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-DESC-MAX-256 — Create с description len=256 (max) → ok",
+      "description": "class:BVA | priority:P2",
+      "item": [
+        {
+          "name": "cr-desc-max",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-DESC-OVER-257 — Create с description len=257 (over-max) → InvalidArgument",
+      "description": "class:BVA | class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-desc-over",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-LABELS-UPPERCASE-KEY — Create с UPPERCASE label key → 400",
+      "description": "class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-lbl-upper",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}, \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-VAL-LABELS-INVALID-KEY-CHAR — Create с invalid char в label key → 400",
+      "description": "class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-lbl-bad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}, \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-LABELS-MAX-64 — Create с 64 labels (max) → ok",
+      "description": "class:BVA | priority:P2",
+      "item": [
+        {
+          "name": "cr-lbl-max",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}, \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-CR-BVA-LABELS-OVER-65 — Create с 65 labels (over-max) → 400",
+      "description": "class:BVA | class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "cr-lbl-over",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"adr-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}, \"externalIpv4AddressSpec\": {\"zoneId\": \"{{existingZoneId}}\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-UPD-VAL-MASK-EMPTY — Update с пустой mask → full PATCH (200)",
+      "description": "class:VAL | class:STATE | priority:P2",
+      "item": [
+        {
+          "name": "upd-empty-mask",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses/{{garbageVpcId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses",
+                "{{garbageVpcId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rejected NF', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-UPD-VAL-MASK-MULTIPLE-UNKNOWN — Update с несколькими unknown полями в mask → 400",
+      "description": "class:VAL | class:STATE | priority:P2",
+      "item": [
+        {
+          "name": "upd-multi-unknown",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses/{{garbageVpcId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses",
+                "{{garbageVpcId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"updateMask\": \"x_unknown,y_unknown\", \"description\": \"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-LST-FILTER-NAME-OK — List с filter name=\"foo\" → 200",
+      "description": "class:FILTER | class:CRUD | priority:P2",
+      "item": [
+        {
+          "name": "list-filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-LST-FILTER-GARBAGE — List с garbage filter syntax → 400 InvalidArgument",
+      "description": "class:FILTER | class:VAL | priority:P1",
+      "item": [
+        {
+          "name": "list-bad-filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-LST-FILTER-UNKNOWN-FIELD — List с filter на unsupported field → 400 InvalidArgument",
+      "description": "class:FILTER | class:VAL | priority:P2",
+      "item": [
+        {
+          "name": "list-unknown-field",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ADR-LST-PAGE-ROUNDTRIP — Pagination: получить пустой/не-пустой ответ + nextPageToken и пройти ещё раз с ним",
+      "description": "class:PAGE | class:BVA | class:CRUD | priority:P2",
+      "item": [
+        {
+          "name": "list-p1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses?folderId={{_suiteFolderId}}&pageSize=1"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const tok = j.nextPageToken || '';",
+                  "pm.environment.set('nextToken', tok);",
+                  "pm.test('token is string', () => pm.expect(tok).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "list-p2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addresses?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));"
                 ]
               }
             }

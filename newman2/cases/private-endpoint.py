@@ -281,3 +281,26 @@ CASES.append(Case(
              test_script=[*save_from_response("j.id", "opId")]),
     ],
 ))
+
+# PE требует Network+Subnet+objectStorage. ECP делаю через wrap.
+def _pe_wrap(prefix, suffix, inner_case):
+    uniq = inner_case.id.lower().replace("-","")[-12:]
+    return Case(
+        id=inner_case.id, title=inner_case.title, classes=inner_case.classes,
+        priority=inner_case.priority,
+        steps=[*_pe_net_sub(uniq, "10.190.0.0/24"),
+               *inner_case.steps,
+               Step(name="cleanup-sub-pe", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                    test_script=[*save_from_response("j.id", "opId")]),
+               poll_operation_until_done(),
+               Step(name="cleanup-net-pe", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+                    test_script=[*save_from_response("j.id", "opId")])],
+    )
+
+_pe_body = {"networkId": "{{netId}}", "subnetId": "{{subId}}", "objectStorage": {}}
+# ECP по name для PE — берём только key cases чтобы не плодить parent-сетей
+for c in ecp_name_block("PE", "/vpc/v1/endpoints", _pe_body)[:3]:
+    CASES.append(_pe_wrap("PE", "ecpn", c))
+CASES.extend(updatemask_decision_table("PE", "/vpc/v1/endpoints"))
+CASES.extend(filter_syntax_block("PE", "/vpc/v1/endpoints"))
+CASES.append(pagination_roundtrip("PE", "/vpc/v1/endpoints"))

@@ -813,3 +813,43 @@ CASES.append(Case(
         _cleanup_net(),
     ],
 ))
+
+# Exhaustive ECP/BVA: используем shared network на каждый кейс
+# (более дорого, но изолировано). Альтернатива — общий network через preflight item.
+# Делаем подмножество кейсов с общим preflight сетью.
+
+def _sub_body_extra():
+    return {
+        "networkId": "{{netId}}", "zoneId": "{{existingZoneId}}",
+        "v4CidrBlocks": ["10.41.0.0/24"],
+    }
+
+
+# Каждый ECP-кейс упакован в Case с _make_net+_cleanup_net
+def _wrap_with_net(prefix, suffix, inner_case):
+    """Обернуть inner_case (от ecp_*_block) в network preflight/teardown.
+    Используем inner_case.id как суффикс — гарантированно уникален per case."""
+    # Превратим case-id в short ASCII suffix (без дефисов и uppercase)
+    uniq = inner_case.id.lower().replace("-", "")[-12:]
+    return Case(
+        id=inner_case.id,
+        title=inner_case.title,
+        classes=inner_case.classes,
+        priority=inner_case.priority,
+        steps=[
+            *_make_net(uniq),
+            *inner_case.steps,
+            _cleanup_net(),
+        ],
+    )
+
+
+for c in ecp_name_block("SUB", "/vpc/v1/subnets", _sub_body_extra()):
+    CASES.append(_wrap_with_net("SUB", "ecp-n", c))
+for c in ecp_description_block("SUB", "/vpc/v1/subnets", _sub_body_extra()):
+    CASES.append(_wrap_with_net("SUB", "ecp-d", c))
+for c in ecp_labels_block("SUB", "/vpc/v1/subnets", _sub_body_extra()):
+    CASES.append(_wrap_with_net("SUB", "ecp-l", c))
+CASES.extend(updatemask_decision_table("SUB", "/vpc/v1/subnets"))
+CASES.extend(filter_syntax_block("SUB", "/vpc/v1/subnets"))
+CASES.append(pagination_roundtrip("SUB", "/vpc/v1/subnets"))

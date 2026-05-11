@@ -239,6 +239,235 @@ def list_pagesize_1_bva(prefix, list_path):
     )
 
 
+def ecp_name_block(prefix, create_path, body_extra=None):
+    """ECP/BVA по полю name: пустое, max, over-max, invalid regex.
+
+    body_extra — обязательные поля кроме folderId/name (например для Subnet: networkId+zoneId+cidr).
+    """
+    body_extra = body_extra or {}
+    base = lambda name: {"folderId": "{{_suiteFolderId}}", "name": name, **body_extra}
+    cases = []
+    # BVA name length: 0, 63 (max), 64 (over)
+    cases.append(Case(
+        id=f"{prefix}-CR-BVA-NAME-EMPTY",
+        title="Create с empty name → VPC permissive (200) или 400",
+        classes=["BVA", "VAL"], priority="P2",
+        steps=[Step(name="cr-empty", method="POST", path=create_path,
+                    body=base(""),
+                    test_script=["pm.test('accepted or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-BVA-NAME-MAX-63",
+        title="Create с name len=63 (max) → ok",
+        classes=["BVA"], priority="P2",
+        steps=[Step(name="cr-max63", method="POST", path=create_path,
+                    body=base("n63" + "abcdefghij"*6),
+                    test_script=[*assert_status(200), *save_from_response("j.id", "opId")])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-BVA-NAME-OVER-64",
+        title="Create с name len=64 (over-max) → InvalidArgument",
+        classes=["BVA", "VAL"], priority="P1",
+        steps=[Step(name="cr-over", method="POST", path=create_path,
+                    body=base("n64" + "abcdefghij"*7),
+                    test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-VAL-NAME-UPPERCASE",
+        title="Create с UPPERCASE name → VPC permissive (200) или 400",
+        classes=["VAL"], priority="P2",
+        steps=[Step(name="cr-upper", method="POST", path=create_path,
+                    body=base("InvalidUpperCase-{{runId}}"),
+                    test_script=["pm.test('accepted or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-VAL-NAME-DIGIT-START",
+        title="Create с name начинающимся с цифры → 400 (verbatim YC regex)",
+        classes=["VAL"], priority="P1",
+        steps=[Step(name="cr-digit", method="POST", path=create_path,
+                    body=base("9invalid-{{runId}}"),
+                    test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-VAL-NAME-HYPHEN-START",
+        title="Create с name начинающимся с дефиса → 400",
+        classes=["VAL"], priority="P1",
+        steps=[Step(name="cr-hyphen", method="POST", path=create_path,
+                    body=base("-bad-{{runId}}"),
+                    test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+    ))
+    cases.append(Case(
+        id=f"{prefix}-CR-VAL-NAME-SPECIAL-CHARS",
+        title="Create с спец-символами в name → 400",
+        classes=["VAL"], priority="P1",
+        steps=[Step(name="cr-special", method="POST", path=create_path,
+                    body=base("name!@#-{{runId}}"),
+                    test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+    ))
+    return cases
+
+
+def ecp_description_block(prefix, create_path, body_extra=None):
+    """BVA по description: 256 (max), 257 (over)."""
+    body_extra = body_extra or {}
+    base = lambda name, desc: {"folderId": "{{_suiteFolderId}}", "name": name, "description": desc, **body_extra}
+    return [
+        Case(
+            id=f"{prefix}-CR-BVA-DESC-MAX-256",
+            title="Create с description len=256 (max) → ok",
+            classes=["BVA"], priority="P2",
+            steps=[Step(name="cr-desc-max", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-desc-{{{{runId}}}}", "x" * 256),
+                        test_script=[*assert_status(200), *save_from_response("j.id", "opId")])],
+        ),
+        Case(
+            id=f"{prefix}-CR-BVA-DESC-OVER-257",
+            title="Create с description len=257 (over-max) → InvalidArgument",
+            classes=["BVA", "VAL"], priority="P1",
+            steps=[Step(name="cr-desc-over", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-d2-{{{{runId}}}}", "x" * 257),
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+    ]
+
+
+def ecp_labels_block(prefix, create_path, body_extra=None):
+    """ECP по labels: invalid key regex, too many pairs (>64), uppercase key."""
+    body_extra = body_extra or {}
+    base = lambda name, labels: {"folderId": "{{_suiteFolderId}}", "name": name, "labels": labels, **body_extra}
+    return [
+        Case(
+            id=f"{prefix}-CR-VAL-LABELS-UPPERCASE-KEY",
+            title="Create с UPPERCASE label key → 400",
+            classes=["VAL"], priority="P1",
+            steps=[Step(name="cr-lbl-upper", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-lblup-{{{{runId}}}}", {"BADKEY": "v"}),
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+        Case(
+            id=f"{prefix}-CR-VAL-LABELS-INVALID-KEY-CHAR",
+            title="Create с invalid char в label key → 400",
+            classes=["VAL"], priority="P1",
+            steps=[Step(name="cr-lbl-bad", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-lblbad-{{{{runId}}}}", {"bad key!": "v"}),
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+        Case(
+            id=f"{prefix}-CR-BVA-LABELS-MAX-64",
+            title="Create с 64 labels (max) → ok",
+            classes=["BVA"], priority="P2",
+            steps=[Step(name="cr-lbl-max", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-lblm-{{{{runId}}}}",
+                                  {f"key{i}": f"v{i}" for i in range(64)}),
+                        test_script=[*assert_status(200), *save_from_response("j.id", "opId")])],
+        ),
+        Case(
+            id=f"{prefix}-CR-BVA-LABELS-OVER-65",
+            title="Create с 65 labels (over-max) → 400",
+            classes=["BVA", "VAL"], priority="P1",
+            steps=[Step(name="cr-lbl-over", method="POST", path=create_path,
+                        body=base(f"{prefix.lower()}-lblo-{{{{runId}}}}",
+                                  {f"k{i}": f"v{i}" for i in range(65)}),
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+    ]
+
+
+def updatemask_decision_table(prefix, update_base_path):
+    """Decision table для UpdateMask: empty, unknown, immutable, valid."""
+    return [
+        Case(
+            id=f"{prefix}-UPD-VAL-MASK-EMPTY",
+            title="Update с пустой mask → full PATCH (200)",
+            classes=["VAL", "STATE"], priority="P2",
+            steps=[Step(name="upd-empty-mask", method="PATCH",
+                        path=f"{update_base_path}/{{{{garbageVpcId}}}}",
+                        body={"description": "x"},
+                        test_script=["pm.test('rejected NF', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"])],
+        ),
+        Case(
+            id=f"{prefix}-UPD-VAL-MASK-MULTIPLE-UNKNOWN",
+            title="Update с несколькими unknown полями в mask → 400",
+            classes=["VAL", "STATE"], priority="P2",
+            steps=[Step(name="upd-multi-unknown", method="PATCH",
+                        path=f"{update_base_path}/{{{{garbageVpcId}}}}",
+                        body={"updateMask": "x_unknown,y_unknown", "description": "x"},
+                        test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
+        ),
+    ]
+
+
+def filter_syntax_block(prefix, list_path):
+    """Filter syntax tests."""
+    return [
+        Case(
+            id=f"{prefix}-LST-FILTER-NAME-OK",
+            title="List с filter name=\"foo\" → 200",
+            classes=["FILTER", "CRUD"], priority="P2",
+            steps=[Step(name="list-filter", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=name%3D%22foo%22",
+                        test_script=[*assert_status(200)])],
+        ),
+        Case(
+            id=f"{prefix}-LST-FILTER-GARBAGE",
+            title="List с garbage filter syntax → 400 InvalidArgument",
+            classes=["FILTER", "VAL"], priority="P1",
+            steps=[Step(name="list-bad-filter", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=this%20is%20not%20valid%20syntax",
+                        test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+        ),
+        Case(
+            id=f"{prefix}-LST-FILTER-UNKNOWN-FIELD",
+            title="List с filter на unsupported field → 400 InvalidArgument",
+            classes=["FILTER", "VAL"], priority="P2",
+            steps=[Step(name="list-unknown-field", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=nonexistent_field%3D%22x%22",
+                        test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+        ),
+    ]
+
+
+def pagination_roundtrip(prefix, list_path):
+    """Pagination round-trip: получить page+token, использовать token для next page."""
+    return Case(
+        id=f"{prefix}-LST-PAGE-ROUNDTRIP",
+        title="Pagination: получить пустой/не-пустой ответ + nextPageToken и пройти ещё раз с ним",
+        classes=["PAGE", "BVA", "CRUD"], priority="P2",
+        steps=[
+            Step(name="list-p1", method="GET",
+                 path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1",
+                 test_script=[*assert_status(200),
+                              "const j = pm.response.json();",
+                              "const tok = j.nextPageToken || '';",
+                              "pm.environment.set('nextToken', tok);",
+                              "pm.test('token is string', () => pm.expect(tok).to.be.a('string'));"]),
+            Step(name="list-p2", method="GET",
+                 path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1&pageToken={{{{nextToken}}}}",
+                 test_script=[*assert_status(200)]),
+        ],
+    )
+
+
+def idempotency_block(prefix, create_path, name_template, body_extra=None):
+    """Idempotency-style: повторный Create same name → consistent behavior."""
+    body_extra = body_extra or {}
+    return Case(
+        id=f"{prefix}-CR-IDM-RETRY",
+        title="Retry-safe: повторный Create same input → consistent result",
+        classes=["IDM", "CONC"], priority="P1",
+        steps=[
+            Step(name="cr-1", method="POST", path=create_path,
+                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId1")]),
+            Step(name="poll-1", method="GET", path="/operations/{{opId1}}",
+                 test_script=["pm.test('done eventually', () => { const j = pm.response.json(); pm.expect([true,false]).to.include(j.done); });"]),
+            Step(name="cr-2", method="POST", path=create_path,
+                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 test_script=[*assert_status(200)]),
+        ],
+    )
+
+
 def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None):
     """CONF: AlreadyExists text при duplicate name."""
     body_extra = body_extra or {}
@@ -375,6 +604,13 @@ def load_cases_module(path: Path):
     mod.state_immutable_folder = state_immutable_folder
     mod.list_pagesize_1_bva = list_pagesize_1_bva
     mod.conf_alreadyexists_block = conf_alreadyexists_block
+    mod.ecp_name_block = ecp_name_block
+    mod.ecp_description_block = ecp_description_block
+    mod.ecp_labels_block = ecp_labels_block
+    mod.updatemask_decision_table = updatemask_decision_table
+    mod.filter_syntax_block = filter_syntax_block
+    mod.pagination_roundtrip = pagination_roundtrip
+    mod.idempotency_block = idempotency_block
     spec.loader.exec_module(mod)
     return mod
 

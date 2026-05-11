@@ -428,3 +428,13 @@ CASES.append(Case(
              test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
     ],
 ))
+
+CASES.extend(ecp_name_block("ADR", "/vpc/v1/addresses",
+                             {"externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+CASES.extend(ecp_description_block("ADR", "/vpc/v1/addresses",
+                                    {"externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+CASES.extend(ecp_labels_block("ADR", "/vpc/v1/addresses",
+                               {"externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+CASES.extend(updatemask_decision_table("ADR", "/vpc/v1/addresses"))
+CASES.extend(filter_syntax_block("ADR", "/vpc/v1/addresses"))
+CASES.append(pagination_roundtrip("ADR", "/vpc/v1/addresses"))

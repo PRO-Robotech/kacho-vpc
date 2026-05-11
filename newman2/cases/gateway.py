@@ -255,3 +255,10 @@ CASES.append(Case(
              test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
     ],
 ))
+
+CASES.extend(ecp_name_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
+CASES.extend(ecp_description_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
+CASES.extend(ecp_labels_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
+CASES.extend(updatemask_decision_table("GW", "/vpc/v1/gateways"))
+CASES.extend(filter_syntax_block("GW", "/vpc/v1/gateways"))
+CASES.append(pagination_roundtrip("GW", "/vpc/v1/gateways"))
