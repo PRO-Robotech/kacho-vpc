@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -40,7 +38,7 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
 		return nil, err
 	}
-	return addressToProto(a), nil
+	return protoconv.Address(a), nil
 }
 
 func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRequest) (*vpcv1.Address, error) {
@@ -58,7 +56,7 @@ func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressBy
 	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
 		return nil, status.Error(codes.NotFound, "Address not found")
 	}
-	return addressToProto(a), nil
+	return protoconv.Address(a), nil
 }
 
 func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySubnetRequest) (*vpcv1.ListAddressesBySubnetResponse, error) {
@@ -85,7 +83,7 @@ func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddres
 	}
 	resp := &vpcv1.ListAddressesBySubnetResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, addressToProto(a))
+		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
 	}
 	return resp, nil
 }
@@ -106,7 +104,7 @@ func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesReque
 	}
 	resp := &vpcv1.ListAddressesResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, addressToProto(a))
+		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
 	}
 	return resp, nil
 }
@@ -246,41 +244,3 @@ func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressReq
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
 // YC-DIFF-TIMESTAMP-PRECISION.md.
-func addressToProto(a *domain.Address) *vpcv1.Address {
-	p := &vpcv1.Address{
-		Id:                 a.ID,
-		FolderId:           a.FolderID,
-		CreatedAt:          timestamppb.New(a.CreatedAt.Truncate(time.Second)),
-		Name:               a.Name,
-		Description:        a.Description,
-		Labels:             a.Labels,
-		Reserved:           a.Reserved,
-		Used:               a.Used,
-		Type:               vpcv1.Address_Type(a.Type),
-		IpVersion:          vpcv1.Address_IpVersion(a.IpVersion),
-		DeletionProtection: a.DeletionProtection,
-	}
-	if a.ExternalIpv4 != nil {
-		ext := &vpcv1.ExternalIpv4Address{
-			Address: a.ExternalIpv4.Address,
-			ZoneId:  a.ExternalIpv4.ZoneID,
-		}
-		if a.ExternalIpv4.Requirements != nil {
-			ext.Requirements = &vpcv1.AddressRequirements{
-				DdosProtectionProvider: a.ExternalIpv4.Requirements.DdosProtectionProvider,
-				OutgoingSmtpCapability: a.ExternalIpv4.Requirements.OutgoingSmtpCapability,
-			}
-		}
-		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
-	} else if a.InternalIpv4 != nil {
-		p.Address = &vpcv1.Address_InternalIpv4Address{
-			InternalIpv4Address: &vpcv1.InternalIpv4Address{
-				Address: a.InternalIpv4.Address,
-				Scope: &vpcv1.InternalIpv4Address_SubnetId{
-					SubnetId: a.InternalIpv4.SubnetID,
-				},
-			},
-		}
-	}
-	return p
-}

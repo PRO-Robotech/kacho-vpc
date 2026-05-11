@@ -15,6 +15,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateNetworkReq — запрос на создание сети.
@@ -223,18 +224,18 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 			// SG creation failed — Network уже создан. Log warn, не падаем
 			// (admin может создать default SG руками через public API).
 			// Возвращаем network без default_security_group_id.
-			return anypb.New(domainNetworkToProto(created))
+			return anypb.New(protoconv.Network(created))
 		}
 		// Bind SG как default через NetworkRepo.Update.
 		created.DefaultSecurityGroupID = createdSG.ID
 		updated, uerr := s.repo.Update(ctx, created)
 		if uerr == nil {
-			return anypb.New(domainNetworkToProto(updated))
+			return anypb.New(protoconv.Network(updated))
 		}
 		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
-		return anypb.New(domainNetworkToProto(created))
+		return anypb.New(protoconv.Network(created))
 	}
-	return anypb.New(domainNetworkToProto(created))
+	return anypb.New(protoconv.Network(created))
 }
 
 // Update обновляет Network.
@@ -283,7 +284,7 @@ func (s *NetworkService) doUpdate(ctx context.Context, req UpdateNetworkReq) (*a
 		// raw "already exists" в Operation.error (verbatim YC parity break).
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainNetworkToProto(updated))
+	return anypb.New(protoconv.Network(updated))
 }
 
 // validateNetworkUpdate — sync-проверка update_mask и значений.
@@ -380,7 +381,7 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainNetworkToProto(updated))
+		return anypb.New(protoconv.Network(updated))
 	})
 
 	return &op, nil
@@ -422,18 +423,7 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	return &op, nil
 }
 
-// domainNetworkToProto конвертирует domain Network в proto Network.
 // Используется в worker-goroutines для формирования Operation.Response.
-func domainNetworkToProto(n *domain.Network) *vpcv1.Network {
-	return &vpcv1.Network{
-		Id:                     n.ID,
-		FolderId:               n.FolderID,
-		Name:                   n.Name,
-		Description:            n.Description,
-		Labels:                 n.Labels,
-		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
-	}
-}
 
 // mapRepoErr переводит domain-ошибки репозитория в gRPC-статусы.
 // errors.Is используется потому, что repo может оборачивать sentinel через %w

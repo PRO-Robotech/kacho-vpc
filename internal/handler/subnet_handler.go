@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -36,7 +35,7 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
 		return nil, err
 	}
-	return subnetToProto(sub), nil
+	return protoconv.Subnet(sub), nil
 }
 
 func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
@@ -55,7 +54,7 @@ func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest)
 	}
 	resp := &vpcv1.ListSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, subnetToProto(s))
+		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
 	}
 	return resp, nil
 }
@@ -285,26 +284,3 @@ func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUs
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
 // YC-DIFF-TIMESTAMP-PRECISION.md.
-func subnetToProto(s *domain.Subnet) *vpcv1.Subnet {
-	p := &vpcv1.Subnet{
-		Id:           s.ID,
-		FolderId:     s.FolderID,
-		CreatedAt:    timestamppb.New(s.CreatedAt.Truncate(time.Second)),
-		Name:         s.Name,
-		Description:  s.Description,
-		Labels:       s.Labels,
-		NetworkId:    s.NetworkID,
-		ZoneId:       s.ZoneID,
-		V4CidrBlocks: s.V4CidrBlocks,
-		V6CidrBlocks: s.V6CidrBlocks,
-		RouteTableId: s.RouteTableID,
-	}
-	if s.DhcpOptions != nil {
-		p.DhcpOptions = &vpcv1.DhcpOptions{
-			DomainNameServers: s.DhcpOptions.DomainNameServers,
-			DomainName:        s.DhcpOptions.DomainName,
-			NtpServers:        s.DhcpOptions.NtpServers,
-		}
-	}
-	return p
-}

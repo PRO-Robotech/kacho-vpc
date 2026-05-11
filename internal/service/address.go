@@ -22,6 +22,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateAddressReq — запрос на создание адреса.
@@ -336,7 +337,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 			created.InternalIpv4.Address = res.IP
 		}
 	}
-	return anypb.New(domainAddressToProto(created))
+	return anypb.New(protoconv.Address(created))
 }
 
 // compensatingDelete — undo Insert при failed allocate. Использует fresh
@@ -401,7 +402,7 @@ func (s *AddressService) doUpdate(ctx context.Context, req UpdateAddressReq) (*a
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainAddressToProto(updated))
+	return anypb.New(protoconv.Address(updated))
 }
 
 // validateAddressUpdate проверяет name/description/labels в Update Address.
@@ -512,7 +513,7 @@ func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainAddressToProto(updated))
+		return anypb.New(protoconv.Address(updated))
 	})
 	return &op, nil
 }
@@ -555,44 +556,6 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 	return &op, nil
 }
 
-// domainAddressToProto конвертирует domain Address в proto Address.
-func domainAddressToProto(a *domain.Address) *vpcv1.Address {
-	p := &vpcv1.Address{
-		Id:                 a.ID,
-		FolderId:           a.FolderID,
-		Name:               a.Name,
-		Description:        a.Description,
-		Labels:             a.Labels,
-		Reserved:           a.Reserved,
-		Used:               a.Used,
-		Type:               vpcv1.Address_Type(a.Type),
-		IpVersion:          vpcv1.Address_IpVersion(a.IpVersion),
-		DeletionProtection: a.DeletionProtection,
-	}
-	if a.ExternalIpv4 != nil {
-		ext := &vpcv1.ExternalIpv4Address{
-			Address: a.ExternalIpv4.Address,
-			ZoneId:  a.ExternalIpv4.ZoneID,
-		}
-		if a.ExternalIpv4.Requirements != nil {
-			ext.Requirements = &vpcv1.AddressRequirements{
-				DdosProtectionProvider: a.ExternalIpv4.Requirements.DdosProtectionProvider,
-				OutgoingSmtpCapability: a.ExternalIpv4.Requirements.OutgoingSmtpCapability,
-			}
-		}
-		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
-	} else if a.InternalIpv4 != nil {
-		p.Address = &vpcv1.Address_InternalIpv4Address{
-			InternalIpv4Address: &vpcv1.InternalIpv4Address{
-				Address: a.InternalIpv4.Address,
-				Scope: &vpcv1.InternalIpv4Address_SubnetId{
-					SubnetId: a.InternalIpv4.SubnetID,
-				},
-			},
-		}
-	}
-	return p
-}
 // AllocateResult — результат allocate-операций.
 type AllocateResult struct {
 	IP               string
@@ -969,4 +932,3 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(msg, "SQLSTATE 23505") ||
 		strings.Contains(msg, "duplicate key value")
 }
-

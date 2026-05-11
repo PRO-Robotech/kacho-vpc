@@ -13,6 +13,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -93,7 +94,7 @@ func TestNetworkToProto_Fields(t *testing.T) {
 		Description: "desc",
 		Labels:      map[string]string{"env": "test"},
 	}
-	p := networkToProto(n)
+	p := protoconv.Network(n)
 	assert.Equal(t, "net-123", p.Id)
 	assert.Equal(t, "folder-1", p.FolderId)
 	assert.Equal(t, "my-net", p.Name)
@@ -111,7 +112,7 @@ func TestAddressToProto_External(t *testing.T) {
 			ZoneID:  "ru-central1-a",
 		},
 	}
-	p := addressToProto(a)
+	p := protoconv.Address(a)
 	assert.Equal(t, "addr-1", p.Id)
 	ext := p.GetExternalIpv4Address()
 	require.NotNil(t, ext)
@@ -129,7 +130,7 @@ func TestAddressToProto_Internal(t *testing.T) {
 			SubnetID: "subnet-1",
 		},
 	}
-	p := addressToProto(a)
+	p := protoconv.Address(a)
 	intAddr := p.GetInternalIpv4Address()
 	require.NotNil(t, intAddr)
 	assert.Equal(t, "10.0.0.5", intAddr.Address)
@@ -145,7 +146,7 @@ func TestRouteTableToProto_StaticRoutes(t *testing.T) {
 			{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
 		},
 	}
-	p := routeTableToProto(rt)
+	p := protoconv.RouteTable(rt)
 	require.Len(t, p.StaticRoutes, 1)
 	assert.Equal(t, "0.0.0.0/0", p.StaticRoutes[0].GetDestinationPrefix())
 	assert.Equal(t, "192.168.0.1", p.StaticRoutes[0].GetNextHopAddress())
@@ -157,6 +158,6 @@ func TestSubnetToProto_CidrBlocks(t *testing.T) {
 		FolderID:     "f1",
 		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
 	}
-	p := subnetToProto(s)
+	p := protoconv.Subnet(s)
 	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, p.V4CidrBlocks)
 }

@@ -82,11 +82,11 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	}
 
 	// 5 pools, one per cascade level (all kind=EXTERNAL_PUBLIC).
-	globalPool := mkPool("global-default", "", true, nil, "198.18.0.0/24")           // step 5
-	zonePool := mkPool("zone-default", zone, true, nil, "198.18.1.0/24")             // step 4
+	globalPool := mkPool("global-default", "", true, nil, "198.18.0.0/24")                                         // step 5
+	zonePool := mkPool("zone-default", zone, true, nil, "198.18.1.0/24")                                           // step 4
 	selectorPool := mkPool("premium-selector", zone, false, map[string]string{"tier": "premium"}, "198.18.2.0/24") // step 3
-	networkBindingPool := mkPool("network-bound", zone, false, nil, "198.18.3.0/24") // step 2
-	overridePool := mkPool("address-override", zone, false, nil, "198.18.4.0/24")    // step 1
+	networkBindingPool := mkPool("network-bound", zone, false, nil, "198.18.3.0/24")                               // step 2
+	overridePool := mkPool("address-override", zone, false, nil, "198.18.4.0/24")                                  // step 1
 
 	// Network + subnet for the internal-address (step-2) path.
 	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", CreatedAt: now, Name: "net-step2"}

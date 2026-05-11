@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -278,7 +279,7 @@ func TestGatewayToProto_SharedEgress(t *testing.T) {
 		Labels:      map[string]string{"env": "prod"},
 		GatewayType: "shared_egress",
 	}
-	p := gatewayToProto(g)
+	p := protoconv.Gateway(g)
 	assert.Equal(t, "gw-1", p.Id)
 	assert.NotNil(t, p.GetSharedEgressGateway())
 }

@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -36,7 +34,7 @@ func (h *GatewayHandler) Get(ctx context.Context, req *vpcv1.GetGatewayRequest) 
 	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
 		return nil, err
 	}
-	return gatewayToProto(g), nil
+	return protoconv.Gateway(g), nil
 }
 
 func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysRequest) (*vpcv1.ListGatewaysResponse, error) {
@@ -55,7 +53,7 @@ func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysReques
 	}
 	resp := &vpcv1.ListGatewaysResponse{NextPageToken: nextToken}
 	for _, g := range gws {
-		resp.Gateways = append(resp.Gateways, gatewayToProto(g))
+		resp.Gateways = append(resp.Gateways, protoconv.Gateway(g))
 	}
 	return resp, nil
 }
@@ -179,18 +177,3 @@ func (h *GatewayHandler) ListOperations(ctx context.Context, req *vpcv1.ListGate
 }
 
 // gatewayToProto конвертирует domain Gateway в proto Gateway, заполняя oneof.
-func gatewayToProto(g *domain.Gateway) *vpcv1.Gateway {
-	p := &vpcv1.Gateway{
-		Id:          g.ID,
-		FolderId:    g.FolderID,
-		CreatedAt:   timestamppb.New(g.CreatedAt.Truncate(time.Second)),
-		Name:        g.Name,
-		Description: g.Description,
-		Labels:      g.Labels,
-	}
-	// shared_egress — единственный тип в YC.
-	p.Gateway = &vpcv1.Gateway_SharedEgressGateway{
-		SharedEgressGateway: &vpcv1.SharedEgressGateway{},
-	}
-	return p
-}

@@ -15,6 +15,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateGatewayReq — запрос на создание NAT gateway.
@@ -127,7 +128,7 @@ func (s *GatewayService) doCreate(ctx context.Context, gwID string, req CreateGa
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainGatewayToProto(created))
+	return anypb.New(protoconv.Gateway(created))
 }
 
 // Update обновляет Gateway.
@@ -167,7 +168,7 @@ func (s *GatewayService) doUpdate(ctx context.Context, req UpdateGatewayReq) (*a
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainGatewayToProto(updated))
+	return anypb.New(protoconv.Gateway(updated))
 }
 
 func validateGatewayUpdate(req UpdateGatewayReq) error {
@@ -280,7 +281,7 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainGatewayToProto(updated))
+		return anypb.New(protoconv.Gateway(updated))
 	})
 	return &op, nil
 }
@@ -297,21 +298,6 @@ func (s *GatewayService) ListOperations(ctx context.Context, gwID string, p Pagi
 	})
 }
 
-// domainGatewayToProto конвертирует domain.Gateway → vpcv1.Gateway.
 //
 // Поскольку Gateway имеет oneof gateway (только shared_egress сейчас),
 // устанавливаем SharedEgressGateway всегда (default-тип в YC).
-func domainGatewayToProto(g *domain.Gateway) *vpcv1.Gateway {
-	p := &vpcv1.Gateway{
-		Id:          g.ID,
-		FolderId:    g.FolderID,
-		Name:        g.Name,
-		Description: g.Description,
-		Labels:      g.Labels,
-	}
-	// shared_egress — единственный поддерживаемый тип в YC sub-phase.
-	p.Gateway = &vpcv1.Gateway_SharedEgressGateway{
-		SharedEgressGateway: &vpcv1.SharedEgressGateway{},
-	}
-	return p
-}

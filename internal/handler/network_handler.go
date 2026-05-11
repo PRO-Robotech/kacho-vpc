@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -40,7 +38,7 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
 		return nil, err
 	}
-	return networkToProto(n), nil
+	return protoconv.Network(n), nil
 }
 
 func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
@@ -61,7 +59,7 @@ func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksReques
 	}
 	resp := &vpcv1.ListNetworksResponse{NextPageToken: nextToken}
 	for _, n := range nets {
-		resp.Networks = append(resp.Networks, networkToProto(n))
+		resp.Networks = append(resp.Networks, protoconv.Network(n))
 	}
 	return resp, nil
 }
@@ -133,7 +131,7 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 	}
 	resp := &vpcv1.ListNetworkSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, subnetToProto(s))
+		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
 	}
 	return resp, nil
 }
@@ -158,7 +156,7 @@ func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.List
 	}
 	resp := &vpcv1.ListNetworkSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, sgToProto(sg))
+		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
 	}
 	return resp, nil
 }
@@ -183,7 +181,7 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 	}
 	resp := &vpcv1.ListNetworkRouteTablesResponse{NextPageToken: nextToken}
 	for _, rt := range rts {
-		resp.RouteTables = append(resp.RouteTables, routeTableToProto(rt))
+		resp.RouteTables = append(resp.RouteTables, protoconv.RouteTable(rt))
 	}
 	return resp, nil
 }
@@ -257,14 +255,3 @@ func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkReq
 //
 // CreatedAt — truncate до seconds для verbatim YC parity (resource.createdAt
 // в YC всегда seconds-precision). См. YC-DIFF-TIMESTAMP-PRECISION.md.
-func networkToProto(n *domain.Network) *vpcv1.Network {
-	return &vpcv1.Network{
-		Id:                     n.ID,
-		FolderId:               n.FolderID,
-		CreatedAt:              timestamppb.New(n.CreatedAt.Truncate(time.Second)),
-		Name:                   n.Name,
-		Description:            n.Description,
-		Labels:                 n.Labels,
-		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
-	}
-}

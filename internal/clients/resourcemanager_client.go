@@ -24,7 +24,7 @@ const folderExistsTTL = 30 * time.Second
 type FolderClient struct {
 	cli rmv1.FolderServiceClient
 
-	mu    sync.RWMutex
+	mu     sync.RWMutex
 	exists map[string]time.Time // folderID → время до которого результат "true" валиден
 }
 

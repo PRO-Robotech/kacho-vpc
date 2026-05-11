@@ -16,6 +16,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateRouteTableReq — запрос на создание таблицы маршрутизации.
@@ -146,7 +147,7 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainRouteTableToProto(created))
+	return anypb.New(protoconv.RouteTable(created))
 }
 
 // Update обновляет RouteTable.
@@ -191,7 +192,7 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainRouteTableToProto(updated))
+	return anypb.New(protoconv.RouteTable(updated))
 }
 
 // validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
@@ -329,7 +330,7 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainRouteTableToProto(updated))
+		return anypb.New(protoconv.RouteTable(updated))
 	})
 	return &op, nil
 }
@@ -360,33 +361,4 @@ func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.
 	})
 
 	return &op, nil
-}
-
-// domainRouteTableToProto конвертирует domain RouteTable в proto RouteTable.
-func domainRouteTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
-	p := &vpcv1.RouteTable{
-		Id:          rt.ID,
-		FolderId:    rt.FolderID,
-		Name:        rt.Name,
-		Description: rt.Description,
-		Labels:      rt.Labels,
-		NetworkId:   rt.NetworkID,
-	}
-	for _, sr := range rt.StaticRoutes {
-		protoSR := &vpcv1.StaticRoute{
-			Labels: sr.Labels,
-		}
-		if sr.DestinationPrefix != "" {
-			protoSR.Destination = &vpcv1.StaticRoute_DestinationPrefix{
-				DestinationPrefix: sr.DestinationPrefix,
-			}
-		}
-		if sr.NextHopAddress != "" {
-			protoSR.NextHop = &vpcv1.StaticRoute_NextHopAddress{
-				NextHopAddress: sr.NextHopAddress,
-			}
-		}
-		p.StaticRoutes = append(p.StaticRoutes, protoSR)
-	}
-	return p
 }

@@ -14,6 +14,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -155,7 +156,7 @@ func TestSGToProto_Fields(t *testing.T) {
 			},
 		},
 	}
-	p := sgToProto(sg)
+	p := protoconv.SecurityGroup(sg)
 	assert.Equal(t, "sg-1", p.Id)
 	assert.Equal(t, vpcv1.SecurityGroup_ACTIVE, p.Status)
 	assert.Len(t, p.Rules, 2)
@@ -163,25 +164,6 @@ func TestSGToProto_Fields(t *testing.T) {
 	require.NotNil(t, p.Rules[0].Ports)
 	assert.Equal(t, int64(22), p.Rules[0].Ports.FromPort)
 	assert.Nil(t, p.Rules[1].Ports, "ports nil for any")
-}
-
-func TestSGStatusToProtoH_AllStates(t *testing.T) {
-	cases := map[string]vpcv1.SecurityGroup_Status{
-		"CREATING": vpcv1.SecurityGroup_CREATING,
-		"ACTIVE":   vpcv1.SecurityGroup_ACTIVE,
-		"UPDATING": vpcv1.SecurityGroup_UPDATING,
-		"DELETING": vpcv1.SecurityGroup_DELETING,
-		"unknown":  vpcv1.SecurityGroup_STATUS_UNSPECIFIED,
-	}
-	for in, expected := range cases {
-		assert.Equal(t, expected, sgStatusToProtoH(in), "state=%q", in)
-	}
-}
-
-func TestSGDirectionToProtoH_AllStates(t *testing.T) {
-	assert.Equal(t, vpcv1.SecurityGroupRule_INGRESS, sgDirectionToProtoH("INGRESS"))
-	assert.Equal(t, vpcv1.SecurityGroupRule_EGRESS, sgDirectionToProtoH("EGRESS"))
-	assert.Equal(t, vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED, sgDirectionToProtoH(""))
 }
 
 func TestRuleSpecFromProto_Fields(t *testing.T) {
@@ -297,7 +279,7 @@ func TestPrivateEndpointToProto_Fields(t *testing.T) {
 		Status:      "AVAILABLE",
 		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
 	}
-	out := privateEndpointToProto(p)
+	out := protoconv.PrivateEndpoint(p)
 	assert.Equal(t, "pe-1", out.Id)
 	assert.Equal(t, pepb.PrivateEndpoint_AVAILABLE, out.Status)
 	require.NotNil(t, out.Address)
@@ -314,7 +296,7 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 		"DELETING":  pepb.PrivateEndpoint_DELETING,
 		"unknown":   pepb.PrivateEndpoint_STATUS_UNSPECIFIED,
 	} {
-		out := privateEndpointToProto(&domain.PrivateEndpoint{Status: status})
+		out := protoconv.PrivateEndpoint(&domain.PrivateEndpoint{Status: status})
 		assert.Equal(t, expected, out.Status, "status=%s", status)
 	}
 }
@@ -612,7 +594,7 @@ func TestSubnetToProto_Fields(t *testing.T) {
 			NtpServers:        []string{"1.1.1.1"},
 		},
 	}
-	p := subnetToProto(s)
+	p := protoconv.Subnet(s)
 	assert.Equal(t, "sub-1", p.Id)
 	assert.Equal(t, "ru-central1-a", p.ZoneId)
 	require.NotNil(t, p.DhcpOptions)

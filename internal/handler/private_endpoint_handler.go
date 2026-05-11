@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -36,7 +34,7 @@ func (h *PrivateEndpointHandler) Get(ctx context.Context, req *pe.GetPrivateEndp
 	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
 		return nil, err
 	}
-	return privateEndpointToProto(got), nil
+	return protoconv.PrivateEndpoint(got), nil
 }
 
 func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEndpointsRequest) (*pe.ListPrivateEndpointsResponse, error) {
@@ -59,7 +57,7 @@ func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEn
 	}
 	resp := &pe.ListPrivateEndpointsResponse{NextPageToken: nextToken}
 	for _, p := range endpoints {
-		resp.PrivateEndpoints = append(resp.PrivateEndpoints, privateEndpointToProto(p))
+		resp.PrivateEndpoints = append(resp.PrivateEndpoints, protoconv.PrivateEndpoint(p))
 	}
 	return resp, nil
 }
@@ -178,42 +176,3 @@ func (h *PrivateEndpointHandler) ListOperations(ctx context.Context, req *pe.Lis
 }
 
 // privateEndpointToProto конвертирует domain → proto PrivateEndpoint.
-func privateEndpointToProto(p *domain.PrivateEndpoint) *pe.PrivateEndpoint {
-	out := &pe.PrivateEndpoint{
-		Id:          p.ID,
-		FolderId:    p.FolderID,
-		CreatedAt:   timestamppb.New(p.CreatedAt.Truncate(time.Second)),
-		Name:        p.Name,
-		Description: p.Description,
-		Labels:      p.Labels,
-		NetworkId:   p.NetworkID,
-	}
-	switch p.Status {
-	case "PENDING":
-		out.Status = pe.PrivateEndpoint_PENDING
-	case "AVAILABLE":
-		out.Status = pe.PrivateEndpoint_AVAILABLE
-	case "DELETING":
-		out.Status = pe.PrivateEndpoint_DELETING
-	default:
-		out.Status = pe.PrivateEndpoint_STATUS_UNSPECIFIED
-	}
-	if p.SubnetID != "" || p.IPAddress != "" || p.AddressID != "" {
-		out.Address = &pe.PrivateEndpoint_EndpointAddress{
-			SubnetId:  p.SubnetID,
-			Address:   p.IPAddress,
-			AddressId: p.AddressID,
-		}
-	}
-	if v, ok := p.DnsOptions["private_dns_records_enabled"]; ok {
-		if b, ok := v.(bool); ok {
-			out.DnsOptions = &pe.PrivateEndpoint_DnsOptions{PrivateDnsRecordsEnabled: b}
-		}
-	}
-	if p.ServiceType == "object_storage" || p.ServiceType == "" {
-		out.Service = &pe.PrivateEndpoint_ObjectStorage_{
-			ObjectStorage: &pe.PrivateEndpoint_ObjectStorage{},
-		}
-	}
-	return out
-}

@@ -15,6 +15,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreatePrivateEndpointReq — запрос на создание PrivateEndpoint.
@@ -156,7 +157,7 @@ func (s *PrivateEndpointService) doCreate(ctx context.Context, peID string, req 
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainPrivateEndpointToProto(created))
+	return anypb.New(protoconv.PrivateEndpoint(created))
 }
 
 // Update обновляет PrivateEndpoint.
@@ -190,7 +191,7 @@ func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEn
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainPrivateEndpointToProto(updated))
+		return anypb.New(protoconv.PrivateEndpoint(updated))
 	})
 	return &op, nil
 }
@@ -284,46 +285,4 @@ func (s *PrivateEndpointService) ListOperations(ctx context.Context, peID string
 		PageSize:   p.PageSize,
 		PageToken:  p.PageToken,
 	})
-}
-
-// domainPrivateEndpointToProto конвертирует domain → proto PrivateEndpoint.
-func domainPrivateEndpointToProto(p *domain.PrivateEndpoint) *pe.PrivateEndpoint {
-	out := &pe.PrivateEndpoint{
-		Id:          p.ID,
-		FolderId:    p.FolderID,
-		Name:        p.Name,
-		Description: p.Description,
-		Labels:      p.Labels,
-		NetworkId:   p.NetworkID,
-	}
-	switch p.Status {
-	case "PENDING":
-		out.Status = pe.PrivateEndpoint_PENDING
-	case "AVAILABLE":
-		out.Status = pe.PrivateEndpoint_AVAILABLE
-	case "DELETING":
-		out.Status = pe.PrivateEndpoint_DELETING
-	default:
-		out.Status = pe.PrivateEndpoint_STATUS_UNSPECIFIED
-	}
-	if p.SubnetID != "" || p.IPAddress != "" || p.AddressID != "" {
-		out.Address = &pe.PrivateEndpoint_EndpointAddress{
-			SubnetId:  p.SubnetID,
-			Address:   p.IPAddress,
-			AddressId: p.AddressID,
-		}
-	}
-	// DnsOptions: только private_dns_records_enabled.
-	if v, ok := p.DnsOptions["private_dns_records_enabled"]; ok {
-		if b, ok := v.(bool); ok {
-			out.DnsOptions = &pe.PrivateEndpoint_DnsOptions{PrivateDnsRecordsEnabled: b}
-		}
-	}
-	// Service oneof — только object_storage.
-	if p.ServiceType == "object_storage" || p.ServiceType == "" {
-		out.Service = &pe.PrivateEndpoint_ObjectStorage_{
-			ObjectStorage: &pe.PrivateEndpoint_ObjectStorage{},
-		}
-	}
-	return out
 }

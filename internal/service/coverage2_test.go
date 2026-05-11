@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // Happy-path Update сценарии для всех ресурсов — покрывают doUpdate /
@@ -372,7 +373,7 @@ func TestDomainSGToProto_Conversion(t *testing.T) {
 			{ID: "r1", Direction: "INGRESS", FromPort: 22, ToPort: 22},
 		},
 	}
-	p := domainSGToProto(sg)
+	p := protoconv.SecurityGroup(sg)
 	assert.Equal(t, "sg-1", p.Id)
 	assert.True(t, p.DefaultForNetwork)
 	require.Len(t, p.Rules, 1)
@@ -390,7 +391,7 @@ func TestDomainPrivateEndpointToProto_Conversion(t *testing.T) {
 		Status:      "AVAILABLE",
 		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
 	}
-	out := domainPrivateEndpointToProto(p)
+	out := protoconv.PrivateEndpoint(p)
 	assert.Equal(t, "pe-1", out.Id)
 }
 
@@ -403,17 +404,4 @@ func TestAssignRuleIDs_GeneratesIDs(t *testing.T) {
 	assert.NotEmpty(t, rules[0].ID)
 	assert.NotEmpty(t, rules[1].ID)
 	assert.NotEqual(t, rules[0].ID, rules[1].ID)
-}
-
-func TestSGStatusToProto_AllStates(t *testing.T) {
-	// status string → proto enum, защита от неверного маппинга
-	for _, s := range []string{"CREATING", "ACTIVE", "UPDATING", "DELETING", "unknown"} {
-		_ = sgStatusToProto(s)
-	}
-}
-
-func TestSGDirectionToProto_All(t *testing.T) {
-	_ = sgDirectionToProto("INGRESS")
-	_ = sgDirectionToProto("EGRESS")
-	_ = sgDirectionToProto("")
 }

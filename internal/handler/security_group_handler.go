@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -36,7 +35,7 @@ func (h *SecurityGroupHandler) Get(ctx context.Context, req *vpcv1.GetSecurityGr
 	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
 		return nil, err
 	}
-	return sgToProto(sg), nil
+	return protoconv.SecurityGroup(sg), nil
 }
 
 func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
@@ -55,7 +54,7 @@ func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurity
 	}
 	resp := &vpcv1.ListSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, sgToProto(sg))
+		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
 	}
 	return resp, nil
 }
@@ -231,66 +230,6 @@ func (h *SecurityGroupHandler) ListOperations(ctx context.Context, req *vpcv1.Li
 }
 
 // sgToProto конвертирует domain SG → proto SG (с timestamp truncation).
-func sgToProto(sg *domain.SecurityGroup) *vpcv1.SecurityGroup {
-	p := &vpcv1.SecurityGroup{
-		Id:                sg.ID,
-		FolderId:          sg.FolderID,
-		NetworkId:         sg.NetworkID,
-		CreatedAt:         timestamppb.New(sg.CreatedAt.Truncate(time.Second)),
-		Name:              sg.Name,
-		Description:       sg.Description,
-		Labels:            sg.Labels,
-		Status:            sgStatusToProtoH(sg.Status),
-		DefaultForNetwork: sg.DefaultForNetwork,
-	}
-	for _, r := range sg.Rules {
-		pr := &vpcv1.SecurityGroupRule{
-			Id:             r.ID,
-			Description:    r.Description,
-			Labels:         r.Labels,
-			Direction:      sgDirectionToProtoH(r.Direction),
-			ProtocolName:   r.ProtocolName,
-			ProtocolNumber: r.ProtocolNumber,
-		}
-		if r.FromPort != 0 || r.ToPort != 0 {
-			pr.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
-		}
-		if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
-			pr.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
-				CidrBlocks: &vpcv1.CidrBlocks{
-					V4CidrBlocks: r.V4CidrBlocks,
-					V6CidrBlocks: r.V6CidrBlocks,
-				},
-			}
-		}
-		p.Rules = append(p.Rules, pr)
-	}
-	return p
-}
-
-func sgStatusToProtoH(s string) vpcv1.SecurityGroup_Status {
-	switch s {
-	case "CREATING":
-		return vpcv1.SecurityGroup_CREATING
-	case "ACTIVE":
-		return vpcv1.SecurityGroup_ACTIVE
-	case "UPDATING":
-		return vpcv1.SecurityGroup_UPDATING
-	case "DELETING":
-		return vpcv1.SecurityGroup_DELETING
-	}
-	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
-}
-
-func sgDirectionToProtoH(d string) vpcv1.SecurityGroupRule_Direction {
-	switch d {
-	case "INGRESS":
-		return vpcv1.SecurityGroupRule_INGRESS
-	case "EGRESS":
-		return vpcv1.SecurityGroupRule_EGRESS
-	}
-	return vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED
-}
 
 // ruleSpecFromProto конвертирует proto SecurityGroupRuleSpec → domain SecurityGroupRule.
 func ruleSpecFromProto(rs *vpcv1.SecurityGroupRuleSpec) domain.SecurityGroupRule {

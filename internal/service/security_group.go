@@ -15,6 +15,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // SecurityGroupService — бизнес-логика SG.
@@ -131,7 +132,7 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(created))
+		return anypb.New(protoconv.SecurityGroup(created))
 	})
 
 	return &op, nil
@@ -226,7 +227,7 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -268,7 +269,7 @@ func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesR
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -317,7 +318,7 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 		// Response — parent SecurityGroup (verbatim YC CLI 1.x compat).
 		// CLI hardcodes expectation на SecurityGroup, не SecurityGroupRule.
 		// См. finding SG-UPDATERULE-RESPONSE-TYPE-MISMATCH.md.
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -445,7 +446,7 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -472,66 +473,4 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 		out[i] = r
 	}
 	return out
-}
-
-// domainSGToProto конвертирует domain SG → proto SG.
-func domainSGToProto(sg *domain.SecurityGroup) *vpcv1.SecurityGroup {
-	p := &vpcv1.SecurityGroup{
-		Id:                sg.ID,
-		FolderId:          sg.FolderID,
-		NetworkId:         sg.NetworkID,
-		Name:              sg.Name,
-		Description:       sg.Description,
-		Labels:            sg.Labels,
-		Status:            sgStatusToProto(sg.Status),
-		DefaultForNetwork: sg.DefaultForNetwork,
-	}
-	for _, r := range sg.Rules {
-		pr := &vpcv1.SecurityGroupRule{
-			Id:             r.ID,
-			Description:    r.Description,
-			Labels:         r.Labels,
-			Direction:      sgDirectionToProto(r.Direction),
-			ProtocolName:   r.ProtocolName,
-			ProtocolNumber: r.ProtocolNumber,
-		}
-		if r.FromPort != 0 || r.ToPort != 0 {
-			pr.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
-		}
-		// CIDR target
-		if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
-			pr.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
-				CidrBlocks: &vpcv1.CidrBlocks{
-					V4CidrBlocks: r.V4CidrBlocks,
-					V6CidrBlocks: r.V6CidrBlocks,
-				},
-			}
-		}
-		p.Rules = append(p.Rules, pr)
-	}
-	return p
-}
-
-func sgStatusToProto(s string) vpcv1.SecurityGroup_Status {
-	switch s {
-	case "CREATING":
-		return vpcv1.SecurityGroup_CREATING
-	case "ACTIVE":
-		return vpcv1.SecurityGroup_ACTIVE
-	case "UPDATING":
-		return vpcv1.SecurityGroup_UPDATING
-	case "DELETING":
-		return vpcv1.SecurityGroup_DELETING
-	}
-	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
-}
-
-func sgDirectionToProto(d string) vpcv1.SecurityGroupRule_Direction {
-	switch d {
-	case "INGRESS":
-		return vpcv1.SecurityGroupRule_INGRESS
-	case "EGRESS":
-		return vpcv1.SecurityGroupRule_EGRESS
-	}
-	return vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED
 }

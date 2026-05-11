@@ -18,6 +18,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateSubnetReq — запрос на создание подсети.
@@ -201,7 +202,7 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainSubnetToProto(created))
+	return anypb.New(protoconv.Subnet(created))
 }
 
 // Update обновляет Subnet.
@@ -257,7 +258,7 @@ func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*any
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainSubnetToProto(updated))
+	return anypb.New(protoconv.Subnet(updated))
 }
 
 // validateSubnetUpdate проверяет name/description/labels в Update.
@@ -409,7 +410,7 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -464,7 +465,7 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -520,7 +521,7 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -552,7 +553,7 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 			return nil, mapRepoErr(err)
 		}
 		if sub.ZoneID == destZoneID {
-			return anypb.New(domainSubnetToProto(sub))
+			return anypb.New(protoconv.Subnet(sub))
 		}
 		// Если подсеть has addresses → отказ (verbatim YC text "Invalid subnet state").
 		addrs, _, err := s.repo.AddressesBySubnet(ctx, id, Pagination{PageSize: 1})
@@ -566,7 +567,7 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -633,28 +634,4 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	})
 
 	return &op, nil
-}
-
-// domainSubnetToProto конвертирует domain Subnet в proto Subnet.
-func domainSubnetToProto(s *domain.Subnet) *vpcv1.Subnet {
-	p := &vpcv1.Subnet{
-		Id:           s.ID,
-		FolderId:     s.FolderID,
-		Name:         s.Name,
-		Description:  s.Description,
-		Labels:       s.Labels,
-		NetworkId:    s.NetworkID,
-		ZoneId:       s.ZoneID,
-		V4CidrBlocks: s.V4CidrBlocks,
-		V6CidrBlocks: s.V6CidrBlocks,
-		RouteTableId: s.RouteTableID,
-	}
-	if s.DhcpOptions != nil {
-		p.DhcpOptions = &vpcv1.DhcpOptions{
-			DomainNameServers: s.DhcpOptions.DomainNameServers,
-			DomainName:        s.DhcpOptions.DomainName,
-			NtpServers:        s.DhcpOptions.NtpServers,
-		}
-	}
-	return p
 }
