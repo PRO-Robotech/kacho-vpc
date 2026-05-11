@@ -52,7 +52,6 @@ jobs:
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.0.0
           working-directory: kacho-vpc
           args: --timeout 5m
 
