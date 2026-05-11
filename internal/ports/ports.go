@@ -142,6 +142,9 @@ type AddressRepo interface {
 	// SetReference upsert'ит referrer-row адреса И выставляет addresses.used=true
 	// в одной tx. ErrNotFound если address не существует.
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
+	// MarkEphemeralInUse атомарно: addresses.reserved=false + addresses.used=true
+	// + upsert referrer-row. ErrNotFound если address не существует. Идемпотентно.
+	MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
 	// ClearReference удаляет referrer-row адреса (no-op если нет) И выставляет
 	// addresses.used=false в одной tx. ErrNotFound если address не существует.
 	ClearReference(ctx context.Context, addressID string) error

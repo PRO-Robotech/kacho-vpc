@@ -388,6 +388,50 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 	return &out, nil
 }
 
+// MarkEphemeralInUse атомарно (одна tx): выставляет addresses.reserved=false,
+// addresses.used=true и upsert'ит referrer-row (= SetReference + сброс reserved).
+// ErrNotFound если address не существует. Используется для эфемерных NIC/NAT
+// Address-ресурсов, созданных kacho-compute через AddressService.Create
+// (там reserved=true verbatim YC, но для авто-аллоцированного NIC-адреса это
+// неверно — в YC он не reserved). Идемпотентно.
+func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `UPDATE addresses SET reserved = false, used = true WHERE id = $1`, ref.AddressID)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("%w: Address %s not found", service.ErrNotFound, ref.AddressID)
+	}
+
+	const q = `
+		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (address_id) DO UPDATE
+		  SET referrer_type = EXCLUDED.referrer_type,
+		      referrer_id   = EXCLUDED.referrer_id,
+		      referrer_name = EXCLUDED.referrer_name,
+		      attached_at   = now()
+		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
+	var out domain.AddressReference
+	if err := tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "reserved": false, "used": true}); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", ref.AddressID)
+	}
+	return &out, nil
+}
+
 // ClearReference удаляет referrer-row адреса (no-op если нет) и выставляет
 // addresses.used=false. ErrNotFound если address не существует.
 func (r *AddressRepo) ClearReference(ctx context.Context, addressID string) error {

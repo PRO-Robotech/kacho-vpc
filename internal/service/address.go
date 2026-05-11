@@ -146,7 +146,40 @@ func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP,
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	s.loadUsedBy(ctx, []*domain.Address{a})
 	return a, nil
+}
+
+// loadUsedBy обогащает каждый адрес из набора полем UsedBy (referrer-tracking,
+// output-only) — кто использует адрес. Best-effort: ошибка чтения
+// address_references → лог + адреса без UsedBy (graceful degradation, не валит
+// чтение). Пустой/nil вход — no-op.
+func (s *AddressService) loadUsedBy(ctx context.Context, addrs []*domain.Address) {
+	if len(addrs) == 0 {
+		return
+	}
+	idsList := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if a != nil {
+			idsList = append(idsList, a.ID)
+		}
+	}
+	if len(idsList) == 0 {
+		return
+	}
+	refs, err := s.repo.ReferencesForAddresses(ctx, idsList)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to load address referrers (used_by); returning addresses without it", "err", err)
+		return
+	}
+	for _, a := range addrs {
+		if a == nil {
+			continue
+		}
+		if ref, ok := refs[a.ID]; ok && ref != nil {
+			a.UsedBy = []*domain.AddressReference{ref}
+		}
+	}
 }
 
 // ListBySubnet возвращает Address-ы, привязанные к указанной подсети.
@@ -166,6 +199,7 @@ func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pa
 	if err != nil {
 		return nil, "", mapRepoErr(err)
 	}
+	s.loadUsedBy(ctx, addrs)
 	return addrs, nextToken, nil
 }
 
@@ -178,6 +212,7 @@ func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, e
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	s.loadUsedBy(ctx, []*domain.Address{a})
 	return a, nil
 }
 
@@ -187,7 +222,12 @@ func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return s.repo.List(ctx, f, p)
+	addrs, nextToken, err := s.repo.List(ctx, f, p)
+	if err != nil {
+		return nil, "", err
+	}
+	s.loadUsedBy(ctx, addrs)
+	return addrs, nextToken, nil
 }
 
 // Create инициирует создание Address.

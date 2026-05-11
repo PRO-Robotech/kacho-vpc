@@ -72,4 +72,9 @@ type Address struct {
 	ExternalIpv4 *ExternalIpv4Spec
 	// Для internal:
 	InternalIpv4 *InternalIpv4Spec
+	// UsedBy — кто использует адрес (referrer-tracking, output-only). Заполняется
+	// сервис-слоем в Get/List/GetByValue/ListBySubnet из address_references;
+	// для compute NIC/NAT-адресов — один элемент с ReferrerType="compute_instance".
+	// Не персистится отдельно (это denormalized view на address_references).
+	UsedBy []*AddressReference
 }

@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
@@ -96,6 +97,18 @@ func Address(a *domain.Address) *vpcv1.Address {
 				Scope:   &vpcv1.InternalIpv4Address_SubnetId{SubnetId: a.InternalIpv4.SubnetID},
 			},
 		}
+	}
+	// used_by (kacho extension, output-only) — кто использует адрес.
+	// Shape совпадает с SubnetService UsedAddress.references[]: один Reference
+	// с referrer{type,id} и type=USED_BY.
+	for _, ref := range a.UsedBy {
+		if ref == nil {
+			continue
+		}
+		p.UsedBy = append(p.UsedBy, &reference.Reference{
+			Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID},
+			Type:     reference.Reference_USED_BY,
+		})
 	}
 	return p
 }
