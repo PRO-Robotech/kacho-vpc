@@ -39,6 +39,15 @@ type Config struct {
 	// подделать FolderClient.GetCloudID/Exists).
 	ResourceManagerTLS bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_TLS" default:"false"`
 
+	// DefaultSGInline — создавать ли default SecurityGroup inline при Network.Create.
+	//   true (default) — Network.doCreate синхронно создаёт default SG в той же
+	//                    операции (workaround после упразднения kacho-vpc-controllers).
+	//   false          — Network.Create НЕ создаёт SG (verbatim YC: SG создаётся
+	//                    отдельным reconciler'ом). Убирает 2 INSERT + 1 UPDATE из
+	//                    hot-path → +30-40% write-throughput. Для load-тестов и
+	//                    deployment'ов с внешним SG-reconciler'ом.
+	DefaultSGInline bool `envconfig:"KACHO_VPC_DEFAULT_SG_INLINE" default:"true"`
+
 	// AuthMode — управление fail-closed гейтом перед IAM merge.
 	//   `dev` (default) — anonymous-mode разрешён, interceptor пропускает
 	//                     callers без AuthN-headers как admin (backward-compat).

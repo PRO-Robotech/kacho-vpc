@@ -125,7 +125,14 @@ func runServe(cfg config.Config) error {
 	zoneSvc := service.NewZoneService(zoneRepo, regionRepo)
 
 	// Inline default-SG creation в request-path NetworkService.doCreate.
-	networkSvc.SetSGRepo(sgRepo)
+	// Отключается через KACHO_VPC_DEFAULT_SG_INLINE=false (verbatim YC: SG
+	// создаётся reconciler'ом, не VPC-сервисом) — убирает 2 INSERT + 1 UPDATE
+	// из hot-path → существенный прирост write-throughput.
+	if cfg.DefaultSGInline {
+		networkSvc.SetSGRepo(sgRepo)
+	} else {
+		logger.Warn("KACHO_VPC_DEFAULT_SG_INLINE=false — Network.Create НЕ создаёт default SG")
+	}
 
 	// production-mode fail-closed guard: KACHO_VPC_AUTH_MODE=production →
 	// anonymous caller отвергается с PermissionDenied сразу. Защита от
