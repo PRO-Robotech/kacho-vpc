@@ -71,32 +71,88 @@ jobs:
       - name: Test (integration via testcontainers, no -short)
         run: go test ./internal/repo/... -race -cover -timeout 300s
 
+  # newman E2E regression suite (tests/newman/) against a lightweight docker
+  # compose stack (pg-rm + pg-vpc + resource-manager + vpc + api-gateway), defined
+  # in kacho-deploy/ci/docker-compose.yml. The compose stack and `make ci-up`
+  # target live in the kacho-deploy repo; we check it out (plus the other sibling
+  # repos the :dev images are built from) into `../` so the workspace layout
+  # matches local dev (parent-context Docker build, see each Dockerfile).
   newman:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout kacho-vpc
+        uses: actions/checkout@v4
+
+      # Sibling repos: needed both as Go-module deps and as Docker build context
+      # (each service Dockerfile COPYs ../kacho-corelib, ../kacho-proto, etc.).
+      - name: Checkout kacho-corelib
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-corelib
+          path: ../kacho-corelib
+      - name: Checkout kacho-proto
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-proto
+          path: ../kacho-proto
+      - name: Checkout kacho-yc-shim
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-yc-shim
+          path: ../kacho-yc-shim
+      - name: Checkout kacho-resource-manager
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-resource-manager
+          path: ../kacho-resource-manager
+      - name: Checkout kacho-api-gateway
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-api-gateway
+          path: ../kacho-api-gateway
+      - name: Checkout kacho-deploy
+        uses: actions/checkout@v4
+        with:
+          repository: PRO-Robotech/kacho-deploy
+          path: ../kacho-deploy
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install Newman
         run: npm install -g newman
 
-      - name: Stand up local Kachō (docker compose)
-        run: |
-          # TODO: replace with actual compose path. Newman job требует поднятого
-          # стенда: kacho-deploy/docker-compose или kind. Пока — placeholder.
-          echo "TODO: compose up — see kacho-deploy/Makefile dev-up"
+      # Build the :dev images and bring up the stack. `ci-up` also seeds fixtures
+      # (Org/Cloud/Folder ids via the REST API, region ru-central1 + zones a..d,
+      # a default EXTERNAL_PUBLIC AddressPool) and writes the discovered ids to
+      # ci/.seeded-ids.env. api-gateway is exposed on host port 28080.
+      - name: Build images + bring up CI stack + seed fixtures
+        run: make -C ../kacho-deploy ci-up
 
-      - name: Run newman suites against local
-        if: false  # disabled until compose-up step is wired
+      - name: Generate newman collections
+        run: python3 tests/newman/scripts/gen.py
+
+      # Run all suites against the compose stack. The seeded ids + base URL
+      # (28080, not the env file's default 18080) are passed as newman --env-var
+      # overrides — run.sh forwards extra args straight to `newman run`, and the
+      # overrides take precedence over -e environments/local.postman_environment.json.
+      - name: Run newman suites against CI stack
         run: |
-          python3 tests/newman/scripts/gen.py
-          tests/newman/scripts/run.sh                  # все сервисы; нужен KACHO_VPC_DEFAULT_SG_INLINE=true
-          # TODO: fail job если в tests/newman/out/summary.txt колонка FAILED > 0 (awk-парсинг)
+          set -a; . ../kacho-deploy/ci/.seeded-ids.env; set +a
+          tests/newman/scripts/run.sh \
+            --env-var baseUrl=http://localhost:28080 \
+            --env-var existingOrgId="$existingOrgId" \
+            --env-var existingCloudId="$existingCloudId" \
+            --env-var existingFolderId="$existingFolderId" \
+            --env-var existingFolderCrossId="$existingFolderCrossId" \
+            --env-var existingZoneId="$existingZoneId" \
+            --env-var existingZoneAltId="$existingZoneAltId"
+
+      - name: Dump stack logs on failure
+        if: failure()
+        run: make -C ../kacho-deploy ci-logs
 
       - name: Upload newman reports
         if: always()
@@ -104,3 +160,13 @@ jobs:
         with:
           name: newman-reports
           path: tests/newman/out/*.json
+
+      # Fail the job if any suite reported assertion failures. summary.txt columns:
+      # SERVICE  ASSERT  FAILED  REQUESTS — so $3 is the FAILED count. Trailing
+      # blank line: $3 is empty there → $3+0 == 0 → no false positive.
+      - name: Fail on newman assertion failures
+        run: awk 'NR>1 && $3+0>0{f=1} END{exit f}' tests/newman/out/summary.txt
+
+      - name: Tear down CI stack
+        if: always()
+        run: make -C ../kacho-deploy ci-down
