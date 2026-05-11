@@ -33,17 +33,23 @@ Status legend: `pending` / `partial` / `deferred` / `wontfix`.
   допускает пустой `dns_record_specs: []`, `dns_records` опциональны в ответе.
   Браться вместе с появлением `kacho-dns`.
 
-## #9 — `cloud_id` / `organization_id` не используются в domain-моделях — `deferred`
+## #9 — `cloud_id` / `organization_id` не в domain-моделях — `wontfix` (так в Yandex Cloud)
 
-- **Проблема:** все VPC-ресурсы scoped только по `folder_id`; `cloud_id`/`organization_id`
-  в схеме и domain-структурах отсутствуют. Фильтрация/листинг — только по folder.
-- **Зачем фиксить:** YC-семантика «список Network в Cloud» / cloud-level quota /
-  cross-folder агрегация требуют знания cloud_id. Сейчас это резолвится ad-hoc
-  через `FolderClient.GetCloudID` только в IPAM-cascade.
-- **Почему отложено:** требует cross-service резолва из resource-manager + расширения
-  proto **всех** ресурсов + миграции — большой churn в `kacho-proto` без текущего
-  потребителя. Для folder-level scoping не нужно; ждёт явного требования cloud-level
-  операций (cloud-list / cloud-quota / cross-folder агрегация в UI).
+- **Проблема (как формулировалось):** VPC-ресурсы scoped только по `folder_id`;
+  `cloud_id`/`organization_id` в схеме/domain отсутствуют, листинг — только по folder.
+- **Проверено по reference YC** (`yandex/cloud/vpc/v1/*.proto`): в YC VPC API ресурсы
+  (`Network`/`Subnet`/`Address`/`RouteTable`/`SecurityGroup`/`Gateway`/`PrivateEndpoint`)
+  **тоже** несут только `folder_id` — ни `cloud_id`, ни `organization_id` на них нет.
+  `List*Request` принимают ровно `folder_id` (required) — нет ни `cloud_id`, ни
+  container-oneof; «список Network в Cloud» в YC делается клиентом: `resourcemanager.FolderService.List(cloud_id)` → затем `vpc.NetworkService.List(folder_id)` по каждому folder.
+  `cloud_id` живёт на `resourcemanager.Folder`, `organization_id` — на `resourcemanager.Cloud`;
+  cloud-level quota — внутренняя служба YC, на ресурсе VPC не отражена.
+- **Решение:** **не делаем** — текущее состояние (folder-scoped, без `cloud_id` на ресурсах)
+  и есть YC-parity. Добавление `cloud_id`/`organization_id` было бы **отклонением** от YC, а не
+  его реализацией. Ad-hoc `FolderClient.GetCloudID` в IPAM-cascade — единственное место,
+  где cloud_id вообще нужен (для cloud-level pool-selector), и это kacho-only расширение, не VPC API.
+  Если когда-нибудь понадобится cloud-level листинг — это feature на стороне UI/agg-слоя
+  (folders→networks), а не поле на VPC-ресурсе.
 
 ---
 
