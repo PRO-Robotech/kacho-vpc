@@ -50,7 +50,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.0.0
           working-directory: kacho-vpc
@@ -109,6 +109,8 @@ jobs:
       - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-api-gateway, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-api-gateway }
       - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-yc-shim, path: kacho-yc-shim }
+      - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-deploy, ref: feat/vpc-internal-port-network-policy, path: kacho-deploy }
 
       - uses: actions/setup-node@v4
@@ -120,7 +122,7 @@ jobs:
       # сеет фикстуры (Org/Cloud/Folder ids → ci/.seeded-ids.env, region ru-central1 + zones a..d,
       # default EXTERNAL_PUBLIC AddressPool). build context = $(abspath ..) = $GITHUB_WORKSPACE.
       - name: ci-up (build images + compose + seed)
-        run: make -C ../kacho-deploy ci-up
+        run: make -C ../kacho-deploy ci-up PROJECT_ROOT="$GITHUB_WORKSPACE"
       - run: python3 tests/newman/scripts/gen.py
       - name: run newman suites
         run: |
