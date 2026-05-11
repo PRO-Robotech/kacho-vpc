@@ -31,7 +31,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
       - run: go build ./...
@@ -48,7 +48,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - uses: golangci/golangci-lint-action@v7
         with:
@@ -65,7 +65,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -82,7 +82,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
       # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
