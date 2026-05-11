@@ -223,3 +223,208 @@ CASES.append(Case(
         poll_operation_until_done(),
     ],
 ))
+
+# Расширение
+CASES.extend(crud_list_bva_block("ADR", "/vpc/v1/addresses"))
+CASES.append(conf_not_found_text("ADR", "/vpc/v1/addresses", "Address"))
+CASES.append(state_update_unknown_mask("ADR", "/vpc/v1/addresses"))
+CASES.append(authz_move_nf("ADR", "/vpc/v1/addresses"))
+
+CASES.append(Case(
+    id="ADR-MV-CRUD-OK",
+    title="Move external address в другой folder",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-mv-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="move", method="POST", path="/vpc/v1/addresses/{{addrId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="verify", method="GET", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('folder updated', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderCrossId')));"]),
+        Step(name="cleanup", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-UPD-CRUD-OK",
+    title="Update address description через mask",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-upd-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="patch", method="PATCH", path="/vpc/v1/addresses/{{addrId}}",
+             body={"updateMask": "description", "description": "upd-newman2"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="verify", method="GET", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('description updated', () => pm.expect(pm.response.json().description).to.eql('upd-newman2'));"]),
+        Step(name="cleanup", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+# Дополнение: STATE immutable folder + VAL move-no-dest + BVA pagesize=1
+CASES.append(state_immutable_folder("ADR", "/vpc/v1/addresses"))
+CASES.append(val_move_no_dest("ADR", "/vpc/v1/addresses"))
+CASES.append(list_pagesize_1_bva("ADR", "/vpc/v1/addresses"))
+
+CASES.append(Case(
+    id="ADR-CR-CONF-SUB-NF-TEXT",
+    title="Create address с garbage subnet → verbatim 'Subnet ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-confnf-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
+                 "pm.test('text matches verbatim Subnet/Folder ... not found', () => pm.expect(j.error.message).to.match(/^(Subnet|Folder) .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-CR-CONF-FOLDER-NF-TEXT",
+    title="Create external address с garbage folder → verbatim 'Folder with id ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{garbageId}}", "name": "adr-fnf-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
+                 "pm.test('verbatim Folder with id ... not found', () => pm.expect(j.error.message).to.match(/^Folder with id .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-UPD-CONF-NF-TEXT",
+    title="Update несуществующего → verbatim 'Address ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="patch-nx", method="PATCH",
+             path="/vpc/v1/addresses/{{garbageVpcId}}",
+             body={"updateMask": "description", "description": "x"},
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('text matches Address ... not found', () => pm.expect(pm.response.json().message).to.match(/^Address .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-DEL-CONF-NF-TEXT",
+    title="Delete несуществующего → verbatim 'Address ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="del-nx", method="DELETE",
+             path="/vpc/v1/addresses/{{garbageVpcId}}",
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('text matches Address ... not found', () => pm.expect(pm.response.json().message).to.match(/^Address .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-MV-CONF-NF-TEXT",
+    title="Move несуществующего → verbatim '<Resource> ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="move-nx", method="POST", path="/vpc/v1/addresses/{{garbageVpcId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-DEL-CRUD-OK",
+    title="Address Delete happy path",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-delok-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="del-happy", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="get-after-del", method="GET", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(404)]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-GBV-CRUD-OK",
+    title="GetByValue существующего external IP → 200 + сам Address",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-gbv-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="get-addr", method="GET", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200),
+                          *save_from_response("j.externalIpv4Address && j.externalIpv4Address.address", "allocatedIp")]),
+        Step(name="gbv", method="GET",
+             path="/vpc/v1/addresses:byValue?externalIpv4Address={{allocatedIp}}",
+             test_script=[*assert_status(200),
+                          "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('addrId')));"]),
+        Step(name="cleanup", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-LBS-NEG-PARENT-NF",
+    title="ListBySubnet несуществующего subnet → 200 или 404",
+    classes=["NEG"], priority="P2",
+    steps=[
+        Step(name="lbs-nx", method="GET",
+             path="/vpc/v1/addresses:bySubnet?subnetId={{garbageVpcId}}",
+             test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
+    ],
+))
+
+CASES.append(Case(
+    id="ADR-LOP-NEG-PARENT-NF",
+    title="ListOperations несуществующего address → 200 или 404",
+    classes=["NEG"], priority="P2",
+    steps=[
+        Step(name="lop-nx", method="GET",
+             path="/vpc/v1/addresses/{{garbageVpcId}}/operations",
+             test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
+    ],
+))

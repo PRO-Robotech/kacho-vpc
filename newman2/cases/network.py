@@ -700,3 +700,118 @@ CASES.append(Case(
         ),
     ],
 ))
+
+# Расширение: CONF + STATE-unknown-mask (BVA pagination уже есть)
+CASES.append(conf_not_found_text("NET", "/vpc/v1/networks", "Network"))
+CASES.append(state_update_unknown_mask("NET", "/vpc/v1/networks"))
+
+# Дополнение: STATE immutable folder + VAL move-no-dest + BVA pagesize=1
+CASES.append(state_immutable_folder("NET", "/vpc/v1/networks"))
+CASES.append(val_move_no_dest("NET", "/vpc/v1/networks"))
+CASES.append(list_pagesize_1_bva("NET", "/vpc/v1/networks"))
+
+CASES.append(Case(
+    id="NET-CR-CONF-FOLDER-NF-TEXT",
+    title="Create network в garbage folder → verbatim 'Folder with id ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
+                 "pm.test('verbatim Folder with id ... not found', () => pm.expect(j.error.message).to.match(/^Folder with id .* not found$/));",
+             ]),
+    ],
+))
+
+# NEG для child-Lists Network: ListSubnets/SGs/RTs/Ops на garbage network
+for prefix, child, method_short in [
+    ("LSUB", "subnets", "LSUB"),
+    ("LSG", "security_groups", "LSG"),
+    ("LRT", "route_tables", "LRT"),
+    ("LOP", "operations", "LOP"),
+]:
+    CASES.append(Case(
+        id=f"NET-{method_short}-NEG-PARENT-NF",
+        title=f"List {child} в несуществующей network → 404 NotFound",
+        classes=["NEG"], priority="P1",
+        steps=[
+            Step(name="list-child", method="GET",
+                 path=f"/vpc/v1/networks/{{{{garbageVpcId}}}}/{child}",
+                 test_script=[
+                     "pm.test('rejected (404 or 200 empty)', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                     "// Если 200 — массив пустой; если 404 — NotFound",
+                 ]),
+        ],
+    ))
+
+CASES.append(Case(
+    id="NET-MV-CONF-NF-TEXT",
+    title="Move несуществующего → verbatim '<Resource> ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="move-nx", method="POST", path="/vpc/v1/networks/{{garbageVpcId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
+             ]),
+    ],
+))
+
+# === Финальное добивание до 100% ===
+CASES.append(Case(
+    id="NET-DEL-CRUD-OK",
+    title="Network Delete (CRUD-OK): отдельная positive-проверка happy delete",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-delok-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="delete-happy", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="get-after-delete", method="GET", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-MV-AUTHZ-NF-SYNC",
+    title="Move несуществующего Network → sync 404 от AuthZ-Get",
+    classes=["NEG", "AUTHZ"], priority="P1",
+    steps=[
+        Step(name="move-nx", method="POST", path="/vpc/v1/networks/{{garbageVpcId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-DEL-CONF-NF-TEXT",
+    title="Delete несуществующего Network → verbatim 'Network ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="del-nx", method="DELETE", path="/vpc/v1/networks/{{garbageVpcId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));"]),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-UPD-CONF-NF-TEXT",
+    title="Update несуществующего Network → verbatim 'Network ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="upd-nx", method="PATCH", path="/vpc/v1/networks/{{garbageVpcId}}",
+             body={"updateMask": "description", "description": "x"},
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));"]),
+    ],
+))

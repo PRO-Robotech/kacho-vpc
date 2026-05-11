@@ -51,3 +51,17 @@ CASES.append(Case(
              test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
     ],
 ))
+
+# Расширение: CONF text
+CASES.append(Case(
+    id="OP-GET-CONF-NF-TEXT",
+    title="Get несуществующего opId → verbatim 'Operation ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="get-vpc-garbage", method="GET", path="/operations/{{garbageVpcId}}",
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('text matches', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not found'));",
+             ]),
+    ],
+))

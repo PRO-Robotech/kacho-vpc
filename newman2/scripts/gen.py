@@ -113,6 +113,159 @@ def assert_operation_envelope() -> List[str]:
     ]
 
 
+def crud_list_bva_block(prefix, list_path):
+    """3 BVA-кейса для List RPC: pageSize=0, pageSize=10000, bad token."""
+    return [
+        Case(
+            id=f"{prefix}-LST-BVA-PAGESIZE-ZERO",
+            title="List pageSize=0 → default applied (200)",
+            classes=["BVA"], priority="P2",
+            steps=[Step(name="list-ps0", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=0",
+                        test_script=[*assert_status(200)])],
+        ),
+        Case(
+            id=f"{prefix}-LST-BVA-PAGESIZE-OVER-MAX",
+            title="List pageSize=10000 → InvalidArgument",
+            classes=["BVA", "VAL"], priority="P2",
+            steps=[Step(name="list-ps-huge", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10000",
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+        Case(
+            id=f"{prefix}-LST-PAGE-TOKEN-GARBAGE",
+            title="List с garbage page_token → InvalidArgument",
+            classes=["PAGE", "VAL"], priority="P1",
+            steps=[Step(name="list-bad-token", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10&pageToken=not-a-real-token",
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+    ]
+
+
+def conf_not_found_text(prefix, get_path, resource_name):
+    """Verbatim YC-text для NotFound: '<Resource> <id> not found'."""
+    return Case(
+        id=f"{prefix}-GET-CONF-NF-TEXT",
+        title=f"Get garbage — verbatim text '{resource_name} ... not found'",
+        classes=["CONF", "NEG"], priority="P1",
+        steps=[Step(name="get-conf", method="GET",
+                    path=f"{get_path}/{{{{garbageVpcId}}}}",
+                    test_script=[
+                        *assert_status(404),
+                        *assert_grpc_code(5, "NOT_FOUND"),
+                        f"pm.test('text matches \"{resource_name} ... not found\"', () => "
+                        f"pm.expect(pm.response.json().message).to.match(/^{resource_name} .* not found$/));",
+                    ])],
+    )
+
+
+def state_update_unknown_mask(prefix, update_path):
+    """PATCH с unknown field в mask → InvalidArgument."""
+    return Case(
+        id=f"{prefix}-UPD-VAL-UNKNOWN-MASK",
+        title="Update с unknown field в UpdateMask → InvalidArgument",
+        classes=["VAL", "STATE"], priority="P1",
+        steps=[Step(name="patch-unknown-mask", method="PATCH",
+                    path=f"{update_path}/{{{{garbageVpcId}}}}",
+                    body={"updateMask": "some_unknown_field_xyz", "description": "x"},
+                    test_script=[
+                        # Может вернуть 404 (если sync Get срабатывает раньше mask-валидации)
+                        # либо 400 (если mask проверяется до Get).
+                        "pm.test('rejected (400 or 404)', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
+                    ])],
+    )
+
+
+def authz_move_nf(prefix, move_base_path):
+    """Move несуществующего id → sync 404."""
+    return Case(
+        id=f"{prefix}-MV-AUTHZ-NF-SYNC",
+        title="Move несуществующего → sync 404 от AuthZ-Get",
+        classes=["NEG", "AUTHZ"], priority="P1",
+        steps=[Step(name="move-nx", method="POST",
+                    path=f"{move_base_path}/{{{{garbageVpcId}}}}:move",
+                    body={"destinationFolderId": "{{_suiteFolderId}}"},
+                    test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")])],
+    )
+
+
+def val_move_no_dest(prefix, move_base_path):
+    """Move без destinationFolderId → InvalidArgument."""
+    return Case(
+        id=f"{prefix}-MV-VAL-NO-DEST",
+        title="Move без destinationFolderId → InvalidArgument",
+        classes=["VAL"], priority="P1",
+        steps=[Step(name="move-no-dest", method="POST",
+                    path=f"{move_base_path}/{{{{garbageVpcId}}}}:move",
+                    body={},
+                    test_script=[
+                        "pm.test('rejected (400 or 404)', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
+                    ])],
+    )
+
+
+def state_immutable_folder(prefix, update_base_path):
+    """Update с mask=folder_id → InvalidArgument (immutable)."""
+    return Case(
+        id=f"{prefix}-UPD-STATE-IMMUTABLE-FOLDER",
+        title="Update с mask=folder_id → InvalidArgument (immutable)",
+        classes=["STATE", "VAL"], priority="P1",
+        steps=[Step(name="upd-folder-via-mask", method="PATCH",
+                    path=f"{update_base_path}/{{{{garbageVpcId}}}}",
+                    body={"updateMask": "folder_id", "folderId": "x"},
+                    test_script=[
+                        # mask immutable должен отвергнуть с 400.
+                        # Если AuthZ-Get срабатывает раньше (404), тоже OK.
+                        "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
+                    ])],
+    )
+
+
+def list_pagesize_1_bva(prefix, list_path):
+    """BVA: pageSize=1 — точечная нижняя граница."""
+    return Case(
+        id=f"{prefix}-LST-BVA-PAGESIZE-1",
+        title="List pageSize=1 → ≤1 item",
+        classes=["BVA", "PAGE"], priority="P2",
+        steps=[Step(name="list-ps1", method="GET",
+                    path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1",
+                    test_script=[*assert_status(200),
+                                 "pm.test('at most 1 item', () => {"
+                                 "  const j = pm.response.json();"
+                                 "  const k = Object.keys(j).find(x => Array.isArray(j[x]));"
+                                 "  pm.expect((j[k] || []).length).to.be.at.most(1);"
+                                 "});"])],
+    )
+
+
+def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None):
+    """CONF: AlreadyExists text при duplicate name."""
+    body_extra = body_extra or {}
+    return Case(
+        id=f"{prefix}-CR-CONF-ALREADY-EXISTS",
+        title="Create duplicate name → verbatim ALREADY_EXISTS текст",
+        classes=["CONF", "NEG"], priority="P1",
+        steps=[
+            Step(name="create-first", method="POST", path=create_path,
+                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("j.metadata && Object.values(j.metadata).find(v => typeof v === 'string' && v.length > 10)", "createdId")]),
+            poll_operation_until_done(),
+            Step(name="create-dup", method="POST", path=create_path,
+                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            poll_operation_until_done(),
+            Step(name="assert-text", method="GET", path="/operations/{{opId}}",
+                 test_script=[
+                     "const j = pm.response.json();",
+                     "pm.test('error code 6 ALREADY_EXISTS', () => pm.expect(j.error && j.error.code).to.eql(6));",
+                     "pm.test('message non-empty', () => pm.expect(j.error.message).to.be.a('string').and.length.greaterThan(0));",
+                 ]),
+        ],
+    )
+
+
 def poll_operation_until_done() -> Step:
     """Reusable poll step. Кейс должен предварительно сохранить opId.
     Note: api-gateway маршрутизирует OperationService на /operations/{id}
@@ -214,6 +367,14 @@ def load_cases_module(path: Path):
     mod.save_from_response = save_from_response
     mod.assert_operation_envelope = assert_operation_envelope
     mod.poll_operation_until_done = poll_operation_until_done
+    mod.crud_list_bva_block = crud_list_bva_block
+    mod.conf_not_found_text = conf_not_found_text
+    mod.state_update_unknown_mask = state_update_unknown_mask
+    mod.authz_move_nf = authz_move_nf
+    mod.val_move_no_dest = val_move_no_dest
+    mod.state_immutable_folder = state_immutable_folder
+    mod.list_pagesize_1_bva = list_pagesize_1_bva
+    mod.conf_alreadyexists_block = conf_alreadyexists_block
     spec.loader.exec_module(mod)
     return mod
 

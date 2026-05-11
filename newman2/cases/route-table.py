@@ -148,3 +148,152 @@ CASES.append(Case(
         _cleanup_net(),
     ],
 ))
+
+# Расширение
+CASES.extend(crud_list_bva_block("RT", "/vpc/v1/routeTables"))
+CASES.append(conf_not_found_text("RT", "/vpc/v1/routeTables", "RouteTable"))
+CASES.append(state_update_unknown_mask("RT", "/vpc/v1/routeTables"))
+CASES.append(authz_move_nf("RT", "/vpc/v1/routeTables"))
+
+CASES.append(Case(
+    id="RT-MV-CRUD-OK",
+    title="Move RouteTable в другой folder",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_net_steps("mv"),
+        Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-mv-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="move", method="POST", path="/vpc/v1/routeTables/{{rtId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-UPD-CRUD-OK",
+    title="Update RouteTable description",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_net_steps("upd"),
+        Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-upd-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="patch", method="PATCH", path="/vpc/v1/routeTables/{{rtId}}",
+             body={"updateMask": "description", "description": "upd-newman2"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+# Дополнение: STATE immutable folder + VAL move-no-dest + BVA pagesize=1
+CASES.append(state_immutable_folder("RT", "/vpc/v1/routeTables"))
+CASES.append(val_move_no_dest("RT", "/vpc/v1/routeTables"))
+CASES.append(list_pagesize_1_bva("RT", "/vpc/v1/routeTables"))
+
+CASES.append(Case(
+    id="RT-CR-CONF-NET-NF-TEXT",
+    title="Create RT в garbage network → verbatim 'Network ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
+                   "name": "rt-confnf-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
+                 "pm.test('verbatim Network ... not found', () => pm.expect(j.error.message).to.match(/^Network .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-UPD-CONF-NF-TEXT",
+    title="Update несуществующего → verbatim 'RouteTable ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="patch-nx", method="PATCH",
+             path="/vpc/v1/routeTables/{{garbageVpcId}}",
+             body={"updateMask": "description", "description": "x"},
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('text matches RouteTable ... not found', () => pm.expect(pm.response.json().message).to.match(/^RouteTable .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-DEL-CONF-NF-TEXT",
+    title="Delete несуществующего → verbatim 'RouteTable ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="del-nx", method="DELETE",
+             path="/vpc/v1/routeTables/{{garbageVpcId}}",
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('text matches RouteTable ... not found', () => pm.expect(pm.response.json().message).to.match(/^RouteTable .* not found$/));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-MV-CONF-NF-TEXT",
+    title="Move несуществующего → verbatim '<Resource> ... not found' text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="move-nx", method="POST", path="/vpc/v1/routeTables/{{garbageVpcId}}:move",
+             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             test_script=[
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
+             ]),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-DEL-CRUD-OK",
+    title="RouteTable Delete happy",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_net_steps("delok"),
+        Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-delok-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="del-happy", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="RT-LOP-NEG-PARENT-NF",
+    title="ListOperations несуществующего routeTable → 200 или 404",
+    classes=["NEG"], priority="P2",
+    steps=[
+        Step(name="lop-nx", method="GET",
+             path="/vpc/v1/routeTables/{{garbageVpcId}}/operations",
+             test_script=["pm.test('200 or 404', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
+    ],
+))
