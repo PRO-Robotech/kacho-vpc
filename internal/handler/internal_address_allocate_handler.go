@@ -103,6 +103,21 @@ func (h *InternalAddressAllocateHandler) GetAddressReference(ctx context.Context
 	return addressReferenceToProto(ref), nil
 }
 
+func (h *InternalAddressAllocateHandler) MarkAddressEphemeralInUse(ctx context.Context, req *vpcv1.MarkAddressEphemeralInUseRequest) (*vpcv1.MarkAddressEphemeralInUseResponse, error) {
+	if req.GetAddressId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	if _, err := h.addressSvc.MarkAddressEphemeralInUse(ctx, service.SetAddressReferenceReq{
+		AddressID:    req.GetAddressId(),
+		ReferrerType: req.GetReferrerType(),
+		ReferrerID:   req.GetReferrerId(),
+		ReferrerName: req.GetReferrerName(),
+	}); err != nil {
+		return nil, err
+	}
+	return &vpcv1.MarkAddressEphemeralInUseResponse{}, nil
+}
+
 func addressReferenceToProto(r *domain.AddressReference) *vpcv1.AddressReference {
 	if r == nil {
 		return nil

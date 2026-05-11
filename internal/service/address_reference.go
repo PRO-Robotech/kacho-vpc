@@ -46,6 +46,37 @@ func (s *AddressService) SetAddressReference(ctx context.Context, req SetAddress
 	return ref, nil
 }
 
+// MarkAddressEphemeralInUse атомарно (одна tx): выставляет Address.reserved=false,
+// Address.used=true и upsert'ит referrer-row (= SetAddressReference + сброс
+// reserved). Используется kacho-compute для эфемерных NIC/NAT Address-ресурсов,
+// которые он сам создал через публичный AddressService.Create (там reserved=true
+// verbatim YC, но для авто-аллоцированного NIC-адреса это неверно — в YC такой
+// адрес не reserved). Идемпотентно. Sync RPC (не Operation).
+//
+// Errors: InvalidArgument (пустой/malformed address_id, пустой referrer_type/id),
+// NotFound (address не существует).
+func (s *AddressService) MarkAddressEphemeralInUse(ctx context.Context, req SetAddressReferenceReq) (*domain.AddressReference, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, req.AddressID); err != nil {
+		return nil, err
+	}
+	if req.ReferrerType == "" {
+		return nil, status.Error(codes.InvalidArgument, "referrer_type required")
+	}
+	if req.ReferrerID == "" {
+		return nil, status.Error(codes.InvalidArgument, "referrer_id required")
+	}
+	ref, err := s.repo.MarkEphemeralInUse(ctx, &domain.AddressReference{
+		AddressID:    req.AddressID,
+		ReferrerType: req.ReferrerType,
+		ReferrerID:   req.ReferrerID,
+		ReferrerName: req.ReferrerName,
+	})
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return ref, nil
+}
+
 // ClearAddressReference удаляет referrer-row адреса (no-op если нет) и
 // выставляет Address.used=false. Sync RPC.
 //

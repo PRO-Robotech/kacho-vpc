@@ -329,6 +329,25 @@ func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReferen
 	return &cp, nil
 }
 
+// MarkEphemeralInUse атомарно: reserved=false + used=true + upsert referrer-row.
+func (r *AddressRepo) MarkEphemeralInUse(_ context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[ref.AddressID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	a.Reserved = false
+	a.Used = true
+	if r.refs == nil {
+		r.refs = make(map[string]*domain.AddressReference)
+	}
+	cp := *ref
+	cp.AttachedAt = time.Now()
+	r.refs[ref.AddressID] = &cp
+	return &cp, nil
+}
+
 // ClearReference удаляет referrer-row (no-op если нет) и выставляет used=false.
 func (r *AddressRepo) ClearReference(_ context.Context, addressID string) error {
 	r.mu.Lock()
