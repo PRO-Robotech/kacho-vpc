@@ -18,6 +18,14 @@ def _cleanup_net():
                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")])
 
 
+def _cleanup_net_lenient():
+    # См. route-table.py::_cleanup_net_lenient — wrap'нутый Create мог пройти permissive'но
+    # (ресурс создан) → DELETE сети блокируется FK RESTRICT (400). Оба исхода ОК.
+    return Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+                test_script=["pm.test('cleanup net (200 or 400 if child leaked)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                             *save_from_response("j.id", "opId")])
+
+
 CASES.append(Case(
     id="SG-CR-CRUD-OK",
     title="Create SG + Get",
@@ -407,7 +415,7 @@ def _sg_wrap(prefix, suffix, inner_case):
     return Case(
         id=inner_case.id, title=inner_case.title, classes=inner_case.classes,
         priority=inner_case.priority,
-        steps=[*_net_steps(uniq), *inner_case.steps, _cleanup_net()],
+        steps=[*_net_steps(uniq), *inner_case.steps, _cleanup_net_lenient()],
     )
 
 _sg_body = {"networkId": "{{netId}}", "ruleSpecs": []}

@@ -944,8 +944,11 @@ def required_fields_matrix(prefix, create_path, body_full, required_field_names)
             steps=[Step(name=f"cr-no-{fld}", method="POST", path=create_path,
                         body=body_missing,
                         test_script=[
-                            "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                            "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5",
+                            # 400 — sync InvalidArgument (missing required field).
+                            # 200 — поле проверяется async (op.error code=3/5).
+                            # 404 — body использует garbage parent id (PE: networkId={{garbageVpcId}});
+                            #       sync existence-check parent'а отрабатывает раньше → NotFound (verbatim YC, kacho-vpc#8).
+                            "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));",
                         ])],
         ))
     return cases

@@ -327,12 +327,14 @@ CASES.extend(list_total_size_check_block("PE", "/vpc/v1/endpoints"))
 # v10 PE-specific
 CASES.append(Case(
     id="PE-CR-VAL-SERVICE-MISSING",
-    title="Create PE без objectStorage → 400",
+    title="Create PE без objectStorage → отвергнут (400 / 404 от sync network-check)",
     classes=["VAL", "NEG"], priority="P1",
+    # networkId={{garbageVpcId}} → sync existence-check сети отрабатывает раньше проверки service-поля →
+    # 404 NOT_FOUND (verbatim YC, kacho-vpc#8). 400 — если service-валидация впереди; 200 — если permissive.
     steps=[Step(name="cr-no-service", method="POST", path="/vpc/v1/endpoints",
                 body={"folderId": "{{_suiteFolderId}}", "name": "pe-noserv-{{runId}}",
                       "networkId": "{{garbageVpcId}}"},
-                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"])],
 ))
 
 CASES.append(Case(
@@ -357,12 +359,13 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="PE-CR-VAL-SUBNET-REQUIRED",
-    title="Create PE без subnetId → ожидаемое поведение",
+    title="Create PE без subnetId → ожидаемое поведение (200 / 400 / 404 от sync network-check)",
     classes=["VAL"], priority="P2",
+    # subnetId опционален; networkId={{garbageVpcId}} → sync network-check → 404 NOT_FOUND (verbatim YC, kacho-vpc#8).
     steps=[Step(name="cr-no-sub", method="POST", path="/vpc/v1/endpoints",
                 body={"folderId": "{{_suiteFolderId}}", "name": "pe-ns-{{runId}}",
                       "networkId": "{{garbageVpcId}}", "objectStorage": {}},
-                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+                test_script=["pm.test('200/400/404', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"])],
 ))
 
 CASES.append(Case(

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "d6cfe0ef-710d-432e-9ae4-82e6ba70a1d5",
+    "_postman_id": "1a44a1dd-8427-4119-801e-d59a50d384f5",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -9742,8 +9742,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                  "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));"
                 ]
               }
             }
@@ -9792,8 +9791,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                  "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));"
                 ]
               }
             }
