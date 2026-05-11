@@ -254,3 +254,60 @@ connections, lock'и, WAL.
 **Architectural takeaway:** kacho-vpc write-path — **DB-bound, не CPU-bound**.
 Horizontal scaling vpc без шардинга БД не увеличивает write throughput.
 1 pod уже выжимает ~5000 Create/sec из single Postgres.
+
+---
+
+## Попытка достичь 50K Create/sec — анализ
+
+### Применённые оптимизации (поверх предыдущих)
+
+- `operations` + `vpc_outbox` → **UNLOGGED tables** (эфемерное состояние, не пишут WAL — теряются при crash, что для LRO/events приемлемо)
+- Postgres `fsync=off` + `full_page_writes=off` (extreme tune для max write; corruption-unsafe — dev only)
+- `shared_buffers=1GB`, `wal_buffers=64MB`, `max_wal_size=8GB`, `wal_writer_delay=10s`, `bgwriter_lru_maxpages=0`
+- in-cluster ghz Job (минует api-gateway И port-forward — port-forward падает под concurrency >300)
+
+### Результаты
+
+| Setup | Aggregate Create/sec | p99 | Errors |
+|---|---|---|---|
+| 1 pod, in-cluster ghz burst (concurrency 600) | **~7000/sec** | 129ms | 0 (600K req) |
+| **5 pod**, 5 параллельных in-cluster ghz Jobs (concurrency 400 каждый) | **~8070/sec** (1617×5) | ~555ms на job | 0 (1.5M req) |
+
+### ⚠️ Вывод: 50K Create/sec на single Postgres НЕДОСТИЖИМО
+
+5 pod дали **только +15%** vs 1 pod (~8K vs ~7K), p99 вырос в **4×** (129ms → 555ms).
+**Postgres single-instance — твёрдый bottleneck ~7-8K Create/sec total**, даже с:
+- UNLOGGED operations+outbox (2 из 3 INSERT без WAL)
+- fsync=off (нет fsync вообще)
+- synchronous_commit=off
+- большими buffers
+
+Postgres-tuning **полностью исчерпан**. Каждый `Network.Create` = 3 INSERT
+(operations + networks + outbox) + 2 trigger pg_notify + индексы. Single
+Postgres-instance не делает больше ~7-8K таких TX/sec на этом железе.
+
+Horizontal scaling vpc **не помогает** — все pod'ы пишут в одну БД.
+
+### Что РЕАЛЬНО нужно для 50K Create/sec
+
+| Подход | Эффект | Сложность |
+|---|---|---|
+| **Database sharding** (database-per-tenant/region/hash) | 7-10 шардов × ~7K = 50-70K. Каждый шард = свой Postgres + свои vpc-pod'ы | Высокая (роутинг, ребалансировка, кросс-шард операции) |
+| **Batch-INSERT redesign** (write-behind buffer, flush через CopyFrom батчами 500-1000) | Снижает round-trips к БД 100-1000× → 1 Postgres держит 50K+ | Высокая (eventual consistency, batch latency, потеря при crash, изменение LRO contract) |
+| **Убрать operations sync INSERT** + batch outbox | -2 INSERT/Create + амортизация → ~3× | Средняя (меняет LRO contract: poll может временно видеть NotFound) |
+| Просто больше vpc-pod'ов | **НЕ помогает** ❌ — DB shared, +15% максимум | — |
+| Больше Postgres-памяти/CPU | помогает на ~20-30%, не на 7× | — |
+
+### Достигнутый максимум на текущей архитектуре
+
+| Метрика | Значение | Прирост от исходного |
+|---|---|---|
+| Create/sec (1 pod, UNLOGGED+fsync=off, burst) | **~7000/sec** | **78×** (от 90/sec) |
+| Create p99 @ 5000 RPS rate-limited (logged, fsync=on) | **28ms** | укладывается в SLO ≤ 50ms |
+| Create/sec (5 pod aggregate) | ~8070/sec | DB-bound, scaling не работает |
+| Read/sec (1 pod, in-cluster burst) | **~19250/sec** @ p99 39ms | read масштабируется горизонтально |
+
+**Резюме:** на single Postgres потолок write — ~7-8K Create/sec. **50K write/sec
+требует фундаментального redesign** (sharding или batch-INSERT). Postgres-tuning и
+horizontal scaling vpc исчерпаны. SLO p99 ≤ 50ms для Create при rate-limited
+профиле до 5000 RPS — выполняется (28ms).
