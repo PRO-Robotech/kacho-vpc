@@ -13,8 +13,9 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateGatewayReq — запрос на создание NAT gateway.
@@ -50,6 +51,9 @@ func NewGatewayService(repo GatewayRepo, folderClient FolderClient, opsRepo oper
 
 // Get возвращает Gateway по ID.
 func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	g, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -58,7 +62,11 @@ func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, e
 }
 
 // List возвращает список Gateways.
+// folder_id обязателен (R10 #C1 closure).
 func (s *GatewayService) List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.Gateway, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
@@ -121,13 +129,16 @@ func (s *GatewayService) doCreate(ctx context.Context, gwID string, req CreateGa
 	}
 	created, err := s.repo.Insert(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainGatewayToProto(created))
+	return anypb.New(protoconv.Gateway(created))
 }
 
 // Update обновляет Gateway.
 func (s *GatewayService) Update(ctx context.Context, req UpdateGatewayReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, req.GatewayID); err != nil {
+		return nil, err
+	}
 	if req.GatewayID == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -161,9 +172,9 @@ func (s *GatewayService) doUpdate(ctx context.Context, req UpdateGatewayReq) (*a
 	applyGatewayMask(g, req)
 	updated, err := s.repo.Update(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainGatewayToProto(updated))
+	return anypb.New(protoconv.Gateway(updated))
 }
 
 func validateGatewayUpdate(req UpdateGatewayReq) error {
@@ -222,6 +233,9 @@ func applyGatewayMask(g *domain.Gateway, req UpdateGatewayReq) {
 
 // Delete удаляет Gateway.
 func (s *GatewayService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -247,6 +261,9 @@ func (s *GatewayService) Delete(ctx context.Context, id string) (*operations.Ope
 
 // Move переносит Gateway в другой folder.
 func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -276,13 +293,16 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainGatewayToProto(updated))
+		return anypb.New(protoconv.Gateway(updated))
 	})
 	return &op, nil
 }
 
 // ListOperations возвращает операции для конкретного Gateway.
 func (s *GatewayService) ListOperations(ctx context.Context, gwID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, gwID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, gwID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -293,21 +313,6 @@ func (s *GatewayService) ListOperations(ctx context.Context, gwID string, p Pagi
 	})
 }
 
-// domainGatewayToProto конвертирует domain.Gateway → vpcv1.Gateway.
 //
 // Поскольку Gateway имеет oneof gateway (только shared_egress сейчас),
 // устанавливаем SharedEgressGateway всегда (default-тип в YC).
-func domainGatewayToProto(g *domain.Gateway) *vpcv1.Gateway {
-	p := &vpcv1.Gateway{
-		Id:          g.ID,
-		FolderId:    g.FolderID,
-		Name:        g.Name,
-		Description: g.Description,
-		Labels:      g.Labels,
-	}
-	// shared_egress — единственный поддерживаемый тип в YC sub-phase.
-	p.Gateway = &vpcv1.Gateway_SharedEgressGateway{
-		SharedEgressGateway: &vpcv1.SharedEgressGateway{},
-	}
-	return p
-}

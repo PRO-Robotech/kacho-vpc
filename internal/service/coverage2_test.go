@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // Happy-path Update сценарии для всех ресурсов — покрывают doUpdate /
@@ -21,7 +22,7 @@ func TestSubnetService_Update_NameOnly(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -50,7 +51,7 @@ func TestSubnetService_Update_FullPATCH(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -84,7 +85,7 @@ func TestSubnetService_Update_BadName(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID: "f1", Name: "sub1", NetworkID: net.ID, ZoneID: "ru-central1-a",
@@ -103,7 +104,7 @@ func TestSubnetService_Update_BadName(t *testing.T) {
 
 func TestSubnetService_Update_UnknownMask(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
 	_, err := svc.Update(context.Background(), UpdateSubnetReq{
 		SubnetID:   "sub-X",
 		UpdateMask: []string{"unknown_field"},
@@ -118,7 +119,7 @@ func TestRouteTableService_Update_FullPATCH(t *testing.T) {
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	rtr := newMockRouteTableRepo()
-	svc := NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateRouteTableReq{
 		FolderID: "f1", Name: "rt1", NetworkID: net.ID,
@@ -140,7 +141,7 @@ func TestRouteTableService_Update_FullPATCH(t *testing.T) {
 
 func TestRouteTableService_Update_UnknownMask(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
 	_, err := svc.Update(context.Background(), UpdateRouteTableReq{
 		RouteTableID: "rt-X",
 		UpdateMask:   []string{"unknown_field"},
@@ -154,7 +155,7 @@ func TestAddressService_Update_FullPATCH(t *testing.T) {
 	or := newMockOpsRepo()
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateAddressReq{
 		FolderID:     "f1",
@@ -181,7 +182,7 @@ func TestSecurityGroupService_Update_NameOnly(t *testing.T) {
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
-	svc := NewSecurityGroupService(newMockSGRepo(), nr, &mockFolderClient{exists: true}, or)
+	svc := NewSecurityGroupService(newMockSGRepo(), nr, newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateSecurityGroupReq{
 		FolderID: "f1", Name: "sg", NetworkID: net.ID,
@@ -205,7 +206,7 @@ func TestSecurityGroupService_Update_FullPATCH(t *testing.T) {
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
-	svc := NewSecurityGroupService(newMockSGRepo(), nr, &mockFolderClient{exists: true}, or)
+	svc := NewSecurityGroupService(newMockSGRepo(), nr, newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateSecurityGroupReq{
 		FolderID: "f1", Name: "sg", NetworkID: net.ID,
@@ -226,7 +227,7 @@ func TestSecurityGroupService_Update_FullPATCH(t *testing.T) {
 
 func TestSecurityGroupService_Update_BadName(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
 	_, err := svc.Update(context.Background(), UpdateSecurityGroupReq{
 		SecurityGroupID: "sg-X",
 		Name:            "1bad",
@@ -239,7 +240,7 @@ func TestSecurityGroupService_Update_BadName(t *testing.T) {
 
 func TestGatewayService_Update_FullPATCH(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateGatewayReq{
 		FolderID: "f1", Name: "gw1", GatewayType: "shared_egress",
@@ -261,7 +262,7 @@ func TestGatewayService_Update_FullPATCH(t *testing.T) {
 
 func TestGatewayService_Update_NameOnly(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateGatewayReq{
 		FolderID: "f1", Name: "gw1", GatewayType: "shared_egress",
@@ -281,7 +282,7 @@ func TestGatewayService_Update_NameOnly(t *testing.T) {
 
 func TestGatewayService_Update_BadName(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
 	_, err := svc.Update(context.Background(), UpdateGatewayReq{
 		GatewayID:  "gw-X",
 		Name:       "BadCaps", // strict NameGateway rejects uppercase
@@ -292,7 +293,7 @@ func TestGatewayService_Update_BadName(t *testing.T) {
 
 func TestGatewayService_Update_UnknownMask(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), &mockFolderClient{exists: true}, or)
+	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
 	_, err := svc.Update(context.Background(), UpdateGatewayReq{
 		GatewayID:  "gw-X",
 		UpdateMask: []string{"unknown"},
@@ -308,7 +309,7 @@ func TestPrivateEndpointService_Update_FullPATCH(t *testing.T) {
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
 	sub := makeSubnet(sr, net.ID)
-	svc := NewPrivateEndpointService(newMockPERepo(), &mockFolderClient{exists: true}, nr, sr, or)
+	svc := NewPrivateEndpointService(newMockPERepo(), newMockFolderClient(true), nr, sr, or)
 
 	createOp, _ := svc.Create(context.Background(), CreatePrivateEndpointReq{
 		FolderID:    "f1",
@@ -372,7 +373,7 @@ func TestDomainSGToProto_Conversion(t *testing.T) {
 			{ID: "r1", Direction: "INGRESS", FromPort: 22, ToPort: 22},
 		},
 	}
-	p := domainSGToProto(sg)
+	p := protoconv.SecurityGroup(sg)
 	assert.Equal(t, "sg-1", p.Id)
 	assert.True(t, p.DefaultForNetwork)
 	require.Len(t, p.Rules, 1)
@@ -390,7 +391,7 @@ func TestDomainPrivateEndpointToProto_Conversion(t *testing.T) {
 		Status:      "AVAILABLE",
 		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
 	}
-	out := domainPrivateEndpointToProto(p)
+	out := protoconv.PrivateEndpoint(p)
 	assert.Equal(t, "pe-1", out.Id)
 }
 
@@ -403,17 +404,4 @@ func TestAssignRuleIDs_GeneratesIDs(t *testing.T) {
 	assert.NotEmpty(t, rules[0].ID)
 	assert.NotEmpty(t, rules[1].ID)
 	assert.NotEqual(t, rules[0].ID, rules[1].ID)
-}
-
-func TestSGStatusToProto_AllStates(t *testing.T) {
-	// status string → proto enum, защита от неверного маппинга
-	for _, s := range []string{"CREATING", "ACTIVE", "UPDATING", "DELETING", "unknown"} {
-		_ = sgStatusToProto(s)
-	}
-}
-
-func TestSGDirectionToProto_All(t *testing.T) {
-	_ = sgDirectionToProto("INGRESS")
-	_ = sgDirectionToProto("EGRESS")
-	_ = sgDirectionToProto("")
 }

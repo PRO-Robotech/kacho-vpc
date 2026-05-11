@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -33,10 +32,16 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	return subnetToProto(sub), nil
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.Subnet(sub), nil
 }
 
 func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	subs, nextToken, err := h.svc.List(ctx, svc.SubnetFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -49,12 +54,15 @@ func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest)
 	}
 	resp := &vpcv1.ListSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, subnetToProto(s))
+		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
 	}
 	return resp, nil
 }
 
 func (h *SubnetHandler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateSubnetReq{
 		FolderID:     req.FolderId,
 		Name:         req.Name,
@@ -82,6 +90,13 @@ func (h *SubnetHandler) Create(ctx context.Context, req *vpcv1.CreateSubnetReque
 func (h *SubnetHandler) Update(ctx context.Context, req *vpcv1.UpdateSubnetRequest) (*operationpb.Operation, error) {
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -114,6 +129,13 @@ func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubne
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -129,6 +151,19 @@ func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubne
 }
 
 func (h *SubnetHandler) Move(ctx context.Context, req *vpcv1.MoveSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.SubnetId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -140,6 +175,13 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.SubnetId)
 	if err != nil {
 		return nil, err
@@ -148,6 +190,16 @@ func (h *SubnetHandler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetReque
 }
 
 func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.AddCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
 	if err != nil {
 		return nil, err
@@ -156,6 +208,16 @@ func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetC
 }
 
 func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.RemoveCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
 	if err != nil {
 		return nil, err
@@ -164,6 +226,16 @@ func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveS
 }
 
 func (h *SubnetHandler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Relocate(ctx, req.SubnetId, req.DestinationZoneId)
 	if err != nil {
 		return nil, err
@@ -172,6 +244,16 @@ func (h *SubnetHandler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetR
 }
 
 func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUsedAddressesRequest) (*vpcv1.ListUsedAddressesResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	sub, err := h.svc.Get(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		return nil, err
+	}
 	addrs, nextToken, err := h.svc.ListUsedAddresses(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -202,26 +284,3 @@ func (h *SubnetHandler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUs
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
 // YC-DIFF-TIMESTAMP-PRECISION.md.
-func subnetToProto(s *domain.Subnet) *vpcv1.Subnet {
-	p := &vpcv1.Subnet{
-		Id:           s.ID,
-		FolderId:     s.FolderID,
-		CreatedAt:    timestamppb.New(s.CreatedAt.Truncate(time.Second)),
-		Name:         s.Name,
-		Description:  s.Description,
-		Labels:       s.Labels,
-		NetworkId:    s.NetworkID,
-		ZoneId:       s.ZoneID,
-		V4CidrBlocks: s.V4CidrBlocks,
-		V6CidrBlocks: s.V6CidrBlocks,
-		RouteTableId: s.RouteTableID,
-	}
-	if s.DhcpOptions != nil {
-		p.DhcpOptions = &vpcv1.DhcpOptions{
-			DomainNameServers: s.DhcpOptions.DomainNameServers,
-			DomainName:        s.DhcpOptions.DomainName,
-			NtpServers:        s.DhcpOptions.NtpServers,
-		}
-	}
-	return p
-}

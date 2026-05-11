@@ -15,6 +15,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // SecurityGroupService — бизнес-логика SG.
@@ -57,6 +58,9 @@ type UpdateSecurityGroupReq struct {
 
 // Get возвращает SG.
 func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	sg, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -65,12 +69,19 @@ func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.Secu
 }
 
 // List возвращает список SG.
+// folder_id обязателен (R10 #C1 closure).
 func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroup, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
 // Create создаёт SG (асинхронно через Operation).
 func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGroupReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -125,9 +136,9 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 		}
 		created, err := s.repo.Insert(ctx, sg)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(created))
+		return anypb.New(protoconv.SecurityGroup(created))
 	})
 
 	return &op, nil
@@ -167,13 +178,16 @@ func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, fold
 	}
 	created, err := s.repo.Insert(ctx, sg)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
 	return created, nil
 }
 
 // Update обновляет SG.
 func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGroupReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -220,9 +234,9 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 		}
 		updated, err := s.repo.Update(ctx, sg)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -230,9 +244,9 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 // UpdateRulesReq — параметры UpdateRules: атомарно удалить правила deletionRuleIDs
 // и добавить additionRuleSpecs (присвоит новые ID).
 type UpdateRulesReq struct {
-	SecurityGroupID    string
-	DeletionRuleIDs    []string
-	AdditionRuleSpecs  []domain.SecurityGroupRule
+	SecurityGroupID   string
+	DeletionRuleIDs   []string
+	AdditionRuleSpecs []domain.SecurityGroupRule
 }
 
 // UpdateRules заменяет набор правил SG атомарно через Operation.
@@ -240,6 +254,9 @@ type UpdateRulesReq struct {
 // YC verbatim: result — Operation, response — обновлённый SG.
 // Sync-валидация: каждое правило (direction, protocol, ports, cidr или sgRef).
 func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -264,7 +281,7 @@ func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesR
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -280,6 +297,9 @@ type UpdateRuleReq struct {
 
 // UpdateRule обновляет description/labels единичного правила.
 func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -313,7 +333,7 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 		// Response — parent SecurityGroup (verbatim YC CLI 1.x compat).
 		// CLI hardcodes expectation на SecurityGroup, не SecurityGroupRule.
 		// См. finding SG-UPDATERULE-RESPONSE-TYPE-MISMATCH.md.
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
@@ -382,6 +402,9 @@ func validateSGRule(field string, r domain.SecurityGroupRule) error {
 
 // Delete удаляет SG. Default SG нельзя удалить (вернёт FAILED_PRECONDITION).
 func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -415,6 +438,9 @@ func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operatio
 
 // Move инициирует перенос SG в другой folder.
 func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -441,13 +467,16 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSGToProto(updated))
+		return anypb.New(protoconv.SecurityGroup(updated))
 	})
 	return &op, nil
 }
 
 // ListOperations возвращает операции для конкретного SG.
 func (s *SecurityGroupService) ListOperations(ctx context.Context, id string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, id); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -468,66 +497,4 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 		out[i] = r
 	}
 	return out
-}
-
-// domainSGToProto конвертирует domain SG → proto SG.
-func domainSGToProto(sg *domain.SecurityGroup) *vpcv1.SecurityGroup {
-	p := &vpcv1.SecurityGroup{
-		Id:                sg.ID,
-		FolderId:          sg.FolderID,
-		NetworkId:         sg.NetworkID,
-		Name:              sg.Name,
-		Description:       sg.Description,
-		Labels:            sg.Labels,
-		Status:            sgStatusToProto(sg.Status),
-		DefaultForNetwork: sg.DefaultForNetwork,
-	}
-	for _, r := range sg.Rules {
-		pr := &vpcv1.SecurityGroupRule{
-			Id:             r.ID,
-			Description:    r.Description,
-			Labels:         r.Labels,
-			Direction:      sgDirectionToProto(r.Direction),
-			ProtocolName:   r.ProtocolName,
-			ProtocolNumber: r.ProtocolNumber,
-		}
-		if r.FromPort != 0 || r.ToPort != 0 {
-			pr.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
-		}
-		// CIDR target
-		if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
-			pr.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
-				CidrBlocks: &vpcv1.CidrBlocks{
-					V4CidrBlocks: r.V4CidrBlocks,
-					V6CidrBlocks: r.V6CidrBlocks,
-				},
-			}
-		}
-		p.Rules = append(p.Rules, pr)
-	}
-	return p
-}
-
-func sgStatusToProto(s string) vpcv1.SecurityGroup_Status {
-	switch s {
-	case "CREATING":
-		return vpcv1.SecurityGroup_CREATING
-	case "ACTIVE":
-		return vpcv1.SecurityGroup_ACTIVE
-	case "UPDATING":
-		return vpcv1.SecurityGroup_UPDATING
-	case "DELETING":
-		return vpcv1.SecurityGroup_DELETING
-	}
-	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
-}
-
-func sgDirectionToProto(d string) vpcv1.SecurityGroupRule_Direction {
-	switch d {
-	case "INGRESS":
-		return vpcv1.SecurityGroupRule_INGRESS
-	case "EGRESS":
-		return vpcv1.SecurityGroupRule_EGRESS
-	}
-	return vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED
 }

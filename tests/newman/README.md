@@ -1,0 +1,86 @@
+# tests/newman — публичный API kacho-vpc, 100% coverage suite
+
+**Главная regression-инфраструктура** kacho-vpc (`tests/newman/`; рядом `tests/k6/` —
+нагрузочные сценарии). Black-box покрытие всех публичных RPC, спроектирована по
+`testing-product-coach` (формальные техники test design) с naming/structure по
+`testing-code-coach`. Источник истины — декларативные case-файлы `cases/*.py`;
+коллекции в `collections/` **генерируются** скриптом `scripts/gen.py`.
+
+> Старая quota-aware 3-suite сьюта против реального YC API (`newman_legacy/`,
+> RO/LIGHT/SEQ, master collection) удалена — история в git.
+
+## Структура
+
+```
+tests/newman/
+├── README.md                — этот файл
+├── cases/                   — ИСТОЧНИК ИСТИНЫ: декларативные case-наборы (Python), по сервису
+│   ├── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py  — публичные RPC
+│   └── {internal-pool,internal-region-zone,internal-cloud}.py  — internal/admin IPAM RPC (kacho-only)
+├── collections/             — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису) — НЕ править руками
+│   └── {…}.postman_collection.json
+├── environments/
+│   ├── local.postman_environment.json   — local stand (port-forward api-gateway → 18080)
+│   └── yc.postman_environment.json       — реальный Yandex Cloud (baseUrl → yc-proxy на :18081); internal-* тут не гоняем
+├── scripts/
+│   ├── gen.py                — генератор коллекций из cases/* (Postman v2.1 JSON)
+│   ├── run.sh                — прогон одного/всех сервисов целиком (newman + JSON reporter → out/)
+│   ├── run-incremental.sh    — прогон ПО ОДНОМУ кейсу за раз + зачистка ресурсов после каждого (quota-safe, как для YC); --resume / --cleanup-only
+│   ├── run-incremental.js    — драйвер (newman library API — без per-case process startup; env SERVICES=... ограничивает список сервисов)
+│   └── yc-proxy.js           — локальный reverse-proxy для прогона против реального YC: /vpc/v1/*→vpc.api, /operations/*→operation.api, подставляет Bearer (yc iam create-token)
+├── docs/
+│   ├── TAXONOMY.md            — классы кейсов и naming convention
+│   ├── TEST-PLAN.md           — карта покрытия (RPC × класс)
+│   ├── CASES-INDEX.md         — каталог уникальных паттернов кейсов
+│   ├── PRODUCT-REQUIREMENTS.md — НОРМАТИВНЫЙ регламент REQ-* (от QA; выведен из CASES-INDEX; vpc-yc-parity-auditor проверяет соответствие)
+│   ├── REQUIREMENTS.md        — бэклог *улучшений* (testability / contract-clarification asks — не нормативный)
+│   └── RESULTS.md             — последний прогон pass/fail + история версий + skill-mapping
+└── out/                     — newman raw output + summary.txt (gitignored snap-логи)
+```
+(Найденные дефекты/наблюдения — в GitHub Issues `PRO-Robotech/kacho-vpc`, см. `kacho-vpc/CLAUDE.md` §14.4;
+by-design расхождения с verbatim YC — `docs/architecture/07-known-divergences.md`. Отдельного bug-map больше нет.)
+
+## Быстрый старт
+
+```bash
+# 1. Поднять стенд + port-forward api-gateway → localhost:18080 (см. kacho-deploy)
+# 2. Перегенерить коллекции из cases/*.py (если меняли cases или код)
+python3 scripts/gen.py            # все сервисы; или: python3 scripts/gen.py network
+# 3a. Прогнать всё одним махом (быстро, но во время прогона создаётся много ресурсов разом)
+./scripts/run.sh                  # сводка в out/summary.txt
+./scripts/run.sh --service network                 # один сервис
+# 3b. Прогнать ПО ОДНОМУ кейсу за раз с зачисткой ресурсов после каждого
+#     (низкий resource-footprint в любой момент → безопасно при quota-guard, как у YC)
+./scripts/run-incremental.sh                        # все ~731 кейс; сводка → out/incremental/summary.txt
+./scripts/run-incremental.sh --resume               # продолжить прерванный прогон
+./scripts/run-incremental.sh --service subnet       # один сервис
+./scripts/run-incremental.sh --cleanup-only         # просто стереть throwaway-ресурсы в тест-папках
+#     тюнинг через env: CLEANUP_EVERY (как часто periodic-cleanup, default 25), DELAY_REQUEST (ms, default 30), SERVICES='svc1 svc2 ...'
+
+# Требует KACHO_VPC_DEFAULT_SG_INLINE=true (default) — иначе кейсы default-SG краснеют.
+
+# 3c. Прогон против РЕАЛЬНОГО Yandex Cloud (parity-аудит — всё, что ≠ YC, считаем багом)
+#     Нужен сконфигурированный `yc` CLI и выделенная throwaway-folder в YC (cleanup-pass стирает ВСЁ в ней).
+node scripts/yc-proxy.js &                            # локальный reverse-proxy :18081 (vpc.api / operation.api + Bearer)
+#   в environments/yc.postman_environment.json подставь свою throwaway-folder в existingFolderId/CrossId
+ENV=environments/yc.postman_environment.json \
+  SERVICES='network subnet address route-table security-group gateway private-endpoint operation' \
+  ./scripts/run-incremental.sh                        # internal-* НЕ включаем — этих IPAM-admin RPC в YC API нет
+#   результат → out/incremental/{progress.tsv, summary.txt, failed/<id>.json}; упавшие = расхождения с YC.
+```
+
+## Принципы (из testing-product-coach)
+
+- **Black-box**: тестируем продукт через публичный gRPC/REST, не код.
+  Тест не должен знать о SQLSTATE, имени constraint'а, конкретной БД.
+- **Источник истины**: acceptance-spec + proto-определения + reference YC.
+- **Изоляция**: каждый case-сценарий внутри своего runId; suite внутри
+  pre-allocated `existingFolderId` (env).
+- **Формальные техники**: ECP, BVA, decision tables, state transition,
+  error guessing — все классы кейсов выводятся системно.
+- **Conformance**: каждый кейс должен иметь зеркало против YC (через
+  `--env yc` — не реализовано в newman v1, см. TEST-PLAN).
+- **Risk-prioritization**: high-risk зоны (AuthZ, allocator,
+  data-integrity) получают больше кейсов.
+
+См. подробности в `docs/TAXONOMY.md`.

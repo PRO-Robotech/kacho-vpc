@@ -16,7 +16,7 @@ func TestRouteTableService_Create_ValidationError(t *testing.T) {
 	nr := newMockNetworkRepo()
 	rtr := newMockRouteTableRepo()
 	or := newMockOpsRepo()
-	svc := NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 
 	// Пустой network_id
 	_, err := svc.Create(context.Background(), CreateRouteTableReq{FolderID: "f1", Name: "rt1"})
@@ -30,7 +30,7 @@ func TestRouteTableService_Create_OK(t *testing.T) {
 	net := makeNetwork(nr)
 	rtr := newMockRouteTableRepo()
 	or := newMockOpsRepo()
-	svc := NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 
 	op, err := svc.Create(context.Background(), CreateRouteTableReq{
 		FolderID:  "f1",
@@ -60,7 +60,7 @@ func TestRouteTableService_Update_StaticRoutes(t *testing.T) {
 	net := makeNetwork(nr)
 	rtr := newMockRouteTableRepo()
 	or := newMockOpsRepo()
-	svc := NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	svc := NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 
 	createOp, _ := svc.Create(context.Background(), CreateRouteTableReq{
 		FolderID:  "f1",

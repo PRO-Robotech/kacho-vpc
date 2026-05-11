@@ -2,27 +2,29 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // AddressHandler реализует vpcv1.AddressServiceServer.
 type AddressHandler struct {
 	vpcv1.UnimplementedAddressServiceServer
-	svc *svc.AddressService
+	svc       *svc.AddressService
+	subnetSvc *svc.SubnetService // для AuthZ pre-check на ListBySubnet
 }
 
-// NewAddressHandler создаёт AddressHandler.
-func NewAddressHandler(s *svc.AddressService) *AddressHandler {
-	return &AddressHandler{svc: s}
+// NewAddressHandler создаёт AddressHandler. subnet может быть nil только
+// в unit-тестах (handler nil-safe в ListBySubnet); production composition
+// root в cmd/vpc/main.go обязан передать non-nil — иначе ListBySubnet
+// AuthZ check будет skip'нут (R10 fail-fast hardening — см. M3 carry-over).
+func NewAddressHandler(s *svc.AddressService, subnet *svc.SubnetService) *AddressHandler {
+	return &AddressHandler{svc: s, subnetSvc: subnet}
 }
 
 func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) (*vpcv1.Address, error) {
@@ -33,7 +35,10 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 	if err != nil {
 		return nil, err
 	}
-	return addressToProto(a), nil
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.Address(a), nil
 }
 
 func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRequest) (*vpcv1.Address, error) {
@@ -44,10 +49,31 @@ func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressBy
 	if err != nil {
 		return nil, err
 	}
-	return addressToProto(a), nil
+	// AuthZ: post-fetch check (нельзя проверить до lookup'а — RPC резолвит
+	// IP→Address). Маскируем под NotFound вместо PermissionDenied чтобы
+	// не leak'нуть существование IP в чужом folder'е (R10 m4 closure +
+	// verbatim YC parity: not-owned-not-existing).
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, status.Error(codes.NotFound, "Address not found")
+	}
+	return protoconv.Address(a), nil
 }
 
 func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySubnetRequest) (*vpcv1.ListAddressesBySubnetResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	// AuthZ: child list — caller обязан владеть parent subnet'ом.
+	// subnetSvc может быть nil только в unit-тестах (см. NewAddressHandler).
+	if h.subnetSvc != nil {
+		sub, err := h.subnetSvc.Get(ctx, req.SubnetId)
+		if err != nil {
+			return nil, err
+		}
+		if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+			return nil, err
+		}
+	}
 	addrs, nextToken, err := h.svc.ListBySubnet(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -57,12 +83,15 @@ func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddres
 	}
 	resp := &vpcv1.ListAddressesBySubnetResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, addressToProto(a))
+		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
 	}
 	return resp, nil
 }
 
 func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -75,12 +104,15 @@ func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesReque
 	}
 	resp := &vpcv1.ListAddressesResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, addressToProto(a))
+		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
 	}
 	return resp, nil
 }
 
 func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateAddressReq{
 		FolderID:           req.FolderId,
 		Name:               req.Name,
@@ -118,6 +150,13 @@ func (h *AddressHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressReq
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -141,6 +180,13 @@ func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddr
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.AddressId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -156,6 +202,19 @@ func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddr
 }
 
 func (h *AddressHandler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest) (*operationpb.Operation, error) {
+	if req.AddressId == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.AddressId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -166,6 +225,13 @@ func (h *AddressHandler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest
 func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (*operationpb.Operation, error) {
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	a, err := h.svc.Get(ctx, req.AddressId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.AddressId)
 	if err != nil {
@@ -178,41 +244,3 @@ func (h *AddressHandler) Delete(ctx context.Context, req *vpcv1.DeleteAddressReq
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
 // YC-DIFF-TIMESTAMP-PRECISION.md.
-func addressToProto(a *domain.Address) *vpcv1.Address {
-	p := &vpcv1.Address{
-		Id:                 a.ID,
-		FolderId:           a.FolderID,
-		CreatedAt:          timestamppb.New(a.CreatedAt.Truncate(time.Second)),
-		Name:               a.Name,
-		Description:        a.Description,
-		Labels:             a.Labels,
-		Reserved:           a.Reserved,
-		Used:               a.Used,
-		Type:               vpcv1.Address_Type(a.Type),
-		IpVersion:          vpcv1.Address_IpVersion(a.IpVersion),
-		DeletionProtection: a.DeletionProtection,
-	}
-	if a.ExternalIpv4 != nil {
-		ext := &vpcv1.ExternalIpv4Address{
-			Address: a.ExternalIpv4.Address,
-			ZoneId:  a.ExternalIpv4.ZoneID,
-		}
-		if a.ExternalIpv4.Requirements != nil {
-			ext.Requirements = &vpcv1.AddressRequirements{
-				DdosProtectionProvider: a.ExternalIpv4.Requirements.DdosProtectionProvider,
-				OutgoingSmtpCapability: a.ExternalIpv4.Requirements.OutgoingSmtpCapability,
-			}
-		}
-		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
-	} else if a.InternalIpv4 != nil {
-		p.Address = &vpcv1.Address_InternalIpv4Address{
-			InternalIpv4Address: &vpcv1.InternalIpv4Address{
-				Address: a.InternalIpv4.Address,
-				Scope: &vpcv1.InternalIpv4Address_SubnetId{
-					SubnetId: a.InternalIpv4.SubnetID,
-				},
-			},
-		}
-	}
-	return p
-}

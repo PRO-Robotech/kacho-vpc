@@ -4,103 +4,148 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+# kacho-vpc — polyrepo: go.mod has `replace github.com/PRO-Robotech/kacho-{corelib,proto} => ../...`
+# и Dockerfile'ы COPY ../kacho-corelib и т.п. → CI должен воспроизвести local layout
+# (kacho-workspace/project/{kacho-vpc, kacho-corelib, ...}). actions/checkout не пускает
+# path вне $GITHUB_WORKSPACE, поэтому: main-репо в подкаталог `kacho-vpc/`, siblings рядом
+# (`kacho-corelib/`, `kacho-proto/`, ...), все `run:`-шаги в `working-directory: kacho-vpc`.
+# Siblings ПОКА пиннятся к feature-веткам: работа IPAM-admin распределена по незакрытым PR
+# (kacho-proto/corelib/resource-manager/api-gateway/deploy) — их `main` ещё не содержит
+# новых stubs/API. Когда эти PR смёржатся в свои `main` — убрать `ref:`-строки (или `ref: main`).
+
+defaults:
+  run:
+    working-directory: kacho-vpc
+
 jobs:
-  test:
+  build-vet-test:
+    name: build + vet + test (unit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Checkout kacho-corelib
-        uses: actions/checkout@v4
-        with:
-          repository: PRO-Robotech/kacho-corelib
-          path: ../kacho-corelib
-
-      - name: Checkout kacho-proto
-        uses: actions/checkout@v4
-        with:
-          repository: PRO-Robotech/kacho-proto
-          path: ../kacho-proto
-
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: go mod download
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race -short -count=1 -timeout 5m ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - uses: golangci/golangci-lint-action@v7
         with:
-          go-version-file: go.mod
+          working-directory: kacho-vpc
+          args: --timeout 5m
 
-      - name: Download deps
-        run: go mod download
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62.2
-          args: --timeout=5m
-
-      - name: Test (unit, short mode)
-        run: go test ./... -race -cover -short -timeout 120s
+  govuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+        continue-on-error: true   # informational пока не fail-on-vuln
 
   integration:
+    name: integration (testcontainers Postgres)
     runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:dind
     steps:
       - uses: actions/checkout@v4
-
-      - name: Checkout kacho-corelib
-        uses: actions/checkout@v4
-        with:
-          repository: PRO-Robotech/kacho-corelib
-          path: ../kacho-corelib
-
-      - name: Checkout kacho-proto
-        uses: actions/checkout@v4
-        with:
-          repository: PRO-Robotech/kacho-proto
-          path: ../kacho-proto
-
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Download deps
-        run: go mod download
-
-      - name: Test (integration via testcontainers, no -short)
-        run: go test ./internal/repo/... -race -cover -timeout 300s
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: go mod download
+      # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
+      # (Docker есть на ubuntu-latest runner'ах). Без -cover (covdata-инструменты в
+      # отдельных toolchain-сборках бывают неполны; coverage здесь не нужен).
+      - run: go test ./internal/repo/... -race -count=1 -timeout 300s
 
   newman:
+    name: newman E2E (docker compose stack)
+    # Поднимает compose-стек (pg-rm + pg-vpc + resource-manager + vpc + api-gateway на host :28080),
+    # сеет фикстуры, гоняет всю newman-сьюту. Образы :dev собираются из siblings (parent-context).
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [build-vet-test]
     steps:
       - uses: actions/checkout@v4
+        with: { path: kacho-vpc }
+      # siblings: нужны как Go-deps (corelib/proto) и как Docker build-context
+      # (Dockerfile'ы COPY ../kacho-corelib и т.п.; PROJECT_ROOT в kacho-deploy/Makefile = $(abspath ..))
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-resource-manager, ref: feat/clouds-org-name-unique, path: kacho-resource-manager }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-api-gateway, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-api-gateway }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-yc-shim, path: kacho-yc-shim }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-deploy, ref: feat/vpc-internal-port-network-policy, path: kacho-deploy }
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install -g newman
+        working-directory: .
 
-      - name: Install Newman
-        run: npm install -g newman
-
-      - name: Stand up local Kachō (docker compose)
+      # Поднимает стек (pg-rm + pg-vpc + resource-manager + vpc + api-gateway на host :28080),
+      # сеет фикстуры (Org/Cloud/Folder ids → ci/.seeded-ids.env, region ru-central1 + zones a..d,
+      # default EXTERNAL_PUBLIC AddressPool). build context = $(abspath ..) = $GITHUB_WORKSPACE.
+      - name: ci-up (build images + compose + seed)
+        run: make -C ../kacho-deploy ci-up PROJECT_ROOT="$GITHUB_WORKSPACE"
+      - run: python3 tests/newman/scripts/gen.py
+      - name: run newman suites
         run: |
-          # TODO: replace with actual compose path. Newman job требует поднятого
-          # стенда: kacho-deploy/docker-compose или kind. Пока — placeholder.
-          echo "TODO: compose up — see kacho-deploy/Makefile dev-up"
-
-      - name: Run RO + LIGHT suites against local
-        if: false  # disabled until compose-up step is wired
-        run: |
-          cd newman
-          ./scripts/run.sh --env local --suite ro --no-precleanup
-          ./scripts/run.sh --env local --suite light --no-precleanup --no-rebuild
-
-      - name: Upload Newman reports
+          set -a; . ../kacho-deploy/ci/.seeded-ids.env; set +a
+          tests/newman/scripts/run.sh \
+            --env-var baseUrl=http://localhost:28080 \
+            --env-var existingOrgId="$existingOrgId" \
+            --env-var existingCloudId="$existingCloudId" \
+            --env-var existingFolderId="$existingFolderId" \
+            --env-var existingFolderCrossId="$existingFolderCrossId" \
+            --env-var existingZoneId="$existingZoneId" \
+            --env-var existingZoneAltId="$existingZoneAltId"
+      - name: dump stack logs on failure
+        if: failure()
+        run: make -C ../kacho-deploy ci-logs
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: newman-reports
-          path: newman/out/last-run-*.json
+          path: kacho-vpc/tests/newman/out/*.json
+      # fail если в out/summary.txt колонка FAILED ($3) > 0
+      - run: awk 'NR>1 && $3+0>0{f=1} END{exit f}' tests/newman/out/summary.txt
+      - name: ci-down
+        if: always()
+        run: make -C ../kacho-deploy ci-down

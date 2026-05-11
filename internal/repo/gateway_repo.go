@@ -107,7 +107,10 @@ func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p servi
 }
 
 func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON := mustMarshalJSON(g.Labels)
+	labelsJSON, err := marshalJSONB(g.Labels, "Gateway.labels")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -137,7 +140,10 @@ func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Ga
 }
 
 func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON := mustMarshalJSON(g.Labels)
+	labelsJSON, err := marshalJSONB(g.Labels, "Gateway.labels")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

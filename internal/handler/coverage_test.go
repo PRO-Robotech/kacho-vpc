@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,9 +10,9 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
-	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -21,172 +20,15 @@ import (
 // для всех публичных ресурсов. Сценарии заимствованы из Postman-коллекции
 // (collections/kacho-vpc.postman_collection.json) — case-id'ы NET-*, SUB-*,
 // ADR-*, RT-*, SG-*, GW-*. Покрывает sync InvalidArgument paths (наиболее
-// частый сценарий валидации до Operation worker'а).
-
-// ---- minimal mock SG repo ----
-
-type mockSGRepoForSvc struct {
-	mu   sync.Mutex
-	data map[string]*domain.SecurityGroup
-}
-
-func newMockSGRepoForSvc() *mockSGRepoForSvc {
-	return &mockSGRepoForSvc{data: make(map[string]*domain.SecurityGroup)}
-}
-
-func (r *mockSGRepoForSvc) Get(_ context.Context, id string) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sg, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return sg, nil
-}
-
-func (r *mockSGRepoForSvc) List(_ context.Context, f svc.SecurityGroupFilter, _ svc.Pagination) ([]*domain.SecurityGroup, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []*domain.SecurityGroup
-	for _, sg := range r.data {
-		if f.FolderID != "" && sg.FolderID != f.FolderID {
-			continue
-		}
-		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
-			continue
-		}
-		out = append(out, sg)
-	}
-	return out, "", nil
-}
-
-func (r *mockSGRepoForSvc) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[sg.ID] = sg
-	return sg, nil
-}
-
-func (r *mockSGRepoForSvc) Update(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[sg.ID] = sg
-	return sg, nil
-}
-
-func (r *mockSGRepoForSvc) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.data, id)
-	return nil
-}
-
-func (r *mockSGRepoForSvc) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sg, ok := r.data[sgID]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return sg, nil
-}
-
-func (r *mockSGRepoForSvc) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sg, ok := r.data[sgID]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return sg, nil
-}
-
-func (r *mockSGRepoForSvc) SetFolderID(_ context.Context, id, folderID string) (*domain.SecurityGroup, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sg, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	sg.FolderID = folderID
-	return sg, nil
-}
-
-// ---- minimal mock Gateway repo ----
-
-type mockGatewayRepoForSvc struct {
-	mu   sync.Mutex
-	data map[string]*domain.Gateway
-}
-
-func newMockGatewayRepoForSvc() *mockGatewayRepoForSvc {
-	return &mockGatewayRepoForSvc{data: make(map[string]*domain.Gateway)}
-}
-
-func (r *mockGatewayRepoForSvc) Get(_ context.Context, id string) (*domain.Gateway, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	g, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return g, nil
-}
-
-func (r *mockGatewayRepoForSvc) List(_ context.Context, f svc.GatewayFilter, _ svc.Pagination) ([]*domain.Gateway, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []*domain.Gateway
-	for _, g := range r.data {
-		if f.FolderID != "" && g.FolderID != f.FolderID {
-			continue
-		}
-		out = append(out, g)
-	}
-	return out, "", nil
-}
-
-func (r *mockGatewayRepoForSvc) Insert(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[g.ID] = g
-	return g, nil
-}
-
-func (r *mockGatewayRepoForSvc) Update(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[g.ID] = g
-	return g, nil
-}
-
-func (r *mockGatewayRepoForSvc) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.data, id)
-	return nil
-}
-
-func (r *mockGatewayRepoForSvc) SetFolderID(_ context.Context, id, folderID string) (*domain.Gateway, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	g, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	g.FolderID = folderID
-	return g, nil
-}
-
-// Compile-time check that interface is satisfied (lazy via constructor).
-var _ operations.Repo = (*mockOpsRepo)(nil)
+// частый сценарий валидации до Operation worker'а). Fake-реализации port-ов —
+// в `internal/ports/portmock` (shim — в mock_test.go).
 
 // ---- Network handler — additional coverage ----
 
 func TestNetworkHandler_Update_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
 	h := NewNetworkHandler(networkSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n1"})
@@ -207,7 +49,7 @@ func TestNetworkHandler_Update_OK(t *testing.T) {
 
 func TestNetworkHandler_Update_InvalidArg(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.Update(context.Background(), &vpcv1.UpdateNetworkRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -215,7 +57,7 @@ func TestNetworkHandler_Update_InvalidArg(t *testing.T) {
 
 func TestNetworkHandler_Move_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -223,7 +65,7 @@ func TestNetworkHandler_Move_Validates(t *testing.T) {
 
 func TestNetworkHandler_ListOperations_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListNetworkOperationsRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -234,7 +76,7 @@ func TestNetworkHandler_ListOperations_RequiresID(t *testing.T) {
 func TestSubnetHandler_Update_InvalidArg(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.Update(context.Background(), &vpcv1.UpdateSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -243,7 +85,7 @@ func TestSubnetHandler_Update_InvalidArg(t *testing.T) {
 func TestSubnetHandler_ListOperations_RequiresID(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListSubnetOperationsRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -253,7 +95,7 @@ func TestSubnetHandler_ListOperations_RequiresID(t *testing.T) {
 
 func TestAddressHandler_Update_InvalidArg(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.Update(context.Background(), &vpcv1.UpdateAddressRequest{AddressId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -261,7 +103,7 @@ func TestAddressHandler_Update_InvalidArg(t *testing.T) {
 
 func TestAddressHandler_ListOperations_RequiresID(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -272,7 +114,7 @@ func TestAddressHandler_ListOperations_RequiresID(t *testing.T) {
 func TestRouteTableHandler_Update_InvalidArg(t *testing.T) {
 	rtr := newMockRouteTableRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
 	_, err := h.Update(context.Background(), &vpcv1.UpdateRouteTableRequest{RouteTableId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -281,7 +123,7 @@ func TestRouteTableHandler_Update_InvalidArg(t *testing.T) {
 func TestRouteTableHandler_ListOperations_RequiresID(t *testing.T) {
 	rtr := newMockRouteTableRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -292,7 +134,7 @@ func TestRouteTableHandler_ListOperations_RequiresID(t *testing.T) {
 func makeSGService(t *testing.T) (*svc.SecurityGroupService, *mockOpsRepo) {
 	t.Helper()
 	or := newMockOpsRepo()
-	return svc.NewSecurityGroupService(newMockSGRepoForSvc(), newMockNetworkRepo(), &mockFolderClient{exists: true}, or), or
+	return svc.NewSecurityGroupService(newMockSGRepoForSvc(), newMockNetworkRepo(), newMockFolderClient(true), or), or
 }
 
 func TestSecurityGroupHandler_Get_InvalidArg(t *testing.T) {
@@ -306,7 +148,7 @@ func TestSecurityGroupHandler_Get_InvalidArg(t *testing.T) {
 func TestSecurityGroupHandler_Get_NotFound(t *testing.T) {
 	sgSvc, _ := makeSGService(t)
 	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ids.NewID(ids.PrefixSecurityGroup)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -356,7 +198,7 @@ func TestSecurityGroupHandler_ListOperations_RequiresID(t *testing.T) {
 func makeGatewayService(t *testing.T) (*svc.GatewayService, *mockOpsRepo) {
 	t.Helper()
 	or := newMockOpsRepo()
-	return svc.NewGatewayService(newMockGatewayRepoForSvc(), &mockFolderClient{exists: true}, or), or
+	return svc.NewGatewayService(newMockGatewayRepoForSvc(), newMockFolderClient(true), or), or
 }
 
 func TestGatewayHandler_Get_InvalidArg(t *testing.T) {
@@ -370,7 +212,7 @@ func TestGatewayHandler_Get_InvalidArg(t *testing.T) {
 func TestGatewayHandler_Get_NotFound(t *testing.T) {
 	gwSvc, _ := makeGatewayService(t)
 	h := NewGatewayHandler(gwSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ids.NewID(ids.PrefixGateway)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -437,7 +279,7 @@ func TestGatewayToProto_SharedEgress(t *testing.T) {
 		Labels:      map[string]string{"env": "prod"},
 		GatewayType: "shared_egress",
 	}
-	p := gatewayToProto(g)
+	p := protoconv.Gateway(g)
 	assert.Equal(t, "gw-1", p.Id)
 	assert.NotNil(t, p.GetSharedEgressGateway())
 }

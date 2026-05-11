@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
@@ -113,8 +113,14 @@ func (r *SubnetRepo) List(ctx context.Context, f service.SubnetFilter, p service
 }
 
 func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON := mustMarshalJSON(s.Labels)
-	dhcpJSON := marshalDhcp(s.DhcpOptions)
+	labelsJSON, err := marshalJSONB(s.Labels, "Subnet.labels")
+	if err != nil {
+		return nil, err
+	}
+	dhcpJSON, err := marshalDhcp(s.DhcpOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -157,8 +163,14 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*domain.Subn
 }
 
 func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	labelsJSON := mustMarshalJSON(s.Labels)
-	dhcpJSON := marshalDhcp(s.DhcpOptions)
+	labelsJSON, err := marshalJSONB(s.Labels, "Subnet.labels")
+	if err != nil {
+		return nil, err
+	}
+	dhcpJSON, err := marshalDhcp(s.DhcpOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -166,14 +178,17 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// v4_cidr_blocks НЕ обновляется здесь — это immutable для Update path
+	// (только service-layer SetCidrBlocks, см. AddCidrBlocks/RemoveCidrBlocks).
+	// Defensive depth (TODO #27): убираем колонку из SET даже если service
+	// слой пропустит модифицированный s.V4CidrBlocks по ошибке.
 	const q = `
-		UPDATE subnets SET name=$2, description=$3, labels=$4, v4_cidr_blocks=$5, route_table_id=$6, dhcp_options=$7
+		UPDATE subnets SET name=$2, description=$3, labels=$4, route_table_id=$5, dhcp_options=$6
 		WHERE id=$1
 		RETURNING ` + subnetCols
 
 	row := tx.QueryRow(ctx, q,
 		s.ID, s.Name, s.Description, labelsJSON,
-		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
 		nullableStr(s.RouteTableID), dhcpJSON,
 	)
 	result, err := scanSubnet(row)
@@ -382,12 +397,11 @@ func scanSubnet(row scannable) (*domain.Subnet, error) {
 	return &s, nil
 }
 
-func marshalDhcp(d *domain.DhcpOptions) []byte {
+func marshalDhcp(d *domain.DhcpOptions) ([]byte, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
-	b := mustMarshalJSON(d)
-	return b
+	return marshalJSONB(d, "Subnet.dhcp_options")
 }
 
 func nullableStr(s string) *string {

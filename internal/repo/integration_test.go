@@ -193,7 +193,28 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists)
 
-	// Internal address
+	// Internal address — addresses.internal_subnet_id has an FK to subnets,
+	// so the referenced subnet (and its network) must exist first.
+	net := &domain.Network{
+		ID:        ids.NewUID(),
+		FolderID:  "folder-1",
+		CreatedAt: time.Now().UTC(),
+		Name:      "net-for-internal-addr",
+	}
+	_, err = repo.NewNetworkRepo(pool).Insert(ctx, net)
+	require.NoError(t, err)
+	sub := &domain.Subnet{
+		ID:           ids.NewUID(),
+		FolderID:     "folder-1",
+		CreatedAt:    time.Now().UTC(),
+		Name:         "sub-for-internal-addr",
+		NetworkID:    net.ID,
+		ZoneID:       "ru-central1-a",
+		V4CidrBlocks: []string{"10.0.0.0/24"},
+	}
+	_, err = repo.NewSubnetRepo(pool).Insert(ctx, sub)
+	require.NoError(t, err)
+
 	intAddr := &domain.Address{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
@@ -202,7 +223,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 		IpVersion: domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{
 			Address:  "10.0.0.5",
-			SubnetID: ids.NewUID(),
+			SubnetID: sub.ID,
 		},
 	}
 	created2, err := ar.Insert(ctx, intAddr)

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,68 +11,24 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
-	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // Этот файл — happy-path и error-path handler-тесты для остальных методов
 // (Move/AddCidrBlocks/RemoveCidrBlocks/Relocate/ListUsedAddresses/UpdateRules/
-// UpdateRule/PrivateEndpoint*).
-
-// ---- minimal mock PE repo ----
-
-type mockPERepoForSvc struct {
-	mu   sync.Mutex
-	data map[string]*domain.PrivateEndpoint
-}
-
-func newMockPERepoForSvc() *mockPERepoForSvc {
-	return &mockPERepoForSvc{data: make(map[string]*domain.PrivateEndpoint)}
-}
-
-func (r *mockPERepoForSvc) Get(_ context.Context, id string) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	p, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) List(_ context.Context, _ svc.PrivateEndpointFilter, _ svc.Pagination) ([]*domain.PrivateEndpoint, string, error) {
-	return nil, "", nil
-}
-
-func (r *mockPERepoForSvc) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.data, id)
-	return nil
-}
+// UpdateRule/PrivateEndpoint*). Fake-реализации port-ов — в
+// `internal/ports/portmock` (shim — в mock_test.go).
 
 // ---- Subnet handler — Move / AddCidrBlocks / RemoveCidrBlocks / Relocate / ListUsedAddresses ----
 
 func TestSubnetHandler_Move_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -82,7 +37,7 @@ func TestSubnetHandler_Move_Validates(t *testing.T) {
 func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.AddCidrBlocks(context.Background(), &vpcv1.AddSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -91,7 +46,7 @@ func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.RemoveCidrBlocks(context.Background(), &vpcv1.RemoveSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -100,7 +55,7 @@ func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.Relocate(context.Background(), &vpcv1.RelocateSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -109,7 +64,7 @@ func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.ListUsedAddresses(context.Background(), &vpcv1.ListUsedAddressesRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -119,7 +74,7 @@ func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 
 func TestAddressHandler_Move_Validates(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -127,15 +82,15 @@ func TestAddressHandler_Move_Validates(t *testing.T) {
 
 func TestAddressHandler_GetByValue_Empty(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 	_, err := h.GetByValue(context.Background(), &vpcv1.GetAddressByValueRequest{})
 	require.Error(t, err)
 }
 
 func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc)
-	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewUID()})
+	h := NewAddressHandler(addrSvc, nil)
+	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewID(ids.PrefixSubnet)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -145,7 +100,7 @@ func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 func TestRouteTableHandler_Move_Validates(t *testing.T) {
 	rtr := newMockRouteTableRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
 	_, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -201,7 +156,7 @@ func TestSGToProto_Fields(t *testing.T) {
 			},
 		},
 	}
-	p := sgToProto(sg)
+	p := protoconv.SecurityGroup(sg)
 	assert.Equal(t, "sg-1", p.Id)
 	assert.Equal(t, vpcv1.SecurityGroup_ACTIVE, p.Status)
 	assert.Len(t, p.Rules, 2)
@@ -209,25 +164,6 @@ func TestSGToProto_Fields(t *testing.T) {
 	require.NotNil(t, p.Rules[0].Ports)
 	assert.Equal(t, int64(22), p.Rules[0].Ports.FromPort)
 	assert.Nil(t, p.Rules[1].Ports, "ports nil for any")
-}
-
-func TestSGStatusToProtoH_AllStates(t *testing.T) {
-	cases := map[string]vpcv1.SecurityGroup_Status{
-		"CREATING": vpcv1.SecurityGroup_CREATING,
-		"ACTIVE":   vpcv1.SecurityGroup_ACTIVE,
-		"UPDATING": vpcv1.SecurityGroup_UPDATING,
-		"DELETING": vpcv1.SecurityGroup_DELETING,
-		"unknown":  vpcv1.SecurityGroup_STATUS_UNSPECIFIED,
-	}
-	for in, expected := range cases {
-		assert.Equal(t, expected, sgStatusToProtoH(in), "state=%q", in)
-	}
-}
-
-func TestSGDirectionToProtoH_AllStates(t *testing.T) {
-	assert.Equal(t, vpcv1.SecurityGroupRule_INGRESS, sgDirectionToProtoH("INGRESS"))
-	assert.Equal(t, vpcv1.SecurityGroupRule_EGRESS, sgDirectionToProtoH("EGRESS"))
-	assert.Equal(t, vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED, sgDirectionToProtoH(""))
 }
 
 func TestRuleSpecFromProto_Fields(t *testing.T) {
@@ -274,7 +210,7 @@ func TestRuleSpecFromProto_Predefined(t *testing.T) {
 func makePEService(t *testing.T) *svc.PrivateEndpointService {
 	t.Helper()
 	or := newMockOpsRepo()
-	return svc.NewPrivateEndpointService(newMockPERepoForSvc(), &mockFolderClient{exists: true}, newMockNetworkRepo(), newMockSubnetRepoForSvc(), or)
+	return svc.NewPrivateEndpointService(newMockPERepoForSvc(), newMockFolderClient(true), newMockNetworkRepo(), newMockSubnetRepoForSvc(), or)
 }
 
 func TestPrivateEndpointHandler_Get_InvalidArg(t *testing.T) {
@@ -286,7 +222,7 @@ func TestPrivateEndpointHandler_Get_InvalidArg(t *testing.T) {
 
 func TestPrivateEndpointHandler_Get_NotFound(t *testing.T) {
 	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ids.NewID(ids.PrefixPrivateEndpoint)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -343,7 +279,7 @@ func TestPrivateEndpointToProto_Fields(t *testing.T) {
 		Status:      "AVAILABLE",
 		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
 	}
-	out := privateEndpointToProto(p)
+	out := protoconv.PrivateEndpoint(p)
 	assert.Equal(t, "pe-1", out.Id)
 	assert.Equal(t, pepb.PrivateEndpoint_AVAILABLE, out.Status)
 	require.NotNil(t, out.Address)
@@ -360,7 +296,7 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 		"DELETING":  pepb.PrivateEndpoint_DELETING,
 		"unknown":   pepb.PrivateEndpoint_STATUS_UNSPECIFIED,
 	} {
-		out := privateEndpointToProto(&domain.PrivateEndpoint{Status: status})
+		out := protoconv.PrivateEndpoint(&domain.PrivateEndpoint{Status: status})
 		assert.Equal(t, expected, out.Status, "status=%s", status)
 	}
 }
@@ -372,7 +308,7 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 func TestNetworkHandler_Update_Happy(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, newMockFolderClient(true), or, nil)
 	h := NewNetworkHandler(networkSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
@@ -402,7 +338,7 @@ func TestNetworkHandler_Update_Happy(t *testing.T) {
 	require.NoError(t, err)
 
 	// Move (worker validates)
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: netID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: netID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -419,10 +355,10 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or)
+	subnetSvc := svc.NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
@@ -452,7 +388,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListSubnetOperationsRequest{SubnetId: subID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -468,10 +404,10 @@ func TestRouteTableHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	rtSvc := svc.NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	rtSvc := svc.NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 	h := NewRouteTableHandler(rtSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateRouteTableRequest{
@@ -497,7 +433,7 @@ func TestRouteTableHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: rtID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -513,10 +449,10 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	sgSvc := svc.NewSecurityGroupService(sgRepo, nr, &mockFolderClient{exists: true}, or)
+	sgSvc := svc.NewSecurityGroupService(sgRepo, nr, newMockFolderClient(true), or)
 	h := NewSecurityGroupHandler(sgSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSecurityGroupRequest{
@@ -563,7 +499,7 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListSecurityGroupOperationsRequest{SecurityGroupId: sgID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSecurityGroupRequest{SecurityGroupId: sgID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSecurityGroupRequest{SecurityGroupId: sgID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -596,7 +532,7 @@ func TestGatewayHandler_MoveDelete(t *testing.T) {
 
 	_, _ = h.ListOperations(context.Background(), &vpcv1.ListGatewayOperationsRequest{GatewayId: gwID})
 
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: "f2"})
+	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	awaitOpDone(t, or, moveOp.Id)
 
 	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: gwID})
@@ -607,7 +543,7 @@ func TestGatewayHandler_MoveDelete(t *testing.T) {
 
 func TestAddressHandler_FullFlow(t *testing.T) {
 	addrSvc, or := makeAddressService()
-	h := NewAddressHandler(addrSvc)
+	h := NewAddressHandler(addrSvc, nil)
 
 	createOp, _ := h.Create(context.Background(), &vpcv1.CreateAddressRequest{
 		FolderId: "f1",
@@ -637,7 +573,7 @@ func TestAddressHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: addrID})
 	require.NoError(t, err)
 
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: addrID, DestinationFolderId: "f2"})
+	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: addrID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	awaitOpDone(t, or, moveOp.Id)
 
 	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteAddressRequest{AddressId: addrID})
@@ -658,7 +594,7 @@ func TestSubnetToProto_Fields(t *testing.T) {
 			NtpServers:        []string{"1.1.1.1"},
 		},
 	}
-	p := subnetToProto(s)
+	p := protoconv.Subnet(s)
 	assert.Equal(t, "sub-1", p.Id)
 	assert.Equal(t, "ru-central1-a", p.ZoneId)
 	require.NotNil(t, p.DhcpOptions)

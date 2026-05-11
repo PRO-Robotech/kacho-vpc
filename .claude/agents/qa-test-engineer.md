@@ -293,7 +293,7 @@ kacho-test/collections/kacho-qa.postman_collection.json
 
 Когда поднимаешь новый local стенд:
 1. Создай через REST: `POST /resource-manager/v1/folders` для main folder + cross folder.
-2. Запиши IDs в `newman/environments/local.postman_environment.json` как `existingFolderId` / `existingFolderCrossId`.
+2. Запиши IDs в `tests/newman/environments/local.postman_environment.json` как `existingFolderId` / `existingFolderCrossId`.
 3. Запиши `existingOrgId` (default org) и `existingCloudId` (default cloud).
 
 Это **разовая настройка стенда**, не часть test design. НЕ правь preflight-кейсы — поправь env-файл.
@@ -307,31 +307,14 @@ Local БД хранит ресурсы между прогонами. После
 - List with pageSize=50 не возвращает recently created (он на странице 2+).
 - Тесты `nlf.1: contains both qa-* networks` фейлятся.
 
-**Решение**: cleanup перед full pipeline:
+**Решение**: вместо inline-bash — готовый скрипт `tests/newman/scripts/run-incremental.sh`:
+- `--cleanup-only` — стереть все throwaway-ресурсы в тест-папках (`existingFolder*` из env), FK-safe порядок,
+  несколько проходов на async-Delete, default-SG не трогает (уходит с network). Запускать перед/после прогона.
+- без флага — прогоняет сьюту **по одному кейсу за раз** и periodic-cleanup каждые `CLEANUP_EVERY` кейсов
+  (default 25) + cleanup после каждого упавшего → resource-footprint остаётся ~0 (quota-safe, как нужно для YC).
+- `--resume` — продолжить прерванный прогон (читает `out/incremental/progress.tsv`).
 
-```bash
-# YC env (script готов):
-./scripts/cleanup-vpc.sh -y
-
-# Local env (script нет — bash inline):
-for fid in $FID $FCROSS; do
-  for kind in subnets addresses routeTables gateways; do
-    while true; do
-      IDS=$(curl -s ".../${kind}?folderId=${fid}&pageSize=100" | jq -r '.[][]?.id')
-      [ -z "$IDS" ] && break
-      while read id; do curl -s -X DELETE ".../${kind}/${id}"; done <<< "$IDS"
-    done
-  done
-  # passes for non-default SGs (cross-refs)
-  for pass in 1 2 3; do
-    IDS=$(curl ... | jq '.[]|select(.defaultForNetwork==false)|.id')
-    ...
-  done
-  # networks last (default SG goes with network)
-done
-```
-
-⚠️ Не cleanup'ай default org/cloud/folder. Только содержимое.
+⚠️ Чистит только содержимое тест-папок; default org/cloud/folder не трогает.
 
 ### 15.3 Snapshot-discipline для diff-а
 
@@ -406,11 +389,20 @@ pm.expect(op.error.message).to.include("overlap");
 
 Probe реального YC API при сомнении и фиксируй точный текст в комментарии теста.
 
-### 15.7 PARITY.md — registry для design mismatch
+### 15.7 PARITY.md → теперь `docs/architecture/07-known-divergences.md` + GitHub Issues
 
-Не каждое расхождение Kachō ↔ YC — баг. Sync vs async errors (Kachō возвращает Operation для всего, YC sync 409/404 для duplicate name) — задокументированный design choice. Такие кейсы → `pending-parity` в `newman/PARITY.md` с blocking-PR описанием.
+Не каждое расхождение Kachō ↔ YC — баг. Намеренные расхождения (sync vs async, и т.п.) →
+`kacho-vpc/docs/architecture/07-known-divergences.md` (это исключения из регламента, см. §15.8).
+Баг → GitHub Issue (`PRO-Robotech/kacho-vpc`, см. `CLAUDE.md` §14.4) + регрессионный кейс (RED до фикса).
+При обнаружении нового расхождения: probe YC и Kachō → реши design-choice (→ 07-known-divergences) vs bug (→ issue).
 
-При обнаружении нового расхождения:
-1. Probe YC и Kachō, зафиксируй точные responses.
-2. Реши: design choice (→ PARITY.md) vs bug (→ PR в kacho-vpc).
-3. Если design — кейс **не идёт** в unified suite, идёт в `kacho-vpc-pending.postman_collection.json`.
+### 15.8 Регламент продуктовых требований — `tests/newman/docs/PRODUCT-REQUIREMENTS.md` (ты его ведёшь)
+
+Нормативный список `REQ-*` (что продукт ДОЛЖЕН / НЕ ДОЛЖЕН), выведенный из `CASES-INDEX.md`. На соответствие
+ему проверяет `vpc-yc-parity-auditor` при ревью изменений. **Твоя ответственность как QA:**
+- Новое выявленное требование (из ревью / прогона / probe YC) → добавь новый `REQ-<AREA>-<NN>` (формат — в шапке файла):
+  нормативная формулировка + `Validated-by:` (case-id-паттерны) + `Agent-check:` (где проверять) + `[приоритет]` + `Divergence:` если это исключение.
+- Каждый новый кейс в `cases/*.py` должен мапиться на `REQ-*`: добавь его case-id в `Validated-by` соответствующего REQ;
+  нет подходящего REQ → сначала заведи REQ, потом кейс. Кейс без REQ — пробел в регламенте.
+- Требование без кейса (`gap`) → запись в секции «Покрытие регламента (gaps)» + тикет/бэклог.
+- Не путать с `REQUIREMENTS.md` (бэклог *улучшений*, не нормативный) и `07-known-divergences.md` (исключения).

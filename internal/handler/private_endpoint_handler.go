@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -33,13 +31,19 @@ func (h *PrivateEndpointHandler) Get(ctx context.Context, req *pe.GetPrivateEndp
 	if err != nil {
 		return nil, err
 	}
-	return privateEndpointToProto(got), nil
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.PrivateEndpoint(got), nil
 }
 
 func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEndpointsRequest) (*pe.ListPrivateEndpointsResponse, error) {
 	folderID := ""
 	if c, ok := req.Container.(*pe.ListPrivateEndpointsRequest_FolderId); ok {
 		folderID = c.FolderId
+	}
+	if err := AssertFolderOwnership(ctx, folderID); err != nil {
+		return nil, err
 	}
 	endpoints, nextToken, err := h.svc.List(ctx, svc.PrivateEndpointFilter{
 		FolderID: folderID,
@@ -53,12 +57,15 @@ func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEn
 	}
 	resp := &pe.ListPrivateEndpointsResponse{NextPageToken: nextToken}
 	for _, p := range endpoints {
-		resp.PrivateEndpoints = append(resp.PrivateEndpoints, privateEndpointToProto(p))
+		resp.PrivateEndpoints = append(resp.PrivateEndpoints, protoconv.PrivateEndpoint(p))
 	}
 	return resp, nil
 }
 
 func (h *PrivateEndpointHandler) Create(ctx context.Context, req *pe.CreatePrivateEndpointRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	r := svc.CreatePrivateEndpointReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -92,6 +99,16 @@ func (h *PrivateEndpointHandler) Create(ctx context.Context, req *pe.CreatePriva
 }
 
 func (h *PrivateEndpointHandler) Update(ctx context.Context, req *pe.UpdatePrivateEndpointRequest) (*operationpb.Operation, error) {
+	if req.PrivateEndpointId == "" {
+		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
+	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -119,6 +136,13 @@ func (h *PrivateEndpointHandler) Delete(ctx context.Context, req *pe.DeletePriva
 	if req.PrivateEndpointId == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.PrivateEndpointId)
 	if err != nil {
 		return nil, err
@@ -129,6 +153,13 @@ func (h *PrivateEndpointHandler) Delete(ctx context.Context, req *pe.DeletePriva
 func (h *PrivateEndpointHandler) ListOperations(ctx context.Context, req *pe.ListPrivateEndpointOperationsRequest) (*pe.ListPrivateEndpointOperationsResponse, error) {
 	if req.PrivateEndpointId == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
+	}
+	got, err := h.svc.Get(ctx, req.PrivateEndpointId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.PrivateEndpointId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -145,42 +176,3 @@ func (h *PrivateEndpointHandler) ListOperations(ctx context.Context, req *pe.Lis
 }
 
 // privateEndpointToProto конвертирует domain → proto PrivateEndpoint.
-func privateEndpointToProto(p *domain.PrivateEndpoint) *pe.PrivateEndpoint {
-	out := &pe.PrivateEndpoint{
-		Id:          p.ID,
-		FolderId:    p.FolderID,
-		CreatedAt:   timestamppb.New(p.CreatedAt.Truncate(time.Second)),
-		Name:        p.Name,
-		Description: p.Description,
-		Labels:      p.Labels,
-		NetworkId:   p.NetworkID,
-	}
-	switch p.Status {
-	case "PENDING":
-		out.Status = pe.PrivateEndpoint_PENDING
-	case "AVAILABLE":
-		out.Status = pe.PrivateEndpoint_AVAILABLE
-	case "DELETING":
-		out.Status = pe.PrivateEndpoint_DELETING
-	default:
-		out.Status = pe.PrivateEndpoint_STATUS_UNSPECIFIED
-	}
-	if p.SubnetID != "" || p.IPAddress != "" || p.AddressID != "" {
-		out.Address = &pe.PrivateEndpoint_EndpointAddress{
-			SubnetId:  p.SubnetID,
-			Address:   p.IPAddress,
-			AddressId: p.AddressID,
-		}
-	}
-	if v, ok := p.DnsOptions["private_dns_records_enabled"]; ok {
-		if b, ok := v.(bool); ok {
-			out.DnsOptions = &pe.PrivateEndpoint_DnsOptions{PrivateDnsRecordsEnabled: b}
-		}
-	}
-	if p.ServiceType == "object_storage" || p.ServiceType == "" {
-		out.Service = &pe.PrivateEndpoint_ObjectStorage_{
-			ObjectStorage: &pe.PrivateEndpoint_ObjectStorage{},
-		}
-	}
-	return out
-}

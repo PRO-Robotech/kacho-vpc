@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -33,10 +32,16 @@ func (h *SecurityGroupHandler) Get(ctx context.Context, req *vpcv1.GetSecurityGr
 	if err != nil {
 		return nil, err
 	}
-	return sgToProto(sg), nil
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.SecurityGroup(sg), nil
 }
 
 func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	sgs, nextToken, err := h.svc.List(ctx, svc.SecurityGroupFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -49,12 +54,15 @@ func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurity
 	}
 	resp := &vpcv1.ListSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, sgToProto(sg))
+		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
 	}
 	return resp, nil
 }
 
 func (h *SecurityGroupHandler) Create(ctx context.Context, req *vpcv1.CreateSecurityGroupRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateSecurityGroupReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -75,6 +83,13 @@ func (h *SecurityGroupHandler) Create(ctx context.Context, req *vpcv1.CreateSecu
 func (h *SecurityGroupHandler) Update(ctx context.Context, req *vpcv1.UpdateSecurityGroupRequest) (*operationpb.Operation, error) {
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -98,6 +113,16 @@ func (h *SecurityGroupHandler) Update(ctx context.Context, req *vpcv1.UpdateSecu
 }
 
 func (h *SecurityGroupHandler) UpdateRules(ctx context.Context, req *vpcv1.UpdateSecurityGroupRulesRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	updReq := svc.UpdateRulesReq{
 		SecurityGroupID: req.SecurityGroupId,
 		DeletionRuleIDs: req.DeletionRuleIds,
@@ -113,6 +138,16 @@ func (h *SecurityGroupHandler) UpdateRules(ctx context.Context, req *vpcv1.Updat
 }
 
 func (h *SecurityGroupHandler) UpdateRule(ctx context.Context, req *vpcv1.UpdateSecurityGroupRuleRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -134,6 +169,13 @@ func (h *SecurityGroupHandler) Delete(ctx context.Context, req *vpcv1.DeleteSecu
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Delete(ctx, req.SecurityGroupId)
 	if err != nil {
 		return nil, err
@@ -142,6 +184,19 @@ func (h *SecurityGroupHandler) Delete(ctx context.Context, req *vpcv1.DeleteSecu
 }
 
 func (h *SecurityGroupHandler) Move(ctx context.Context, req *vpcv1.MoveSecurityGroupRequest) (*operationpb.Operation, error) {
+	if req.SecurityGroupId == "" {
+		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.SecurityGroupId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -152,6 +207,13 @@ func (h *SecurityGroupHandler) Move(ctx context.Context, req *vpcv1.MoveSecurity
 func (h *SecurityGroupHandler) ListOperations(ctx context.Context, req *vpcv1.ListSecurityGroupOperationsRequest) (*vpcv1.ListSecurityGroupOperationsResponse, error) {
 	if req.SecurityGroupId == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
+	}
+	sg, err := h.svc.Get(ctx, req.SecurityGroupId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.SecurityGroupId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -168,66 +230,6 @@ func (h *SecurityGroupHandler) ListOperations(ctx context.Context, req *vpcv1.Li
 }
 
 // sgToProto конвертирует domain SG → proto SG (с timestamp truncation).
-func sgToProto(sg *domain.SecurityGroup) *vpcv1.SecurityGroup {
-	p := &vpcv1.SecurityGroup{
-		Id:                sg.ID,
-		FolderId:          sg.FolderID,
-		NetworkId:         sg.NetworkID,
-		CreatedAt:         timestamppb.New(sg.CreatedAt.Truncate(time.Second)),
-		Name:              sg.Name,
-		Description:       sg.Description,
-		Labels:            sg.Labels,
-		Status:            sgStatusToProtoH(sg.Status),
-		DefaultForNetwork: sg.DefaultForNetwork,
-	}
-	for _, r := range sg.Rules {
-		pr := &vpcv1.SecurityGroupRule{
-			Id:             r.ID,
-			Description:    r.Description,
-			Labels:         r.Labels,
-			Direction:      sgDirectionToProtoH(r.Direction),
-			ProtocolName:   r.ProtocolName,
-			ProtocolNumber: r.ProtocolNumber,
-		}
-		if r.FromPort != 0 || r.ToPort != 0 {
-			pr.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
-		}
-		if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
-			pr.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
-				CidrBlocks: &vpcv1.CidrBlocks{
-					V4CidrBlocks: r.V4CidrBlocks,
-					V6CidrBlocks: r.V6CidrBlocks,
-				},
-			}
-		}
-		p.Rules = append(p.Rules, pr)
-	}
-	return p
-}
-
-func sgStatusToProtoH(s string) vpcv1.SecurityGroup_Status {
-	switch s {
-	case "CREATING":
-		return vpcv1.SecurityGroup_CREATING
-	case "ACTIVE":
-		return vpcv1.SecurityGroup_ACTIVE
-	case "UPDATING":
-		return vpcv1.SecurityGroup_UPDATING
-	case "DELETING":
-		return vpcv1.SecurityGroup_DELETING
-	}
-	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
-}
-
-func sgDirectionToProtoH(d string) vpcv1.SecurityGroupRule_Direction {
-	switch d {
-	case "INGRESS":
-		return vpcv1.SecurityGroupRule_INGRESS
-	case "EGRESS":
-		return vpcv1.SecurityGroupRule_EGRESS
-	}
-	return vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED
-}
 
 // ruleSpecFromProto конвертирует proto SecurityGroupRuleSpec → domain SecurityGroupRule.
 func ruleSpecFromProto(rs *vpcv1.SecurityGroupRuleSpec) domain.SecurityGroupRule {

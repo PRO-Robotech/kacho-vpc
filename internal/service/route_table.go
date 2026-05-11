@@ -14,8 +14,9 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateRouteTableReq — запрос на создание таблицы маршрутизации.
@@ -53,6 +54,9 @@ func NewRouteTableService(repo RouteTableRepo, networkRepo NetworkRepo, folderCl
 
 // Get возвращает RouteTable по ID.
 func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	rt, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -61,12 +65,19 @@ func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTa
 }
 
 // List возвращает список таблиц маршрутизации.
+// folder_id обязателен (R10 #C1 closure).
 func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
 // Create инициирует создание RouteTable.
 func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -140,15 +151,18 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 	}
 	created, err := s.repo.Insert(ctx, rt)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainRouteTableToProto(created))
+	return anypb.New(protoconv.RouteTable(created))
 }
 
 // Update обновляет RouteTable.
 //
 // Sync-валидация: см. validateRouteTableUpdate.
 func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, req.RouteTableID); err != nil {
+		return nil, err
+	}
 	if req.RouteTableID == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
@@ -185,9 +199,9 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 
 	updated, err := s.repo.Update(ctx, rt)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainRouteTableToProto(updated))
+	return anypb.New(protoconv.RouteTable(updated))
 }
 
 // validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
@@ -287,6 +301,9 @@ func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {
 
 // ListOperations возвращает операции для конкретного RouteTable.
 func (s *RouteTableService) ListOperations(ctx context.Context, rtID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, rtID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, rtID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -299,6 +316,9 @@ func (s *RouteTableService) ListOperations(ctx context.Context, rtID string, p P
 
 // Move инициирует перенос RouteTable в другой folder.
 func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
@@ -325,13 +345,16 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainRouteTableToProto(updated))
+		return anypb.New(protoconv.RouteTable(updated))
 	})
 	return &op, nil
 }
 
 // Delete удаляет RouteTable.
 func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
@@ -356,33 +379,4 @@ func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.
 	})
 
 	return &op, nil
-}
-
-// domainRouteTableToProto конвертирует domain RouteTable в proto RouteTable.
-func domainRouteTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
-	p := &vpcv1.RouteTable{
-		Id:          rt.ID,
-		FolderId:    rt.FolderID,
-		Name:        rt.Name,
-		Description: rt.Description,
-		Labels:      rt.Labels,
-		NetworkId:   rt.NetworkID,
-	}
-	for _, sr := range rt.StaticRoutes {
-		protoSR := &vpcv1.StaticRoute{
-			Labels: sr.Labels,
-		}
-		if sr.DestinationPrefix != "" {
-			protoSR.Destination = &vpcv1.StaticRoute_DestinationPrefix{
-				DestinationPrefix: sr.DestinationPrefix,
-			}
-		}
-		if sr.NextHopAddress != "" {
-			protoSR.NextHop = &vpcv1.StaticRoute_NextHopAddress{
-				NextHopAddress: sr.NextHopAddress,
-			}
-		}
-		p.StaticRoutes = append(p.StaticRoutes, protoSR)
-	}
-	return p
 }

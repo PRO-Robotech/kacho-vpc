@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -33,10 +32,16 @@ func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableReq
 	if err != nil {
 		return nil, err
 	}
-	return routeTableToProto(rt), nil
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.RouteTable(rt), nil
 }
 
 func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	rts, nextToken, err := h.svc.List(ctx, svc.RouteTableFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -49,12 +54,15 @@ func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTables
 	}
 	resp := &vpcv1.ListRouteTablesResponse{NextPageToken: nextToken}
 	for _, rt := range rts {
-		resp.RouteTables = append(resp.RouteTables, routeTableToProto(rt))
+		resp.RouteTables = append(resp.RouteTables, protoconv.RouteTable(rt))
 	}
 	return resp, nil
 }
 
 func (h *RouteTableHandler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest) (*operationpb.Operation, error) {
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	createReq := svc.CreateRouteTableReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -84,6 +92,13 @@ func (h *RouteTableHandler) Create(ctx context.Context, req *vpcv1.CreateRouteTa
 func (h *RouteTableHandler) Update(ctx context.Context, req *vpcv1.UpdateRouteTableRequest) (*operationpb.Operation, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
 	}
 	var mask []string
 	if req.UpdateMask != nil {
@@ -119,6 +134,13 @@ func (h *RouteTableHandler) ListOperations(ctx context.Context, req *vpcv1.ListR
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
+	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.RouteTableId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -134,6 +156,19 @@ func (h *RouteTableHandler) ListOperations(ctx context.Context, req *vpcv1.ListR
 }
 
 func (h *RouteTableHandler) Move(ctx context.Context, req *vpcv1.MoveRouteTableRequest) (*operationpb.Operation, error) {
+	if req.RouteTableId == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.RouteTableId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -144,6 +179,13 @@ func (h *RouteTableHandler) Move(ctx context.Context, req *vpcv1.MoveRouteTableR
 func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTableRequest) (*operationpb.Operation, error) {
 	if req.RouteTableId == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
+	}
+	rt, err := h.svc.Get(ctx, req.RouteTableId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.RouteTableId)
 	if err != nil {
@@ -156,29 +198,3 @@ func (h *RouteTableHandler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTa
 //
 // CreatedAt — truncate до seconds для verbatim YC parity. См.
 // YC-DIFF-TIMESTAMP-PRECISION.md.
-func routeTableToProto(rt *domain.RouteTable) *vpcv1.RouteTable {
-	p := &vpcv1.RouteTable{
-		Id:          rt.ID,
-		FolderId:    rt.FolderID,
-		CreatedAt:   timestamppb.New(rt.CreatedAt.Truncate(time.Second)),
-		Name:        rt.Name,
-		Description: rt.Description,
-		Labels:      rt.Labels,
-		NetworkId:   rt.NetworkID,
-	}
-	for _, sr := range rt.StaticRoutes {
-		protoSR := &vpcv1.StaticRoute{Labels: sr.Labels}
-		if sr.DestinationPrefix != "" {
-			protoSR.Destination = &vpcv1.StaticRoute_DestinationPrefix{
-				DestinationPrefix: sr.DestinationPrefix,
-			}
-		}
-		if sr.NextHopAddress != "" {
-			protoSR.NextHop = &vpcv1.StaticRoute_NextHopAddress{
-				NextHopAddress: sr.NextHopAddress,
-			}
-		}
-		p.StaticRoutes = append(p.StaticRoutes, protoSR)
-	}
-	return p
-}

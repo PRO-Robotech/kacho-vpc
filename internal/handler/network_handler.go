@@ -2,15 +2,13 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -33,10 +31,22 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 	if err != nil {
 		return nil, err
 	}
-	return networkToProto(n), nil
+	// AuthZ: caller обязан иметь access к folder, владеющему ресурсом.
+	// При AuthN-noop (anonymous) HasFolderAccess возвращает true (empty
+	// FolderIDs = full access) — backward compat. С IAM token caller
+	// получит PermissionDenied для cross-folder.
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
+	return protoconv.Network(n), nil
 }
 
 func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
+	// AuthZ: caller обязан иметь access к запрошенному folder. Anonymous
+	// (FolderIDs={}) пропускается; AuthN tenant без access → PermissionDenied.
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	nets, nextToken, err := h.svc.List(ctx, svc.NetworkFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
@@ -49,12 +59,16 @@ func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksReques
 	}
 	resp := &vpcv1.ListNetworksResponse{NextPageToken: nextToken}
 	for _, n := range nets {
-		resp.Networks = append(resp.Networks, networkToProto(n))
+		resp.Networks = append(resp.Networks, protoconv.Network(n))
 	}
 	return resp, nil
 }
 
 func (h *NetworkHandler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (*operationpb.Operation, error) {
+	// AuthZ: caller обязан иметь access к destination folder.
+	if err := AssertFolderOwnership(ctx, req.FolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Create(ctx, svc.CreateNetworkReq{
 		FolderID:    req.FolderId,
 		Name:        req.Name,
@@ -68,6 +82,17 @@ func (h *NetworkHandler) Create(ctx context.Context, req *vpcv1.CreateNetworkReq
 }
 
 func (h *NetworkHandler) Update(ctx context.Context, req *vpcv1.UpdateNetworkRequest) (*operationpb.Operation, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// AuthZ: sync repo.Get + folder check до старта Operation.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	var mask []string
 	if req.UpdateMask != nil {
 		mask = req.UpdateMask.Paths
@@ -89,6 +114,14 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
+	// AuthZ: child list — caller обязан владеть parent network'ом.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
 	subs, nextToken, err := h.svc.ListSubnets(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -98,7 +131,7 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 	}
 	resp := &vpcv1.ListNetworkSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, subnetToProto(s))
+		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
 	}
 	return resp, nil
 }
@@ -106,6 +139,13 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.ListNetworkSecurityGroupsRequest) (*vpcv1.ListNetworkSecurityGroupsResponse, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	sgs, nextToken, err := h.svc.ListSecurityGroups(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -116,7 +156,7 @@ func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.List
 	}
 	resp := &vpcv1.ListNetworkSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, sgToProto(sg))
+		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
 	}
 	return resp, nil
 }
@@ -124,6 +164,13 @@ func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.List
 func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNetworkRouteTablesRequest) (*vpcv1.ListNetworkRouteTablesResponse, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	rts, nextToken, err := h.svc.ListRouteTables(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -134,7 +181,7 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 	}
 	resp := &vpcv1.ListNetworkRouteTablesResponse{NextPageToken: nextToken}
 	for _, rt := range rts {
-		resp.RouteTables = append(resp.RouteTables, routeTableToProto(rt))
+		resp.RouteTables = append(resp.RouteTables, protoconv.RouteTable(rt))
 	}
 	return resp, nil
 }
@@ -142,6 +189,13 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 func (h *NetworkHandler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkOperationsRequest) (*vpcv1.ListNetworkOperationsResponse, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.NetworkId, svc.Pagination{
 		PageToken: req.PageToken,
@@ -158,6 +212,20 @@ func (h *NetworkHandler) ListOperations(ctx context.Context, req *vpcv1.ListNetw
 }
 
 func (h *NetworkHandler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest) (*operationpb.Operation, error) {
+	if req.NetworkId == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// AuthZ: caller должен владеть и source-folder'ом (текущим), и destination'ом.
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+		return nil, err
+	}
 	op, err := h.svc.Move(ctx, req.NetworkId, req.DestinationFolderId)
 	if err != nil {
 		return nil, err
@@ -168,6 +236,13 @@ func (h *NetworkHandler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest
 func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (*operationpb.Operation, error) {
 	if req.NetworkId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	n, err := h.svc.Get(ctx, req.NetworkId)
+	if err != nil {
+		return nil, err
+	}
+	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		return nil, err
 	}
 	op, err := h.svc.Delete(ctx, req.NetworkId)
 	if err != nil {
@@ -180,14 +255,3 @@ func (h *NetworkHandler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkReq
 //
 // CreatedAt — truncate до seconds для verbatim YC parity (resource.createdAt
 // в YC всегда seconds-precision). См. YC-DIFF-TIMESTAMP-PRECISION.md.
-func networkToProto(n *domain.Network) *vpcv1.Network {
-	return &vpcv1.Network{
-		Id:                     n.ID,
-		FolderId:               n.FolderID,
-		CreatedAt:              timestamppb.New(n.CreatedAt.Truncate(time.Second)),
-		Name:                   n.Name,
-		Description:            n.Description,
-		Labels:                 n.Labels,
-		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
-	}
-}

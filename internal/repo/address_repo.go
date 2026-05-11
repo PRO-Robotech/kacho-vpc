@@ -107,9 +107,18 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 }
 
 func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON := mustMarshalJSON(a.Labels)
-	extJSON := marshalExternalIPv4(a.ExternalIpv4)
-	intJSON := marshalInternalIPv4(a.InternalIpv4)
+	labelsJSON, err := marshalJSONB(a.Labels, "Address.labels")
+	if err != nil {
+		return nil, err
+	}
+	extJSON, err := marshalExternalIPv4(a.ExternalIpv4)
+	if err != nil {
+		return nil, err
+	}
+	intJSON, err := marshalInternalIPv4(a.InternalIpv4)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -141,7 +150,10 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 }
 
 func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON := mustMarshalJSON(a.Labels)
+	labelsJSON, err := marshalJSONB(a.Labels, "Address.labels")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -168,6 +180,63 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 		return nil, wrapPgErr(err, "Address", a.ID)
 	}
 	return result, nil
+}
+
+// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 JSONB-spec.
+// Передавайте nil для поля, которое не нужно менять.
+func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+	if ext == nil && intn == nil {
+		return r.Get(ctx, id)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := `UPDATE addresses SET `
+	args := []any{id}
+	switch {
+	case ext != nil && intn == nil:
+		extJSON, err := marshalJSONB(ext, "Address.external_ipv4")
+		if err != nil {
+			return nil, err
+		}
+		q += `external_ipv4 = $2::jsonb`
+		args = append(args, extJSON)
+	case ext == nil && intn != nil:
+		intJSON, err := marshalJSONB(intn, "Address.internal_ipv4")
+		if err != nil {
+			return nil, err
+		}
+		q += `internal_ipv4 = $2::jsonb`
+		args = append(args, intJSON)
+	default:
+		extJSON, err := marshalJSONB(ext, "Address.external_ipv4")
+		if err != nil {
+			return nil, err
+		}
+		intJSON, err := marshalJSONB(intn, "Address.internal_ipv4")
+		if err != nil {
+			return nil, err
+		}
+		q += `external_ipv4 = $2::jsonb, internal_ipv4 = $3::jsonb`
+		args = append(args, extJSON, intJSON)
+	}
+	q += ` WHERE id = $1 RETURNING ` + addressCols
+
+	row := tx.QueryRow(ctx, q, args...)
+	a, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	return a, nil
 }
 
 // SetFolderID меняет folder_id у Address.
@@ -310,18 +379,16 @@ func scanAddress(row scannable) (*domain.Address, error) {
 	return &a, nil
 }
 
-func marshalExternalIPv4(e *domain.ExternalIpv4Spec) []byte {
+func marshalExternalIPv4(e *domain.ExternalIpv4Spec) ([]byte, error) {
 	if e == nil {
-		return nil
+		return nil, nil
 	}
-	b := mustMarshalJSON(e)
-	return b
+	return marshalJSONB(e, "Address.external_ipv4")
 }
 
-func marshalInternalIPv4(i *domain.InternalIpv4Spec) []byte {
+func marshalInternalIPv4(i *domain.InternalIpv4Spec) ([]byte, error) {
 	if i == nil {
-		return nil
+		return nil, nil
 	}
-	b := mustMarshalJSON(i)
-	return b
+	return marshalJSONB(i, "Address.internal_ipv4")
 }

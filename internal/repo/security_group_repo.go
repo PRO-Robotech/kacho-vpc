@@ -115,8 +115,14 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 }
 
 func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON := mustMarshalJSON(sg.Labels)
-	rulesJSON := mustMarshalJSON(sg.Rules)
+	labelsJSON, err := marshalJSONB(sg.Labels, "SecurityGroup.labels")
+	if err != nil {
+		return nil, err
+	}
+	rulesJSON, err := marshalJSONB(sg.Rules, "SecurityGroup.rules")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -145,8 +151,14 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 }
 
 func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON := mustMarshalJSON(sg.Labels)
-	rulesJSON := mustMarshalJSON(sg.Rules)
+	labelsJSON, err := marshalJSONB(sg.Labels, "SecurityGroup.labels")
+	if err != nil {
+		return nil, err
+	}
+	rulesJSON, err := marshalJSONB(sg.Rules, "SecurityGroup.rules")
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -211,8 +223,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 
 	// Загрузить текущий список rules + xmin (txid версия row для optimistic CC).
 	// xmin — Postgres system column, меняется на каждый UPDATE; не требует
-	// дополнительной колонки в схеме (security_groups не имеет resource_version,
-	// в отличие от Network/Subnet/RT — миграция 0008 не добавила K8s-style envelope).
+	// дополнительной колонки в схеме.
 	var rulesJSON []byte
 	var rowXmin string
 	err = tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin)
@@ -242,7 +253,10 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 	}
 	// добавляем новые
 	rules = append(rules, add...)
-	newRulesJSON := mustMarshalJSON(rules)
+	newRulesJSON, err := marshalJSONB(rules, "SecurityGroup.rules")
+	if err != nil {
+		return nil, err
+	}
 
 	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, sgCols)
 	row := tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)
@@ -316,7 +330,10 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 		return nil, fmt.Errorf("%w: SecurityGroupRule %s not found in SecurityGroup %s",
 			service.ErrNotFound, ruleID, sgID)
 	}
-	newRulesJSON := mustMarshalJSON(rules)
+	newRulesJSON, err := marshalJSONB(rules, "SecurityGroup.rules")
+	if err != nil {
+		return nil, err
+	}
 
 	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, sgCols)
 	row := tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)

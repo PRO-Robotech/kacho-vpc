@@ -8,12 +8,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreatePrivateEndpointReq — запрос на создание PrivateEndpoint.
@@ -60,6 +62,9 @@ func NewPrivateEndpointService(repo PrivateEndpointRepo, folderClient FolderClie
 
 // Get возвращает PrivateEndpoint по ID.
 func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
+		return nil, err
+	}
 	got, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -68,12 +73,22 @@ func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.Pr
 }
 
 // List возвращает список PrivateEndpoints.
+// folder_id обязателен (R10 #C1 closure).
 func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpoint, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
 // Create инициирует создание PrivateEndpoint, возвращает Operation.
 func (s *PrivateEndpointService) Create(ctx context.Context, req CreatePrivateEndpointReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.SubnetID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -149,13 +164,16 @@ func (s *PrivateEndpointService) doCreate(ctx context.Context, peID string, req 
 	}
 	created, err := s.repo.Insert(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainPrivateEndpointToProto(created))
+	return anypb.New(protoconv.PrivateEndpoint(created))
 }
 
 // Update обновляет PrivateEndpoint.
 func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEndpointReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, req.PrivateEndpointID); err != nil {
+		return nil, err
+	}
 	if req.PrivateEndpointID == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
@@ -183,9 +201,9 @@ func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEn
 		applyPrivateEndpointMask(got, req)
 		updated, err := s.repo.Update(ctx, got)
 		if err != nil {
-			return nil, err
+			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainPrivateEndpointToProto(updated))
+		return anypb.New(protoconv.PrivateEndpoint(updated))
 	})
 	return &op, nil
 }
@@ -244,6 +262,9 @@ func applyPrivateEndpointMask(p *domain.PrivateEndpoint, req UpdatePrivateEndpoi
 
 // Delete удаляет PrivateEndpoint.
 func (s *PrivateEndpointService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
@@ -262,13 +283,18 @@ func (s *PrivateEndpointService) Delete(ctx context.Context, id string) (*operat
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(&pe.DeletePrivateEndpointMetadata{PrivateEndpointId: id})
+		// proto-options: response = google.protobuf.Empty (verbatim YC).
+		// Metadata уже передана при operations.New выше; в response — Empty.
+		return anypb.New(&emptypb.Empty{})
 	})
 	return &op, nil
 }
 
 // ListOperations возвращает операции для PE.
 func (s *PrivateEndpointService) ListOperations(ctx context.Context, peID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, peID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, peID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -277,46 +303,4 @@ func (s *PrivateEndpointService) ListOperations(ctx context.Context, peID string
 		PageSize:   p.PageSize,
 		PageToken:  p.PageToken,
 	})
-}
-
-// domainPrivateEndpointToProto конвертирует domain → proto PrivateEndpoint.
-func domainPrivateEndpointToProto(p *domain.PrivateEndpoint) *pe.PrivateEndpoint {
-	out := &pe.PrivateEndpoint{
-		Id:          p.ID,
-		FolderId:    p.FolderID,
-		Name:        p.Name,
-		Description: p.Description,
-		Labels:      p.Labels,
-		NetworkId:   p.NetworkID,
-	}
-	switch p.Status {
-	case "PENDING":
-		out.Status = pe.PrivateEndpoint_PENDING
-	case "AVAILABLE":
-		out.Status = pe.PrivateEndpoint_AVAILABLE
-	case "DELETING":
-		out.Status = pe.PrivateEndpoint_DELETING
-	default:
-		out.Status = pe.PrivateEndpoint_STATUS_UNSPECIFIED
-	}
-	if p.SubnetID != "" || p.IPAddress != "" || p.AddressID != "" {
-		out.Address = &pe.PrivateEndpoint_EndpointAddress{
-			SubnetId:  p.SubnetID,
-			Address:   p.IPAddress,
-			AddressId: p.AddressID,
-		}
-	}
-	// DnsOptions: только private_dns_records_enabled.
-	if v, ok := p.DnsOptions["private_dns_records_enabled"]; ok {
-		if b, ok := v.(bool); ok {
-			out.DnsOptions = &pe.PrivateEndpoint_DnsOptions{PrivateDnsRecordsEnabled: b}
-		}
-	}
-	// Service oneof — только object_storage.
-	if p.ServiceType == "object_storage" || p.ServiceType == "" {
-		out.Service = &pe.PrivateEndpoint_ObjectStorage_{
-			ObjectStorage: &pe.PrivateEndpoint_ObjectStorage{},
-		}
-	}
-	return out
 }

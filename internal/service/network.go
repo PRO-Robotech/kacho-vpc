@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -15,8 +13,9 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateNetworkReq — запрос на создание сети.
@@ -42,6 +41,7 @@ type NetworkService struct {
 	subnetRepo     SubnetRepo
 	routeTableRepo RouteTableRepo
 	sgService      *SecurityGroupService // для создания default SG (может быть nil в тестах)
+	sgRepo         SecurityGroupRepo     // для inline default-SG creation в worker'е
 	folderClient   FolderClient
 	opsRepo        operations.Repo
 }
@@ -50,16 +50,19 @@ type NetworkService struct {
 //
 // subnetRepo / routeTableRepo используются для per-network children endpoints
 // (ListSubnets / ListRouteTables). Могут быть nil — тогда соответствующие
-// методы вернут empty list.
+// методы вернут empty list. sgService nil — disable auto-create/cleanup default SG.
 //
-// sgService nil — disable auto-create default SG (для unit-тестов или
-// если фича отключена).
-func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, sgService *SecurityGroupService, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
+// sgRepo: если не nil — Network.Create синхронно создаёт inline default SG в
+// worker'е (KACHO_VPC_DEFAULT_SG_INLINE=true). Если nil — Network.Create не создаёт SG
+// (verbatim YC: SG создаётся внешним reconciler'ом). Передаётся конструктором, а не
+// setter'ом — composition root решает по флагу до сборки сервиса.
+func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, sgService *SecurityGroupService, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *NetworkService {
 	return &NetworkService{
 		repo:           repo,
 		subnetRepo:     subnetRepo,
 		routeTableRepo: routeTableRepo,
 		sgService:      sgService,
+		sgRepo:         sgRepo,
 		folderClient:   folderClient,
 		opsRepo:        opsRepo,
 	}
@@ -68,6 +71,9 @@ func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo R
 // ListSubnets возвращает подсети, принадлежащие данной сети.
 // Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).
 func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pagination) ([]*domain.Subnet, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -79,6 +85,9 @@ func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pa
 
 // ListSecurityGroups возвращает SG, привязанные к данной сети.
 func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroup, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -90,6 +99,9 @@ func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID strin
 
 // ListRouteTables возвращает route tables, привязанные к данной сети.
 func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTable, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -101,6 +113,9 @@ func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, 
 
 // ListOperations возвращает операции, относящиеся к данному ресурсу (по resource_id).
 func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -113,6 +128,9 @@ func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p
 
 // Get возвращает Network по ID.
 func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	n, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -121,7 +139,14 @@ func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, e
 }
 
 // List возвращает список сетей в folder с пагинацией.
+//
+// folder_id обязателен (verbatim YC: oneof container с exactly_one). Без
+// service-level enforcement repo тихо пропускал бы WHERE folder_id и
+// возвращал кросс-folder enumeration — closed R10 critical (#C1).
 func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.Network, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
@@ -184,13 +209,48 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 	}
 	created, err := s.repo.Insert(ctx, n)
 	if err != nil {
-		return nil, err
+		// Маппим service.ErrAlreadyExists (UNIQUE folder_id+name, миграция 0018)
+		// и прочие в gRPC status — иначе worker положит raw error с code=Unknown.
+		return nil, mapRepoErr(err)
 	}
 
-	// Pure: НЕ создаём default SG здесь. Это делает kacho-vpc-controllers
-	// (default-sg reconciler-loop) асинхронно. См.
-	// POST-PROCESSING-IN-CONTROLLERS.md.
-	return anypb.New(domainNetworkToProto(created))
+	// Inline default SG. Verbatim YC defaults: 2 правила INGRESS+EGRESS, protocol ANY, cidr 0.0.0.0/0.
+	if s.sgRepo != nil {
+		shortNet := created.ID
+		if len(shortNet) > 8 {
+			shortNet = shortNet[:8]
+		}
+		sg := &domain.SecurityGroup{
+			ID:                ids.NewID(ids.PrefixSecurityGroup),
+			FolderID:          created.FolderID,
+			NetworkID:         created.ID,
+			CreatedAt:         time.Now().UTC(),
+			Name:              "default-sg-" + shortNet,
+			Description:       "Default security group (auto-created by kacho-vpc)",
+			Status:            "ACTIVE",
+			DefaultForNetwork: true,
+			Rules: []domain.SecurityGroupRule{
+				{Direction: "INGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+				{Direction: "EGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+			},
+		}
+		createdSG, sgErr := s.sgRepo.Insert(ctx, sg)
+		if sgErr != nil {
+			// SG creation failed — Network уже создан. Log warn, не падаем
+			// (admin может создать default SG руками через public API).
+			// Возвращаем network без default_security_group_id.
+			return anypb.New(protoconv.Network(created))
+		}
+		// Bind SG как default через NetworkRepo.Update.
+		created.DefaultSecurityGroupID = createdSG.ID
+		updated, uerr := s.repo.Update(ctx, created)
+		if uerr == nil {
+			return anypb.New(protoconv.Network(updated))
+		}
+		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
+		return anypb.New(protoconv.Network(created))
+	}
+	return anypb.New(protoconv.Network(created))
 }
 
 // Update обновляет Network.
@@ -199,6 +259,9 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 // упомянутое в mask, проверяется по тем же правилам, что и Create. Без mask —
 // валидируются все три поля (name/description/labels). См. validateNetworkUpdate.
 func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
@@ -235,9 +298,11 @@ func (s *NetworkService) doUpdate(ctx context.Context, req UpdateNetworkReq) (*a
 
 	updated, err := s.repo.Update(ctx, n)
 	if err != nil {
-		return nil, err
+		// mapRepoErr: sentinel→gRPC. Без обёртки worker отдавал бы
+		// raw "already exists" в Operation.error (verbatim YC parity break).
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainNetworkToProto(updated))
+	return anypb.New(protoconv.Network(updated))
 }
 
 // validateNetworkUpdate — sync-проверка update_mask и значений.
@@ -303,6 +368,9 @@ func applyNetworkMask(n *domain.Network, req UpdateNetworkReq) {
 // Async (внутри Operation worker): destination folder Exists через folderClient.
 // Если folder не найден → Operation.error: NotFound "Folder with id X not found" (verbatim YC).
 func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
@@ -334,7 +402,7 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainNetworkToProto(updated))
+		return anypb.New(protoconv.Network(updated))
 	})
 
 	return &op, nil
@@ -342,6 +410,9 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 
 // Delete удаляет Network.
 func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
@@ -376,57 +447,11 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	return &op, nil
 }
 
-// domainNetworkToProto конвертирует domain Network в proto Network.
 // Используется в worker-goroutines для формирования Operation.Response.
-func domainNetworkToProto(n *domain.Network) *vpcv1.Network {
-	return &vpcv1.Network{
-		Id:                     n.ID,
-		FolderId:               n.FolderID,
-		Name:                   n.Name,
-		Description:            n.Description,
-		Labels:                 n.Labels,
-		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
-	}
-}
 
 // mapRepoErr переводит domain-ошибки репозитория в gRPC-статусы.
 // errors.Is используется потому, что repo может оборачивать sentinel через %w
 // (например, ErrFailedPrecondition + контекст "network is not empty").
 //
-// Sentinel-prefix (`failed precondition: `, `not found`, ...) удаляется при
-// преобразовании в gRPC-сообщение, чтобы клиент видел verbatim YC text без
-// internal-обёртки. См. YC-DIFF-CIDR-ERROR-SHAPE.md.
-func mapRepoErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, ErrNotFound) {
-		return status.Error(codes.NotFound, stripSentinel(err, ErrNotFound))
-	}
-	if errors.Is(err, ErrAlreadyExists) {
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ErrAlreadyExists))
-	}
-	if errors.Is(err, ErrFailedPrecondition) {
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ErrFailedPrecondition))
-	}
-	if errors.Is(err, ErrInvalidArg) {
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ErrInvalidArg))
-	}
-	if errors.Is(err, ErrInternal) {
-		// Generic Internal без leak'а pgx-текста.
-		return status.Error(codes.Internal, "internal database error")
-	}
-	return err
-}
-
-// stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »),
-// чтобы выдать клиенту verbatim text без internal-обёртки sentinel-ошибки.
-// Если err == sentinel или контекст не добавлен, возвращает sentinel.Error().
-func stripSentinel(err, sentinel error) string {
-	msg := err.Error()
-	prefix := sentinel.Error() + ": "
-	if rest, ok := strings.CutPrefix(msg, prefix); ok {
-		return rest
-	}
-	return msg
-}
+// mapRepoErr / stripSentinel переехали в maperr.go (ранее был только тут,
+// что давало неявную зависимость network.go ↔ все service-файлы).

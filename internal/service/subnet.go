@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -10,11 +12,13 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // CreateSubnetReq — запрос на создание подсети.
@@ -48,15 +52,47 @@ type SubnetService struct {
 	networkRepo  NetworkRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
+	zoneReg      ZoneRegistry
 }
 
 // NewSubnetService создаёт SubnetService.
-func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *SubnetService {
-	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo}
+//
+// zoneReg — port для валидации `zone_id` через таблицу `zones` (источник
+// истины вместо удалённого hardcode `ru-central1-{a,b,c,d}` в corelib).
+func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo, zoneReg ZoneRegistry) *SubnetService {
+	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo, zoneReg: zoneReg}
+}
+
+// validateZoneID — sync-валидация zone_id: required + existence в БД.
+//
+// Возвращает gRPC InvalidArgument с FieldViolation для пустого значения
+// (`<field> is required`) или несуществующей зоны (`<field> must be one
+// of: <list>` с динамическим перечислением зарегистрированных зон).
+// Любая другая ошибка БД → mapRepoErr.
+func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string) error {
+	if err := corevalidate.ZoneId(field, zoneID); err != nil {
+		return err
+	}
+	if s.zoneReg == nil {
+		return nil // безопасный fallback для тестов без zoneReg
+	}
+	_, err := s.zoneReg.Get(ctx, zoneID)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrNotFound) {
+		ids, _ := s.zoneReg.ListIDs(ctx)
+		msg := field + " must be one of: " + strings.Join(ids, ", ")
+		return coreerrors.InvalidArgument().AddFieldViolation(field, msg).Err()
+	}
+	return mapRepoErr(err)
 }
 
 // Get возвращает Subnet по ID.
 func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	sub, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -65,12 +101,19 @@ func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, err
 }
 
 // List возвращает список подсетей.
+// folder_id обязателен (R10 #C1 closure).
 func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error) {
+	if f.FolderID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	}
 	return s.repo.List(ctx, f, p)
 }
 
 // Create инициирует создание Subnet.
 func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -81,9 +124,9 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	// folder_id / network_id больше НЕ валидируются sync — async через
 	// folderClient.Exists / networkRepo.Get → NotFound (verbatim YC). См.
 	// YC-DIFF-INVALID-PARENT-CODE.md, YC-DIFF-NAME-VALIDATION.md.
-	// ZoneId — verbatim YC whitelist `ru-central1-{a,b,c,d}`. Пустой zone_id —
-	// `zone_id is required`. См. ZONE-ID-VALIDATION.md.
-	if err := corevalidate.ZoneId("zone_id", req.ZoneID); err != nil {
+	// ZoneId: required + existence в таблице `zones` (без hardcoded whitelist;
+	// допустимые значения формируются динамически из БД).
+	if err := s.validateZoneID(ctx, "zone_id", req.ZoneID); err != nil {
 		return nil, err
 	}
 	// Proto contract: v4_cidr_blocks [(required) = true]. См. subnet_service.proto:214.
@@ -165,7 +208,7 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainSubnetToProto(created))
+	return anypb.New(protoconv.Subnet(created))
 }
 
 // Update обновляет Subnet.
@@ -177,6 +220,9 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 //     полей (как обычно делает UI, шлющий full-object PATCH) → silently
 //     игнорируем. applySubnetMask не применяет immutable fields.
 func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.SubnetID); err != nil {
+		return nil, err
+	}
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -219,9 +265,9 @@ func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*any
 
 	updated, err := s.repo.Update(ctx, sub)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
-	return anypb.New(domainSubnetToProto(updated))
+	return anypb.New(protoconv.Subnet(updated))
 }
 
 // validateSubnetUpdate проверяет name/description/labels в Update.
@@ -335,6 +381,9 @@ func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 
 // ListOperations возвращает операции для конкретного Subnet (фильтр resource_id).
 func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, subnetID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -347,6 +396,9 @@ func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p P
 
 // Move инициирует перенос Subnet в другой folder.
 func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -373,7 +425,7 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -392,6 +444,9 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 // добавляемым CIDR не проверяется на DB-уровне. Покрываем service-level
 // проверкой через networkRepo / List.
 func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -428,7 +483,7 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -441,6 +496,9 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 //   - Если внутри CIDR есть Address — на текущей фазе пропускаем (доп. проверка
 //     потребует JSON-запрос по addresses; в будущем добавится).
 func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -484,20 +542,24 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
 
 // Relocate переносит подсеть в другую zone.
 //
-// YC verbatim: requires destination_zone_id, ZoneId whitelist. Если подсеть
-// "in use" (есть Address-ресурсы) — FailedPrecondition "Invalid subnet state".
+// YC verbatim: requires destination_zone_id, ZoneId existence-check через
+// БД. Если подсеть "in use" (есть Address-ресурсы) — FailedPrecondition
+// "Invalid subnet state".
 func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if err := corevalidate.ZoneId("destination_zone_id", destZoneID); err != nil {
+	if err := s.validateZoneID(ctx, "destination_zone_id", destZoneID); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC,
@@ -515,7 +577,7 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 			return nil, mapRepoErr(err)
 		}
 		if sub.ZoneID == destZoneID {
-			return anypb.New(domainSubnetToProto(sub))
+			return anypb.New(protoconv.Subnet(sub))
 		}
 		// Если подсеть has addresses → отказ (verbatim YC text "Invalid subnet state").
 		addrs, _, err := s.repo.AddressesBySubnet(ctx, id, Pagination{PageSize: 1})
@@ -529,7 +591,7 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(domainSubnetToProto(updated))
+		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
 }
@@ -537,6 +599,9 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 // ListUsedAddresses возвращает Address-ресурсы, привязанные к подсети
 // (через internal_ipv4.subnet_id). Sync RPC, не Operation.
 func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
+		return nil, "", err
+	}
 	if subnetID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -572,6 +637,9 @@ func checkCIDRDisjoint(cidrs []string) error {
 
 // Delete удаляет Subnet.
 func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -596,28 +664,4 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	})
 
 	return &op, nil
-}
-
-// domainSubnetToProto конвертирует domain Subnet в proto Subnet.
-func domainSubnetToProto(s *domain.Subnet) *vpcv1.Subnet {
-	p := &vpcv1.Subnet{
-		Id:           s.ID,
-		FolderId:     s.FolderID,
-		Name:         s.Name,
-		Description:  s.Description,
-		Labels:       s.Labels,
-		NetworkId:    s.NetworkID,
-		ZoneId:       s.ZoneID,
-		V4CidrBlocks: s.V4CidrBlocks,
-		V6CidrBlocks: s.V6CidrBlocks,
-		RouteTableId: s.RouteTableID,
-	}
-	if s.DhcpOptions != nil {
-		p.DhcpOptions = &vpcv1.DhcpOptions{
-			DomainNameServers: s.DhcpOptions.DomainNameServers,
-			DomainName:        s.DhcpOptions.DomainName,
-			NtpServers:        s.DhcpOptions.NtpServers,
-		}
-	}
-	return p
 }

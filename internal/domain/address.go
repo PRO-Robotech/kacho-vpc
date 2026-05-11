@@ -25,6 +25,11 @@ type ExternalIpv4Spec struct {
 	Address      string               `json:"address"` // например 203.0.113.X
 	ZoneID       string               `json:"zone_id"`
 	Requirements *AddressRequirements `json:"requirements,omitempty"`
+	// AddressPoolID — internal-only поле, заполняется allocator'ом при
+	// AllocateExternalIP. Используется для UNIQUE (pool_id, ip) constraint
+	// (миграция 0015) и для observability ("из какого пула выделили").
+	// Не сериализуется в публичный VPC API (filter в proto-конвертере).
+	AddressPoolID string `json:"address_pool_id,omitempty"`
 }
 
 // AddressRequirements — требования к выделенному внешнему IP (DDoS provider,
@@ -36,7 +41,7 @@ type AddressRequirements struct {
 
 // InternalIpv4Spec — параметры внутреннего IPv4-адреса.
 type InternalIpv4Spec struct {
-	Address  string `json:"address"`   // например 10.0.0.X
+	Address  string `json:"address"` // например 10.0.0.X
 	SubnetID string `json:"subnet_id"`
 }
 
