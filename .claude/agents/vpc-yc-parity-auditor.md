@@ -88,7 +88,7 @@ Gateway).
 | Сценарий                            | gRPC code              | Источник кода                          |
 |-------------------------------------|------------------------|------------------------------------|
 | Resource не найден (any)            | `NOT_FOUND`            | `mapRepoErr(ErrNotFound)`              |
-| Malformed / wrong-prefix id         | YC: `INVALID_ARGUMENT "invalid <res> id"` (probe 2026-05-11); мы пока `NOT_FOUND` | расхождение `kacho-vpc#7` — sync id-validation = target |
+| Malformed / нераспознанный id (нет известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) | `INVALID_ARGUMENT "invalid <res> id '<X>'"` (verbatim YC, probe 2026-05-11) | `corevalidate.ResourceID(...)` — первым стейтментом в каждом id-берущем RPC; family-agnostic. Флагай отсутствие этого вызова на новых RPC |
 | Well-formed id, ресурс отсутствует  | `NOT_FOUND`            | `repo.Get` → NotFound (sync для Get/Update/Delete/Move) |
 | CIDR overlap                        | `FAILED_PRECONDITION`  | `e015191`, `wrapPgErr` 23P01           |
 | CIDR host-bits ≠ 0                  | `INVALID_ARGUMENT`     | `validateCIDRPrefix`                   |
@@ -150,13 +150,16 @@ YC verbatim semantics:
 - **Async** (внутри Operation worker): existence checks (folder, network),
   FK violations, CIDR overlap (DB EXCLUDE), UNIQUE violations.
 
-- [ ] **id-syntax sync-валидация** — реальный YC sync-валидирует синтаксис/prefix id:
-  `update`/`get` с malformed/wrong-prefix id → `InvalidArgument "invalid <res> id '<X>'"`
-  (probe 2026-05-11); well-formed-но-несуществующий → `NotFound`. Это YC-aligned target.
-  ⚠️ **Текущий код пока НЕ валидирует** id sync → возвращает `NotFound` на любой bad id
-  (исторический gotcha `ac61127` «не валидировать sync» устарел — YC поменял поведение).
-  Расхождение трекается в `kacho-vpc#7`. **НЕ флагай sync id-validation как violation** —
-  наоборот, её добавление = closing #7.
+- [ ] **id-syntax sync-валидация** — РЕАЛИЗОВАНО (`kacho-vpc#7` закрыт): каждый id-берущий RPC
+  (Get/Update/Delete/Move/AddCidrBlocks/RemoveCidrBlocks/Relocate/UpdateRules/UpdateRule/
+  ListXxx-by-parent/Create-parent-network) первым стейтментом вызывает
+  `corevalidate.ResourceID(resourceType, ids.PrefixXxx, id)` → malformed / нераспознанный id
+  (нет известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) → `InvalidArgument "invalid <res> id '<X>'"`
+  (verbatim YC, probe 2026-05-11); well-formed-но-несуществующий (известный prefix) → `NotFound`
+  через `repo.Get`. Семантика family-agnostic (`enp...` как subnet-id проходит prefix-check →
+  `repo.Get` → `NotFound`, как реальный YC). **Требуй этот вызов на любом новом / изменённом
+  id-берущем RPC** — флагай его отсутствие как violation (исторический gotcha `ac61127` «не
+  валидировать sync» устарел и заменён).
 - [ ] **folder.exists для Create — async** (внутри Operation worker): если folder absent,
   `NotFound` приходит из worker'а (наш design — Create всегда возвращает Operation). Для
   `update`/`delete`/`move` существование самого ресурса проверяется **sync** перед созданием
@@ -292,7 +295,7 @@ verbatim-YC/security/data-integrity, иначе Important; `P2`/`P3` → Importa
 1. ☐ proto-options: `metadata` и `response` правильные?
 2. ☐ Service: sync-валидация полей (regex/length/whitelist) выполняется ДО
    `operations.New`?
-3. ☐ Service: id-syntax валидируется sync → `InvalidArgument "invalid <res> id"`? (YC-aligned; текущий код пока нет — `kacho-vpc#7`. НЕ требуй обратного.)
+3. ☐ Service: id-берущий RPC первым стейтментом вызывает `corevalidate.ResourceID(resourceType, ids.PrefixXxx, id)` → malformed/нераспознанный id → `InvalidArgument "invalid <res> id '<X>'"` (verbatim YC, family-agnostic)? Отсутствие вызова — violation.
 4. ☐ Worker: folder.Exists check + правильный verbatim text?
 5. ☐ Worker: возвращает `domainXxxToProto(...)` через anypb?
 6. ☐ Worker: Delete возвращает Empty?

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "902d8d40-6962-4561-86b9-83aabf368a86",
+    "_postman_id": "ec68eae7-e1bb-4fbb-a6a2-e61f7b7fe826",
     "name": "kacho-vpc / newman / private-endpoint",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -210,7 +210,7 @@
       ]
     },
     {
-      "name": "PE-GET-NEG-NF — Get garbage → 404",
+      "name": "PE-GET-NEG-NF — Get malformed id → 400 InvalidArgument 'invalid private endpoint id'",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -242,11 +242,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
-                  "});"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }

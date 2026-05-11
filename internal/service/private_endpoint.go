@@ -62,6 +62,9 @@ func NewPrivateEndpointService(repo PrivateEndpointRepo, folderClient FolderClie
 
 // Get возвращает PrivateEndpoint по ID.
 func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
+		return nil, err
+	}
 	got, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -80,6 +83,12 @@ func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilt
 
 // Create инициирует создание PrivateEndpoint, возвращает Operation.
 func (s *PrivateEndpointService) Create(ctx context.Context, req CreatePrivateEndpointReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.SubnetID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -162,6 +171,9 @@ func (s *PrivateEndpointService) doCreate(ctx context.Context, peID string, req 
 
 // Update обновляет PrivateEndpoint.
 func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEndpointReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, req.PrivateEndpointID); err != nil {
+		return nil, err
+	}
 	if req.PrivateEndpointID == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
@@ -250,6 +262,9 @@ func applyPrivateEndpointMask(p *domain.PrivateEndpoint, req UpdatePrivateEndpoi
 
 // Delete удаляет PrivateEndpoint.
 func (s *PrivateEndpointService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
@@ -277,6 +292,9 @@ func (s *PrivateEndpointService) Delete(ctx context.Context, id string) (*operat
 
 // ListOperations возвращает операции для PE.
 func (s *PrivateEndpointService) ListOperations(ctx context.Context, peID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, peID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, peID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}

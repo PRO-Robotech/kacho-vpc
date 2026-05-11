@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "5447f98d-9875-474f-9703-53312e462453",
+    "_postman_id": "431e019e-6a70-44cd-aea7-2f70946046fd",
     "name": "kacho-vpc / newman / address",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1366,7 +1366,7 @@
       ]
     },
     {
-      "name": "ADR-GET-NEG-NF — Get garbage → 404",
+      "name": "ADR-GET-NEG-NF — Get malformed id → 400 InvalidArgument 'invalid address id'",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -1398,11 +1398,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
-                  "});"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }

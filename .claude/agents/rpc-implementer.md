@@ -271,10 +271,13 @@ operations.Run(ctx, opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error
 
 - **Sync (до Operation.New)**: format validation (regex, length, whitelist), required fields, deletion_protection, immutable mask check.
 - **Async (внутри worker)**: existence checks (folder, network), FK violations, EXCLUDE constraint (CIDR overlap), UNIQUE name violation.
-- **id-валидация**: текущая конвенция — синтаксис id sync НЕ проверяем; malformed и well-formed-absent
-  одинаково → `NotFound` через `repo.Get`. ⚠️ Расходится с реальным YC (malformed/wrong-prefix → sync
-  `InvalidArgument "invalid <res> id"`, probe 2026-05-11) — трекается в `kacho-vpc#7`. Пока #7 не закрыт —
-  держи консистентность (`NotFound`); фикс #7 = добавить sync id-syntax-check во все RPC, берущие id.
+- **id-валидация**: каждый RPC, берущий resource-id, ОБЯЗАН первым стейтментом вызвать
+  `corevalidate.ResourceID(resourceType, ids.PrefixXxx, id)` → malformed / нераспознанный id (нет
+  известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) → `InvalidArgument "invalid <res> id '<X>'"`
+  (verbatim YC, probe 2026-05-11); well-formed-но-несуществующий (известный prefix) → `NotFound` через
+  `repo.Get`. Семантика family-agnostic (`enp...` как subnet-id проходит prefix-check → `repo.Get` →
+  `NotFound`, как реальный YC). Зеркалит то, что делают остальные 7 сервисов. (Старый совет «id sync
+  не проверяем», `kacho-vpc#7` — закрыт.)
 - **НЕ проверять folder.Exists синхронно для Create** — async через `folderClient.Exists` в worker.
   (Для `update`/`delete`/`move` существование самого ресурса проверяется sync — `repo.Get` до Operation.New —
   иначе невозможен AuthZ; см. `docs/architecture/07-known-divergences.md`.)

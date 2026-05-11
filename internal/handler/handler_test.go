@@ -40,7 +40,7 @@ func TestNetworkHandler_Get_NotFound(t *testing.T) {
 	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
 	h := NewNetworkHandler(networkSvc)
 
-	_, err := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: ids.NewID(ids.PrefixNetwork)})
 	require.Error(t, err)
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())

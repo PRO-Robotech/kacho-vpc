@@ -25,7 +25,7 @@ func TestNetworkService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixNetwork), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -50,7 +50,7 @@ func TestNetworkService_Delete_OK(t *testing.T) {
 func TestNetworkService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -58,7 +58,7 @@ func TestNetworkService_ListOperations_NotFound(t *testing.T) {
 func TestNetworkService_ListSubnets_NetworkNotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewNetworkService(newMockNetworkRepo(), newMockSubnetRepo(), nil, nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListSubnets(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListSubnets(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -104,7 +104,7 @@ func TestSubnetService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixSubnet), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -115,10 +115,10 @@ func TestSubnetService_AddCidrBlocks_Validates(t *testing.T) {
 	_, err := svc.AddCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.AddCidrBlocks(context.Background(), ids.NewUID(), nil)
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.AddCidrBlocks(context.Background(), ids.NewUID(), []string{"10.0.0.5/24"})
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), []string{"10.0.0.5/24"})
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -129,7 +129,7 @@ func TestSubnetService_RemoveCidrBlocks_Validates(t *testing.T) {
 	_, err := svc.RemoveCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.RemoveCidrBlocks(context.Background(), ids.NewUID(), nil)
+	_, err = svc.RemoveCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -143,7 +143,7 @@ func TestSubnetService_Relocate_Validates(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 	// Несуществующая zone отвергается с InvalidArgument (existence-check через
 	// mockZoneRegistry — заменяет удалённый hardcode whitelist в corelib).
-	_, err = svc.Relocate(context.Background(), ids.NewUID(), "invalid-zone")
+	_, err = svc.Relocate(context.Background(), ids.NewID(ids.PrefixSubnet), "invalid-zone")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -172,7 +172,7 @@ func TestAddressService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixAddress), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -195,7 +195,7 @@ func TestAddressService_GetByValue_Empty(t *testing.T) {
 func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListBySubnet(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListBySubnet(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -203,7 +203,7 @@ func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
 func TestAddressService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixAddress), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -216,7 +216,7 @@ func TestRouteTableService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixRouteTable), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -232,7 +232,7 @@ func TestRouteTableService_Delete_RequiresID(t *testing.T) {
 func TestRouteTableService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixRouteTable), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -262,7 +262,7 @@ func TestSecurityGroupService_UpdateMask_UnknownField(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
 	_, err := svc.Update(context.Background(), UpdateSecurityGroupReq{
-		SecurityGroupID: ids.NewUID(),
+		SecurityGroupID: ids.NewID(ids.PrefixSecurityGroup),
 		UpdateMask:      []string{"unknown_field"},
 	})
 	st, _ := status.FromError(err)
@@ -283,7 +283,7 @@ func TestSecurityGroupService_UpdateRule_RequiresIDs(t *testing.T) {
 	_, err := svc.UpdateRule(context.Background(), UpdateRuleReq{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.UpdateRule(context.Background(), UpdateRuleReq{SecurityGroupID: ids.NewUID()})
+	_, err = svc.UpdateRule(context.Background(), UpdateRuleReq{SecurityGroupID: ids.NewID(ids.PrefixSecurityGroup)})
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -302,7 +302,7 @@ func TestSecurityGroupService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixSecurityGroup), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -310,7 +310,7 @@ func TestSecurityGroupService_Move_Validates(t *testing.T) {
 func TestSecurityGroupService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixSecurityGroup), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -366,7 +366,7 @@ func TestGatewayService_Move_Validates(t *testing.T) {
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewUID(), "")
+	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixGateway), "")
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -374,7 +374,7 @@ func TestGatewayService_Move_Validates(t *testing.T) {
 func TestGatewayService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixGateway), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -417,7 +417,7 @@ func TestCheckCIDRDisjoint_Overlap(t *testing.T) {
 func TestSecurityGroupService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixSecurityGroup))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -433,7 +433,7 @@ func TestSecurityGroupService_List_Empty(t *testing.T) {
 func TestGatewayService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixGateway))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -450,7 +450,7 @@ func TestNetworkService_ListSecurityGroups_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	sgSvc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
 	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, sgSvc, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListSecurityGroups(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListSecurityGroups(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -458,7 +458,7 @@ func TestNetworkService_ListSecurityGroups_NotFound(t *testing.T) {
 func TestNetworkService_ListRouteTables_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewNetworkService(newMockNetworkRepo(), nil, newMockRouteTableRepo(), nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListRouteTables(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListRouteTables(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -468,7 +468,7 @@ func TestNetworkService_ListRouteTables_NotFound(t *testing.T) {
 func TestSubnetService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixSubnet))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -484,7 +484,7 @@ func TestSubnetService_List_Empty(t *testing.T) {
 func TestSubnetService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -494,7 +494,7 @@ func TestSubnetService_ListOperations_NotFound(t *testing.T) {
 func TestAddressService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixAddress))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -504,7 +504,7 @@ func TestAddressService_Get_NotFound(t *testing.T) {
 func TestRouteTableService_Get_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixRouteTable))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -526,7 +526,7 @@ func makePEService() (*PrivateEndpointService, *mockOpsRepo) {
 
 func TestPrivateEndpointService_Get_NotFound(t *testing.T) {
 	svc, _ := makePEService()
-	_, err := svc.Get(context.Background(), ids.NewUID())
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixPrivateEndpoint))
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -576,7 +576,7 @@ func TestPrivateEndpointService_Update_RequiresID(t *testing.T) {
 func TestPrivateEndpointService_Update_BadName(t *testing.T) {
 	svc, _ := makePEService()
 	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
-		PrivateEndpointID: ids.NewUID(),
+		PrivateEndpointID: ids.NewID(ids.PrefixPrivateEndpoint),
 		Name:              "1bad-starts-with-digit",
 		UpdateMask:        []string{"name"},
 	})
@@ -588,7 +588,7 @@ func TestPrivateEndpointService_Update_BadName(t *testing.T) {
 func TestPrivateEndpointService_Update_UnknownMask(t *testing.T) {
 	svc, _ := makePEService()
 	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
-		PrivateEndpointID: ids.NewUID(),
+		PrivateEndpointID: ids.NewID(ids.PrefixPrivateEndpoint),
 		UpdateMask:        []string{"unknown_field"},
 	})
 	st, _ := status.FromError(err)
@@ -604,7 +604,7 @@ func TestPrivateEndpointService_Delete_RequiresID(t *testing.T) {
 
 func TestPrivateEndpointService_ListOperations_NotFound(t *testing.T) {
 	svc, _ := makePEService()
-	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
+	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixPrivateEndpoint), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }

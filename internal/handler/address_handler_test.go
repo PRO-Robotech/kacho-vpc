@@ -36,7 +36,7 @@ func TestAddressHandler_Get_NotFound(t *testing.T) {
 	addrSvc, _ := makeAddressService()
 	h := NewAddressHandler(addrSvc, nil)
 
-	_, err := h.Get(context.Background(), &vpcv1.GetAddressRequest{AddressId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetAddressRequest{AddressId: ids.NewID(ids.PrefixAddress)})
 	require.Error(t, err)
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())

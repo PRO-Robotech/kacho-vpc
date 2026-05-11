@@ -62,10 +62,6 @@ selector для несуществующего/удалённого cloud без
 
 ## Подтверждённые расхождения, вынесенные в issues (здесь — только указатель)
 
-- **Malformed / wrong-prefix resource id → мы `NotFound`, YC `InvalidArgument`.** Probe 2026-05-11:
-  `yc vpc network update --id not-a-real-network-id` → `InvalidArgument "invalid network id 'X'"`;
-  `--id xyz00000000000000000` (20 симв., prefix не реальный) → то же. Наш код (gotcha #1 в
-  `06-conventions.md`, commit `ac61127`) **не** валидирует синтаксис id sync — идёт в `repo.Get` →
-  `NotFound`. Это расхождение (исторически gotcha #1 утверждал обратное — вероятно YC изменил
-  поведение после перехода с UUID на `enp...`-формат). Выравнивание затрагивает ~все RPC, берущие
-  resource-id, + newman-кейсы, ассертящие «garbage id → 404». → **GitHub Issue `PRO-Robotech/kacho-vpc#7`**.
+(пока пусто. Закрытые: `kacho-vpc#7` — malformed / нераспознанный resource-id → sync
+`InvalidArgument "invalid <res> id '<X>'"` — реализовано через `corevalidate.ResourceID`,
+вызывается первым стейтментом в каждом id-берущем RPC; см. `06-conventions.md` gotcha #1.)

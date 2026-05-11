@@ -164,7 +164,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-GET-NEG-NOT-FOUND",
-    title="Get garbage id → NOT_FOUND (verbatim YC async-style)",
+    title="Get malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
     classes=["NEG", "CONF"],
     priority="P0",
     steps=[
@@ -172,10 +172,12 @@ CASES.append(Case(
             name="get-garbage",
             method="GET",
             path="/vpc/v1/networks/{{garbageId}}",
+            # verbatim-YC (probe 2026-05-11, kacho-vpc#7): malformed id (нет известного 3-char префикса)
+            # → 400 InvalidArgument "invalid network id '<X>'" (раньше было 404 NotFound). Проверка family-agnostic.
             test_script=[
-                *assert_status(404),
-                *assert_grpc_code(5, "NOT_FOUND"),
-                "pm.test('error text mentions Network', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not found'));",
+                *assert_status(400),
+                *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });",
             ],
         ),
     ],
@@ -367,7 +369,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-UPD-NEG-NF-INVALID-PREFIX",
-    title="Update с id без VPC-префикса → sync 404 (gateway prefix-routing)",
+    title="Update malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
     classes=["NEG", "STATE"],
     priority="P1",
     steps=[
@@ -377,11 +379,11 @@ CASES.append(Case(
             path="/vpc/v1/networks/{{garbageId}}",
             body={"updateMask": "description", "description": "x"},
             test_script=[
-                # Документированное поведение: garbage id на resource-path →
-                # async-style 404 от repo.Get, не sync InvalidArgument
-                # (gotcha #1; см. docs/architecture/06-conventions.md + 07-known-divergences.md).
-                *assert_status(404),
-                *assert_grpc_code(5, "NOT_FOUND"),
+                # verbatim-YC (probe 2026-05-11, kacho-vpc#7): malformed id (нет известного 3-char префикса)
+                # → 400 InvalidArgument "invalid network id '<X>'" (раньше было 404 NotFound). Проверка family-agnostic.
+                *assert_status(400),
+                *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });",
             ],
         ),
     ],
@@ -414,7 +416,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-DEL-NEG-NF-INVALID-PREFIX",
-    title="Delete с id без VPC-префикса → sync 404",
+    title="Delete malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
     classes=["NEG", "STATE"],
     priority="P1",
     steps=[
@@ -423,8 +425,11 @@ CASES.append(Case(
             method="DELETE",
             path="/vpc/v1/networks/{{garbageId}}",
             test_script=[
-                *assert_status(404),
-                *assert_grpc_code(5, "NOT_FOUND"),
+                # verbatim-YC (probe 2026-05-11, kacho-vpc#7): malformed id (нет известного 3-char префикса)
+                # → 400 InvalidArgument "invalid network id '<X>'" (раньше было 404 NotFound). Проверка family-agnostic.
+                *assert_status(400),
+                *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });",
             ],
         ),
     ],
@@ -502,7 +507,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-MV-NEG-DEST-FOLDER-NF",
-    title="Move в garbage folder → async NOT_FOUND",
+    title="Move в несуществующий destinationFolderId → NotFound 'Folder with id ... not found'",
     classes=["NEG"],
     priority="P1",
     steps=[
@@ -523,6 +528,10 @@ CASES.append(Case(
             method="POST",
             path="/vpc/v1/networks/{{netId}}:move",
             body={"destinationFolderId": "{{garbageId}}"},
+            # NB: verbatim-YC (probe 2026-05-11) — Move в несуществующий folder отдаёт sync
+            # 404 NOT_FOUND "Folder with id ... not found" (folder-existence — sync), а не 200+Operation.
+            # Текущий kacho-vpc: пока 200+Operation→async-NotFound (см. kacho-vpc#8 — sync-валидация).
+            # Этот кейс — в backlog #8; пока ассертит текущее поведение.
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -535,7 +544,9 @@ CASES.append(Case(
             path="/operations/{{opId}}",
             test_script=[
                 "const j = pm.response.json();",
+                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
                 "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
+                "pm.test('error text mentions folder', () => pm.expect(j.error.message.toLowerCase()).to.include('folder'));",
             ],
         ),
         Step(

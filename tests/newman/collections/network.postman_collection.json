@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "ef93ebe9-497e-49b0-8a5f-3107fb26bc82",
+    "_postman_id": "2a5ddd04-9ac7-49b4-b7f9-95744bfe7afa",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -666,7 +666,7 @@
       ]
     },
     {
-      "name": "NET-GET-NEG-NOT-FOUND — Get garbage id → NOT_FOUND (verbatim YC async-style)",
+      "name": "NET-GET-NEG-NOT-FOUND — Get malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
       "description": "class:NEG | class:CONF | priority:P0",
       "item": [
         {
@@ -698,12 +698,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
                   "});",
-                  "pm.test('error text mentions Network', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not found'));"
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }
@@ -1294,7 +1294,7 @@
       ]
     },
     {
-      "name": "NET-UPD-NEG-NF-INVALID-PREFIX — Update с id без VPC-префикса → sync 404 (gateway prefix-routing)",
+      "name": "NET-UPD-NEG-NF-INVALID-PREFIX — Update malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
       "description": "class:NEG | class:STATE | priority:P1",
       "item": [
         {
@@ -1335,11 +1335,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
-                  "});"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }
@@ -1402,7 +1403,7 @@
       ]
     },
     {
-      "name": "NET-DEL-NEG-NF-INVALID-PREFIX — Delete с id без VPC-префикса → sync 404",
+      "name": "NET-DEL-NEG-NF-INVALID-PREFIX — Delete malformed id → 400 InvalidArgument 'invalid network id' (verbatim-YC, probe 2026-05-11, kacho-vpc#7)",
       "description": "class:NEG | class:STATE | priority:P1",
       "item": [
         {
@@ -1434,11 +1435,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
-                  "});"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }
@@ -1763,7 +1765,7 @@
       ]
     },
     {
-      "name": "NET-MV-NEG-DEST-FOLDER-NF — Move в garbage folder → async NOT_FOUND",
+      "name": "NET-MV-NEG-DEST-FOLDER-NF — Move в несуществующий destinationFolderId → NotFound 'Folder with id ... not found'",
       "description": "class:NEG | priority:P1",
       "item": [
         {
@@ -1988,7 +1990,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));"
+                  "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                  "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
+                  "pm.test('error text mentions folder', () => pm.expect(j.error.message.toLowerCase()).to.include('folder'));"
                 ]
               }
             }

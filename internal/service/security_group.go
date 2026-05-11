@@ -58,6 +58,9 @@ type UpdateSecurityGroupReq struct {
 
 // Get возвращает SG.
 func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	sg, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -76,6 +79,9 @@ func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, 
 
 // Create создаёт SG (асинхронно через Operation).
 func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGroupReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -179,6 +185,9 @@ func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, fold
 
 // Update обновляет SG.
 func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGroupReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -245,6 +254,9 @@ type UpdateRulesReq struct {
 // YC verbatim: result — Operation, response — обновлённый SG.
 // Sync-валидация: каждое правило (direction, protocol, ports, cidr или sgRef).
 func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -285,6 +297,9 @@ type UpdateRuleReq struct {
 
 // UpdateRule обновляет description/labels единичного правила.
 func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.SecurityGroupID); err != nil {
+		return nil, err
+	}
 	if req.SecurityGroupID == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -387,6 +402,9 @@ func validateSGRule(field string, r domain.SecurityGroupRule) error {
 
 // Delete удаляет SG. Default SG нельзя удалить (вернёт FAILED_PRECONDITION).
 func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -420,6 +438,9 @@ func (s *SecurityGroupService) Delete(ctx context.Context, id string) (*operatio
 
 // Move инициирует перенос SG в другой folder.
 func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
@@ -453,6 +474,9 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 
 // ListOperations возвращает операции для конкретного SG.
 func (s *SecurityGroupService) ListOperations(ctx context.Context, id string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, id); err != nil {
 		return nil, "", mapRepoErr(err)
 	}

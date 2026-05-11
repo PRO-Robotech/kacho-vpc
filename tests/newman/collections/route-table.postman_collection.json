@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "d211a492-3567-4b01-805a-30ab301330ad",
+    "_postman_id": "f3c04f5e-40de-4fe7-be94-af3af8bf4b01",
     "name": "kacho-vpc / newman / route-table",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -576,7 +576,7 @@
       ]
     },
     {
-      "name": "RT-GET-NEG-NF — Get garbage → 404",
+      "name": "RT-GET-NEG-NF — Get malformed id → 400 InvalidArgument 'invalid route table id'",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -608,11 +608,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
-                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
-                  "});"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });"
                 ]
               }
             }

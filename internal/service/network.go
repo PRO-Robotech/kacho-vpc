@@ -71,6 +71,9 @@ func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo R
 // ListSubnets возвращает подсети, принадлежащие данной сети.
 // Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).
 func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pagination) ([]*domain.Subnet, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -82,6 +85,9 @@ func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pa
 
 // ListSecurityGroups возвращает SG, привязанные к данной сети.
 func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroup, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -93,6 +99,9 @@ func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID strin
 
 // ListRouteTables возвращает route tables, привязанные к данной сети.
 func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTable, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -104,6 +113,9 @@ func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, 
 
 // ListOperations возвращает операции, относящиеся к данному ресурсу (по resource_id).
 func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -116,6 +128,9 @@ func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p
 
 // Get возвращает Network по ID.
 func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	n, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -244,6 +259,9 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 // упомянутое в mask, проверяется по тем же правилам, что и Create. Без mask —
 // валидируются все три поля (name/description/labels). См. validateNetworkUpdate.
 func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
@@ -350,6 +368,9 @@ func applyNetworkMask(n *domain.Network, req UpdateNetworkReq) {
 // Async (внутри Operation worker): destination folder Exists через folderClient.
 // Если folder не найден → Operation.error: NotFound "Folder with id X not found" (verbatim YC).
 func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
@@ -389,6 +410,9 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 
 // Delete удаляет Network.
 func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}

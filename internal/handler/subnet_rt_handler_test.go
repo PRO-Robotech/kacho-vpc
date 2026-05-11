@@ -40,7 +40,7 @@ func TestSubnetHandler_Get_NotFound(t *testing.T) {
 	subnetSvc := svc.NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
-	_, err := h.Get(context.Background(), &vpcv1.GetSubnetRequest{SubnetId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetSubnetRequest{SubnetId: ids.NewID(ids.PrefixSubnet)})
 	require.Error(t, err)
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -51,7 +51,7 @@ func TestSubnetHandler_Create_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 	// Создаём сеть чтобы subnet service нашёл её
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 	subnetSvc := svc.NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 	h := NewSubnetHandler(subnetSvc)
@@ -126,7 +126,7 @@ func TestRouteTableHandler_Create_OK(t *testing.T) {
 	rtr := newMockRouteTableRepoForSvc()
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 	rtSvc := svc.NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 	h := NewRouteTableHandler(rtSvc)

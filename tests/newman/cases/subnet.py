@@ -216,7 +216,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-GET-NEG-NOT-FOUND",
-    title="Get garbage → 404",
+    title="Get malformed id → 400 InvalidArgument 'invalid subnet id'",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -224,7 +224,13 @@ CASES.append(Case(
             name="get-garbage",
             method="GET",
             path="/vpc/v1/subnets/{{garbageId}}",
-            test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")],
+            # verbatim-YC (probe 2026-05-11, kacho-vpc#7): malformed id (нет известного 3-char префикса)
+            # → 400 InvalidArgument "invalid subnet id '<X>'" (раньше было 404 NotFound). Проверка family-agnostic.
+            test_script=[
+                *assert_status(400),
+                *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                "pm.test('mentions invalid id', () => { const m = pm.response.json().message; pm.expect(m).to.include('invalid'); pm.expect(m).to.include('id'); });",
+            ],
         ),
     ],
 ))

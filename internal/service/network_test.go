@@ -9,11 +9,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
 )
 
 func TestNetworkService_Get_NotFound(t *testing.T) {
 	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), newMockOpsRepo(), nil)
-	_, err := svc.Get(context.Background(), "nonexistent")
+	// well-formed-но-несуществующий id → NotFound (не InvalidArgument).
+	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixNetwork))
 	require.Error(t, err)
 	st, ok := status.FromError(err)
 	assert.True(t, ok)

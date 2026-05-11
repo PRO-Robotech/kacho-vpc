@@ -90,7 +90,7 @@ func TestAddressHandler_GetByValue_Empty(t *testing.T) {
 func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 	addrSvc, _ := makeAddressService()
 	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewUID()})
+	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewID(ids.PrefixSubnet)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -222,7 +222,7 @@ func TestPrivateEndpointHandler_Get_InvalidArg(t *testing.T) {
 
 func TestPrivateEndpointHandler_Get_NotFound(t *testing.T) {
 	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ids.NewID(ids.PrefixPrivateEndpoint)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -338,7 +338,7 @@ func TestNetworkHandler_Update_Happy(t *testing.T) {
 	require.NoError(t, err)
 
 	// Move (worker validates)
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: netID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: netID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -355,7 +355,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
 	subnetSvc := svc.NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
@@ -388,7 +388,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListSubnetOperationsRequest{SubnetId: subID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -404,7 +404,7 @@ func TestRouteTableHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
 	rtSvc := svc.NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
@@ -433,7 +433,7 @@ func TestRouteTableHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: rtID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -449,7 +449,7 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
 
-	netID := ids.NewUID()
+	netID := ids.NewID(ids.PrefixNetwork)
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
 	sgSvc := svc.NewSecurityGroupService(sgRepo, nr, newMockFolderClient(true), or)
@@ -499,7 +499,7 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListSecurityGroupOperationsRequest{SecurityGroupId: sgID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSecurityGroupRequest{SecurityGroupId: sgID, DestinationFolderId: "f2"})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSecurityGroupRequest{SecurityGroupId: sgID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	awaitOpDone(t, or, moveOp.Id)
 
@@ -532,7 +532,7 @@ func TestGatewayHandler_MoveDelete(t *testing.T) {
 
 	_, _ = h.ListOperations(context.Background(), &vpcv1.ListGatewayOperationsRequest{GatewayId: gwID})
 
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: "f2"})
+	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	awaitOpDone(t, or, moveOp.Id)
 
 	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: gwID})
@@ -573,7 +573,7 @@ func TestAddressHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: addrID})
 	require.NoError(t, err)
 
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: addrID, DestinationFolderId: "f2"})
+	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: addrID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	awaitOpDone(t, or, moveOp.Id)
 
 	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteAddressRequest{AddressId: addrID})

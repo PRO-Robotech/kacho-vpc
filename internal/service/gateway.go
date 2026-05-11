@@ -51,6 +51,9 @@ func NewGatewayService(repo GatewayRepo, folderClient FolderClient, opsRepo oper
 
 // Get возвращает Gateway по ID.
 func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	g, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -133,6 +136,9 @@ func (s *GatewayService) doCreate(ctx context.Context, gwID string, req CreateGa
 
 // Update обновляет Gateway.
 func (s *GatewayService) Update(ctx context.Context, req UpdateGatewayReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, req.GatewayID); err != nil {
+		return nil, err
+	}
 	if req.GatewayID == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -227,6 +233,9 @@ func applyGatewayMask(g *domain.Gateway, req UpdateGatewayReq) {
 
 // Delete удаляет Gateway.
 func (s *GatewayService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -252,6 +261,9 @@ func (s *GatewayService) Delete(ctx context.Context, id string) (*operations.Ope
 
 // Move переносит Gateway в другой folder.
 func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
@@ -288,6 +300,9 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 
 // ListOperations возвращает операции для конкретного Gateway.
 func (s *GatewayService) ListOperations(ctx context.Context, gwID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, gwID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, gwID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}

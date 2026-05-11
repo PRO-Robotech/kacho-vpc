@@ -90,6 +90,9 @@ func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string
 
 // Get возвращает Subnet по ID.
 func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	sub, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -108,6 +111,9 @@ func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) 
 
 // Create инициирует создание Subnet.
 func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -214,6 +220,9 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 //     полей (как обычно делает UI, шлющий full-object PATCH) → silently
 //     игнорируем. applySubnetMask не применяет immutable fields.
 func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.SubnetID); err != nil {
+		return nil, err
+	}
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -372,6 +381,9 @@ func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 
 // ListOperations возвращает операции для конкретного Subnet (фильтр resource_id).
 func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, subnetID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -384,6 +396,9 @@ func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p P
 
 // Move инициирует перенос Subnet в другой folder.
 func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -429,6 +444,9 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 // добавляемым CIDR не проверяется на DB-уровне. Покрываем service-level
 // проверкой через networkRepo / List.
 func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -478,6 +496,9 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 //   - Если внутри CIDR есть Address — на текущей фазе пропускаем (доп. проверка
 //     потребует JSON-запрос по addresses; в будущем добавится).
 func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -532,6 +553,9 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 // БД. Если подсеть "in use" (есть Address-ресурсы) — FailedPrecondition
 // "Invalid subnet state".
 func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -575,6 +599,9 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 // ListUsedAddresses возвращает Address-ресурсы, привязанные к подсети
 // (через internal_ipv4.subnet_id). Sync RPC, не Operation.
 func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
+		return nil, "", err
+	}
 	if subnetID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -610,6 +637,9 @@ func checkCIDRDisjoint(cidrs []string) error {
 
 // Delete удаляет Subnet.
 func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}

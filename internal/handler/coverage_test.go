@@ -148,7 +148,7 @@ func TestSecurityGroupHandler_Get_InvalidArg(t *testing.T) {
 func TestSecurityGroupHandler_Get_NotFound(t *testing.T) {
 	sgSvc, _ := makeSGService(t)
 	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ids.NewID(ids.PrefixSecurityGroup)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
@@ -212,7 +212,7 @@ func TestGatewayHandler_Get_InvalidArg(t *testing.T) {
 func TestGatewayHandler_Get_NotFound(t *testing.T) {
 	gwSvc, _ := makeGatewayService(t)
 	h := NewGatewayHandler(gwSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ids.NewUID()})
+	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ids.NewID(ids.PrefixGateway)})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }

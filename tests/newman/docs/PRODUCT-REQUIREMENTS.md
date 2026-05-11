@@ -268,7 +268,7 @@ Boundary 1000 → ok; 1001 → `400`.
 ### REQ-DEL-01 — Delete несуществующего → sync 404 (verbatim text)              [P1]
 `Delete` несуществующего ресурса → sync `NOT_FOUND "<Resource> <id> not found"` (не Operation).
 - Validated-by: `*-DEL-AUTHZ-NF-SYNC`, `*-DEL-CONF-NF-TEXT`, `*-DEL-CONF-FULLTEXT`, `*-DEL-NEG-NF-INVALID-PREFIX`
-- Agent-check: `internal/service/*.go` Delete — `repo.Get` + `AssertFolderOwnership` ДО Operation. (id-syntax → InvalidArgument: см. REQ-YC-04 / `kacho-vpc#7`.)
+- Agent-check: `internal/service/*.go` Delete — `corevalidate.ResourceID(...)` (первым стейтментом) + `repo.Get` + `AssertFolderOwnership` ДО Operation. (id-syntax → `InvalidArgument`: см. REQ-YC-04.)
 
 ### REQ-DEL-02 — Network: нельзя удалить с детьми (FK RESTRICT)                  [P0]
 `Delete` Network, у которой есть Subnet / RouteTable / не-default SecurityGroup → `FailedPrecondition "network is not empty"` (FK RESTRICT).
@@ -396,12 +396,13 @@ NotFound→`NOT_FOUND`, AlreadyExists→`ALREADY_EXISTS`, CIDR overlap/FK/reloca
 - Validated-by: все `*-NEG-*`/`*-VAL-*` кейсы (ассертят grpc-код)
 - Agent-check: `internal/service/network.go::mapRepoErr` + `internal/handler/internal_maperr.go`.
 
-### REQ-YC-04 — id-syntax sync-валидация (target — расхождение)                  [P1]
-Реальный YC: malformed / wrong-prefix resource-id → sync `InvalidArgument "invalid <res> id <X>"`; well-formed-но-несуществующий → `NotFound`.
-Текущий код возвращает `NotFound` на любой bad id (не валидирует синтаксис sync).
-- Validated-by: `*-GET-NEG-NF`, `*-GET-NEG-NOT-FOUND`, `*-UPD-NEG-NF-INVALID-PREFIX`, `*-DEL-NEG-NF-INVALID-PREFIX` (ассертят текущее поведение; при закрытии #7 — переделать на `InvalidArgument` для malformed)
-- Agent-check: `kacho-vpc#7`; `06-conventions.md` gotcha #1; `07-known-divergences.md` (секция «вынесено в issues»).
-- Divergence: да — `kacho-vpc#7` (не баг, осознанная стейл-конвенция, target = sync id-validation).
+### REQ-YC-04 — id-syntax sync-валидация                                          [P1]
+Каждый id-берущий RPC первым стейтментом вызывает `corevalidate.ResourceID(resourceType, ids.PrefixXxx, id)`:
+malformed / нераспознанный resource-id (нет известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) → sync `InvalidArgument "invalid <res> id '<X>'"`
+(verbatim YC, probe 2026-05-11); well-formed-но-несуществующий (известный prefix) → `NotFound` через `repo.Get`. Семантика family-agnostic.
+- Validated-by: `*-GET-NEG-NF`, `*-GET-NEG-NOT-FOUND`, `*-UPD-NEG-NF-INVALID-PREFIX`, `*-DEL-NEG-NF-INVALID-PREFIX`
+- Agent-check: `corevalidate.ResourceID` вызывается первым стейтментом в `internal/service/*.go` для каждого id-берущего RPC; `06-conventions.md` gotcha #1.
+- Divergence: нет — выровнено с verbatim YC (`kacho-vpc#7` закрыт).
 
 ### REQ-YC-05 — REST-пути дословно как YC (не нормализовать)                      [P2]
 REST-пути (`google.api.http` в `kacho-proto`): kebab у custom-методов (`:add-cidr-blocks`,`:move`), snake у child-list

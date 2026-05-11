@@ -54,6 +54,9 @@ func NewRouteTableService(repo RouteTableRepo, networkRepo NetworkRepo, folderCl
 
 // Get возвращает RouteTable по ID.
 func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	rt, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -72,6 +75,9 @@ func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagi
 
 // Create инициирует создание RouteTable.
 func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
+		return nil, err
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -154,6 +160,9 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 //
 // Sync-валидация: см. validateRouteTableUpdate.
 func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, req.RouteTableID); err != nil {
+		return nil, err
+	}
 	if req.RouteTableID == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
@@ -292,6 +301,9 @@ func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {
 
 // ListOperations возвращает операции для конкретного RouteTable.
 func (s *RouteTableService) ListOperations(ctx context.Context, rtID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, rtID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, rtID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -304,6 +316,9 @@ func (s *RouteTableService) ListOperations(ctx context.Context, rtID string, p P
 
 // Move инициирует перенос RouteTable в другой folder.
 func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
@@ -337,6 +352,9 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 
 // Delete удаляет RouteTable.
 func (s *RouteTableService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}

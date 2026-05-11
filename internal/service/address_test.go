@@ -15,7 +15,7 @@ import (
 
 func makeSubnet(sr *mockSubnetRepo, networkID string) *domain.Subnet {
 	s := &domain.Subnet{
-		ID:           ids.NewUID(),
+		ID:           ids.NewID(ids.PrefixSubnet),
 		FolderID:     "f1",
 		NetworkID:    networkID,
 		Name:         "test-subnet",
@@ -239,7 +239,7 @@ func TestAddressService_Delete_NotFound(t *testing.T) {
 
 	// Delete теперь делает sync Get для проверки deletion_protection,
 	// поэтому NotFound возвращается синхронно, а не внутри goroutine.
-	_, err := svc.Delete(context.Background(), ids.NewUID())
+	_, err := svc.Delete(context.Background(), ids.NewID(ids.PrefixAddress))
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -251,7 +251,7 @@ func TestAddressService_Delete_DeletionProtection(t *testing.T) {
 	or := newMockOpsRepo()
 
 	// Положим адрес с включённой защитой от удаления.
-	addrID := ids.NewUID()
+	addrID := ids.NewID(ids.PrefixAddress)
 	a := &domain.Address{
 		ID:                 addrID,
 		FolderID:           "f1",

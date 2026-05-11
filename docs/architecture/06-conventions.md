@@ -41,7 +41,7 @@ Workspace-уровень — в `kacho-workspace/docs/architecture/07-convention
 
 Specific:
 - CIDR overlap (PG `23P01` от EXCLUDE) → `FailedPrecondition` `"Subnet CIDRs can not overlap"`.
-- Garbage / malformed id → пока `NotFound` через `repo.Get` (исторически — «не валидируем синтаксис sync», `ac61127`). ⚠️ Реальный YC сейчас → `InvalidArgument "invalid <res> id"` (probe 2026-05-11) — расхождение, `kacho-vpc#7`.
+- Malformed / нераспознанный resource-id (нет известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) → sync `InvalidArgument "invalid <res> id '<X>'"` (`corevalidate.ResourceID`, вызывается первым стейтментом в каждом id-берущем RPC; verbatim-YC, probe 2026-05-11). Well-formed-но-несуществующий id (известный prefix) → `NotFound` через `repo.Get`. Семантика family-agnostic (`enp...` как subnet-id проходит prefix-check → потом `repo.Get` → `NotFound`, как у реального YC). (`kacho-vpc#7` — закрыт; старый gotcha `ac61127` «не валидировать id sync» устарел и заменён.)
 - Duplicate name (UNIQUE `23505`) → `ALREADY_EXISTS`.
 - `addresses_external_pool_ip_uniq` violation → должна быть `RetryableInternal`, allocator её ловит и пытается заново.
 
@@ -129,7 +129,7 @@ Zero-overhead, миграция не нужна.
 
 ## Top-10 gotchas (из истории фиксов)
 
-1. **id sync-валидация** — well-formed-но-несуществующий id → `NotFound` (как сейчас). ⚠️ malformed / wrong-prefix id: реальный YC отдаёт `InvalidArgument "invalid <res> id '<X>'"` (probe 2026-05-11), у нас пока `NotFound` через `repo.Get` — известное расхождение (`kacho-vpc#7`, см. `07-known-divergences.md`). Старый gotcha «никогда не валидировать id sync» (`ac61127`) устарел — YC поменял поведение после перехода с UUID на `enp...`-формат.
+1. **id sync-валидация** — malformed / нераспознанный resource-id (нет известного 3-char prefix `b1g/bpf/enp/e9b/epd/fd8`) → sync `InvalidArgument "invalid <res> id '<X>'"` (`corevalidate.ResourceID`, первым стейтментом в каждом id-берущем RPC; verbatim-YC, probe 2026-05-11). Well-formed-но-несуществующий id (известный prefix) → `NotFound` через `repo.Get`. Семантика family-agnostic — `enp...`, переданный как subnet-id, проходит prefix-check, затем `repo.Get` → `NotFound` (как у реального YC). (`kacho-vpc#7` — закрыт; старый gotcha «не валидировать id sync», `ac61127`, устарел и заменён.)
 2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для Network/Subnet/Address/RouteTable/SG. Gateway — strict (`corevalidate.NameGateway`: lowercase, без uppercase/underscore — verbatim YC).
 3. **CIDR overlap** = `FailedPrecondition`, не `InvalidArgument` (`e015191`).
 4. **CIDR host-bits=0** обязательно, sync через `netip.Prefix.Masked()`.

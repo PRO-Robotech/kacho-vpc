@@ -153,6 +153,9 @@ func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP,
 //
 // Использует subnetRepo.AddressesBySubnet (joining через internal_ipv4.subnet_id).
 func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
+		return nil, "", err
+	}
 	if subnetID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
 	}
@@ -168,6 +171,9 @@ func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pa
 
 // Get возвращает Address по ID.
 func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
+		return nil, err
+	}
 	a, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -186,6 +192,11 @@ func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination
 
 // Create инициирует создание Address.
 func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*operations.Operation, error) {
+	if req.InternalSpec != nil {
+		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.InternalSpec.SubnetID); err != nil {
+			return nil, err
+		}
+	}
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -364,6 +375,9 @@ func (s *AddressService) compensatingDelete(ctx context.Context, addressID, kind
 // Sync-валидация: см. validateAddressUpdate. Address — особый случай: name
 // может быть пустым (как и в Create), потому что для адресов name необязательное.
 func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, req.AddressID); err != nil {
+		return nil, err
+	}
 	if req.AddressID == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
@@ -475,6 +489,9 @@ func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
 //
 // ListOperations возвращает операции для конкретного Address.
 func (s *AddressService) ListOperations(ctx context.Context, addressID string, p Pagination) ([]operations.Operation, string, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, addressID); err != nil {
+		return nil, "", err
+	}
 	if _, err := s.repo.Get(ctx, addressID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
@@ -487,6 +504,9 @@ func (s *AddressService) ListOperations(ctx context.Context, addressID string, p
 
 // Move инициирует перенос Address в другой folder.
 func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
@@ -521,6 +541,9 @@ func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*op
 // Если адреса нет вовсе — пробрасывается NotFound (через mapRepoErr).
 // Если репо вернул другую ошибку — Internal.
 func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Operation, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
+		return nil, err
+	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
