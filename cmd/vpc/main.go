@@ -201,7 +201,7 @@ func runServe(cfg config.Config) error {
 		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(true, productionMode)),
 		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true, productionMode)),
 	)
-	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.DSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
+	vpcv1.RegisterInternalWatchServiceServer(internalSrv, handler.NewInternalWatchHandler(pool, cfg.MigrateDSN(), logger.With("component", "internal-watch"), cfg.WatchMaxStreams))
 	// InternalAddressService: только Allocate* RPC (SetInternalIP удалён,
 	// composite-shim снесён). Если старые callers ещё дёргают SetInternalIP,
 	// они получат Unimplemented через UnimplementedInternalAddressServiceServer
@@ -280,7 +280,7 @@ func runMigrate(cfg config.Config, direction string) {
 		log.Fatalf("goose dialect: %v", err)
 	}
 
-	db, err := sql.Open("pgx", cfg.DSN())
+	db, err := sql.Open("pgx", cfg.MigrateDSN())
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}

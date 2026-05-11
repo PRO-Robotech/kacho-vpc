@@ -52,20 +52,33 @@ type Config struct {
 	AuthMode string `envconfig:"KACHO_VPC_AUTH_MODE" default:"dev"`
 }
 
-// DSN возвращает PostgreSQL DSN строку с настраиваемым sslmode.
-func (c Config) DSN() string {
+// baseDSN возвращает стандартный postgres DSN без pgxpool-специфичных
+// параметров — пригоден и для pgxpool, и для database/sql.Open("pgx").
+func (c Config) baseDSN() string {
 	mode := c.DBSSLMode
 	if mode == "" {
 		mode = "disable"
 	}
-	dsn := fmt.Sprintf(
+	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName, mode,
 	)
+}
+
+// DSN — connection string для pgxpool (поддерживает pool_max_conns).
+// НЕ использовать для database/sql.Open("pgx") — там pool_max_conns
+// передаётся серверу как unknown PG-параметр → FATAL (см. FINDING-007).
+func (c Config) DSN() string {
+	dsn := c.baseDSN()
 	if c.DBMaxConns > 0 {
 		dsn += fmt.Sprintf("&pool_max_conns=%d", c.DBMaxConns)
 	}
 	return dsn
+}
+
+// MigrateDSN — connection string для goose/database/sql (без pgxpool-параметров).
+func (c Config) MigrateDSN() string {
+	return c.baseDSN()
 }
 
 // Load загружает конфигурацию из переменных окружения.
