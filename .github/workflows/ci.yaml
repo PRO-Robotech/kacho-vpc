@@ -50,7 +50,7 @@ jobs:
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v9
         with:
           working-directory: kacho-vpc
           args: --timeout 5m
