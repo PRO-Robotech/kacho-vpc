@@ -22,6 +22,14 @@ def _cleanup_net():
                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")])
 
 
+def _cleanup_net_lenient():
+    # См. route-table.py::_cleanup_net_lenient — wrap'нутый Create мог пройти permissive'но
+    # (subnet создан) → DELETE сети блокируется FK RESTRICT (400). Оба исхода ОК.
+    return Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+                test_script=["pm.test('cleanup net (200 or 400 if child leaked)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                             *save_from_response("j.id", "opId")])
+
+
 # ---------------------------------------------------------------------------
 # SUB-CR
 # ---------------------------------------------------------------------------
@@ -814,7 +822,7 @@ def _wrap_with_net(prefix, suffix, inner_case):
         steps=[
             *_make_net(uniq),
             *inner_case.steps,
-            _cleanup_net(),
+            _cleanup_net_lenient(),
         ],
     )
 

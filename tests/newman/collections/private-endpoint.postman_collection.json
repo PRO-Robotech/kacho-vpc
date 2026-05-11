@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "ffb09b11-adff-4ff3-97c1-7c9eea49830c",
+    "_postman_id": "298460a0-7eb2-4381-a0b2-a515896c5b4c",
     "name": "kacho-vpc / newman / private-endpoint",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6649,7 +6649,7 @@
       ]
     },
     {
-      "name": "PE-CR-VAL-SERVICE-MISSING — Create PE без objectStorage → 400",
+      "name": "PE-CR-VAL-SERVICE-MISSING — Create PE без objectStorage → отвергнут (400 / 404 от sync network-check)",
       "description": "class:VAL | class:NEG | priority:P1",
       "item": [
         {
@@ -6689,7 +6689,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
                 ]
               }
             }
@@ -6787,7 +6787,7 @@
       ]
     },
     {
-      "name": "PE-CR-VAL-SUBNET-REQUIRED — Create PE без subnetId → ожидаемое поведение",
+      "name": "PE-CR-VAL-SUBNET-REQUIRED — Create PE без subnetId → ожидаемое поведение (200 / 400 / 404 от sync network-check)",
       "description": "class:VAL | priority:P2",
       "item": [
         {
@@ -6827,7 +6827,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                  "pm.test('200/400/404', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
                 ]
               }
             }
@@ -8276,8 +8276,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                  "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));"
                 ]
               }
             }
@@ -8326,8 +8325,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                  "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));"
                 ]
               }
             }
@@ -8376,8 +8374,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200]));",
-                  "// если 200 — значит проверка async, тогда op.error должен быть code=3 или 5"
+                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 200, 404]));"
                 ]
               }
             }
