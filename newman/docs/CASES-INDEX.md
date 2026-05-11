@@ -1,40 +1,38 @@
 # newman — индекс уникальных кейсов
 
-578 тест-сценариев, сгруппированных по 177 уникальным
-паттернам (case-id с заменой domain-префикса на `*`).
+685 кейсов / 218 паттернов.
 
-## Сводка по методам
+## По методам
 
 | RPC method | Паттернов | Описание |
 |---|---|---|
-| - | 5 | HTTP-level / cross-method |
-| AddCidrBlocks | 3 | Subnet: добавить CIDR-блоки |
-| Create | 64 | Создание ресурса (async, возвращает Operation) |
-| Delete | 12 | Удаление (async, sync-NF от AuthZ-Get; FK RESTRICT) |
-| Get | 13 | Чтение по id (sync, может быть NotFound) |
-| GetByValue | 4 | Address: lookup по конкретному IP |
-| List | 26 | Листинг с фильтром по folder_id + пагинацией |
-| ListBySubnet | 2 | Address: список в подсети |
-| ListOperations | 2 | Operations связанные с ресурсом |
-| ListRouteTables | 2 | Network: дочерние RouteTable |
-| ListSecurityGroups | 2 | Network: дочерние SG |
-| ListSubnets | 2 | Network: дочерние Subnet |
-| ListUsedAddresses | 2 | Subnet: используемые IP |
-| Move | 6 | Перемещение в другой folder (async) |
+| - | 5 | Cross-method |
+| AddCidrBlocks | 8 | Subnet: добавить CIDR |
+| Create | 85 | Создание (async, Operation) |
+| Delete | 12 | Удаление (async) |
+| Get | 13 | Чтение по id |
+| GetByValue | 4 | Address: lookup по IP |
+| Lifecycle | 1 | Полный CRUD-цикл |
+| List | 27 | Листинг + pagination |
+| ListBySubnet | 2 | Address: в подсети |
+| ListOperations | 2 | Operations |
+| ListRouteTables | 2 | Network: RT |
+| ListSecurityGroups | 2 | Network: SG |
+| ListSubnets | 2 | Network: subnets |
+| ListUsedAddresses | 2 | Subnet: использ. IP |
+| Move | 6 | Move в другой folder |
 | Relocate | 3 | Subnet: сменить zone |
-| RemoveCidrBlocks | 3 | Subnet: убрать CIDR-блоки |
-| Update | 16 | Изменение (PATCH с UpdateMask, async) |
-| UpdateRule | 3 | SG: единичное правило |
-| UpdateRules | 7 | SG: batch обновление правил (xmin OCC) |
+| RemoveCidrBlocks | 6 | Subnet: убрать CIDR |
+| Update | 26 | PATCH с UpdateMask |
+| UpdateRule | 3 | SG: 1 rule |
+| UpdateRules | 7 | SG: batch rules |
 
 ---
 
-## Кейсы по методам
 
+### Cross-method
 
-### Cross-method (HTTP-level)
-
-*HTTP-level / cross-method*
+*Cross-method*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -46,17 +44,22 @@
 
 ### AddCidrBlocks
 
-*Subnet: добавить CIDR-блоки*
+*Subnet: добавить CIDR*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
+| `*-ACB-CRUD-ADD-MULTIPLE` | BVA,CRUD | P1 | 1 (sub) | AddCidrBlocks: добавить 3 CIDR за один request → все 3 видны |
+| `*-ACB-CRUD-ADD-ONE` | CRUD | P1 | 1 (sub) | AddCidrBlocks: добавить 1 CIDR → виден в response |
 | `*-ACB-CRUD-OK` | CRUD | P1 | 1 (sub) | AddCidrBlocks → новый блок виден в GET |
 | `*-ACB-NEG-OVERLAP` | NEG | P1 | 1 (sub) | AddCidrBlocks с CIDR пересекающимся с existing → InvalidArgument/FailedPrecondition |
+| `*-ACB-NEG-OVERLAP-SELF` | CONF,NEG | P0 | 1 (sub) | AddCidrBlocks с CIDR пересекающимся с existing prefix → FailedPrecondition |
+| `*-ACB-RCB-ROUNDTRIP` | IDM,STATE | P2 | 1 (sub) | AddCidrBlocks + RemoveCidrBlocks roundtrip: добавили → убрали → не изменилось |
 | `*-ACB-STATE-DISJOINT-CIDRS` | CONF,STATE,VAL | P1 | 1 (sub) | AddCidrBlocks с пересекающимися CIDR в одном запросе → InvalidArgument |
+| `*-ACB-VAL-HOST-BITS` | NEG,VAL | P1 | 1 (sub) | AddCidrBlocks с host-bits в CIDR (10.180.30.5/24) → 400 |
 
 ### Create
 
-*Создание ресурса (async, возвращает Operation)*
+*Создание (async, Operation)*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -88,6 +91,22 @@
 | `*-CR-NEG-NETWORK-NOT-FOUND` | NEG | P0 | 1 (sub) | Create в несуществующей network → async NOT_FOUND |
 | `*-CR-NEG-SUBNET-NF-FINDING-006` | NEG | P1 | 1 (pri) | FINDING-006: PE Create с garbage subnetId silent success — нет existence validation |
 | `*-CR-NEG-SUBNET-NOT-FOUND` | NEG | P0 | 1 (add) | Create internal с garbage subnetId → async NotFound |
+| `*-CR-PAIRWISE-00` | CRUD,VAL | P2 | 1 (sub) | Pairwise [0]: zone=ru-central1-a prefix=/24 dhcp=True |
+| `*-CR-PAIRWISE-01` | CRUD,VAL | P2 | 1 (sub) | Pairwise [1]: zone=ru-central1-a prefix=/28 dhcp=False |
+| `*-CR-PAIRWISE-02` | CRUD,VAL | P2 | 1 (sub) | Pairwise [2]: zone=ru-central1-a prefix=/16 dhcp=True |
+| `*-CR-PAIRWISE-03` | CRUD,VAL | P2 | 1 (sub) | Pairwise [3]: zone=ru-central1-b prefix=/24 dhcp=False |
+| `*-CR-PAIRWISE-04` | CRUD,VAL | P2 | 1 (sub) | Pairwise [4]: zone=ru-central1-b prefix=/28 dhcp=True |
+| `*-CR-PAIRWISE-05` | CRUD,VAL | P2 | 1 (sub) | Pairwise [5]: zone=ru-central1-b prefix=/16 dhcp=False |
+| `*-CR-PAIRWISE-06` | CRUD,VAL | P2 | 1 (sub) | Pairwise [6]: zone=ru-central1-c prefix=/24 dhcp=True |
+| `*-CR-PAIRWISE-07` | CRUD,VAL | P2 | 1 (sub) | Pairwise [7]: zone=ru-central1-c prefix=/28 dhcp=False |
+| `*-CR-PAIRWISE-08` | CRUD,VAL | P2 | 1 (sub) | Pairwise [8]: zone=ru-central1-c prefix=/16 dhcp=True |
+| `*-CR-SEC-CMD` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: cmd in name → handled, no 500 |
+| `*-CR-SEC-LONGPAYLOAD` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: longpayload in name → handled, no 500 |
+| `*-CR-SEC-NULLBYTE` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: nullbyte in name → handled, no 500 |
+| `*-CR-SEC-PATH` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: path in name → handled, no 500 |
+| `*-CR-SEC-SQLI` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: sqli in name → handled, no 500 |
+| `*-CR-SEC-UNION` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: union in name → handled, no 500 |
+| `*-CR-SEC-XSS` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security probe: xss in name → handled, no 500 |
 | `*-CR-VAL-BOTH-SPEC` | VAL | P0 | 1 (add) | Create с обоими spec (external+internal) → InvalidArgument |
 | `*-CR-VAL-CIDR-HOSTBITS` | VAL | P0 | 1 (sub) | Create с host-bits в CIDR (10.0.0.5/24) → InvalidArgument |
 | `*-CR-VAL-CIDR-REQUIRED` | VAL | P0 | 1 (sub) | Create без v4_cidr_blocks → InvalidArgument |
@@ -113,6 +132,11 @@
 | `*-CR-VAL-NAME-SPECIAL-CHARS` | VAL | P1 | 6 (add,gat,net,rou,sec,sub) | Create с спец-символами в name → 400 |
 | `*-CR-VAL-NAME-UPPERCASE` | VAL | P2 | 6 (add,gat,net,rou,sec,sub) | Create с UPPERCASE name → VPC permissive (200) или 400 |
 | `*-CR-VAL-NETWORK-REQUIRED` | NEG,VAL | P0 | 3 (pri,rou,sec) | Create без network_id → InvalidArgument |
+| `*-CR-VAL-REQ-FOLDERID` | VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | Create без required поля 'folderId' → 400 InvalidArgument |
+| `*-CR-VAL-REQ-NAME` | VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | Create без required поля 'name' → 400 InvalidArgument |
+| `*-CR-VAL-REQ-NETWORKID` | VAL | P0 | 4 (pri,rou,sec,sub) | Create без required поля 'networkId' → 400 InvalidArgument |
+| `*-CR-VAL-REQ-V4CIDRBLOCKS` | VAL | P0 | 1 (sub) | Create без required поля 'v4CidrBlocks' → 400 InvalidArgument |
+| `*-CR-VAL-REQ-ZONEID` | VAL | P0 | 1 (sub) | Create без required поля 'zoneId' → 400 InvalidArgument |
 | `*-CR-VAL-RESERVED-USED-OK` | VAL | P2 | 1 (add) | Create address с reserved/used флагами (если разрешено) → 200 или 400 |
 | `*-CR-VAL-ROUTE-EMPTY-HOP` | NEG,VAL | P1 | 1 (rou) | static_routes validation: RT-CR-VAL-ROUTE-EMPTY-HOP |
 | `*-CR-VAL-ROUTE-EMPTY-PREFIX` | NEG,VAL | P1 | 1 (rou) | static_routes validation: RT-CR-VAL-ROUTE-EMPTY-PREFIX |
@@ -127,7 +151,7 @@
 
 ### Delete
 
-*Удаление (async, sync-NF от AuthZ-Get; FK RESTRICT)*
+*Удаление (async)*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -146,7 +170,7 @@
 
 ### Get
 
-*Чтение по id (sync, может быть NotFound)*
+*Чтение по id*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -166,7 +190,7 @@
 
 ### GetByValue
 
-*Address: lookup по конкретному IP*
+*Address: lookup по IP*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -175,9 +199,17 @@
 | `*-GBV-NEG-NF` | AUTHZ,NEG | P0 | 1 (add) | GetByValue несуществующего IP → NotFound (security: не должно leak'ать существование) |
 | `*-GBV-VAL-INVALID-IP` | NEG,VAL | P2 | 1 (add) | GetByValue с garbage IP → 400 или 404 |
 
+### Lifecycle
+
+*Полный CRUD-цикл*
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `*-LIFECYCLE-CONF` | CONF,CRUD,STATE | P1 | 3 (add,gat,net) | Full lifecycle conformance: CRUD invariants |
+
 ### List
 
-*Листинг с фильтром по folder_id + пагинацией*
+*Листинг + pagination*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -206,11 +238,12 @@
 | `*-LST-PAGESIZE-EXACTLY-1000` | BVA | P2 | 5 (add,gat,net,rou,sec) | List с pageSize=1000 (boundary max) → 200 |
 | `*-LST-PERF-BASELINE` | CRUD,PERF | P2 | 7 (add,gat,net,pri,rou,sec,sub) | List response time < 500ms (perf baseline) |
 | `*-LST-ROUNDTRIP` | CRUD,PAGE | P2 | 1 (pri) | Pagination roundtrip PE |
+| `*-LST-SEC-FILTER-SQLI` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security: SQL injection в filter → не 500 |
 | `*-LST-VAL-FOLDER-REQUIRED` | AUTHZ,VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | List без folderId → InvalidArgument |
 
 ### ListBySubnet
 
-*Address: список в подсети*
+*Address: в подсети*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -219,7 +252,7 @@
 
 ### ListOperations
 
-*Operations связанные с ресурсом*
+*Operations*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -228,7 +261,7 @@
 
 ### ListRouteTables
 
-*Network: дочерние RouteTable*
+*Network: RT*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -237,7 +270,7 @@
 
 ### ListSecurityGroups
 
-*Network: дочерние SG*
+*Network: SG*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -246,7 +279,7 @@
 
 ### ListSubnets
 
-*Network: дочерние Subnet*
+*Network: subnets*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -255,7 +288,7 @@
 
 ### ListUsedAddresses
 
-*Subnet: используемые IP*
+*Subnet: использ. IP*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -264,7 +297,7 @@
 
 ### Move
 
-*Перемещение в другой folder (async)*
+*Move в другой folder*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -287,17 +320,20 @@
 
 ### RemoveCidrBlocks
 
-*Subnet: убрать CIDR-блоки*
+*Subnet: убрать CIDR*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `*-RCB-CONF-STATE` | STATE | P1 | 1 (sub) | STATE для RemoveCidrBlocks: проверка инварианта после операции |
 | `*-RCB-CRUD-OK` | CRUD | P1 | 1 (sub) | RemoveCidrBlocks: убрать дополнительный CIDR |
+| `*-RCB-CRUD-REMOVE-ONE` | CRUD | P1 | 1 (sub) | RemoveCidrBlocks: добавить 3 → убрать 1 → 2 остаются |
+| `*-RCB-NEG-CANNOT-REMOVE-PRIMARY` | NEG,STATE | P0 | 1 (sub) | RemoveCidrBlocks для primary v4_cidr (первый, primary) → отказ |
 | `*-RCB-NEG-NF` | NEG,STATE,VAL | P1 | 1 (sub) | RemoveCidrBlocks с несуществующим CIDR → InvalidArgument |
+| `*-RCB-NEG-NOT-PRESENT` | NEG,VAL | P1 | 1 (sub) | RemoveCidrBlocks с CIDR не из списка → ожидаемое поведение (FailedPrecondition или silent) |
 
 ### Update
 
-*Изменение (PATCH с UpdateMask, async)*
+*PATCH с UpdateMask*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -311,8 +347,18 @@
 | `*-UPD-CRUD-NAME` | CRUD | P2 | 6 (add,gat,net,rou,sec,sub) | Update happy name |
 | `*-UPD-CRUD-OK` | CRUD | P1 | 6 (add,gat,pri,rou,sec,sub) | Update Subnet description |
 | `*-UPD-NEG-NF-INVALID-PREFIX` | NEG,STATE | P1 | 1 (net) | Update с id без VPC-префикса → sync 404 (gateway prefix-routing) |
+| `*-UPD-STATE-IMMUTABLE-ADDRESS-ID` | CONF,STATE,VAL | P1 | 1 (pri) | Update mask='address_id' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-CIDR` | STATE,VAL | P1 | 1 (sub) | Update с mask=v4_cidr_blocks → InvalidArgument (immutable) |
+| `*-UPD-STATE-IMMUTABLE-EXTERNAL-IPV4-ADDRESS-SPEC` | CONF,STATE,VAL | P1 | 1 (add) | Update mask='external_ipv4_address_spec' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-FOLDER` | STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update с mask=folder_id → InvalidArgument (immutable) |
+| `*-UPD-STATE-IMMUTABLE-FOLDER-ID` | CONF,STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update mask='folder_id' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-INTERNAL-IPV4-ADDRESS-SPEC` | CONF,STATE,VAL | P1 | 1 (add) | Update mask='internal_ipv4_address_spec' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-NETWORK-ID` | CONF,STATE,VAL | P1 | 4 (pri,rou,sec,sub) | Update mask='network_id' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-SERVICE-TYPE` | CONF,STATE,VAL | P1 | 1 (pri) | Update mask='service_type' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-SUBNET-ID` | CONF,STATE,VAL | P1 | 1 (pri) | Update mask='subnet_id' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-V4-CIDR-BLOCKS` | CONF,STATE,VAL | P1 | 1 (sub) | Update mask='v4_cidr_blocks' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-V6-CIDR-BLOCKS` | CONF,STATE,VAL | P1 | 1 (sub) | Update mask='v6_cidr_blocks' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-ZONE-ID` | CONF,STATE,VAL | P1 | 1 (sub) | Update mask='zone_id' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-VAL-MASK-EMPTY` | STATE,VAL | P2 | 7 (add,gat,net,pri,rou,sec,sub) | Update с пустой mask → full PATCH (200) |
 | `*-UPD-VAL-MASK-MULTIPLE-UNKNOWN` | STATE,VAL | P2 | 7 (add,gat,net,pri,rou,sec,sub) | Update с несколькими unknown полями в mask → 400 |
 | `*-UPD-VAL-MASK-NAME-ONLY` | STATE,VAL | P2 | 6 (add,gat,net,rou,sec,sub) | Update mask=name → только name меняется, description/labels не трогаются |
@@ -320,7 +366,7 @@
 
 ### UpdateRule
 
-*SG: единичное правило*
+*SG: 1 rule*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
@@ -330,7 +376,7 @@
 
 ### UpdateRules
 
-*SG: batch обновление правил (xmin OCC)*
+*SG: batch rules*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|

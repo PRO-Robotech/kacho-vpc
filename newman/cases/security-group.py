@@ -593,3 +593,7 @@ for c in required_fields_matrix("SG", "/vpc/v1/securityGroups",
     CASES.append(_sg_wrap("SG", "req", c))
 CASES.extend(immutable_fields_matrix("SG", "/vpc/v1/securityGroups",
     ["folder_id", "network_id"]))
+
+for c in security_injection_block("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    CASES.append(_sg_wrap("SG", "sec", c))

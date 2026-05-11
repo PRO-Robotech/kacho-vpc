@@ -1070,3 +1070,9 @@ CASES.extend(required_fields_matrix("NET", "/vpc/v1/networks",
     ["folderId", "name"]))
 CASES.extend(immutable_fields_matrix("NET", "/vpc/v1/networks",
     ["folder_id"]))
+
+# v14 — security probes + lifecycle conformance
+CASES.extend(security_injection_block("NET", "/vpc/v1/networks", "/vpc/v1/networks",
+    {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(conformance_lifecycle_pack("NET", "/vpc/v1/networks",
+    {"folderId": "{{_suiteFolderId}}"}))

@@ -1179,6 +1179,131 @@ def subnet_cidr_expand_shrink_pack():
     return cases
 
 
+def pairwise_subnet_pack():
+    """Pairwise (§3.5) для Subnet: zone × prefix × dhcp.
+    9 combinations покрывают все пары."""
+    combos = [
+        ("ru-central1-a", "/24", True),  ("ru-central1-a", "/28", False), ("ru-central1-a", "/16", True),
+        ("ru-central1-b", "/24", False), ("ru-central1-b", "/28", True),  ("ru-central1-b", "/16", False),
+        ("ru-central1-c", "/24", True),  ("ru-central1-c", "/28", False), ("ru-central1-c", "/16", True),
+    ]
+    cases = []
+    for i, (zone, prefix, with_dhcp) in enumerate(combos):
+        ipbase = f"10.{170+i}.0.0"
+        body = {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                "name": f"sub-pw-{i}-{{{{runId}}}}", "zoneId": zone,
+                "v4CidrBlocks": [f"{ipbase}{prefix}"]}
+        if with_dhcp:
+            body["dhcpOptions"] = {"domainName": "test.local",
+                                   "domainNameServers": ["8.8.8.8"]}
+        cases.append(Case(
+            id=f"SUB-CR-PAIRWISE-{i:02d}",
+            title=f"Pairwise [{i}]: zone={zone} prefix={prefix} dhcp={with_dhcp}",
+            classes=["VAL", "CRUD"], priority="P2",
+            steps=[
+                Step(name="cr-pw", method="POST", path="/vpc/v1/subnets", body=body,
+                     test_script=[
+                         "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                         *save_from_response("j.id", "opId"),
+                         *save_from_response("j.metadata && j.metadata.subnetId", "subId"),
+                     ]),
+                poll_operation_until_done(),
+                Step(name="cleanup-pw", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                     test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                                  *save_from_response("j.id", "opId")]),
+            ],
+        ))
+    return cases
+
+
+def security_injection_block(prefix, create_path, list_path, body_create):
+    """Security probes (§4.10): SQL/command/XSS injection в name + filter.
+    Никогда не должно возвращать 500 или утечку pgx/stack trace.
+    """
+    injections = [
+        ("sqli", "test' OR 1=1--"),
+        ("union", "x' UNION SELECT * FROM operations--"),
+        ("xss", "<script>alert(1)</script>"),
+        ("cmd", "; rm -rf / ;"),
+        ("path", "../../etc/passwd"),
+        ("nullbyte", "x y"),
+        ("longpayload", "A" * 1000),
+    ]
+    cases = []
+    for name, payload in injections:
+        cases.append(Case(
+            id=f"{prefix}-CR-SEC-{name.upper()}",
+            title=f"Security probe: {name} in name → handled, no 500",
+            classes=["VAL", "NEG"], priority="P0",
+            steps=[Step(name=f"cr-{name}", method="POST", path=create_path,
+                        body={**body_create, "name": payload[:1000]},
+                        test_script=[
+                            "pm.test('not 500', () => pm.expect(pm.response.code).to.not.eql(500));",
+                            "pm.test('handled 2xx/4xx', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 413]));",
+                            "const body = JSON.stringify(pm.response.json() || {});",
+                            "pm.test('no panic/sqlstate/stacktrace leak', () => {",
+                            "  const low = body.toLowerCase();",
+                            "  pm.expect(low).to.not.include('panic');",
+                            "  pm.expect(low).to.not.include('sqlstate');",
+                            "  pm.expect(low).to.not.include('goroutine');",
+                            "});",
+                        ])],
+        ))
+    cases.append(Case(
+        id=f"{prefix}-LST-SEC-FILTER-SQLI",
+        title="Security: SQL injection в filter → не 500",
+        classes=["VAL", "NEG"], priority="P0",
+        steps=[Step(name="lst-sqli", method="GET",
+                    path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
+                    test_script=[
+                        "pm.test('not 500', () => pm.expect(pm.response.code).to.not.eql(500));",
+                        "pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                    ])],
+    ))
+    return cases
+
+
+def conformance_lifecycle_pack(prefix, create_path, body_create):
+    """Lifecycle: Create→Get→List-includes→Update→Get-updated→Delete→List-excludes→Get-404."""
+    return Case(
+        id=f"{prefix}-LIFECYCLE-CONF",
+        title="Full lifecycle conformance: CRUD invariants",
+        classes=["CRUD", "CONF", "STATE"], priority="P1",
+        steps=[
+            Step(name="cr", method="POST", path=create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-life-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "lifeId")]),
+            poll_operation_until_done(),
+            Step(name="get-1", method="GET", path=f"{create_path}/{{{{lifeId}}}}",
+                 test_script=[*assert_status(200),
+                              "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('lifeId')));"]),
+            Step(name="lst-includes", method="GET",
+                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1000",
+                 test_script=[*assert_status(200),
+                              "const items = Object.values(pm.response.json()).find(v => Array.isArray(v)) || [];",
+                              "pm.test('list contains', () => pm.expect(items.map(x => x.id)).to.include(pm.environment.get('lifeId')));"]),
+            Step(name="upd", method="PATCH", path=f"{create_path}/{{{{lifeId}}}}",
+                 body={"updateMask": "description", "description": "life-conf"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            poll_operation_until_done(),
+            Step(name="get-after-upd", method="GET", path=f"{create_path}/{{{{lifeId}}}}",
+                 test_script=[*assert_status(200),
+                              "pm.test('description updated', () => pm.expect(pm.response.json().description).to.eql('life-conf'));"]),
+            Step(name="del", method="DELETE", path=f"{create_path}/{{{{lifeId}}}}",
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            poll_operation_until_done(),
+            Step(name="lst-excludes", method="GET",
+                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1000",
+                 test_script=[*assert_status(200),
+                              "const items = Object.values(pm.response.json()).find(v => Array.isArray(v)) || [];",
+                              "pm.test('list does not contain', () => pm.expect(items.map(x => x.id)).to.not.include(pm.environment.get('lifeId')));"]),
+            Step(name="get-404", method="GET", path=f"{create_path}/{{{{lifeId}}}}",
+                 test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+        ],
+    )
+
+
 def authz_caller_headers_block(prefix, list_path):
     """RBAC-pre kit: проверка headers cross-tenant (анонимный vs admin-claim)."""
     return [
@@ -1364,6 +1489,9 @@ def load_cases_module(path: Path):
     mod.immutable_fields_matrix = immutable_fields_matrix
     mod.mutable_field_accepts = mutable_field_accepts
     mod.subnet_cidr_expand_shrink_pack = subnet_cidr_expand_shrink_pack
+    mod.pairwise_subnet_pack = pairwise_subnet_pack
+    mod.security_injection_block = security_injection_block
+    mod.conformance_lifecycle_pack = conformance_lifecycle_pack
     spec.loader.exec_module(mod)
     return mod
 

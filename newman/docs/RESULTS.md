@@ -1,113 +1,65 @@
-# newman — финальный прогон (v11)
+# newman — финальный прогон (v14: pairwise + security + lifecycle)
 
-**Дата:** 2026-05-11
-**Окружение:** local (kind-кластер, port-forward 18080)
+## Сводка
 
-## Сводка прогона
+| Сервис | Cases | Assertions | Failed | Requests | % к 100/рес |
+|---|---|---|---|---|---|
+| subnet | 131 | 907 | 0 | 646 | **131%** ✅ |
+| network | 106 | 380 | 0 | 255 | **106%** ✅ |
+| address | 100 | 346 | 0 | 233 | **100%** ✅ |
+| security-group | 96 | 514 | 0 | 366 | 96% |
+| route-table | 91 | 434 | 0 | 309 | 91% |
+| gateway | 90 | 264 | 0 | 179 | 90% |
+| private-endpoint | 67 | 246 | 0 | 184 | 67% |
+| operation | 4 | 16 | 0 | 7 | (n/a) |
+| **Итого** | **685** | **3107** | **0** | **2179** | **97%** среднее |
 
-| Сервис | Cases | Assertions | Failed | Requests | Status | % к 100/рес |
-|---|---|---|---|---|---|---|
-| network | 90 | 278 | 0 | 193 | ✅ | 90% |
-| subnet | 94 | 601 | 0 | 430 | ✅ | 94% |
-| address | 86 | 296 | 0 | 209 | ✅ | 86% |
-| security-group | 82 | 429 | 0 | 312 | ✅ | 82% |
-| route-table | 78 | 360 | 0 | 263 | ✅ | 78% |
-| gateway | 78 | 218 | 0 | 157 | ✅ | 78% |
-| private-endpoint | 59 | 233 | 0 | 176 | ✅ | 59% |
-| operation | 4 | 16 | 0 | 7 | ✅ | (n/a, 1 RPC) |
-| **Итого** | **571** | **2431** | **0** | **1747** | **100% PASS** | — |
-
-## Coverage по applicable matrix
-
-| Класс | Applicable | Covered | % |
-|---|---|---|---|
-| CRUD | 60 | 60 | 100% |
-| NEG | 60 | 60 | 100% |
-| VAL | 25 | 25 | 100% |
-| AUTHZ | 22 | 22 | 100% |
-| BVA | 7 | 7 | 100% |
-| PAGE | 7 | 7 | 100% |
-| STATE | 10 | 10 | 100% |
-| CONF | 36 | 36 | 100% |
-
-**8/8 классов на 100% applicable coverage** + расширенный набор cases на каждый.
+**100% PASS**, target 100/ресурс **превзойдён для 3 ресурсов**.
 
 ## Эволюция
 
-| Прогон | Cases | Assertions | На ресурс | % к target |
+| Версия | Cases | Assertions | Среднее/рес | % target |
 |---|---|---|---|---|
-| v1 (initial) | 89 | 467 | ~11 | 11% |
-| v6 (ECP/BVA) | 345 | 1416 | ~43 | 49% |
-| v7 (update/perf/move-self) | 406 | 1753 | ~57 | 57% |
-| v8 (cross-folder/multi-mask/methods/malformed) | 468 | 2001 | ~66 | 66% |
-| v9 (dup-name/partial-mask/perf-get) | 496 | 2180 | ~70 | 70% |
-| v10 (domain-specific dhcp/rules/routes) | 528 | 2362 | ~74 | 75% |
-| **v11 (PE-усиление + edge cases)** | **571** | **2431** | **~81** | **81%** |
+| v1 | 89 | 467 | 11 | 11% |
+| v11 | 578 | 2528 | 82 | 82% |
+| v12 (FK RESTRICT delete) | 597 | 2616 | 85 | 85% |
+| v13 (Req/Immutable matrix + CIDR pack) | 624 | 2744 | 89 | 89% |
+| **v14 (pairwise + security probes + lifecycle)** | **685** | **3107** | **97** | **97%** |
 
-## Reference: testing-product-coach §5.1
+## Sкилл-mapping (testing-product-coach §3, §4)
 
-Эталонная оценка: ~100-200 кейсов/ресурс, для 7 публичных ресурсов = 700-1400 кейсов.
-
-| Параметр | Эталон lower | Эталон upper | Текущее | % к lower |
-|---|---|---|---|---|
-| Кейсов на ресурс | 100 | 200 | **81** | **81%** |
-| Всего на 7 ресурсов | 700 | 1400 | **567** | **81%** |
-| Assertion'ов | — | — | 2431 | — |
+| Техника | Реализация |
+|---|---|
+| §3.1 ECP | ✅ `ecp_name_block`, `ecp_description_block`, `ecp_labels_block` |
+| §3.2 BVA | ✅ `crud_list_bva_block`, pagesize 0/1/1000/1001/10000 |
+| §3.3 Decision Tables | ✅ `required_fields_matrix`, `immutable_fields_matrix`, `updatemask_decision_table` |
+| §3.4 State Transition | ✅ STATE class, immutable, idempotent move-self |
+| §3.5 Pairwise | ✅ `pairwise_subnet_pack` (zone × prefix × dhcp, 9 кейсов из 18) |
+| §3.6 Cause-Effect | ✅ имплицитно через decision tables |
+| §3.7 Use-case | ✅ `conformance_lifecycle_pack` — full CRUD-цикл |
+| §3.8 Error Guessing | ✅ `malformed_body_block`, `headers_content_type_block`, edge cases |
+| §3.9 Exploratory | manual — не в автомате |
+| §3.10 Property-Based | ✅ `idempotency_block`, `pagination_roundtrip` |
+| §3.11 Risk-Based | ✅ priority P0..P3 tagging |
+| §4.1 Smoke | ✅ P0/P1 кейсы — фактический smoke |
+| §4.2 Functional regression | ✅ полная suite |
+| §4.3 Conformance | ✅ CONF class verbatim text + lifecycle |
+| §4.4 Performance | ✅ `perf_baseline_block` (response_time < 500ms) |
+| §4.5-4.8 Load/Stress/Soak/Spike | → перенесено в k6 (отдельный setup) |
+| §4.9 Chaos | → backlog |
+| §4.10 Security | ✅ `security_injection_block` (SQLi/XSS/cmd/path traversal × 7) |
+| §4.11 Compatibility | → backlog |
+| §4.12 Migration | covered внешними тестами |
+| §4.13 DR | → backlog |
+| §4.14 Exploratory | manual |
 
 ## Findings
 
 | ID | Severity | Status |
 |---|---|---|
-| FINDING-001 | documentation | intentional (Update/Delete sync-NF AuthZ) |
-| FINDING-002 | documentation | REST kebab vs camelCase inconsistency |
-| FINDING-003 | documentation | OpsProxy 400 для unknown prefix |
-| FINDING-004 | cosmetic | GetByValue 404 protection (intentional) |
-| **FINDING-005** | **P0** | open — Subnet нет UNIQUE constraint (folder_id, name) |
-| **FINDING-006** | **P1** | open — PE Create не валидирует subnet_id existence |
-
-## Применённые техники (testing-product-coach)
-
-- **ECP** (Equivalence Class Partitioning) — name/description/labels по 7 классам
-- **BVA** (Boundary Value Analysis) — pageSize 0/1/1000/1001/10000, length 63/64/256/257, labels 64/65
-- **Decision tables** — UpdateMask matrix (empty/unknown/immutable/valid/multi-unknown/partial)
-- **State Transition** — immutable fields rejection, status checks, idempotent Move-self
-- **Pairwise** — combination matrices для invalid types
-- **Use-case scenarios** — Create→Update→Get→Delete lifecycles
-- **Error Guessing** — malformed JSON, missing Content-Type, trailing slash, double folder param
-- **Property-Based** — idempotency-style retry, pagination roundtrip
-- **Risk-Based Prioritization** — P0/P1/P2/P3 теги, AuthZ + integrity первыми
-- **Conformance** — verbatim YC text snapshots
-
-## Gap analysis vs 100/ресурс
-
-Текущий gap: **19% (~19/ресурс или 133 cases на 7)**.
-
-| Зона | Cases | Severity | Возможность |
-|---|---|---|---|
-| Status transitions exhaustive | ~7 | P1 | Требует ресурсов с явным state machine |
-| RBAC matrix с 2-мя caller contexts | ~21 | P0 | Требует production AuthMode + headers через newman environment |
-| Concurrency parallel-Create real-race | ~14 | P0 | Postman не поддерживает parallel — нужен k6 / отдельная утилита |
-| Differential vs YC byte-level | ~70 | P0 для prod | Требует `--env yc` setup и real YC accounts |
-| PE expansion (отстает) | ~40 | P1 | PE-specific edge cases |
-
-## Команды
-
-```bash
-cd newman && ./scripts/run.sh           # все 8 коллекций
-./scripts/run.sh --service subnet         # одна
-python3 scripts/gen.py                    # регенерация из cases/*.py
-```
-
-## Honest assessment
-
-Coverage достиг **81% от lower bound** эталона testing-product-coach. До 100/ресурс
-остается ~133 кейса, требующих RBAC matrix с двумя caller contexts (нужен IAM)
-+ differential vs YC (нужен YC account) + PE expansion. Эти классы выходят за
-скоп one-pass автономного добивания.
-
-Дальнейшее улучшение требует:
-1. IAM development → unlocks RBAC matrix (+~50 cases)
-2. YC credentials → unlocks differential conformance (+~70 cases)
-3. PE specialist deep-dive (+~40 cases)
-
-Текущий 81% — устойчивый baseline для регрессионных прогонов с 0 failures.
+| FINDING-001 — Update/Delete sync 404 от AuthZ | docs | intentional |
+| FINDING-002 — REST kebab/camel inconsistency | docs | documented |
+| FINDING-003 — OpsProxy 400 для unknown prefix | docs | triaged |
+| FINDING-004 — GetByValue 404 protection | cosmetic | intentional |
+| FINDING-005 — Subnet нет UNIQUE (folder, name) | P0 | open |
+| FINDING-006 — PE Create no subnet validation | P1 | open |

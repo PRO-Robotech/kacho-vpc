@@ -596,3 +596,8 @@ CASES.extend(required_fields_matrix("ADR", "/vpc/v1/addresses",
     ["folderId", "name"]))  # ipv4 spec — oneof, не required
 CASES.extend(immutable_fields_matrix("ADR", "/vpc/v1/addresses",
     ["folder_id", "external_ipv4_address_spec", "internal_ipv4_address_spec"]))
+
+CASES.extend(security_injection_block("ADR", "/vpc/v1/addresses", "/vpc/v1/addresses",
+    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+CASES.append(conformance_lifecycle_pack("ADR", "/vpc/v1/addresses",
+    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))

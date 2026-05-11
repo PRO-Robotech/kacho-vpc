@@ -1061,3 +1061,11 @@ def _subnet_cidr_setup_teardown(case):
 
 for case in subnet_cidr_expand_shrink_pack():
     CASES.append(_subnet_cidr_setup_teardown(case))
+
+# v14 — pairwise + security (parent net wrap)
+for c in pairwise_subnet_pack():
+    CASES.append(_wrap_with_net("SUB", "pw", c))
+for c in security_injection_block("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+     "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.169.0.0/24"]}):
+    CASES.append(_wrap_with_net("SUB", "sec", c))

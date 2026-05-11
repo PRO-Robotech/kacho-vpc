@@ -389,3 +389,8 @@ CASES.extend(required_fields_matrix("GW", "/vpc/v1/gateways",
     ["folderId", "name"]))
 CASES.extend(immutable_fields_matrix("GW", "/vpc/v1/gateways",
     ["folder_id"]))
+
+CASES.extend(security_injection_block("GW", "/vpc/v1/gateways", "/vpc/v1/gateways",
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+CASES.append(conformance_lifecycle_pack("GW", "/vpc/v1/gateways",
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))

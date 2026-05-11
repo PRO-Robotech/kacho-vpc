@@ -443,3 +443,7 @@ for c in required_fields_matrix("RT", "/vpc/v1/routeTables",
     CASES.append(_rt_wrap("RT", "req", c))
 CASES.extend(immutable_fields_matrix("RT", "/vpc/v1/routeTables",
     ["folder_id", "network_id"]))
+
+for c in security_injection_block("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    CASES.append(_rt_wrap("RT", "sec", c))
