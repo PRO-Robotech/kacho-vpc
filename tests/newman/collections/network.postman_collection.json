@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "615fd04e-30d7-47b3-a080-fa8483da1c11",
+    "_postman_id": "d6cfe0ef-710d-432e-9ae4-82e6ba70a1d5",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -627,8 +627,8 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "pm.test('has networks array', () => pm.expect(j.networks).to.be.an('array'));",
-                  "pm.test('nextPageToken is string', () => pm.expect(j.nextPageToken).to.be.a('string'));"
+                  "pm.test('networks is array (or omitted when empty)', () => pm.expect(j.networks || []).to.be.an('array'));",
+                  "pm.test('nextPageToken is string (or omitted)', () => pm.expect(j.nextPageToken || '').to.be.a('string'));"
                 ]
               }
             }
@@ -714,7 +714,7 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "pm.test('default pagesize applied', () => pm.expect(j.networks.length).to.be.at.most(50));"
+                  "pm.test('default pagesize applied', () => pm.expect((j.networks || []).length).to.be.at.most(50));"
                 ]
               }
             }
@@ -5463,8 +5463,8 @@
       ]
     },
     {
-      "name": "NET-MV-IDM-SAME-FOLDER — Move в текущий folder → ok (idempotent), ресурс остаётся",
-      "description": "class:IDM | class:CRUD | priority:P2",
+      "name": "NET-MV-IDM-SAME-FOLDER — Move в текущий folder → 400 'Destination folder is the same as the source'",
+      "description": "class:IDM | class:NEG | priority:P2",
       "item": [
         {
           "name": "create",
@@ -5590,52 +5590,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "poll-move",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "verify-same-folder",
+          "name": "verify-unchanged",
           "request": {
             "method": "GET",
             "header": [
@@ -5745,7 +5712,7 @@
       ]
     },
     {
-      "name": "NET-GET-CONF-FULLTEXT — Get garbage → 'Network <id> not found' формат",
+      "name": "NET-GET-CONF-FULLTEXT — Get garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5782,7 +5749,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches <Resource> <id> not found', () => pm.expect(pm.response.json().message).to.match(/^Network enpsnapshotnonexist01 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Network enpsnapshotnonexist01 not found\"));"
                 ]
               }
             }
@@ -5791,7 +5758,7 @@
       ]
     },
     {
-      "name": "NET-UPD-CONF-FULLTEXT — Update garbage → точный текст 'Network ... not found'",
+      "name": "NET-UPD-CONF-FULLTEXT — Update garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5837,7 +5804,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Network enpsnapshotnonexist02 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Network enpsnapshotnonexist02 not found\"));"
                 ]
               }
             }
@@ -5846,7 +5813,7 @@
       ]
     },
     {
-      "name": "NET-DEL-CONF-FULLTEXT — Delete garbage → 'Network ... not found'",
+      "name": "NET-DEL-CONF-FULLTEXT — Delete garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5883,7 +5850,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Network enpsnapshotnonexist03 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Network enpsnapshotnonexist03 not found\"));"
                 ]
               }
             }
@@ -6667,7 +6634,7 @@
       ]
     },
     {
-      "name": "NET-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 InvalidArgument",
+      "name": "NET-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P2",
       "item": [
         {
@@ -6708,9 +6675,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -6720,7 +6689,7 @@
       ]
     },
     {
-      "name": "NET-CR-VAL-DESC-INT-TYPE — Create с description=число → 400",
+      "name": "NET-CR-VAL-DESC-INT-TYPE — Create с description=число → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P3",
       "item": [
         {
@@ -6761,9 +6730,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "e871c12c-2dbf-4b9c-808f-cffca2eea582",
+    "_postman_id": "ffb09b11-adff-4ff3-97c1-7c9eea49830c",
     "name": "kacho-vpc / newman / private-endpoint",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -5621,7 +5621,7 @@
       ]
     },
     {
-      "name": "PE-GET-CONF-FULLTEXT — Get garbage → 'PrivateEndpoint <id> not found' формат",
+      "name": "PE-GET-CONF-FULLTEXT — Get garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5658,7 +5658,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches <Resource> <id> not found', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint enpsnapshotnonexist01 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"PrivateEndpoint enpsnapshotnonexist01 not found\"));"
                 ]
               }
             }
@@ -5667,7 +5667,7 @@
       ]
     },
     {
-      "name": "PE-UPD-CONF-FULLTEXT — Update garbage → точный текст 'PrivateEndpoint ... not found'",
+      "name": "PE-UPD-CONF-FULLTEXT — Update garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5713,7 +5713,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint enpsnapshotnonexist02 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"PrivateEndpoint enpsnapshotnonexist02 not found\"));"
                 ]
               }
             }
@@ -5722,7 +5722,7 @@
       ]
     },
     {
-      "name": "PE-DEL-CONF-FULLTEXT — Delete garbage → 'PrivateEndpoint ... not found'",
+      "name": "PE-DEL-CONF-FULLTEXT — Delete garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -5759,7 +5759,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint enpsnapshotnonexist03 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"PrivateEndpoint enpsnapshotnonexist03 not found\"));"
                 ]
               }
             }

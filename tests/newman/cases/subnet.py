@@ -282,7 +282,7 @@ CASES.append(Case(
         # CIDR-колонки не перезаписывает → изменение CIDR через Update у нас no-op,
         # см. 07-known-divergences.md.)
         Step(name="patch-cidr-via-mask", method="PATCH", path="/vpc/v1/subnets/{{subId}}",
-             body={"updateMask": "v4_cidr_blocks", "v4CidrBlocks": ["10.31.0.0/24"]},
+             body={"updateMask": "v4CidrBlocks", "v4CidrBlocks": ["10.31.0.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
         Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",

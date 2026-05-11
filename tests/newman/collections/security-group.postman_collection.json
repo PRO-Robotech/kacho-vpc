@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "8dbdc3be-46d2-49e9-baa4-e5a6c90bf2ef",
+    "_postman_id": "deb1cb4a-add1-4c44-9254-5efd20f1ccb7",
     "name": "kacho-vpc / newman / security-group",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1630,7 +1630,7 @@
       ]
     },
     {
-      "name": "SG-GET-CONF-NF-TEXT — Get garbage — verbatim text 'SecurityGroup ... not found'",
+      "name": "SG-GET-CONF-NF-TEXT — Get garbage — verbatim text 'Security group ... not found'",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -1667,7 +1667,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches \"SecurityGroup ... not found\"', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup .* not found$/));"
+                  "pm.test('text matches \"Security group ... not found\"', () => pm.expect(pm.response.json().message).to.match(/^Security group .* not found$/));"
                 ]
               }
             }
@@ -1780,7 +1780,7 @@
       ]
     },
     {
-      "name": "SG-UR-NEG-RULE-NF — UpdateRule (single) несуществующего rule_id → 404 NotFound",
+      "name": "SG-UR-NEG-RULE-NF — UpdateRule малформированного rule_id → sync 400 'Invalid rule id <id>' (verbatim YC)",
       "description": "class:NEG | priority:P1",
       "item": [
         {
@@ -1982,7 +1982,7 @@
           ]
         },
         {
-          "name": "ur-nx",
+          "name": "ur-bad-rule-id",
           "request": {
             "method": "PATCH",
             "header": [
@@ -2021,93 +2021,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "assert-rule-nf",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                  "pm.test('rule_id NotFound async (code 5)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Invalid rule id nonexistent-rule-id'));"
                 ]
               }
             }
@@ -3287,7 +3206,7 @@
       ]
     },
     {
-      "name": "SG-UPD-CONF-NF-TEXT — Update несуществующего → verbatim 'SecurityGroup ... not found' text",
+      "name": "SG-UPD-CONF-NF-TEXT — Update несуществующего → verbatim 'Security group ... not found' text",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -3333,7 +3252,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches SecurityGroup ... not found', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup .* not found$/));"
+                  "pm.test('text matches Security group ... not found', () => pm.expect(pm.response.json().message).to.match(/^Security group .* not found$/));"
                 ]
               }
             }
@@ -3342,7 +3261,7 @@
       ]
     },
     {
-      "name": "SG-DEL-CONF-NF-TEXT — Delete несуществующего → verbatim 'SecurityGroup ... not found' text",
+      "name": "SG-DEL-CONF-NF-TEXT — Delete несуществующего → verbatim 'Security group ... not found' text",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -3379,7 +3298,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches SecurityGroup ... not found', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup .* not found$/));"
+                  "pm.test('text matches Security group ... not found', () => pm.expect(pm.response.json().message).to.match(/^Security group .* not found$/));"
                 ]
               }
             }
@@ -8582,7 +8501,7 @@
       ]
     },
     {
-      "name": "SG-GET-CONF-FULLTEXT — Get garbage → 'SecurityGroup <id> not found' формат",
+      "name": "SG-GET-CONF-FULLTEXT — Get garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -8619,7 +8538,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('text matches <Resource> <id> not found', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup enpsnapshotnonexist01 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Security group SecurityGroup.Id(value=enpsnapshotnonexist01) not found\"));"
                 ]
               }
             }
@@ -8628,7 +8547,7 @@
       ]
     },
     {
-      "name": "SG-UPD-CONF-FULLTEXT — Update garbage → точный текст 'SecurityGroup ... not found'",
+      "name": "SG-UPD-CONF-FULLTEXT — Update garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -8674,7 +8593,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup enpsnapshotnonexist02 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Security group SecurityGroup.Id(value=enpsnapshotnonexist02) not found\"));"
                 ]
               }
             }
@@ -8683,7 +8602,7 @@
       ]
     },
     {
-      "name": "SG-DEL-CONF-FULLTEXT — Delete garbage → 'SecurityGroup ... not found'",
+      "name": "SG-DEL-CONF-FULLTEXT — Delete garbage → точный verbatim-YC текст not-found",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -8720,7 +8639,7 @@
                   "  const j = pm.response.json();",
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
-                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^SecurityGroup enpsnapshotnonexist03 not found$/));"
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql(\"Security group SecurityGroup.Id(value=enpsnapshotnonexist03) not found\"));"
                 ]
               }
             }
@@ -8769,8 +8688,8 @@
       ]
     },
     {
-      "name": "SG-MV-IDM-SAME-FOLDER — Move в текущий folder → ok (idempotent), ресурс остаётся",
-      "description": "class:IDM | class:CRUD | priority:P2",
+      "name": "SG-MV-IDM-SAME-FOLDER — Move в текущий folder → 400 'Destination folder is the same as the source'",
+      "description": "class:IDM | class:NEG | priority:P2",
       "item": [
         {
           "name": "pre-net",
@@ -8995,52 +8914,19 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "poll-move",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "verify-same-folder",
+          "name": "verify-unchanged",
           "request": {
             "method": "GET",
             "header": [
@@ -10142,7 +10028,7 @@
       ]
     },
     {
-      "name": "SG-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 InvalidArgument",
+      "name": "SG-CR-VAL-LABELS-STRING-TYPE — Create с labels=строка (вместо object) → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P2",
       "item": [
         {
@@ -10282,9 +10168,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }
@@ -10334,7 +10222,7 @@
       ]
     },
     {
-      "name": "SG-CR-VAL-DESC-INT-TYPE — Create с description=число → 400",
+      "name": "SG-CR-VAL-DESC-INT-TYPE — Create с description=число → 400 (тело: YC plain-text / наш JSON — defensive)",
       "description": "class:VAL | class:NEG | priority:P3",
       "item": [
         {
@@ -10474,9 +10362,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "pm.test('non-empty error body', () => {",
+                  "  let m;",
+                  "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+                  "  catch (e) { m = pm.response.text() || ''; }",
+                  "  pm.expect(String(m).length).to.be.above(0);",
                   "});"
                 ]
               }

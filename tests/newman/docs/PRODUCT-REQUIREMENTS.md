@@ -62,10 +62,11 @@ flat-таблицы без K8s-envelope.
 - Validated-by: косвенно `*-DEL-CRUD-OK` + `*-GET-NEG-NF` после Delete
 - Agent-check: `internal/migrations/0001_initial.sql` (нет envelope-колонок); `internal/repo/*.go` (`DELETE FROM`).
 
-### REQ-RES-06 — Move в текущий folder — idempotent no-op                        [P2]
-`Move` ресурса в его же `folder_id` ДОЛЖЕН успешно завершиться (200/Operation done), ресурс остаётся.
+### REQ-RES-06 — Move в текущий folder → InvalidArgument                          [P2]
+`Move` ресурса в его же `folder_id` → sync `InvalidArgument "Illegal argument Destination folder
+is the same as the source"` (verbatim YC, probe 2026-05-11; kacho-vpc#10). Ресурс не меняется.
 - Validated-by: `*-MV-IDM-SAME-FOLDER`
-- Agent-check: `internal/service/*.go` doMove.
+- Agent-check: `internal/service/*.go` Move → `checkMoveDestination` в `internal/service/validate.go`; порядок sync-проверок: формат id → id required → destination required → `repo.Get` (NotFound) → same-folder/dest-exists.
 
 ---
 
@@ -79,9 +80,12 @@ flat-таблицы без K8s-envelope.
 - Agent-check: начало `Create` в `internal/service/*.go` — `corevalidate.Required`/явные проверки ДО `operations.New`.
 
 ### REQ-VAL-02 — malformed body / типы полей                                     [P1]
-Malformed JSON → `400`. Неверный тип поля (`description`=число, `labels`=строка, `name`=null) → `400 InvalidArgument`.
+Malformed JSON → `400`. Неверный тип поля (`description`=число, `labels`=строка, `name`=null) → `400`.
 Пустой body → `400`. Unknown поле в body — silent-ignore (200) ИЛИ `400` (документировать выбор).
-- Validated-by: `*-CR-VAL-MALFORMED-JSON`, `*-CR-VAL-DESC-INT-TYPE`, `*-CR-VAL-LABELS-STRING-TYPE`, `*-CR-VAL-NAME-NULL`, `*-CR-VAL-EMPTY-BODY`, `*-CR-VAL-EXTRA-FIELDS`
+Тело ответа на JSON-transcoding-ошибку: verbatim YC отдаёт plain-text, наш api-gateway — JSON
+`{code,message}` (поведение runtime-библиотеки grpc-gateway; известное расхождение,
+`07-known-divergences.md` §4) → кейсы `*-CR-VAL-DESC-INT-TYPE`/`-LABELS-STRING-TYPE`/`ADR-CR-VAL-BOTH-SPEC` defensive (`400` + непустое тело).
+- Validated-by: `*-CR-VAL-MALFORMED-JSON`, `*-CR-VAL-DESC-INT-TYPE`, `*-CR-VAL-LABELS-STRING-TYPE`, `*-CR-VAL-NAME-NULL`, `*-CR-VAL-EMPTY-BODY`, `*-CR-VAL-EXTRA-FIELDS`, `ADR-CR-VAL-BOTH-SPEC`
 - Agent-check: grpc-gateway transcoding (api-gateway) + handler-слой; protobuf JSON-unmarshal поведение.
 
 ### REQ-VAL-03 — description ≤ 256, labels ≤ 64 пар, label-key regex             [P1]
@@ -155,11 +159,19 @@ CIDR не из списка → `InvalidArgument`/`FailedPrecondition` (доку
 - Validated-by: `*-RCB-NEG-CANNOT-REMOVE-PRIMARY`, `*-RCB-NEG-NF`, `*-RCB-NEG-NOT-PRESENT`, `*-RCB-CRUD-OK`, `*-RCB-CRUD-REMOVE-ONE`, `*-RCB-CONF-STATE`, `*-ACB-RCB-ROUNDTRIP`
 - Agent-check: `internal/service/subnet.go` RemoveCidrBlocks.
 
-### REQ-CIDR-06 — Relocate Subnet: запрещено при наличии Address                 [P1]
-`Relocate` Subnet, у которого есть internal Address-ресурсы → `FailedPrecondition "Invalid subnet state"` (verbatim YC).
-Без адресов → успех, `zone_id` обновляется. Без `destinationZoneId` → `InvalidArgument`.
+### REQ-CIDR-06 — Relocate Subnet: всегда запрещён                               [P1]
+`Relocate` Subnet → **всегда** sync `FailedPrecondition "Invalid subnet state"` (verbatim YC,
+probe 2026-05-11; kacho-vpc#10) — даже для свежей подсети без адресов и валидной целевой зоны;
+Operation не создаётся. Без `destinationZoneId` → sync `InvalidArgument`. Несуществующая подсеть → `NotFound`.
 - Validated-by: `*-REL-NEG-IN-USE`, `*-REL-STATE-NO-ADDRESSES-OK`, `*-REL-VAL-NO-DEST`
-- Agent-check: `internal/service/subnet.go` Relocate (`repo.AddressesBySubnet` check).
+- Agent-check: `internal/service/subnet.go` Relocate — после format-check id, валидации `destination_zone_id`, `repo.Get` → `return status.Error(codes.FailedPrecondition, "Invalid subnet state")`.
+
+### REQ-CIDR-07 — Subnet IPv4-префикс ≤ /28                                      [P2]
+Subnet с IPv4 CIDR-префиксом длиннее `/28` (`/29`, `/30`, `/31`, `/32`) → sync
+`InvalidArgument "Illegal argument Invalid network prefix /N"` (verbatim YC, probe 2026-05-11;
+kacho-vpc#10). Касается Create.v4_cidr_blocks и AddCidrBlocks. `/28` — допустимо.
+- Validated-by: `SUB-CR-BVA-CIDR-28`, `SUB-CR-BVA-CIDR-29`, `SUB-CR-BVA-CIDR-30`, `SUB-CR-BVA-CIDR-31`
+- Agent-check: `validateSubnetV4CIDR` в `internal/service/validate.go` (`prefix.Addr().Is4() && prefix.Bits() > 28`).
 
 ---
 
@@ -204,13 +216,15 @@ CIDR не из списка → `InvalidArgument`/`FailedPrecondition` (доку
 - Validated-by: `*-UPD-VAL-UNKNOWN-MASK`, `*-UPD-VAL-MASK-MULTIPLE-UNKNOWN`
 - Agent-check: `corevalidate.UpdateMask(known-set)` в `internal/service/*.go`.
 
-### REQ-UPD-03 — immutable поле в mask → InvalidArgument (verbatim text)         [P1]
-`Update` с immutable-полем в `update_mask` → `InvalidArgument "<field> is immutable after <Resource>.Create"`.
-Immutable по ресурсам: **все** — `folder_id`; **Subnet** — `v4_cidr_blocks`,`v6_cidr_blocks`,`network_id`,`zone_id`;
+### REQ-UPD-03 — hard-immutable поле в mask → InvalidArgument (verbatim text)     [P1]
+`Update` с hard-immutable-полем в `update_mask` → `InvalidArgument "<field> is immutable after <Resource>.Create"`.
+Hard-immutable по ресурсам: **все** — `folder_id`; **Subnet** — `network_id`,`zone_id`;
 **Address** — `external_ipv4_address_spec`,`internal_ipv4_address_spec`; **PrivateEndpoint** — `network_id`,`subnet_id`,`service_type`,`address_id`;
 **RouteTable/SecurityGroup** — `network_id`.
-- Validated-by: `*-UPD-STATE-IMMUTABLE-FOLDER`/`-FOLDER-ID`, `*-UPD-STATE-IMMUTABLE-CIDR`/`-V4-CIDR-BLOCKS`/`-V6-CIDR-BLOCKS`/`-NETWORK-ID`/`-ZONE-ID`, `*-UPD-STATE-IMMUTABLE-EXTERNAL-IPV4-ADDRESS-SPEC`/`-INTERNAL-IPV4-ADDRESS-SPEC`, `*-UPD-STATE-IMMUTABLE-SUBNET-ID`/`-SERVICE-TYPE`/`-ADDRESS-ID`
-- Agent-check: начало `Update` в `internal/service/*.go` — `switch field { case <immutable>: return invalidArg(...) }`; список immutable в `CLAUDE.md` §4.4 / `06-conventions.md`.
+Subnet `v4_cidr_blocks`/`v6_cidr_blocks` — **soft-immutable**: в mask → НЕ ошибка (verbatim YC
+`200`; kacho-vpc#10); у нас принимается, но `repo.Update` CIDR не перезаписывает → no-op.
+- Validated-by: `*-UPD-STATE-IMMUTABLE-FOLDER`/`-FOLDER-ID`, `SUB-UPD-STATE-IMMUTABLE-CIDR` (→ `200`), `*-UPD-STATE-IMMUTABLE-NETWORK-ID`/`-ZONE-ID`, `*-UPD-STATE-IMMUTABLE-EXTERNAL-IPV4-ADDRESS-SPEC`/`-INTERNAL-IPV4-ADDRESS-SPEC`, `*-UPD-STATE-IMMUTABLE-SUBNET-ID`/`-SERVICE-TYPE`/`-ADDRESS-ID`
+- Agent-check: начало `Update` в `internal/service/*.go` — `switch field { case <hard-immutable>: return invalidArg(...) }`; список в `CLAUDE.md` §4.4 / `06-conventions.md`; для Subnet НЕ должно быть `v4_cidr_blocks`/`v6_cidr_blocks` в reject-switch.
 
 ### REQ-UPD-04 — mask=<single mutable> → меняется только это поле                [P2]
 `Update` с `update_mask=name` (или одно mutable-поле) → меняется только оно; description/labels не трогаются.
@@ -420,10 +434,13 @@ REST-пути (`google.api.http` в `kacho-proto`): kebab у custom-методо
 - Validated-by: `*-MV-CRUD-OK`
 - Agent-check: `internal/service/*.go` doMove.
 
-### REQ-MOVE-02 — Move: destination NotFound / отсутствует                        [P1]
-`Move` в несуществующий folder → async `NOT_FOUND`. `Move` без `destination_folder_id` → sync `InvalidArgument`.
-- Validated-by: `*-MV-NEG-DEST-FOLDER-NF`, `*-MV-VAL-NO-DEST`
-- Agent-check: `internal/service/*.go` Move — sync required-check + worker folder-exists.
+### REQ-MOVE-02 — Move: destination / resource NotFound / отсутствует             [P1]
+`Move` в несуществующий folder → sync `NOT_FOUND "Folder with id <X> not found"` (kacho-vpc#8).
+`Move` без `destination_folder_id` → sync `InvalidArgument`. `Move` несуществующего ресурса
+(well-formed id) → sync `NOT_FOUND "<Resource> ... not found"` (kacho-vpc#10 — Move делает sync
+`repo.Get`). `Move` в текущий folder → см. REQ-RES-06.
+- Validated-by: `*-MV-NEG-DEST-FOLDER-NF`, `*-MV-VAL-NO-DEST`, `*-MV-AUTHZ-NF-SYNC`, `*-MV-CONF-NF-TEXT`
+- Agent-check: `internal/service/*.go` Move — sync `repo.Get` → `checkMoveDestination` ДО `operations.New`.
 
 ---
 

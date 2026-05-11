@@ -1466,6 +1466,7 @@ def load_cases_module(path: Path):
     mod.Case = Case
     mod.assert_status = assert_status
     mod.assert_grpc_code = assert_grpc_code
+    mod.assert_transcode_error = assert_transcode_error
     mod.assert_field_violation = assert_field_violation
     mod.save_from_response = save_from_response
     mod.assert_operation_envelope = assert_operation_envelope

@@ -91,16 +91,19 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="ADR-CR-VAL-BOTH-SPEC",
-    title="Create с обоими spec (external+internal) → InvalidArgument",
+    title="Create с обоими spec (external+internal) → 400 (тело: YC plain-text / наш JSON — defensive)",
     classes=["VAL"],
     priority="P0",
     steps=[
         *_make_net_sub("both", "10.101.0.0/24"),
+        # oneof address_spec задан дважды → ошибка JSON-transcoding. Verbatim YC
+        # отдаёт plain-text, наш api-gateway — JSON {code,message} (kacho-vpc#10,
+        # 07-known-divergences.md). Кейс defensive — 400 + непустое тело.
         Step(name="create-both", method="POST", path="/vpc/v1/addresses",
              body={"folderId": "{{_suiteFolderId}}", "name": "adr-bo-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"},
                    "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
-             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
+             test_script=[*assert_transcode_error()]),
         *_cleanup_sub_net(),
     ],
 ))
