@@ -18,7 +18,7 @@
 | 04 | [API Surface](04-api-surface.md) | Все RPC (public 59 + internal 29), REST endpoints, верстки путей |
 | 05 | [Database](05-database.md) | Схема pg-vpc, миграции (`0001_initial.sql` squashed baseline + `0002_resource_name_unique.sql`), ключевые constraints (EXCLUDE для CIDR, partial UNIQUE, JSONB GIN) |
 | 06 | [Conventions & Gotchas](06-conventions.md) | VPC-specific правила, error mapping, top-10 уроков из истории фиксов |
-| 07 | [Known divergences](07-known-divergences.md) | Осознанные расхождения с verbatim-YC / спорные решения (by-design — не баги; баги/задачи — в GitHub Issues) |
+| 07 | [Намеренные решения / расхождения с YC](07-known-divergences.md) | Осознанные поведенческие решения, которые могут удивить ревьюера — где расходимся с verbatim-YC или deliberately не делаем напрашивающегося (не баги; «корректно по спеке» — НЕ сюда; баги/задачи — в GitHub Issues) |
 | 09 | [Go skills applied](09-go-skills-applied.md) | Как применены практики code/test coaching; что закрыто рефакторингами |
 
 ## TL;DR — что это за сервис
