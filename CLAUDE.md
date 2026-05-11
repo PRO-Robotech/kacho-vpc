@@ -492,7 +492,7 @@ newman, k6, integration- или unit-тестах (или при ревью/пр
 
 ## 15. Top-10 gotchas (из истории фиксов)
 
-1. **Не валидировать UUID/id sync** — garbage id даёт async NotFound, не sync InvalidArgument (`ac61127`).
+1. **id sync-валидация** — well-formed-но-несуществующий id → `NotFound`. ⚠️ malformed / wrong-prefix id: реальный YC → `InvalidArgument "invalid <res> id '<X>'"` (probe 2026-05-11), у нас пока `NotFound` — расхождение, `kacho-vpc#7` / `docs/architecture/07-known-divergences.md`. (Старый gotcha «не валидировать id sync», `ac61127`, устарел — YC поменял поведение после перехода с UUID на `enp...`.)
 2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для
    Network/Subnet/Address/RouteTable/SG. Gateway — отдельный strict-контракт
    `corevalidate.NameGateway` (lowercase, без uppercase/underscore — verbatim YC).

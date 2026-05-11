@@ -874,8 +874,11 @@ cluster-internal listener api-gateway и не публикуются на TLS-en
 ### 8.4 ID format
 
 ID получается через `kacho-corelib/ids.NewID(prefix)` (см. таблицу в §5.1).
-Колонки — `TEXT`. Никакой sync UUID-валидации: garbage id даёт async
-`NOT_FOUND` (verbatim YC), а не sync `INVALID_ARGUMENT`.
+Колонки — `TEXT`. Текущая конвенция: синтаксис id sync НЕ валидируется — любой
+bad id (malformed или well-formed-absent) даёт `NOT_FOUND` через `repo.Get`.
+⚠️ Расходится с реальным YC (malformed/wrong-prefix id → sync `INVALID_ARGUMENT
+"invalid <res> id"`, probe 2026-05-11) — трекается в `kacho-vpc#7` (см.
+`docs/architecture/07-known-divergences.md`).
 
 ---
 
@@ -1311,7 +1314,7 @@ baseline в `tests/k6/results/BASELINE.md`.)
 | Idempotent Allocate | Повторный Allocate того же address — same IP, `already_allocated=true` |
 | Outbox TX atomicity | Если worker падает между INSERT ресурса и `emitVPC`, оба откатываются (одна TX) |
 | Watch resume | Перезапуск подписчика с сохранённым cursor не пропускает события |
-| garbage id | `GET /networks/garbageId` возвращает `NOT_FOUND` (async через repo.Get), а не sync `INVALID_ARGUMENT` |
+| garbage id | сейчас: `GET /networks/garbageId` → `NOT_FOUND` (через `repo.Get`). ⚠️ Реальный YC: malformed/wrong-prefix id → sync `INVALID_ARGUMENT "invalid <res> id"` (probe 2026-05-11) — расхождение, `kacho-vpc#7` |
 | timestamp truncation | Все `created_at` в proto-response обрезаны до секунд |
 | empty mask | `UpdateNetwork` с пустой mask применяет mutable поля и игнорирует immutable из body (verbatim YC) |
 | Operation response type | `Delete*` возвращают `Operation` с `response = google.protobuf.Empty` (а не `Delete*Metadata`) |

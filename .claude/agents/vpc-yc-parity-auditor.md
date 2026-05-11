@@ -88,7 +88,8 @@ Gateway).
 | Сценарий                            | gRPC code              | Источник кода                          |
 |-------------------------------------|------------------------|------------------------------------|
 | Resource не найден (any)            | `NOT_FOUND`            | `mapRepoErr(ErrNotFound)`              |
-| Garbage id на входе                 | `NOT_FOUND` (async)    | repo.Get отвечает; **NE sync InvalidArgument** |
+| Malformed / wrong-prefix id         | YC: `INVALID_ARGUMENT "invalid <res> id"` (probe 2026-05-11); мы пока `NOT_FOUND` | расхождение `kacho-vpc#7` — sync id-validation = target |
+| Well-formed id, ресурс отсутствует  | `NOT_FOUND`            | `repo.Get` → NotFound (sync для Get/Update/Delete/Move) |
 | CIDR overlap                        | `FAILED_PRECONDITION`  | `e015191`, `wrapPgErr` 23P01           |
 | CIDR host-bits ≠ 0                  | `INVALID_ARGUMENT`     | `validateCIDRPrefix`                   |
 | Cannot remove last CIDR             | `FAILED_PRECONDITION`  | `subnet.go:476`                        |
@@ -149,10 +150,17 @@ YC verbatim semantics:
 - **Async** (внутри Operation worker): existence checks (folder, network),
   FK violations, CIDR overlap (DB EXCLUDE), UNIQUE violations.
 
-- [ ] **Не валидировать garbage UUID синхронно** — async через repo.Get
-  → NotFound. Источник: `ac61127`. Если видишь sync-проверку UUID — Critical.
-- [ ] **Не проверять folder.exists синхронно** — async. Если folder absent,
-  NotFound приходит из worker'а. Источник: `ac61127`.
+- [ ] **id-syntax sync-валидация** — реальный YC sync-валидирует синтаксис/prefix id:
+  `update`/`get` с malformed/wrong-prefix id → `InvalidArgument "invalid <res> id '<X>'"`
+  (probe 2026-05-11); well-formed-но-несуществующий → `NotFound`. Это YC-aligned target.
+  ⚠️ **Текущий код пока НЕ валидирует** id sync → возвращает `NotFound` на любой bad id
+  (исторический gotcha `ac61127` «не валидировать sync» устарел — YC поменял поведение).
+  Расхождение трекается в `kacho-vpc#7`. **НЕ флагай sync id-validation как violation** —
+  наоборот, её добавление = closing #7.
+- [ ] **folder.exists для Create — async** (внутри Operation worker): если folder absent,
+  `NotFound` приходит из worker'а (наш design — Create всегда возвращает Operation). Для
+  `update`/`delete`/`move` существование самого ресурса проверяется **sync** перед созданием
+  Operation (AuthZ невозможен без folder ресурса) → sync `NotFound`/`PERMISSION_DENIED`.
 - [ ] **Sync-валидация CIDR host-bits** — обязательно (UI shows error
   immediately).
 
@@ -261,7 +269,7 @@ YC verbatim semantics:
 1. ☐ proto-options: `metadata` и `response` правильные?
 2. ☐ Service: sync-валидация полей (regex/length/whitelist) выполняется ДО
    `operations.New`?
-3. ☐ Service: garbage-id format **НЕ** валидируется sync?
+3. ☐ Service: id-syntax валидируется sync → `InvalidArgument "invalid <res> id"`? (YC-aligned; текущий код пока нет — `kacho-vpc#7`. НЕ требуй обратного.)
 4. ☐ Worker: folder.Exists check + правильный verbatim text?
 5. ☐ Worker: возвращает `domainXxxToProto(...)` через anypb?
 6. ☐ Worker: Delete возвращает Empty?

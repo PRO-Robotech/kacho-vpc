@@ -271,8 +271,13 @@ operations.Run(ctx, opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error
 
 - **Sync (до Operation.New)**: format validation (regex, length, whitelist), required fields, deletion_protection, immutable mask check.
 - **Async (внутри worker)**: existence checks (folder, network), FK violations, EXCLUDE constraint (CIDR overlap), UNIQUE name violation.
-- **НЕ валидировать garbage UUID синхронно** — async через `repo.Get` → `NotFound` (verbatim YC).
-- **НЕ проверять folder.Exists синхронно** — async через `folderClient.Exists` в worker.
+- **id-валидация**: текущая конвенция — синтаксис id sync НЕ проверяем; malformed и well-formed-absent
+  одинаково → `NotFound` через `repo.Get`. ⚠️ Расходится с реальным YC (malformed/wrong-prefix → sync
+  `InvalidArgument "invalid <res> id"`, probe 2026-05-11) — трекается в `kacho-vpc#7`. Пока #7 не закрыт —
+  держи консистентность (`NotFound`); фикс #7 = добавить sync id-syntax-check во все RPC, берущие id.
+- **НЕ проверять folder.Exists синхронно для Create** — async через `folderClient.Exists` в worker.
+  (Для `update`/`delete`/`move` существование самого ресурса проверяется sync — `repo.Get` до Operation.New —
+  иначе невозможен AuthZ; см. `docs/architecture/07-known-divergences.md`.)
 
 ### 9.4 Optimistic concurrency для read-modify-write
 

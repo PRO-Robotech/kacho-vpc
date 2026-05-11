@@ -41,7 +41,7 @@ Workspace-уровень — в `kacho-workspace/docs/architecture/07-convention
 
 Specific:
 - CIDR overlap (PG `23P01` от EXCLUDE) → `FailedPrecondition` `"Subnet CIDRs can not overlap"`.
-- Garbage UUID format в id → **NE** sync InvalidArgument; async через `repo.Get` → `NotFound`.
+- Garbage / malformed id → пока `NotFound` через `repo.Get` (исторически — «не валидируем синтаксис sync», `ac61127`). ⚠️ Реальный YC сейчас → `InvalidArgument "invalid <res> id"` (probe 2026-05-11) — расхождение, `kacho-vpc#7`.
 - Duplicate name (UNIQUE `23505`) → `ALREADY_EXISTS`.
 - `addresses_external_pool_ip_uniq` violation → должна быть `RetryableInternal`, allocator её ловит и пытается заново.
 
@@ -129,7 +129,7 @@ Zero-overhead, миграция не нужна.
 
 ## Top-10 gotchas (из истории фиксов)
 
-1. **Не валидировать UUID/id sync** — garbage id даёт **async** NotFound, не sync InvalidArgument (verbatim YC, `ac61127`).
+1. **id sync-валидация** — well-formed-но-несуществующий id → `NotFound` (как сейчас). ⚠️ malformed / wrong-prefix id: реальный YC отдаёт `InvalidArgument "invalid <res> id '<X>'"` (probe 2026-05-11), у нас пока `NotFound` через `repo.Get` — известное расхождение (`kacho-vpc#7`, см. `07-known-divergences.md`). Старый gotcha «никогда не валидировать id sync» (`ac61127`) устарел — YC поменял поведение после перехода с UUID на `enp...`-формат.
 2. **NameVPC permissive, не strict** — empty/uppercase/underscore разрешены для Network/Subnet/Address/RouteTable/SG. Gateway — strict (`corevalidate.NameGateway`: lowercase, без uppercase/underscore — verbatim YC).
 3. **CIDR overlap** = `FailedPrecondition`, не `InvalidArgument` (`e015191`).
 4. **CIDR host-bits=0** обязательно, sync через `netip.Prefix.Masked()`.
