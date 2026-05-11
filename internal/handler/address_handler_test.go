@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,199 +11,15 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 func makeAddressService() (*svc.AddressService, *mockOpsRepo) {
-	ar := &mockAddressRepo{data: make(map[string]*domain.Address)}
-	sr := &mockSubnetRepo{data: make(map[string]*domain.Subnet)}
+	ar := portmock.NewAddressRepo()
+	sr := portmock.NewSubnetRepo()
 	or := newMockOpsRepo()
-	return svc.NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil), or
-}
-
-type mockAddressRepo struct {
-	mu   sync.Mutex
-	data map[string]*domain.Address
-}
-
-func (r *mockAddressRepo) Get(_ context.Context, id string) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	a, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return a, nil
-}
-
-func (r *mockAddressRepo) List(_ context.Context, f svc.AddressFilter, _ svc.Pagination) ([]*domain.Address, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var result []*domain.Address
-	for _, a := range r.data {
-		if f.FolderID == "" || a.FolderID == f.FolderID {
-			result = append(result, a)
-		}
-	}
-	return result, "", nil
-}
-
-func (r *mockAddressRepo) Insert(_ context.Context, a *domain.Address) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[a.ID] = a
-	return a, nil
-}
-
-func (r *mockAddressRepo) Update(_ context.Context, a *domain.Address) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.data[a.ID]; !ok {
-		return nil, svc.ErrNotFound
-	}
-	r.data[a.ID] = a
-	return a, nil
-}
-
-func (r *mockAddressRepo) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.data[id]; !ok {
-		return svc.ErrNotFound
-	}
-	delete(r.data, id)
-	return nil
-}
-
-func (r *mockAddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, a := range r.data {
-		if a.ExternalIpv4 != nil && a.ExternalIpv4.Address == ip {
-			return true, nil
-		}
-		if a.InternalIpv4 != nil && a.InternalIpv4.Address == ip {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (r *mockAddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, a := range r.data {
-		if ext != "" && a.ExternalIpv4 != nil && a.ExternalIpv4.Address == ext {
-			return a, nil
-		}
-		if intl != "" && a.InternalIpv4 != nil && a.InternalIpv4.Address == intl {
-			return a, nil
-		}
-	}
-	return nil, svc.ErrNotFound
-}
-
-// SetIPSpec — mock-stub.
-func (r *mockAddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	a, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	if ext != nil {
-		a.ExternalIpv4 = ext
-	}
-	if intn != nil {
-		a.InternalIpv4 = intn
-	}
-	return a, nil
-}
-
-func (r *mockAddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	a, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	a.FolderID = folderID
-	return a, nil
-}
-
-type mockSubnetRepo struct {
-	mu   sync.Mutex
-	data map[string]*domain.Subnet
-}
-
-func (r *mockSubnetRepo) Get(_ context.Context, id string) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	s, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return s, nil
-}
-
-func (r *mockSubnetRepo) List(_ context.Context, _ svc.SubnetFilter, _ svc.Pagination) ([]*domain.Subnet, string, error) {
-	return nil, "", nil
-}
-
-func (r *mockSubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[s.ID] = s
-	return s, nil
-}
-
-func (r *mockSubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[s.ID] = s
-	return s, nil
-}
-
-func (r *mockSubnetRepo) Delete(_ context.Context, id string) error {
-	return nil
-}
-
-func (r *mockSubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	s, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	s.FolderID = folderID
-	return s, nil
-}
-
-func (r *mockSubnetRepo) SetCidrBlocks(_ context.Context, id string, v4 []string) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	s, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	s.V4CidrBlocks = v4
-	return s, nil
-}
-
-func (r *mockSubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.Subnet, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	s, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	s.ZoneID = zoneID
-	return s, nil
-}
-
-func (r *mockSubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ svc.Pagination) ([]*domain.Address, string, error) {
-	return nil, "", nil
+	return svc.NewAddressService(ar, sr, newMockFolderClient(true), or, nil), or
 }
 
 func TestAddressHandler_Get_InvalidArg(t *testing.T) {

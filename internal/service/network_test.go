@@ -12,7 +12,7 @@ import (
 )
 
 func TestNetworkService_Get_NotFound(t *testing.T) {
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, newMockOpsRepo())
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), newMockOpsRepo())
 	_, err := svc.Get(context.Background(), "nonexistent")
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -21,7 +21,7 @@ func TestNetworkService_Get_NotFound(t *testing.T) {
 }
 
 func TestNetworkService_Create_ValidationError(t *testing.T) {
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, newMockOpsRepo())
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), newMockOpsRepo())
 
 	// Пустой folder_id
 	_, err := svc.Create(context.Background(), CreateNetworkReq{Name: "test"})
@@ -40,7 +40,7 @@ func TestNetworkService_Create_ValidationError(t *testing.T) {
 
 func TestNetworkService_Create_FolderNotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: false}, or)
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(false), or)
 	op, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1"})
 	require.NoError(t, err) // Operation создаётся, ошибка внутри goroutine
 	require.NotNil(t, op)
@@ -50,7 +50,7 @@ func TestNetworkService_Create_FolderNotFound(t *testing.T) {
 func TestNetworkService_Create_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	svc := NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
+	svc := NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or)
 
 	op, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1", Description: "desc"})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestNetworkService_Create_OK(t *testing.T) {
 }
 
 func TestNetworkService_List_Empty(t *testing.T) {
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, newMockOpsRepo())
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), newMockOpsRepo())
 	nets, token, err := svc.List(context.Background(), NetworkFilter{FolderID: "f1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Empty(t, nets)
@@ -70,7 +70,7 @@ func TestNetworkService_List_Empty(t *testing.T) {
 }
 
 func TestNetworkService_Delete_ValidationError(t *testing.T) {
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, &mockFolderClient{exists: true}, newMockOpsRepo())
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), newMockOpsRepo())
 	_, err := svc.Delete(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -83,7 +83,7 @@ func TestNetworkService_Delete_ValidationError(t *testing.T) {
 func TestNetworkService_Delete_ResponseIsEmpty(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	svc := NewNetworkService(nr, nil, nil, nil, &mockFolderClient{exists: true}, or)
+	svc := NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or)
 
 	createOp, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "del-resp-test"})
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func TestNetworkService_Delete_ResponseIsEmpty(t *testing.T) {
 func TestNetworkService_Update_MaskApplication(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	folderClient := &mockFolderClient{exists: true}
+	folderClient := newMockFolderClient(true)
 	svc := NewNetworkService(nr, nil, nil, nil, folderClient, or)
 
 	// Создаём сеть

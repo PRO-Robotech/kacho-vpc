@@ -27,7 +27,7 @@ func TestSubnetService_Create_ValidationError(t *testing.T) {
 	nr := newMockNetworkRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	// Пустой network_id
 	_, err := svc.Create(context.Background(), CreateSubnetReq{FolderID: "f1", Name: "sub1"})
@@ -41,7 +41,7 @@ func TestSubnetService_Create_OK(t *testing.T) {
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:     "f1",
@@ -68,7 +68,7 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 	nr := newMockNetworkRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:     "f1",
@@ -92,7 +92,7 @@ func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:     "f1",

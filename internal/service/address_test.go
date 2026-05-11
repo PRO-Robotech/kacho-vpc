@@ -29,7 +29,7 @@ func TestAddressService_Create_NoSpec(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	_, err := svc.Create(context.Background(), CreateAddressReq{FolderID: "f1"})
 	require.Error(t, err)
@@ -41,7 +41,7 @@ func TestAddressService_Create_External_OK(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -70,7 +70,7 @@ func TestAddressService_Create_External_NoAutoAlloc(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	// Без явного адреса — service остаётся pure: address.address пуст.
 	// Аллокация — задача kacho-vpc-controllers (allocator reconciler-loop).
@@ -97,7 +97,7 @@ func TestAddressService_Create_Internal_WithSubnet(t *testing.T) {
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	sub := makeSubnet(sr, ids.NewUID())
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -124,7 +124,7 @@ func TestAddressService_Create_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	sub := makeSubnet(sr, ids.NewUID()) // 10.0.0.0/24
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	_, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -145,7 +145,7 @@ func TestAddressService_Create_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	sub := makeSubnet(sr, ids.NewUID()) // 10.0.0.0/24
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -166,7 +166,7 @@ func TestAddressService_Create_Internal_ExplicitIP_SubnetNotFound_Async(t *testi
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	op, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -188,7 +188,7 @@ func TestAddressService_Create_Internal_ExplicitIP_BadFormat(t *testing.T) {
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	sub := makeSubnet(sr, ids.NewUID())
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	_, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
@@ -206,7 +206,7 @@ func TestAddressService_Update_DeletionProtection(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateAddressReq{
 		FolderID:     "f1",
@@ -235,7 +235,7 @@ func TestAddressService_Delete_NotFound(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	// Delete теперь делает sync Get для проверки deletion_protection,
 	// поэтому NotFound возвращается синхронно, а не внутри goroutine.
@@ -263,7 +263,7 @@ func TestAddressService_Delete_DeletionProtection(t *testing.T) {
 	}
 	_, _ = ar.Insert(context.Background(), a)
 
-	svc := NewAddressService(ar, sr, &mockFolderClient{exists: true}, or, nil)
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
 	// Sync FAILED_PRECONDITION; Operation НЕ создаётся.
 	_, err := svc.Delete(context.Background(), addrID)

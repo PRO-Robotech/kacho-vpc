@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,60 +19,15 @@ import (
 
 // Этот файл — happy-path и error-path handler-тесты для остальных методов
 // (Move/AddCidrBlocks/RemoveCidrBlocks/Relocate/ListUsedAddresses/UpdateRules/
-// UpdateRule/PrivateEndpoint*).
-
-// ---- minimal mock PE repo ----
-
-type mockPERepoForSvc struct {
-	mu   sync.Mutex
-	data map[string]*domain.PrivateEndpoint
-}
-
-func newMockPERepoForSvc() *mockPERepoForSvc {
-	return &mockPERepoForSvc{data: make(map[string]*domain.PrivateEndpoint)}
-}
-
-func (r *mockPERepoForSvc) Get(_ context.Context, id string) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	p, ok := r.data[id]
-	if !ok {
-		return nil, svc.ErrNotFound
-	}
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) List(_ context.Context, _ svc.PrivateEndpointFilter, _ svc.Pagination) ([]*domain.PrivateEndpoint, string, error) {
-	return nil, "", nil
-}
-
-func (r *mockPERepoForSvc) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
-}
-
-func (r *mockPERepoForSvc) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.data, id)
-	return nil
-}
+// UpdateRule/PrivateEndpoint*). Fake-реализации port-ов — в
+// `internal/ports/portmock` (shim — в mock_test.go).
 
 // ---- Subnet handler — Move / AddCidrBlocks / RemoveCidrBlocks / Relocate / ListUsedAddresses ----
 
 func TestSubnetHandler_Move_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -82,7 +36,7 @@ func TestSubnetHandler_Move_Validates(t *testing.T) {
 func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.AddCidrBlocks(context.Background(), &vpcv1.AddSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -91,7 +45,7 @@ func TestSubnetHandler_AddCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.RemoveCidrBlocks(context.Background(), &vpcv1.RemoveSubnetCidrBlocksRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -100,7 +54,7 @@ func TestSubnetHandler_RemoveCidrBlocks_Validates(t *testing.T) {
 func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.Relocate(context.Background(), &vpcv1.RelocateSubnetRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -109,7 +63,7 @@ func TestSubnetHandler_Relocate_Validates(t *testing.T) {
 func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 	sr := newMockSubnetRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or, nil))
+	h := NewSubnetHandler(svc.NewSubnetService(sr, newMockNetworkRepo(), newMockFolderClient(true), or, nil))
 	_, err := h.ListUsedAddresses(context.Background(), &vpcv1.ListUsedAddressesRequest{SubnetId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -145,7 +99,7 @@ func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 func TestRouteTableHandler_Move_Validates(t *testing.T) {
 	rtr := newMockRouteTableRepoForSvc()
 	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), &mockFolderClient{exists: true}, or))
+	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
 	_, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -274,7 +228,7 @@ func TestRuleSpecFromProto_Predefined(t *testing.T) {
 func makePEService(t *testing.T) *svc.PrivateEndpointService {
 	t.Helper()
 	or := newMockOpsRepo()
-	return svc.NewPrivateEndpointService(newMockPERepoForSvc(), &mockFolderClient{exists: true}, newMockNetworkRepo(), newMockSubnetRepoForSvc(), or)
+	return svc.NewPrivateEndpointService(newMockPERepoForSvc(), newMockFolderClient(true), newMockNetworkRepo(), newMockSubnetRepoForSvc(), or)
 }
 
 func TestPrivateEndpointHandler_Get_InvalidArg(t *testing.T) {
@@ -372,7 +326,7 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 func TestNetworkHandler_Update_Happy(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, &mockFolderClient{exists: true}, or)
+	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, newMockFolderClient(true), or)
 	h := NewNetworkHandler(networkSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
@@ -422,7 +376,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	netID := ids.NewUID()
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	subnetSvc := svc.NewSubnetService(sr, nr, &mockFolderClient{exists: true}, or, nil)
+	subnetSvc := svc.NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 	h := NewSubnetHandler(subnetSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
@@ -471,7 +425,7 @@ func TestRouteTableHandler_FullFlow(t *testing.T) {
 	netID := ids.NewUID()
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	rtSvc := svc.NewRouteTableService(rtr, nr, &mockFolderClient{exists: true}, or)
+	rtSvc := svc.NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
 	h := NewRouteTableHandler(rtSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateRouteTableRequest{
@@ -516,7 +470,7 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	netID := ids.NewUID()
 	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
 
-	sgSvc := svc.NewSecurityGroupService(sgRepo, nr, &mockFolderClient{exists: true}, or)
+	sgSvc := svc.NewSecurityGroupService(sgRepo, nr, newMockFolderClient(true), or)
 	h := NewSecurityGroupHandler(sgSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSecurityGroupRequest{
