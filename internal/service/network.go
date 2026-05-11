@@ -169,6 +169,23 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 		return nil, err
 	}
 
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation is created (clients get a sync gRPC error, not a 200+Operation
+	// that fails async). The async copies in doCreate stay as the atomic
+	// backstop. См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, NetworkFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Network with name %s already exists", req.Name)
+		}
+	}
+
 	netID := ids.NewID(ids.PrefixNetwork)
 	op, err := operations.New(
 		ids.PrefixOperationVPC,
@@ -377,6 +394,10 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
+	// Verbatim YC: destination folder existence is a sync precondition.
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
+	}
 
 	op, err := operations.New(
 		ids.PrefixOperationVPC,
@@ -416,6 +437,12 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
+	// Verbatim YC: a Network with children (subnets / route tables / non-default
+	// security groups) can not be deleted — sync FAILED_PRECONDITION. The async
+	// FK RESTRICT path in the worker stays as the atomic backstop. См. kacho-vpc#8.
+	if err := s.checkNetworkEmpty(ctx, id); err != nil {
+		return nil, err
+	}
 
 	op, err := operations.New(
 		ids.PrefixOperationVPC,
@@ -445,6 +472,46 @@ func (s *NetworkService) Delete(ctx context.Context, id string) (*operations.Ope
 	})
 
 	return &op, nil
+}
+
+// checkNetworkEmpty — sync FAILED_PRECONDITION if the network still has
+// subnets / route tables / non-default security groups (verbatim YC text:
+// "Network <id> is not empty"). repo-handles may be nil in test wiring → skip
+// that child class. См. kacho-vpc#8.
+func (s *NetworkService) checkNetworkEmpty(ctx context.Context, networkID string) error {
+	notEmpty := func() error {
+		return status.Errorf(codes.FailedPrecondition, "Network %s is not empty", networkID)
+	}
+	if s.subnetRepo != nil {
+		subs, _, err := s.subnetRepo.List(ctx, SubnetFilter{NetworkID: networkID}, Pagination{})
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if len(subs) > 0 {
+			return notEmpty()
+		}
+	}
+	if s.routeTableRepo != nil {
+		rts, _, err := s.routeTableRepo.List(ctx, RouteTableFilter{NetworkID: networkID}, Pagination{})
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if len(rts) > 0 {
+			return notEmpty()
+		}
+	}
+	if s.sgRepo != nil {
+		sgs, _, err := s.sgRepo.List(ctx, SecurityGroupFilter{NetworkID: networkID}, Pagination{})
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		for _, sg := range sgs {
+			if !sg.DefaultForNetwork {
+				return notEmpty()
+			}
+		}
+	}
+	return nil
 }
 
 // Используется в worker-goroutines для формирования Operation.Response.

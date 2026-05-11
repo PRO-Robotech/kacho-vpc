@@ -263,19 +263,15 @@ CASES.append(list_pagesize_1_bva("SG", "/vpc/v1/securityGroups"))
 
 CASES.append(Case(
     id="SG-CR-CONF-NET-NF-TEXT",
-    title="Create SG в garbage network → verbatim 'Network ... not found'",
+    title="Create SG в garbage network → sync verbatim 'Network ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/securityGroups",
              body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                    "name": "sg-confnf-{{runId}}", "ruleSpecs": []},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Network ... not found', () => pm.expect(j.error.message).to.match(/^Network .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));",
              ]),
     ],
 ))

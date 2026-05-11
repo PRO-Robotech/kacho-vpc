@@ -449,20 +449,27 @@ def pagination_roundtrip(prefix, list_path):
 
 
 def idempotency_block(prefix, create_path, name_template, body_extra=None):
-    """Idempotency-style: повторный Create same name → consistent behavior."""
+    """Повторный Create same name → 409 ALREADY_EXISTS (verbatim-YC, kacho-vpc#8 — не идемпотентно).
+
+    Первый Create OK, второй с тем же name → sync 409 ALREADY_EXISTS.
+    """
     body_extra = body_extra or {}
     return Case(
         id=f"{prefix}-CR-IDM-RETRY",
-        title="Retry-safe: повторный Create same input → consistent result",
-        classes=["IDM", "CONC"], priority="P1",
+        title="Повторный Create same name → 409 ALREADY_EXISTS (sync, kacho-vpc#8)",
+        classes=["IDM", "CONC", "NEG"], priority="P1",
         steps=[
             Step(name="cr-1", method="POST", path=create_path,
                  body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
-                 test_script=[*assert_status(200), *save_from_response("j.id", "opId1")]),
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId1"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "idmCreatedId")]),
             Step(name="poll-1", method="GET", path="/operations/{{opId1}}",
                  test_script=["pm.test('done eventually', () => { const j = pm.response.json(); pm.expect([true,false]).to.include(j.done); });"]),
             Step(name="cr-2", method="POST", path=create_path,
                  body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
+                              "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));"]),
+            Step(name="cleanup", method="DELETE", path=f"{create_path}/{{{{idmCreatedId}}}}",
                  test_script=[*assert_status(200)]),
         ],
     )
@@ -775,10 +782,10 @@ def malformed_body_block(prefix, create_path):
 
 
 def alreadyexists_dup_name_for(prefix, create_path, body_create):
-    """Tests duplicate name → ALREADY_EXISTS (где есть UNIQUE constraint)."""
+    """Создать дубль с тем же name → sync 409 ALREADY_EXISTS (verbatim-YC, kacho-vpc#8)."""
     return Case(
         id=f"{prefix}-CR-NEG-DUP-NAME-CHECK",
-        title="Создать дубль с тем же name → проверить ALREADY_EXISTS или silent (FINDING)",
+        title="Создать дубль с тем же name → sync 409 ALREADY_EXISTS (kacho-vpc#8)",
         classes=["NEG", "CONC"], priority="P1",
         steps=[
             Step(name="cr-first", method="POST", path=create_path,
@@ -789,28 +796,12 @@ def alreadyexists_dup_name_for(prefix, create_path, body_create):
                  test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
             Step(name="cr-dup", method="POST", path=create_path,
                  body={**body_create, "name": f"{prefix.lower()}-dupck-{{{{runId}}}}"},
-                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
-                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "secondId")]),
-            Step(name="poll-dup", method="GET", path="/operations/{{opId}}",
-                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
-            Step(name="check-result", method="GET", path="/operations/{{opId}}",
-                 test_script=[
-                     "const j = pm.response.json();",
-                     "// Если UNIQUE есть — j.error.code===6; если нет — silent success.",
-                     "pm.test('result is either ALREADY_EXISTS or success', () => {",
-                     "  const hasError = j.error && (j.error.code === 6 || j.error.code === 9);  // ALREADY_EXISTS или FailedPrecondition (CIDR overlap)",
-                     "  const hasResponse = !j.error && j.response;",
-                     "  pm.expect(Boolean(hasError || hasResponse)).to.eql(true);",
-                     "});",
-                 ]),
+                 test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
+                              "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));"]),
             Step(name="cleanup-first", method="DELETE", path=f"{create_path}/{{{{firstId}}}}",
                  test_script=[*save_from_response("j.id", "opId")]),
             Step(name="poll-c1", method="GET", path="/operations/{{opId}}",
                  test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
-            Step(name="cleanup-second-if-different", method="DELETE",
-                 path=f"{create_path}/{{{{secondId}}}}",
-                 test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
-                              *save_from_response("j.id", "opId")]),
         ],
     )
 
@@ -1321,11 +1312,11 @@ def authz_caller_headers_block(prefix, list_path):
 
 
 def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None):
-    """CONF: AlreadyExists text при duplicate name."""
+    """CONF: sync 409 ALREADY_EXISTS text при duplicate name (verbatim-YC, kacho-vpc#8)."""
     body_extra = body_extra or {}
     return Case(
         id=f"{prefix}-CR-CONF-ALREADY-EXISTS",
-        title="Create duplicate name → verbatim ALREADY_EXISTS текст",
+        title="Create duplicate name → sync 409 verbatim ALREADY_EXISTS текст (kacho-vpc#8)",
         classes=["CONF", "NEG"], priority="P1",
         steps=[
             Step(name="create-first", method="POST", path=create_path,
@@ -1335,14 +1326,11 @@ def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None
             poll_operation_until_done(),
             Step(name="create-dup", method="POST", path=create_path,
                  body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
-                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+                 test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
+                              "pm.test('verbatim with name ... already exists', () => pm.expect(pm.response.json().message).to.match(/ with name .* already exists$/));"]),
+            Step(name="cleanup-first", method="DELETE", path=f"{create_path}/{{{{createdId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
             poll_operation_until_done(),
-            Step(name="assert-text", method="GET", path="/operations/{{opId}}",
-                 test_script=[
-                     "const j = pm.response.json();",
-                     "pm.test('error code 6 ALREADY_EXISTS', () => pm.expect(j.error && j.error.code).to.eql(6));",
-                     "pm.test('message non-empty', () => pm.expect(j.error.message).to.be.a('string').and.length.greaterThan(0));",
-                 ]),
         ],
     )
 

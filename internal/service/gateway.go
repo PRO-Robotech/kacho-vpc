@@ -85,6 +85,22 @@ func (s *GatewayService) Create(ctx context.Context, req CreateGatewayReq) (*ope
 		return nil, err
 	}
 
+	// Verbatim YC: folder existence + name uniqueness are sync preconditions,
+	// checked BEFORE the Operation. The async folder check in doCreate stays as
+	// a defensive backstop. См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, GatewayFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Gateway with name %s already exists", req.Name)
+		}
+	}
+
 	gwID := ids.NewID(ids.PrefixGateway)
 	op, err := operations.New(
 		ids.PrefixOperationVPC,
@@ -269,6 +285,9 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 	}
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
 	}
 	op, err := operations.New(
 		ids.PrefixOperationVPC,

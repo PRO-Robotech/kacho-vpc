@@ -45,7 +45,8 @@ func (r *NetworkRepo) List(_ context.Context, f ports.NetworkFilter, _ ports.Pag
 	defer r.mu.Unlock()
 	var result []*domain.Network
 	for _, n := range r.data {
-		if f.FolderID == "" || n.FolderID == f.FolderID {
+		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
+			(f.Name == "" || n.Name == f.Name) {
 			result = append(result, n)
 		}
 	}
@@ -115,7 +116,8 @@ func (r *SubnetRepo) List(_ context.Context, f ports.SubnetFilter, _ ports.Pagin
 	var result []*domain.Subnet
 	for _, s := range r.data {
 		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
-			(f.NetworkID == "" || s.NetworkID == f.NetworkID) {
+			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
+			(f.Name == "" || s.Name == f.Name) {
 			result = append(result, s)
 		}
 	}
@@ -217,7 +219,8 @@ func (r *AddressRepo) List(_ context.Context, f ports.AddressFilter, _ ports.Pag
 	defer r.mu.Unlock()
 	var result []*domain.Address
 	for _, a := range r.data {
-		if f.FolderID == "" || a.FolderID == f.FolderID {
+		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
+			(f.Name == "" || a.Name == f.Name) {
 			result = append(result, a)
 		}
 	}
@@ -334,7 +337,8 @@ func (r *RouteTableRepo) List(_ context.Context, f ports.RouteTableFilter, _ por
 	var result []*domain.RouteTable
 	for _, rt := range r.data {
 		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
-			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) {
+			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
+			(f.Name == "" || rt.Name == f.Name) {
 			result = append(result, rt)
 		}
 	}
@@ -409,6 +413,9 @@ func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter,
 			continue
 		}
 		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
+			continue
+		}
+		if f.Name != "" && sg.Name != f.Name {
 			continue
 		}
 		out = append(out, sg)
@@ -495,6 +502,9 @@ func (r *GatewayRepo) List(_ context.Context, f ports.GatewayFilter, _ ports.Pag
 		if f.FolderID != "" && g.FolderID != f.FolderID {
 			continue
 		}
+		if f.Name != "" && g.Name != f.Name {
+			continue
+		}
 		out = append(out, g)
 	}
 	return out, "", nil
@@ -559,6 +569,9 @@ func (r *PrivateEndpointRepo) List(_ context.Context, f ports.PrivateEndpointFil
 	var out []*domain.PrivateEndpoint
 	for _, p := range r.data {
 		if f.FolderID != "" && p.FolderID != f.FolderID {
+			continue
+		}
+		if f.Name != "" && p.Name != f.Name {
 			continue
 		}
 		out = append(out, p)

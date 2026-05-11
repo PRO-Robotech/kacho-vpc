@@ -58,6 +58,11 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 		args = append(args, f.NetworkID)
 		argIdx++
 	}
+	if f.Name != "" {
+		conditions = append(conditions, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, f.Name)
+		argIdx++
+	}
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name"})
 		if perr != nil {

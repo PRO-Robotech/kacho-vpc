@@ -26,8 +26,12 @@ type Pagination struct {
 }
 
 // NetworkFilter — фильтр для списка сетей.
+//
+// Name — точное совпадение имени (для sync uniqueness-check в Create; verbatim
+// YC `name=...` semantics, но без парсинга filter-выражения). См. kacho-vpc#8.
 type NetworkFilter struct {
 	FolderID string
+	Name     string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`).
 	// Парсится в repo с whitelist allowedFields=["name"].
 	Filter string
@@ -37,12 +41,14 @@ type NetworkFilter struct {
 type SubnetFilter struct {
 	FolderID  string
 	NetworkID string
+	Name      string
 	Filter    string // raw filter expression (YC-syntax)
 }
 
 // AddressFilter — фильтр для списка адресов.
 type AddressFilter struct {
 	FolderID string
+	Name     string
 	Filter   string
 }
 
@@ -50,6 +56,7 @@ type AddressFilter struct {
 type RouteTableFilter struct {
 	FolderID  string
 	NetworkID string
+	Name      string
 	Filter    string
 }
 
@@ -57,18 +64,21 @@ type RouteTableFilter struct {
 type SecurityGroupFilter struct {
 	FolderID  string
 	NetworkID string
+	Name      string
 	Filter    string
 }
 
 // GatewayFilter — фильтр для списка NAT Gateways.
 type GatewayFilter struct {
 	FolderID string
+	Name     string
 	Filter   string
 }
 
 // PrivateEndpointFilter — фильтр для списка PrivateEndpoints.
 type PrivateEndpointFilter struct {
 	FolderID string
+	Name     string
 	Filter   string
 }
 

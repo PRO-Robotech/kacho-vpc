@@ -107,17 +107,15 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="ADR-CR-NEG-SUBNET-NOT-FOUND",
-    title="Create internal с garbage subnetId → async NotFound",
+    title="Create internal с garbage subnetId → sync 404 NOT_FOUND (kacho-vpc#8)",
     classes=["NEG"],
     priority="P0",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
              body={"folderId": "{{_suiteFolderId}}", "name": "adr-snf-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-nf", method="GET", path="/operations/{{opId}}",
-             test_script=["pm.test('error code 5', () => pm.expect(pm.response.json().error && pm.response.json().error.code).to.eql(5));"]),
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('mentions subnet', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('subnet'));"]),
     ],
 ))
 
@@ -291,38 +289,30 @@ CASES.append(list_pagesize_1_bva("ADR", "/vpc/v1/addresses"))
 
 CASES.append(Case(
     id="ADR-CR-CONF-SUB-NF-TEXT",
-    title="Create address с garbage subnet → verbatim 'Subnet ... not found'",
+    title="Create address с garbage subnet → sync verbatim 'Subnet ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
              body={"folderId": "{{_suiteFolderId}}", "name": "adr-confnf-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('text matches verbatim Subnet/Folder ... not found', () => pm.expect(j.error.message).to.match(/^(Subnet|Folder) .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim Subnet ... not found', () => pm.expect(pm.response.json().message).to.match(/^Subnet .* not found$/));",
              ]),
     ],
 ))
 
 CASES.append(Case(
     id="ADR-CR-CONF-FOLDER-NF-TEXT",
-    title="Create external address с garbage folder → verbatim 'Folder with id ... not found'",
+    title="Create external address с garbage folder → sync verbatim 'Folder with id ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
              body={"folderId": "{{garbageId}}", "name": "adr-fnf-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Folder with id ... not found', () => pm.expect(j.error.message).to.match(/^Folder with id .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Folder with id .* not found$/));",
              ]),
     ],
 ))

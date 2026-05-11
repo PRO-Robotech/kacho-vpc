@@ -81,7 +81,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-NEG-FOLDER-NOT-FOUND",
-    title="Create с garbage folderId → async NOT_FOUND",
+    title="Create с garbage folderId → sync 404 NOT_FOUND (kacho-vpc#8)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -91,20 +91,9 @@ CASES.append(Case(
             path="/vpc/v1/networks",
             body={"folderId": "{{garbageId}}", "name": "net-bf-{{runId}}"},
             test_script=[
-                *assert_status(200),
-                *save_from_response("j.id", "opId"),
-            ],
-        ),
-        poll_operation_until_done(),
-        Step(
-            name="assert-not-found",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=[
-                "const j = pm.response.json();",
-                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
-                "pm.test('error text mentions folder', () => pm.expect(j.error.message.toLowerCase()).to.include('folder'));",
+                *assert_status(404),
+                *assert_grpc_code(5, "NOT_FOUND"),
+                "pm.test('mentions folder not found', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('folder'));",
             ],
         ),
     ],
@@ -112,7 +101,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-NEG-DUP-NAME",
-    title="Create с duplicate name в folder → async ALREADY_EXISTS",
+    title="Create с duplicate name в folder → sync 409 ALREADY_EXISTS (kacho-vpc#8)",
     classes=["NEG", "CONC"],
     priority="P1",
     steps=[
@@ -123,6 +112,7 @@ CASES.append(Case(
             body={"folderId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
             test_script=[
                 *assert_status(200),
+                *assert_operation_envelope(),
                 *save_from_response("j.id", "opId"),
                 *save_from_response("j.metadata && j.metadata.networkId", "createdNetworkId"),
             ],
@@ -134,19 +124,9 @@ CASES.append(Case(
             path="/vpc/v1/networks",
             body={"folderId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
             test_script=[
-                *assert_status(200),
-                *save_from_response("j.id", "opId"),
-            ],
-        ),
-        poll_operation_until_done(),
-        Step(
-            name="assert-already-exists",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=[
-                "const j = pm.response.json();",
-                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                "pm.test('error code 6 (ALREADY_EXISTS)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(6));",
+                *assert_status(409),
+                *assert_grpc_code(6, "ALREADY_EXISTS"),
+                "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));",
             ],
         ),
         Step(
@@ -507,7 +487,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-MV-NEG-DEST-FOLDER-NF",
-    title="Move в несуществующий destinationFolderId → NotFound 'Folder with id ... not found'",
+    title="Move в несуществующий destinationFolderId → sync 404 'Folder with id ... not found' (kacho-vpc#8)",
     classes=["NEG"],
     priority="P1",
     steps=[
@@ -528,25 +508,12 @@ CASES.append(Case(
             method="POST",
             path="/vpc/v1/networks/{{netId}}:move",
             body={"destinationFolderId": "{{garbageId}}"},
-            # NB: verbatim-YC (probe 2026-05-11) — Move в несуществующий folder отдаёт sync
-            # 404 NOT_FOUND "Folder with id ... not found" (folder-existence — sync), а не 200+Operation.
-            # Текущий kacho-vpc: пока 200+Operation→async-NotFound (см. kacho-vpc#8 — sync-валидация).
-            # Этот кейс — в backlog #8; пока ассертит текущее поведение.
+            # verbatim-YC (probe 2026-05-11, kacho-vpc#8): Move в несуществующий folder отдаёт sync
+            # 404 NOT_FOUND "Folder with id ... not found" (folder-existence проверяется синхронно).
             test_script=[
-                *assert_status(200),
-                *save_from_response("j.id", "opId"),
-            ],
-        ),
-        poll_operation_until_done(),
-        Step(
-            name="assert-not-found",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=[
-                "const j = pm.response.json();",
-                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
-                "pm.test('error text mentions folder', () => pm.expect(j.error.message.toLowerCase()).to.include('folder'));",
+                *assert_status(404),
+                *assert_grpc_code(5, "NOT_FOUND"),
+                "pm.test('folder not found', () => pm.expect(pm.response.json().message).to.match(/^Folder with id .* not found$/));",
             ],
         ),
         Step(
@@ -724,18 +691,14 @@ CASES.append(list_pagesize_1_bva("NET", "/vpc/v1/networks"))
 
 CASES.append(Case(
     id="NET-CR-CONF-FOLDER-NF-TEXT",
-    title="Create network в garbage folder → verbatim 'Folder with id ... not found'",
+    title="Create network в garbage folder → sync verbatim 'Folder with id ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
              body={"folderId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Folder with id ... not found', () => pm.expect(j.error.message).to.match(/^Folder with id .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Folder with id .* not found$/));",
              ]),
     ],
 ))
@@ -958,14 +921,9 @@ CASES.append(Case(
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
         poll_operation_until_done(),
         Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('error code 9 (FAILED_PRECONDITION)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
-                 "pm.test('text mentions network not empty', () => pm.expect((j.error.message || '').toLowerCase()).to.match(/not empty|has subnet|in use|cannot|fk|reference/));",
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('not empty text', () => pm.expect(pm.response.json().message).to.match(/^Network .* is not empty$/));",
              ]),
         # cleanup в обратном порядке
         Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
@@ -994,12 +952,9 @@ CASES.append(Case(
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
         poll_operation_until_done(),
         Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 9', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('not empty text', () => pm.expect(pm.response.json().message).to.match(/^Network .* is not empty$/));",
              ]),
         Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
              test_script=[*save_from_response("j.id", "opId")]),
@@ -1028,12 +983,9 @@ CASES.append(Case(
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
         Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 9 (FailedPrecondition) — RESTRICT FK', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('not empty text', () => pm.expect(pm.response.json().message).to.match(/^Network .* is not empty$/));",
              ]),
         Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
              test_script=[*save_from_response("j.id", "opId")]),

@@ -44,10 +44,13 @@ func TestNetworkService_Create_ValidationError(t *testing.T) {
 func TestNetworkService_Create_FolderNotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(false), or, nil)
-	op, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1"})
-	require.NoError(t, err) // Operation создаётся, ошибка внутри goroutine
-	require.NotNil(t, op)
-	awaitOpDone(t, or, op.ID)
+	// Verbatim YC: folder existence is checked synchronously, BEFORE the
+	// Operation — client gets a sync NotFound, not a 200+Operation that fails
+	// async. См. kacho-vpc#8.
+	_, err := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "net1"})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 func TestNetworkService_Create_OK(t *testing.T) {

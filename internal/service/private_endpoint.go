@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -103,6 +104,36 @@ func (s *PrivateEndpointService) Create(ctx context.Context, req CreatePrivateEn
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. The async copies in doCreate stay as defensive backstops.
+	// См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	if req.SubnetID != "" {
+		if _, err := s.subnetRepo.Get(ctx, req.SubnetID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", req.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, PrivateEndpointFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "PrivateEndpoint with name %s already exists", req.Name)
+		}
 	}
 
 	peID := ids.NewID(ids.PrefixPrivateEndpoint)

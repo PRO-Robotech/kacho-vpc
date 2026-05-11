@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -12,7 +11,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	coreerrors "github.com/PRO-Robotech/kacho-corelib/errors"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
@@ -66,8 +64,8 @@ func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient Fol
 // validateZoneID — sync-валидация zone_id: required + existence в БД.
 //
 // Возвращает gRPC InvalidArgument с FieldViolation для пустого значения
-// (`<field> is required`) или несуществующей зоны (`<field> must be one
-// of: <list>` с динамическим перечислением зарегистрированных зон).
+// (`<field> is required`); для несуществующей зоны — flat-message
+// `unknown zone id '<zoneId>'` (verbatim YC, probe 2026-05-11; kacho-vpc#8).
 // Любая другая ошибка БД → mapRepoErr.
 func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string) error {
 	if err := corevalidate.ZoneId(field, zoneID); err != nil {
@@ -81,9 +79,7 @@ func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string
 		return nil
 	}
 	if errors.Is(err, ErrNotFound) {
-		ids, _ := s.zoneReg.ListIDs(ctx)
-		msg := field + " must be one of: " + strings.Join(ids, ", ")
-		return coreerrors.InvalidArgument().AddFieldViolation(field, msg).Err()
+		return status.Errorf(codes.InvalidArgument, "unknown zone id '%s'", zoneID)
 	}
 	return mapRepoErr(err)
 }
@@ -149,6 +145,31 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 		return nil, err
 	}
 	if err := validateDhcpOptions(req.DhcpOptions); err != nil {
+		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness / overlap checks run synchronously,
+	// BEFORE the Operation. The async copies in doCreate + the DB EXCLUDE
+	// constraint stay as the atomic backstops. См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, SubnetFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Subnet with name %s already exists", req.Name)
+		}
+	}
+	if err := s.checkSubnetCIDROverlap(ctx, req.FolderID, req.NetworkID, req.V4CidrBlocks); err != nil {
 		return nil, err
 	}
 
@@ -405,6 +426,9 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
+	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move subnet %s", id),
 		&vpcv1.MoveSubnetMetadata{SubnetId: id})
 	if err != nil {
@@ -615,6 +639,43 @@ func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, 
 	return addrs, nextToken, nil
 }
 
+// checkSubnetCIDROverlap — sync FAILED_PRECONDITION "Subnet CIDRs can not
+// overlap" if any of the requested v4 CIDRs overlaps a CIDR of an existing
+// subnet in the same network/folder. The DB EXCLUDE constraint (миграция 0007)
+// stays as the atomic backstop in doCreate. См. kacho-vpc#8.
+func (s *SubnetService) checkSubnetCIDROverlap(ctx context.Context, folderID, networkID string, v4 []string) error {
+	if len(v4) == 0 {
+		return nil
+	}
+	newPrefixes := make([]netipPrefix, 0, len(v4))
+	for _, c := range v4 {
+		pr, err := parseNetipPrefix(c)
+		if err != nil {
+			// host-bits / format already validated upstream; be defensive.
+			return invalidArg("v4_cidr_blocks", "must be valid CIDR")
+		}
+		newPrefixes = append(newPrefixes, pr)
+	}
+	existing, _, err := s.repo.List(ctx, SubnetFilter{FolderID: folderID, NetworkID: networkID}, Pagination{})
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	for _, sub := range existing {
+		for _, raw := range sub.V4CidrBlocks {
+			pr, perr := parseNetipPrefix(raw)
+			if perr != nil {
+				continue
+			}
+			for _, np := range newPrefixes {
+				if prefixesOverlap(pr, np) {
+					return status.Errorf(codes.FailedPrecondition, "Subnet CIDRs can not overlap")
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
 func checkCIDRDisjoint(cidrs []string) error {
 	prefixes := make([]netipPrefix, 0, len(cidrs))
@@ -642,6 +703,16 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	// Verbatim YC: a Subnet with internal Address children can not be deleted —
+	// sync FAILED_PRECONDITION. The async FK RESTRICT path stays as the atomic
+	// backstop in the worker. См. kacho-vpc#8.
+	addrs, _, aerr := s.repo.AddressesBySubnet(ctx, id, Pagination{})
+	if aerr != nil {
+		return nil, mapRepoErr(aerr)
+	}
+	if len(addrs) > 0 {
+		return nil, status.Error(codes.FailedPrecondition, "Subnet has allocated internal addresses")
 	}
 
 	op, err := operations.New(

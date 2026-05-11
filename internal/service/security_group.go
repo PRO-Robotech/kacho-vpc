@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -96,6 +97,28 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. The async copies in the worker stay as defensive backstops.
+	// См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, SecurityGroupFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "SecurityGroup with name %s already exists", req.Name)
+		}
 	}
 
 	sgID := ids.NewID(ids.PrefixSecurityGroup)
@@ -446,6 +469,9 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 	}
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move security group %s", id),
 		&vpcv1.MoveSecurityGroupMetadata{SecurityGroupId: id})

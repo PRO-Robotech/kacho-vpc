@@ -233,12 +233,34 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 		}
 	}
 
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. The folder check / FK reads in doCreate stay as defensive
+	// copies. См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if req.InternalSpec != nil && req.InternalSpec.SubnetID != "" {
+		if _, err := s.subnetRepo.Get(ctx, req.InternalSpec.SubnetID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", req.InternalSpec.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, AddressFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Address with name %s already exists", req.Name)
+		}
+	}
+
 	// Sync-проверка: explicit IP (`internal_ipv4_address_spec.address`) должен
-	// принадлежать CIDR-блоку указанной subnet. Если subnet не найден — sync
-	// валидация пропускается (NotFound будет async, как и для остальных
-	// FK — verbatim YC, см. YC-DIFF-INVALID-PARENT-CODE.md). Если IP вне CIDR
-	// — возвращаем sync InvalidArgument: иначе адрес попадает в БД и пишется
-	// в NetBox, минуя любые FK, что приводит к мусору в IPAM.
+	// принадлежать CIDR-блоку указанной subnet. Если IP вне CIDR — возвращаем
+	// sync InvalidArgument: иначе адрес попадает в БД минуя любые FK, что
+	// приводит к мусору в IPAM.
 	if req.InternalSpec != nil && req.InternalSpec.SubnetID != "" && req.InternalSpec.Address != "" {
 		if err := s.validateInternalIPInSubnet(ctx, req.InternalSpec.SubnetID, req.InternalSpec.Address); err != nil {
 			return nil, err
@@ -512,6 +534,9 @@ func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*op
 	}
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move address %s", id),
 		&vpcv1.MoveAddressMetadata{AddressId: id})

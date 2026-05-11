@@ -160,26 +160,24 @@ func TestAddressService_Create_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	assert.Nil(t, savedOp.Error)
 }
 
-// Если subnet не найден sync-ом — валидация пропускается, NotFound будет
-// async через doCreate (verbatim YC, см. YC-DIFF-INVALID-PARENT-CODE.md).
-func TestAddressService_Create_Internal_ExplicitIP_SubnetNotFound_Async(t *testing.T) {
+// Verbatim YC: when the referenced subnet doesn't exist, Create returns a sync
+// NotFound — BEFORE the Operation (kacho-vpc#8). Previously this was async.
+func TestAddressService_Create_Internal_ExplicitIP_SubnetNotFound(t *testing.T) {
 	ar := newMockAddressRepo()
 	sr := newMockSubnetRepo()
 	or := newMockOpsRepo()
 	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
 
-	op, err := svc.Create(context.Background(), CreateAddressReq{
+	_, err := svc.Create(context.Background(), CreateAddressReq{
 		FolderID: "f1",
 		InternalSpec: &InternalAddrSpec{
 			SubnetID: "e9bnonexistentxxxxxx",
 			Address:  "192.168.99.100",
 		},
 	})
-	require.NoError(t, err)
-	savedOp := awaitOpDone(t, or, op.ID)
-	assert.True(t, savedOp.Done)
-	require.NotNil(t, savedOp.Error)
-	assert.Equal(t, int32(codes.NotFound), savedOp.Error.Code)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 // Sync-валидация: invalid IP-формат → InvalidArgument.

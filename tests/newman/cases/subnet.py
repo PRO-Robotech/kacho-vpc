@@ -82,7 +82,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-CR-VAL-ZONE-UNKNOWN",
-    title="Create с несуществующей зоной → InvalidArgument (dynamic whitelist)",
+    title="Create с несуществующей зоной → sync 400 INVALID_ARGUMENT \"unknown zone id '...'\" (kacho-vpc#8)",
     classes=["VAL"],
     priority="P0",
     steps=[
@@ -94,8 +94,9 @@ CASES.append(Case(
             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                   "name": "sub-zu-{{runId}}", "zoneId": "ru-central1-z-fake",
                   "v4CidrBlocks": ["10.0.0.0/24"]},
+            # verbatim-YC (kacho-vpc#8): flat {code,message} body, не Operation.
             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
-                         "pm.test('mentions zone whitelist', () => pm.expect(pm.response.json().details && JSON.stringify(pm.response.json())).to.include('zone_id'));"],
+                         "pm.test('unknown zone text', () => pm.expect(pm.response.json().message).to.match(/^unknown zone id '.*'$/));"],
         ),
         _cleanup_net(),
     ],
@@ -142,7 +143,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-CR-NEG-NETWORK-NOT-FOUND",
-    title="Create в несуществующей network → async NOT_FOUND",
+    title="Create в несуществующей network → sync 404 NOT_FOUND (kacho-vpc#8)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -153,21 +154,15 @@ CASES.append(Case(
             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                   "name": "sub-nf-{{runId}}", "zoneId": "{{existingZoneId}}",
                   "v4CidrBlocks": ["10.10.0.0/24"]},
-            test_script=[*assert_status(200), *save_from_response("j.id", "opId")],
-        ),
-        poll_operation_until_done(),
-        Step(
-            name="assert-nf",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=["pm.test('error code 5', () => pm.expect(pm.response.json().error && pm.response.json().error.code).to.eql(5));"],
+            test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                         "pm.test('mentions network', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('network'));"],
         ),
     ],
 ))
 
 CASES.append(Case(
     id="SUB-CR-NEG-CIDR-OVERLAP",
-    title="Create двух subnet с пересекающимися CIDR → второй FailedPrecondition",
+    title="Create двух subnet с пересекающимися CIDR → второй sync 400 FAILED_PRECONDITION (kacho-vpc#8)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -190,18 +185,8 @@ CASES.append(Case(
             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                   "name": "sub-ov2-{{runId}}", "zoneId": "{{existingZoneId}}",
                   "v4CidrBlocks": ["10.50.5.0/24"]},  # overlaps with /16
-            test_script=[*assert_status(200), *save_from_response("j.id", "opId")],
-        ),
-        poll_operation_until_done(),
-        Step(
-            name="assert-failed-precondition",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=[
-                "const j = pm.response.json();",
-                "pm.test('error code 9 (FAILED_PRECONDITION)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
-                "pm.test('text mentions overlap', () => pm.expect(j.error.message.toLowerCase()).to.match(/overlap|cidr/));",
-            ],
+            test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                         "pm.test('overlap text', () => pm.expect(pm.response.json().message).to.eql('Subnet CIDRs can not overlap'));"],
         ),
         Step(name="cleanup-sub1", method="DELETE", path="/vpc/v1/subnets/{{subId1}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
@@ -586,20 +571,16 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-CR-CONF-NET-NF-TEXT",
-    title="Create subnet в garbage network → verbatim text 'Network ... not found'",
+    title="Create subnet в garbage network → sync verbatim 'Network ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create-bad-net", method="POST", path="/vpc/v1/subnets",
              body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                    "name": "sub-confnf-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.170.0.0/24"]},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-conf-text", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error.code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Network ... not found', () => pm.expect(j.error.message).to.match(/^Network .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));",
              ]),
     ],
 ))
@@ -621,14 +602,8 @@ CASES.append(Case(
              body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sub-dup-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.181.0.0/24"]},  # другой CIDR — дубль только по name
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-already-exists", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('error code 6 (ALREADY_EXISTS)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(6));",
-             ]),
+             test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
+                          "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));"]),
         Step(name="cleanup-1", method="DELETE", path="/vpc/v1/subnets/{{subId1}}",
              test_script=[*save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -886,10 +861,11 @@ for c in neg_invalid_types_block("SUB", "/vpc/v1/subnets",
 CASES.extend(http_method_not_allowed_block("SUB", "/vpc/v1/subnets"))
 CASES.extend(malformed_body_block("SUB", "/vpc/v1/subnets"))
 
-CASES.append(_wrap_with_net("SUB", "v9d",
-    alreadyexists_dup_name_for("SUB", "/vpc/v1/subnets",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
-         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.246.0.0/24"]})))
+# NB: dup-name для Subnet покрыт hand-written SUB-CR-NEG-DUP-NAME (использует РАЗНЫЕ
+# CIDR у обеих подсетей). Generated alreadyexists_dup_name_for тут НЕ применим: он
+# создаёт две подсети с ОДИНАКОВЫМ телом (тот же CIDR) → verbatim-YC проверяет
+# overlap раньше name-uniqueness и возвращает FAILED_PRECONDITION "Subnet CIDRs can
+# not overlap", а не ALREADY_EXISTS. (kacho-vpc#8.)
 for c in update_mask_partial_block("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
     {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.247.0.0/24"]}):
@@ -981,13 +957,11 @@ CASES.append(Case(
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
         poll_operation_until_done(),
         Step(name="del-sub-blocked", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('error code 9 (FailedPrecondition)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+                 # verbatim-YC (probe 2026-05-11, kacho-vpc#8): delete subnet с internal Address →
+                 # sync FAILED_PRECONDITION "Subnet has allocated internal addresses".
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Subnet has allocated internal addresses'));",
              ]),
         # cleanup
         Step(name="cleanup-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",

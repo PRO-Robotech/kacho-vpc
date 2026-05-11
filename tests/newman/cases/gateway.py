@@ -234,19 +234,15 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="GW-CR-NEG-FOLDER-NF",
-    title="Create Gateway в несуществующий folder → async NotFound",
+    title="Create Gateway в несуществующий folder → sync 404 NOT_FOUND (kacho-vpc#8)",
     classes=["NEG", "CONF"], priority="P0",
     steps=[
         Step(name="create-bad-folder", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{garbageId}}", "name": "gw-fnf-{{runId}}",
                    "sharedEgressGateway": {}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Folder with id ... not found', () => pm.expect(j.error.message).to.match(/^Folder with id .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('mentions folder not found', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('folder'));",
              ]),
     ],
 ))

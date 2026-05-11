@@ -1,12 +1,27 @@
 package service
 
 import (
+	"context"
 	"net/netip"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// checkFolderExists — verbatim YC sync precondition for Create/Move RPCs: the
+// destination folder must exist. error → Unavailable "folder check: <err>";
+// not-found → NotFound "Folder with id <X> not found". См. kacho-vpc#8.
+func checkFolderExists(ctx context.Context, fc FolderClient, folderID string) error {
+	exists, err := fc.Exists(ctx, folderID)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return status.Errorf(codes.NotFound, "Folder with id %s not found", folderID)
+	}
+	return nil
+}
 
 // validateCIDRPrefix проверяет, что value — валидный CIDR-prefix (например
 // "10.0.0.0/24") и host-bits = 0 (т.е. value совпадает с .Masked()).

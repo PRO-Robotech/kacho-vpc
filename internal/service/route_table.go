@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"time"
@@ -102,6 +103,28 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 	// См. RT-STATIC-ROUTES-VALIDATION.md.
 	if err := validateStaticRoutes(req.StaticRoutes); err != nil {
 		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. The async copies in doCreate stay as defensive backstops.
+	// См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	if req.Name != "" {
+		existing, _, lerr := s.repo.List(ctx, RouteTableFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "RouteTable with name %s already exists", req.Name)
+		}
 	}
 
 	rtID := ids.NewID(ids.PrefixRouteTable)
@@ -324,6 +347,9 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 	}
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	}
+	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move route table %s", id),
 		&vpcv1.MoveRouteTableMetadata{RouteTableId: id})

@@ -16,7 +16,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="PE-CR-NEG-NETWORK-NF",
-    title="Create в несуществующую network → async NotFound",
+    title="Create в несуществующую network → sync 404 NOT_FOUND (kacho-vpc#8)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -24,10 +24,8 @@ CASES.append(Case(
              body={"folderId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
                    "networkId": "{{garbageVpcId}}",
                    "objectStorage": {}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-nf", method="GET", path="/operations/{{opId}}",
-             test_script=["pm.test('error code 5', () => pm.expect(pm.response.json().error && pm.response.json().error.code).to.eql(5));"]),
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('mentions network', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('network'));"]),
     ],
 ))
 
@@ -163,19 +161,15 @@ CASES.append(list_pagesize_1_bva("PE", "/vpc/v1/endpoints"))
 
 CASES.append(Case(
     id="PE-CR-CONF-NET-NF-TEXT",
-    title="Create PE в garbage network → verbatim text 'Network ... not found'",
+    title="Create PE в garbage network → sync verbatim 'Network ... not found' (kacho-vpc#8)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
              body={"folderId": "{{_suiteFolderId}}", "name": "pe-confnf-{{runId}}",
                    "networkId": "{{garbageVpcId}}", "objectStorage": {}},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert", method="GET", path="/operations/{{opId}}",
              test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 5', () => pm.expect(j.error && j.error.code).to.eql(5));",
-                 "pm.test('verbatim Network ... not found', () => pm.expect(j.error.message).to.match(/^Network .* not found$/));",
+                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                 "pm.test('verbatim Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));",
              ]),
     ],
 ))
@@ -373,7 +367,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="PE-CR-NEG-SUBNET-NF",
-    title="PE Create с garbage subnetId в addressSpec → async NotFound 'Subnet ... not found'",
+    title="PE Create с garbage subnetId в addressSpec → sync 404 'Subnet ... not found' (kacho-vpc#8)",
     classes=["NEG", "CONF"], priority="P1",
     steps=[*_pe_net_sub("nsnf", "10.135.0.0/24"),
            # addressSpec.internalIpv4AddressSpec.subnetId — verbatim YC oneof-форма
@@ -383,14 +377,9 @@ CASES.append(Case(
                       "networkId": "{{netId}}",
                       "addressSpec": {"internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
                       "objectStorage": {}},
-                test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-           poll_operation_until_done(),
-           Step(name="assert-subnet-nf", method="GET", path="/operations/{{opId}}",
                 test_script=[
-                    "const j = pm.response.json();",
-                    "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                    "pm.test('error code 5 (NOT_FOUND)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(5));",
-                    "pm.test('verbatim Subnet ... not found', () => pm.expect(j.error.message).to.match(/^Subnet .* not found$/));",
+                    *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                    "pm.test('verbatim Subnet ... not found', () => pm.expect(pm.response.json().message).to.match(/^Subnet .* not found$/));",
                 ]),
            Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
                 test_script=[*save_from_response("j.id", "opId")]),

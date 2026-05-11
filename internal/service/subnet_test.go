@@ -70,18 +70,18 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 
-	op, err := svc.Create(context.Background(), CreateSubnetReq{
+	// Verbatim YC: parent-network existence is checked synchronously, BEFORE
+	// the Operation — client gets a sync NotFound. См. kacho-vpc#8.
+	_, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:     "f1",
 		Name:         "sub1",
-		NetworkID:    ids.NewID(ids.PrefixNetwork), // well-formed-но-несуществующий → async NotFound
+		NetworkID:    ids.NewID(ids.PrefixNetwork), // well-formed-но-несуществующий
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
-	require.NoError(t, err)
-
-	savedOp := awaitOpDone(t, or, op.ID)
-	assert.True(t, savedOp.Done)
-	assert.NotNil(t, savedOp.Error) // должна быть ошибка NotFound
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
