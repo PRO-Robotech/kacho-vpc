@@ -324,7 +324,7 @@ Admin переключает cloud на премиум-pool.
 
 ```mermaid
 sequenceDiagram
-  participant Admin as Admin (kachoctl/UI)
+  participant Admin as Admin (UI / curl)
   participant H as InternalCloudHandler
   participant S as AddressPoolService
   participant Repo as cloudSel

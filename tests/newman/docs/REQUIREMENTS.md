@@ -16,7 +16,7 @@
 - **Description**: kacho-deploy init-job должен seed'ить регион `ru-central1`
   + zones `ru-central1-{a,b,c,d}` + default `AddressPool` на zone `a`
   для `EXTERNAL_PUBLIC` (например 198.51.100.0/24). Сейчас приходится seed'ить
-  вручную через `kachoctl-ipam` или curl на каждом `make dev-up`.
+  вручную через curl на api-gateway на каждом `make dev-up`.
 - **Rationale**: без правильных fixtures suite падает массово на sync-валидации
   `zone_id` и на Allocate external IP. Невозможно reproducible CI.
 - **Impact**: 100% suite автоматически зелёный после `make dev-up`.

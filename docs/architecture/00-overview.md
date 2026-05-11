@@ -119,7 +119,7 @@ internal/
 
 **Inbound** (кто дёргает kacho-vpc):
 - `kacho-api-gateway` — proxy для REST/gRPC клиентов.
-- `kachoctl-ipam` — admin CLI напрямую на :9091.
+- admin-tooling (curl/REST через api-gateway internal mux) / web-UI на :9091 RPC.
 - (потенциально) `kacho-compute`, `kacho-loadbalancer` — frozen.
 
 **Outbound** (кого дёргает kacho-vpc):

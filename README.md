@@ -39,7 +39,7 @@ default-SG теперь inline в service-слое).
 | Порт   | Сервисы                                                                           | Кто использует                       |
 |--------|-----------------------------------------------------------------------------------|--------------------------------------|
 | `9090` | NetworkService, SubnetService, AddressService, RouteTableService, SecurityGroupService, GatewayService, PrivateEndpointService, OperationService | api-gateway → внешние клиенты        |
-| `9091` | InternalWatchService, InternalAddressService (allocate int/ext IP), InternalAddressPoolService, InternalRegionService, InternalZoneService, InternalNetworkService, InternalCloudService | admin-tooling (`kachoctl ipam`), UI (через api-gateway internal mux), in-process inline-allocate; в будущем kacho-compute |
+| `9091` | InternalWatchService, InternalAddressService (allocate int/ext IP), InternalAddressPoolService, InternalRegionService, InternalZoneService, InternalNetworkService, InternalCloudService | admin-tooling (curl/REST на api-gateway internal mux), UI (через api-gateway internal mux), in-process inline-allocate; в будущем kacho-compute |
 
 `Internal*` сервисы не маршрутизируются через external TLS endpoint api-gateway
 (запрет #6 из workspace `CLAUDE.md`); часть проброшена на cluster-internal listener

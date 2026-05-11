@@ -123,7 +123,7 @@ white-box masquerade.
 |---|---|
 | gRPC `:9090` (внешний) | Все RPC из публичных proto |
 | REST через api-gateway (`/vpc/v1/...`, `/resource-manager/v1/...`) | grpc-gateway маршруты с JSON |
-| Internal gRPC `:9091` | Admin RPC (для admin-UI / kachoctl) |
+| Internal gRPC `:9091` | Admin RPC (для admin-UI / curl) |
 | Логи / метрики / трейсинг | Observability surface |
 | Поведение во времени (latency, throughput, soak) | Non-functional |
 

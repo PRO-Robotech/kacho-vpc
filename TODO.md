@@ -30,8 +30,8 @@ Verified Newman regression: **686 кейсов / ~3120 assertions / 0 failures**
 | 30 | NetBox-integration убрать; IPAM встроить             | High     | done       |
 | 31 | AddressPool resource (internal-only)                 | High     | done       |
 | 32 | Pool selectors + cascade resolve + Check/Explain     | High     | done       |
-| 33 | kachoctl-ipam admin CLI                              | Medium   | done       |
-| 34 | Seed default-pool в dev-стенде                       | Low      | reverted (per #49 — admin создаёт пулы вручную через kachoctl) |
+| 33 | kachoctl-ipam admin CLI                              | Medium   | **removed** (`cmd/kachoctl-ipam` удалён; admin — curl/REST на api-gateway / UI) |
+| 34 | Seed default-pool в dev-стенде                       | Low      | reverted (per #49 — admin создаёт пулы вручную через curl на api-gateway) |
 | 35 | Newman regression: AddressPool RPC suite             | Medium   | wontfix — internal API, прогон через grpcurl |
 | 36 | Inline allocation в request-path                     | Medium   | **done** (kacho-vpc-controllers упразднён в Phase 2; см. workspace CLAUDE.md) |
 | 37 | SetInternalIP deprecation в proto                    | Low      | **done** (`option deprecated = true` на rpc + request/response messages) |
@@ -77,8 +77,8 @@ step + Newman smoke на global_default. Не хватает: одного по�
 сценария где админ конфигурирует все 5 уровней и каждый Address получает
 IP из правильного pool в зависимости от своих labels/folder/network.
 
-**Когда поднимать**: когда добавится Newman suite для admin-CLI flow
-(`kachoctl ipam`).
+**Когда поднимать**: когда добавится Newman suite для admin REST flow
+(curl/REST на api-gateway).
 
 ---
 

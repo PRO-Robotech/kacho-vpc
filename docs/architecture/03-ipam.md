@@ -165,7 +165,7 @@ ORDER BY:
 1. `(size(pool.selector_labels) - size(cloud_selector)) ASC` — точнее лучше.
 2. `selector_priority DESC` — выше = wins.
 
-При equal-equal: **resolve order undefined** — Postgres вернёт первую row. Используй `kachoctl ipam check` (или `InternalAddressPoolService.Check` RPC) для обнаружения ambiguous конфигов.
+При equal-equal: **resolve order undefined** — Postgres вернёт первую row. Для обнаружения ambiguous конфигов — `InternalAddressPoolService.Check` (`GET /vpc/v1/addressPools:check`).
 
 ## IP picker
 
@@ -211,37 +211,34 @@ return ResourceExhausted "address pool X exhausted (no free IP in any cidr_block
 
 REST: `GET /vpc/v1/addressPools/{pool_id}/utilization` (через apiGW, на cluster-internal listener).
 
-## Управление через kachoctl-ipam
+## Управление (через api-gateway internal mux — нет CLI)
+
+Отдельного `kachoctl-ipam` CLI **нет** (удалён) — все admin-операции делаются
+REST-запросами на cluster-internal listener api-gateway (локально — port-forward
+на `localhost:18080`) либо из web-UI. Эти пути не публикуются на external TLS endpoint.
 
 ```bash
-# Region/Zone
-kachoctl-ipam region create --id eu-west1 --name "Europe West 1"
-kachoctl-ipam zone create --id eu-west1-a --region-id eu-west1 --name "EUW1-A"
+BASE=http://localhost:18080   # port-forward api-gateway
 
-# Pool — глобальный admin
-kachoctl-ipam pool create \
-  --kind EXTERNAL_PUBLIC \
-  --zone-id ru-central1-a \
-  --cidr 198.51.100.0/24 \
-  --is-default \
-  --name default-zone-a
+# Region / Zone — InternalRegionService / InternalZoneService
+curl -XPOST $BASE/vpc/v1/regions -d '{"id":"eu-west1","name":"Europe West 1"}'
+curl -XPOST $BASE/vpc/v1/zones   -d '{"id":"eu-west1-a","regionId":"eu-west1","name":"EUW1-A"}'
 
-# Pool со селектором (премиум-клиенты)
-kachoctl-ipam pool create \
-  --kind EXTERNAL_PUBLIC \
-  --zone-id ru-central1-a \
-  --cidr 203.0.113.0/24 \
-  --selector tier=premium \
-  --priority 100 \
-  --name premium-pool
+# AddressPool (глобальный — без folder_id) — InternalAddressPoolService.Create
+curl -XPOST $BASE/vpc/v1/addressPools -d \
+  '{"name":"default-zone-a","kind":"EXTERNAL_PUBLIC","zoneId":"ru-central1-a","cidrBlocks":["198.51.100.0/24"],"isDefault":true}'
+curl -XPOST $BASE/vpc/v1/addressPools -d \
+  '{"name":"premium-pool","kind":"EXTERNAL_PUBLIC","zoneId":"ru-central1-a","cidrBlocks":["203.0.113.0/24"],"selectorLabels":{"tier":"premium"},"selectorPriority":100}'
 
-# Cloud-selector — admin привязывает Cloud к premium routing
-kachoctl-ipam cloud set-pool-selector \
-  --cloud b1g... --selector tier=premium
+# Cloud-selector (cascade Step 3) — InternalCloudService.SetPoolSelector;
+# либо явная привязка addressPoolBinding (per-network) / addressPoolOverride (per-address)
+curl -XPOST $BASE/vpc/v1/clouds/b1g.../poolSelector -d '{"selector":{"tier":"premium"},"setBy":"admin@kacho"}'
+curl -XPOST $BASE/vpc/v1/networks/enp.../addressPoolBinding -d '{"poolId":"apl..."}'
+curl -XPOST $BASE/vpc/v1/addresses/e9b.../addressPoolOverride -d '{"poolId":"apl..."}'
 
-# Diagnostics
-kachoctl-ipam ipam check                     # ambiguous configs
-kachoctl-ipam ipam explain --address adr...  # какой pool выберется
+# Diagnostics — InternalAddressPoolService.{Check,ExplainResolution}
+curl "$BASE/vpc/v1/addressPools:check?zoneId=ru-central1-a"
+curl "$BASE/vpc/v1/addressPools:explainResolution?addressId=e9b...&networkId=enp..."
 ```
 
 ## Ошибки

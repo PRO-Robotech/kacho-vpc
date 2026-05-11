@@ -31,7 +31,7 @@ Owns два слоя:
 - **IPAM (kacho-only, admin)**: Region, Zone, AddressPool, CloudPoolSelector,
   bindings (network_default, address_override). Internal-only API на
   gRPC `:9091`. Глобальные ресурсы — не привязаны к org/cloud/folder.
-  Управляются админом через kachoctl-ipam / web-UI / TUI.
+  Управляются админом через web-UI / curl-REST на api-gateway internal mux.
 
 Cascade IP-allocate работает inline в worker'е `AddressService.doCreate`
 (раньше был отдельный `kacho-vpc-controllers` процесс — выпилен в Phase 2).
