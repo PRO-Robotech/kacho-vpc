@@ -1,53 +1,50 @@
 # newman — публичный API kacho-vpc, 100% coverage suite
 
-Параллельная регрессионная сьюта, спроектированная по `testing-product-coach`
-(black-box, формальные техники test design) с naming/structure по
-`testing-code-coach`. Цель — покрыть **все публичные RPC** kacho-vpc
-систематически, с явной taxonomy, prioritization и tracking-документами.
+**Главная regression-инфраструктура** kacho-vpc. Black-box покрытие всех публичных
+RPC, спроектирована по `testing-product-coach` (формальные техники test design) с
+naming/structure по `testing-code-coach`. Источник истины — декларативные case-файлы
+`cases/*.py`; коллекции в `collections/` **генерируются** скриптом `scripts/gen.py`.
 
-> Существующий `newman/` остаётся как baseline. `newman/` — отдельная
-> ветка, не пересекается с master collection (`kacho-vpc.postman_collection.json`).
+> `newman_legacy/` (в корне репо) — старая quota-aware 3-suite сьюта против реального
+> YC API (RO/LIGHT/SEQ, master collection); сохранена как baseline, активно не используется.
 
 ## Структура
 
 ```
 newman/
 ├── README.md                — этот файл
-├── collections/             — Postman-коллекции по сервису
-│   ├── network.postman_collection.json
-│   ├── subnet.postman_collection.json
-│   ├── address.postman_collection.json
-│   ├── route-table.postman_collection.json
-│   ├── security-group.postman_collection.json
-│   ├── gateway.postman_collection.json
-│   ├── private-endpoint.postman_collection.json
-│   └── operation.postman_collection.json
+├── cases/                   — ИСТОЧНИК ИСТИНЫ: декларативные case-наборы (Python), по сервису
+│   └── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py
+├── collections/             — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису) — НЕ править руками
+│   └── {…}.postman_collection.json
 ├── environments/
-│   └── local.postman_environment.json
+│   └── local.postman_environment.json   — local stand (port-forward api-gateway → 18080)
 ├── scripts/
-│   ├── run.sh               — прогон одного / всех сервисов
-│   └── report.py            — агрегация результатов
+│   ├── gen.py               — генератор коллекций из cases/* (Postman v2.1 JSON)
+│   └── run.sh               — прогон одного/всех сервисов (newman + JSON reporter → out/)
 ├── docs/
 │   ├── TAXONOMY.md          — классы кейсов и naming convention
-│   ├── TEST-PLAN.md         — карта покрытия (RPC × class)
-│   ├── BUG-MAP.md           — найденные дефекты
+│   ├── TEST-PLAN.md         — карта покрытия (RPC × класс)
+│   ├── CASES-INDEX.md       — каталог уникальных паттернов кейсов
+│   ├── BUG-MAP.md           — найденные дефекты/наблюдения (FINDING-NNN)
 │   ├── REQUIREMENTS.md      — требования к продукту из тестового анализа
-│   └── RESULTS.md           — последний прогон pass/fail
-└── out/                     — newman raw output (gitignored)
+│   └── RESULTS.md           — последний прогон pass/fail + история версий + skill-mapping
+└── out/                     — newman raw output + summary.txt (gitignored snap-логи)
 ```
 
 ## Быстрый старт
 
 ```bash
-# 1. Поднять стенд + port-forward на 18080 (см. kacho-deploy)
-# 2. Прогнать всё
-./scripts/run.sh
-
-# Только один сервис
+# 1. Поднять стенд + port-forward api-gateway → localhost:18080 (см. kacho-deploy)
+# 2. Перегенерить коллекции из cases/*.py (если меняли cases или код)
+python3 scripts/gen.py            # все сервисы; или: python3 scripts/gen.py network
+# 3. Прогнать всё
+./scripts/run.sh                  # сводка в out/summary.txt
+# Один сервис / с задержкой / fail-fast
 ./scripts/run.sh --service network
+./scripts/run.sh --service subnet --delay 60 --bail
 
-# Только один класс кейсов (по тегу)
-./scripts/run.sh --class NEG
+# Требует KACHO_VPC_DEFAULT_SG_INLINE=true (default) — иначе кейсы default-SG краснеют.
 ```
 
 ## Принципы (из testing-product-coach)

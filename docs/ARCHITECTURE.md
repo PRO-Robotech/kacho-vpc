@@ -1123,31 +1123,31 @@ IAM sidecar — иначе anonymous = root.
 
 ### 12.3 Newman E2E
 
-Отдельный домен в `newman/`:
+Главная regression-инфраструктура — black-box покрытие всех публичных RPC.
+Декларативный генератор: case-файлы на Python → `gen.py` → Postman-коллекции по сервису.
 
 ```
 newman/
-├── collections/
-│   ├── kacho-vpc.postman_collection.json       — master, single source
-│   ├── kacho-vpc-ro.postman_collection.json    — auto-gen read-only smoke
-│   ├── kacho-vpc-light.postman_collection.json — auto-gen light mutations
-│   ├── kacho-vpc-seq.postman_collection.json   — auto-gen heavy/sequential
-│   ├── kacho-vpc-internal.postman_collection.json — kacho-only (admin)
-│   └── kacho-vpc-pending.postman_collection.json — pending-parity
-├── environments/
-│   ├── local.postman_environment.json — Kachō локально (port-forward 18080)
-│   └── yc.postman_environment.json    — реальный YC API
+├── cases/                       — декларативные case-наборы (Python), по сервису
+│   └── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py
+├── collections/                 — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису)
+│   └── {…}.postman_collection.json
+├── environments/local.postman_environment.json   — local stand (port-forward 18080)
 ├── scripts/
-│   ├── run.sh           — quota-aware entrypoint
-│   ├── cleanup-vpc.sh   — освобождает baseline в FOLDER
-│   └── build-suite.py   — генерирует ro/light/seq из master
-└── docs/TESTCASES.md    — class taxonomy
+│   ├── gen.py                   — генератор коллекций из cases/* (источник истины — cases/)
+│   └── run.sh                   — прогон одного/всех сервисов → out/{svc}.json + out/summary.txt
+├── docs/                        — TAXONOMY / TEST-PLAN / CASES-INDEX / BUG-MAP / REQUIREMENTS / RESULTS
+└── out/                         — newman raw output (gitignored snap-логи)
 ```
 
-Quota-aware 3-suite pipeline (RO → LIGHT → SEQ) с задержками 50/250/1500 мс,
-учитывающий YC rate-limit ~2 POST/sec на folder. Контракт изоляции:
-`00-preflight` создаёт ad-hoc Org/Cloud/Folder (local) или копирует
-`existingFolderId` (yc); `99-teardown` чистит local-only.
+Запуск: `python3 newman/scripts/gen.py` (перегенерить коллекции) → `newman/scripts/run.sh`
+(все 8 сервисов; `--service network` для одного). Изоляция: каждый case — внутри своего
+`runId`, suite — внутри pre-allocated `existingFolderId`/`existingFolderCrossId` (env), Org/Cloud/Folder
+не создаёт. Требует `KACHO_VPC_DEFAULT_SG_INLINE=true` (default; иначе default-SG-кейсы краснеют).
+Текущий результат — `newman/docs/RESULTS.md` (v15: 686 кейсов / ~3120 assertions / 0 fail).
+
+`newman_legacy/` — старая quota-aware 3-suite сьюта против реального YC API (RO/LIGHT/SEQ
+с rate-limit ~2 POST/sec); сохранена как baseline, активно не используется.
 
 ### 12.4 Coverage
 
@@ -1297,8 +1297,7 @@ Quota-aware 3-suite pipeline (RO → LIGHT → SEQ) с задержками 50/2
 | Линтер | `golangci-lint run` чистый |
 | Миграции | `bin/kacho-vpc migrate up` идемпотентен |
 | Service start | `bin/kacho-vpc serve` слушает 9090 и 9091 |
-| Newman RO | `./scripts/run.sh --env local --suite ro` зелёный |
-| Newman LIGHT | То же `--suite light` |
+| Newman | `python3 newman/scripts/gen.py && newman/scripts/run.sh` — 0 failures (нужен port-forward api-gateway → 18080 + `KACHO_VPC_DEFAULT_SG_INLINE=true`) |
 | Watch stream | Создание Network → событие в outbox → пришло в подписку |
 | Allocate IP | `InternalAddressService.AllocateExternalIP` возвращает IP из настроенного pool'а |
 | Cascade | Изменение CloudPoolSelector меняет выбираемый pool без рестарта |

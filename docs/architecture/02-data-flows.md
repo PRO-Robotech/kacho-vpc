@@ -355,8 +355,8 @@ Effect: следующий `AllocateExternalIP` для **любого** Address 
 | Subnet create + CIDR | `internal/service/subnet.go::doCreate` |
 | Address create | `internal/service/address.go::doCreate` |
 | Cascade resolve | `internal/service/address_pool_service.go::resolveWithRunnerUp` |
-| AllocateExternalIP retry-loop | `internal/service/address_allocate.go::AllocateExternalIP` |
-| `isUniqueViolation` | `internal/service/address_allocate.go` |
+| AllocateExternalIP retry-loop | `internal/service/address.go::AllocateExternalIP` (аллокатор inlined из бывшего `address_allocate.go`) |
+| `isUniqueViolation` / двухфазный sweep | `internal/service/address.go` (бенчмарки — `address_allocate_bench_test.go`) |
 | FolderClient.GetCloudID | `internal/clients/resourcemanager_client.go` |
 | Operations worker | `kacho-corelib/operations/run.go` |
 | Outbox + LISTEN/NOTIFY | `internal/handler/internal_watch_handler.go` |
