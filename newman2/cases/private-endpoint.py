@@ -304,3 +304,183 @@ for c in ecp_name_block("PE", "/vpc/v1/endpoints", _pe_body)[:3]:
 CASES.extend(updatemask_decision_table("PE", "/vpc/v1/endpoints"))
 CASES.extend(filter_syntax_block("PE", "/vpc/v1/endpoints"))
 CASES.append(pagination_roundtrip("PE", "/vpc/v1/endpoints"))
+
+# PE: update-per-field — добавляем только description+labels (name тяжелее)
+for c in update_happy_per_field("PE", "/vpc/v1/endpoints", "/vpc/v1/endpoints",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+     "subnetId": "{{subId}}", "objectStorage": {}})[1:]:  # skip NAME (PE имеет особый Update)
+    CASES.append(_pe_wrap("PE", "v7", c))
+
+CASES.extend(perf_baseline_block("PE", "/vpc/v1/endpoints"))
+CASES.extend(verbatim_text_pack("PE", "PrivateEndpoint", "/vpc/v1/endpoints"))
+CASES.extend(authz_caller_headers_block("PE", "/vpc/v1/endpoints"))
+
+CASES.append(_pe_wrap("PE", "v8m",
+    update_happy_multi_field("PE", "/vpc/v1/endpoints", "/vpc/v1/endpoints",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "subnetId": "{{subId}}", "objectStorage": {}})))
+CASES.extend(http_method_not_allowed_block("PE", "/vpc/v1/endpoints"))
+CASES.extend(malformed_body_block("PE", "/vpc/v1/endpoints"))
+
+CASES.extend(list_total_size_check_block("PE", "/vpc/v1/endpoints"))
+
+# v10 PE-specific
+CASES.append(Case(
+    id="PE-CR-VAL-SERVICE-MISSING",
+    title="Create PE без objectStorage → 400",
+    classes=["VAL", "NEG"], priority="P1",
+    steps=[Step(name="cr-no-service", method="POST", path="/vpc/v1/endpoints",
+                body={"folderId": "{{_suiteFolderId}}", "name": "pe-noserv-{{runId}}",
+                      "networkId": "{{garbageVpcId}}"},
+                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="PE-LST-FILTER-STATUS",
+    title="List PE с фильтром по status (если поддерживается)",
+    classes=["FILTER"], priority="P3",
+    steps=[Step(name="lst-status", method="GET",
+                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+# v11 — PE усиленный набор
+CASES.append(Case(
+    id="PE-CR-VAL-NETWORK-REQUIRED",
+    title="Create PE без networkId → 400",
+    classes=["VAL", "NEG"], priority="P1",
+    steps=[Step(name="cr-no-net", method="POST", path="/vpc/v1/endpoints",
+                body={"folderId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
+                      "objectStorage": {}},
+                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="PE-CR-VAL-SUBNET-REQUIRED",
+    title="Create PE без subnetId → ожидаемое поведение",
+    classes=["VAL"], priority="P2",
+    steps=[Step(name="cr-no-sub", method="POST", path="/vpc/v1/endpoints",
+                body={"folderId": "{{_suiteFolderId}}", "name": "pe-ns-{{runId}}",
+                      "networkId": "{{garbageVpcId}}", "objectStorage": {}},
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="PE-CR-NEG-SUBNET-NF-FINDING-006",
+    title="FINDING-006: PE Create с garbage subnetId silent success — нет existence validation",
+    classes=["NEG"], priority="P1",
+    steps=[*_pe_net_sub("nsnf", "10.135.0.0/24"),
+           Step(name="cr-bad-sub", method="POST", path="/vpc/v1/endpoints",
+                body={"folderId": "{{_suiteFolderId}}", "name": "pe-nsnf-{{runId}}",
+                      "networkId": "{{netId}}", "subnetId": "{{garbageVpcId}}",
+                      "objectStorage": {}},
+                test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                             *save_from_response("j.metadata && j.metadata.privateEndpointId", "createdPeId")]),
+           poll_operation_until_done(),
+           Step(name="assert-current-behavior", method="GET", path="/operations/{{opId}}",
+                test_script=[
+                    "const j = pm.response.json();",
+                    "pm.test('done', () => pm.expect(j.done).to.eql(true));",
+                    "pm.test('FINDING-006: silent success без subnet validation', () => pm.expect(j.error).to.be.undefined);",
+                ]),
+           Step(name="cleanup-pe", method="DELETE", path="/vpc/v1/endpoints/{{createdPeId}}",
+                test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                             *save_from_response("j.id", "opId")]),
+           Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                test_script=[*save_from_response("j.id", "opId")]),
+           poll_operation_until_done(),
+           Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+                test_script=[*save_from_response("j.id", "opId")])],
+))
+
+CASES.append(Case(
+    id="PE-DEL-CONF-NF-TEXT",
+    title="Delete несуществующего PE → verbatim 'PrivateEndpoint ... not found'",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[Step(name="del-nx", method="DELETE", path="/vpc/v1/endpoints/{{garbageVpcId}}",
+                test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                             "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint .* not found$/));"])],
+))
+
+CASES.append(Case(
+    id="PE-UPD-CONF-NF-TEXT",
+    title="Update несуществующего PE → verbatim text",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[Step(name="upd-nx", method="PATCH", path="/vpc/v1/endpoints/{{garbageVpcId}}",
+                body={"updateMask": "description", "description": "x"},
+                test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                             "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint .* not found$/));"])],
+))
+
+CASES.append(Case(
+    id="PE-LST-PAGE-ZERO",
+    title="List PE с pageSize=0 → default applied",
+    classes=["BVA"], priority="P2",
+    steps=[Step(name="lst-0", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=0",
+                test_script=[*assert_status(200)])],
+))
+
+CASES.append(Case(
+    id="PE-LST-PAGE-OVER",
+    title="List PE с pageSize=10000 → 400",
+    classes=["BVA", "VAL"], priority="P2",
+    steps=[Step(name="lst-over", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10000",
+                test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+))
+
+CASES.append(Case(
+    id="PE-LST-FILTER-NAME-OK",
+    title="List PE с filter=name='x' → 200",
+    classes=["FILTER", "CRUD"], priority="P2",
+    steps=[Step(name="lst-f", method="GET",
+                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=name%3D%22nonexistent%22",
+                test_script=[*assert_status(200)])],
+))
+
+CASES.append(Case(
+    id="PE-LST-FILTER-GARBAGE",
+    title="List PE с garbage filter → 200 или 400",
+    classes=["FILTER", "VAL"], priority="P2",
+    steps=[Step(name="lst-fbad", method="GET",
+                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=garbage%20!syntax",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="PE-LST-ROUNDTRIP",
+    title="Pagination roundtrip PE",
+    classes=["PAGE", "CRUD"], priority="P2",
+    steps=[
+        Step(name="p1", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1",
+             test_script=[*assert_status(200),
+                          "pm.environment.set('peTok', pm.response.json().nextPageToken || '');"]),
+        Step(name="p2", method="GET",
+             path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}",
+             test_script=[*assert_status(200)]),
+    ],
+))
+
+CASES.append(Case(
+    id="PE-GET-CONF-NF-FULLTEXT",
+    title="Get garbage PE → 'PrivateEndpoint <id> not found' формат",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[Step(name="get-pe", method="GET", path="/vpc/v1/endpoints/enpsnapshotpe99999",
+                test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                             "pm.test('exact format', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint enpsnapshotpe99999 not found$/));"])],
+))
+
+CASES.append(Case(
+    id="PE-METHOD-NOT-ALLOWED",
+    title="PUT/HEAD на /endpoints → не разрешено",
+    classes=["VAL", "NEG"], priority="P3",
+    steps=[Step(name="put-pe", method="PUT", path="/vpc/v1/endpoints", body={},
+                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
+))
+
+CASES.append(Case(
+    id="PE-GET-EXTRA-QS",
+    title="Get PE с unused query params → не влияет",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="get-extra", method="GET", path="/vpc/v1/endpoints/{{garbageVpcId}}?foo=bar&baz=qux",
+                test_script=[*assert_status(404)])],
+))

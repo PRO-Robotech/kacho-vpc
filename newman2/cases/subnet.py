@@ -853,3 +853,108 @@ for c in ecp_labels_block("SUB", "/vpc/v1/subnets", _sub_body_extra()):
 CASES.extend(updatemask_decision_table("SUB", "/vpc/v1/subnets"))
 CASES.extend(filter_syntax_block("SUB", "/vpc/v1/subnets"))
 CASES.append(pagination_roundtrip("SUB", "/vpc/v1/subnets"))
+
+# v7: update-per-field wrap'ed в network
+for c in update_happy_per_field("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+     "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.241.0.0/24"]}):
+    CASES.append(_wrap_with_net("SUB", "v7", c))
+
+CASES.extend(perf_baseline_block("SUB", "/vpc/v1/subnets"))
+CASES.extend(verbatim_text_pack("SUB", "Subnet", "/vpc/v1/subnets"))
+CASES.extend(authz_caller_headers_block("SUB", "/vpc/v1/subnets"))
+
+# move-self для subnet
+CASES.append(_wrap_with_net("SUB", "mvself",
+    move_same_folder("SUB", "/vpc/v1/subnets",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.242.0.0/24"]})))
+
+# v8 subnet
+CASES.append(_wrap_with_net("SUB", "v8m",
+    update_happy_multi_field("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.243.0.0/24"]})))
+CASES.append(_wrap_with_net("SUB", "v8f",
+    list_filter_match_block("SUB", "/vpc/v1/subnets",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.244.0.0/24"]})))
+for c in neg_invalid_types_block("SUB", "/vpc/v1/subnets",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+     "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.245.0.0/24"]}):
+    CASES.append(_wrap_with_net("SUB", "v8nt", c))
+CASES.extend(http_method_not_allowed_block("SUB", "/vpc/v1/subnets"))
+CASES.extend(malformed_body_block("SUB", "/vpc/v1/subnets"))
+
+CASES.append(_wrap_with_net("SUB", "v9d",
+    alreadyexists_dup_name_for("SUB", "/vpc/v1/subnets",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.246.0.0/24"]})))
+for c in update_mask_partial_block("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+     "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.247.0.0/24"]}):
+    CASES.append(_wrap_with_net("SUB", "v9p", c))
+CASES.append(_wrap_with_net("SUB", "v9pf",
+    perf_baseline_get_block("SUB", "/vpc/v1/subnets",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+         "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.248.0.0/24"]})))
+CASES.extend(list_total_size_check_block("SUB", "/vpc/v1/subnets"))
+
+# v10: subnet-specific dhcp_options + cidr boundary
+def _sub_dhcp(opts):
+    return {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+            "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.250.0.0/24"],
+            "dhcpOptions": opts}
+
+# DHCP options ECP
+for case_id, opts, expect_ok in [
+    ("SUB-CR-VAL-DHCP-DOMAIN-OK", {"domainName": "example.com"}, True),
+    ("SUB-CR-VAL-DHCP-DOMAIN-INVALID", {"domainName": "!!!"}, False),
+    ("SUB-CR-VAL-DHCP-NS-OK", {"domainNameServers": ["8.8.8.8", "1.1.1.1"]}, True),
+    ("SUB-CR-VAL-DHCP-NS-INVALID-IP", {"domainNameServers": ["999.999.999.999"]}, False),
+    ("SUB-CR-VAL-DHCP-NTP-OK", {"ntpServers": ["169.254.169.123"]}, True),
+    ("SUB-CR-VAL-DHCP-NTP-INVALID-IP", {"ntpServers": ["not-an-ip"]}, False),
+]:
+    inner = Case(
+        id=case_id, title=f"DHCP options: {case_id}",
+        classes=["VAL"] + (["CRUD"] if expect_ok else ["NEG"]),
+        priority="P1" if not expect_ok else "P2",
+        steps=[
+            Step(name="cr-dhcp", method="POST", path="/vpc/v1/subnets",
+                 body=dict(_sub_dhcp(opts), name=f"sub-dhcp-{case_id.lower()[-8:]}-{{{{runId}}}}"),
+                 test_script=[
+                     f"pm.test('{'200 ok' if expect_ok else '400 rejected'}', () => pm.expect(pm.response.code).to.eql({200 if expect_ok else 400}));",
+                     *(save_from_response("j.id", "opId") if expect_ok else []),
+                     *(save_from_response("j.metadata && j.metadata.subnetId", "subId") if expect_ok else []),
+                 ]),
+        ] + ([poll_operation_until_done(),
+              Step(name="cleanup", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                   test_script=[*save_from_response("j.id", "opId")]),
+              poll_operation_until_done()] if expect_ok else []),
+    )
+    CASES.append(_wrap_with_net("SUB", "v10dhcp" + case_id[-5:].lower(), inner))
+
+# CIDR prefix boundary
+for cidr in ["10.255.0.0/28", "10.255.0.0/29", "10.255.0.0/30", "10.255.0.0/31"]:
+    suffix = cidr.replace(".", "").replace("/", "p")[-8:]
+    CASES.append(_wrap_with_net("SUB", "v10cidr" + suffix,
+        Case(
+            id=f"SUB-CR-BVA-CIDR-{cidr.split('/')[1]}",
+            title=f"Create subnet с prefix /{cidr.split('/')[1]} → ожидаемое поведение",
+            classes=["BVA"], priority="P2",
+            steps=[
+                Step(name="cr-prefix", method="POST", path="/vpc/v1/subnets",
+                     body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                           "zoneId": "{{existingZoneId}}", "v4CidrBlocks": [cidr],
+                           "name": f"sub-cidr-{cidr.split('/')[1]}-{{{{runId}}}}"},
+                     test_script=[
+                         "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                         *save_from_response("j.id", "opId"),
+                         *save_from_response("j.metadata && j.metadata.subnetId", "subId"),
+                     ]),
+                poll_operation_until_done(),
+                Step(name="cleanup", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                     test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                                  *save_from_response("j.id", "opId")]),
+            ],
+        )))

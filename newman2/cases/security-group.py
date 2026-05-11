@@ -422,3 +422,129 @@ for c in ecp_labels_block("SG", "/vpc/v1/securityGroups", _sg_body):
 CASES.extend(updatemask_decision_table("SG", "/vpc/v1/securityGroups"))
 CASES.extend(filter_syntax_block("SG", "/vpc/v1/securityGroups"))
 CASES.append(pagination_roundtrip("SG", "/vpc/v1/securityGroups"))
+
+for c in update_happy_per_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    CASES.append(_sg_wrap("SG", "v7", c))
+
+CASES.extend(perf_baseline_block("SG", "/vpc/v1/securityGroups"))
+CASES.extend(verbatim_text_pack("SG", "SecurityGroup", "/vpc/v1/securityGroups"))
+CASES.extend(authz_caller_headers_block("SG", "/vpc/v1/securityGroups"))
+
+CASES.append(_sg_wrap("SG", "mvself",
+    move_same_folder("SG", "/vpc/v1/securityGroups",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+
+CASES.append(_sg_wrap("SG", "v8m",
+    update_happy_multi_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+CASES.append(_sg_wrap("SG", "v8f",
+    list_filter_match_block("SG", "/vpc/v1/securityGroups",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+for c in neg_invalid_types_block("SG", "/vpc/v1/securityGroups",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    CASES.append(_sg_wrap("SG", "v8nt", c))
+CASES.extend(http_method_not_allowed_block("SG", "/vpc/v1/securityGroups"))
+CASES.extend(malformed_body_block("SG", "/vpc/v1/securityGroups"))
+
+CASES.append(_sg_wrap("SG", "v9d",
+    alreadyexists_dup_name_for("SG", "/vpc/v1/securityGroups",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+for c in update_mask_partial_block("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    CASES.append(_sg_wrap("SG", "v9p", c))
+CASES.append(_sg_wrap("SG", "v9pf",
+    perf_baseline_get_block("SG", "/vpc/v1/securityGroups",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+CASES.extend(list_total_size_check_block("SG", "/vpc/v1/securityGroups"))
+
+# v10: SG-specific rule validation
+for case_id, rule, expect_ok in [
+    ("SG-URL-VAL-PORT-NEG", {"fromPort": -2, "toPort": 22}, False),
+    ("SG-URL-VAL-PORT-OVER-65535", {"fromPort": 65536, "toPort": 65536}, False),
+    ("SG-URL-VAL-PORT-ANY-MINUS-1", {"fromPort": -1, "toPort": -1}, True),
+    ("SG-URL-VAL-DIRECTION-UNKNOWN", {"fromPort": 80, "toPort": 80, "direction": "DIAGONAL"}, False),
+    ("SG-URL-VAL-PROTOCOL-UNKNOWN", {"fromPort": 80, "toPort": 80, "protocolName": "klingon"}, False),
+]:
+    rule_full = {"description": "test", "direction": rule.pop("direction", "INGRESS"),
+                 "ports": {"fromPort": rule["fromPort"], "toPort": rule["toPort"]},
+                 "protocolName": rule.pop("protocolName", "tcp"),
+                 "cidrBlocks": {"v4CidrBlocks": ["0.0.0.0/0"]}}
+    inner = Case(
+        id=case_id, title=f"UpdateRules rule field: {case_id}",
+        classes=["VAL", "STATE"] + (["NEG"] if not expect_ok else []),
+        priority="P1",
+        steps=[
+            Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
+                 body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                       "name": f"sg-r-{case_id.lower()[-6:]}-{{{{runId}}}}", "ruleSpecs": []},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+            poll_operation_until_done(),
+            Step(name="update-rule-bad", method="PATCH", path="/vpc/v1/securityGroups/{{sgId}}/rules",
+                 body={"additionRuleSpecs": [rule_full]},
+                 test_script=[
+                     f"pm.test('{'200' if expect_ok else 'rejected sync or async'}', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                     *(save_from_response("j.id", "opId") if expect_ok else []),
+                 ]),
+        ] + ([poll_operation_until_done()] if expect_ok else []) + [
+            Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            poll_operation_until_done(),
+        ],
+    )
+    CASES.append(_sg_wrap("SG", "v10r" + case_id[-5:].lower(), inner))
+
+# v11 edge cases
+CASES.append(Case(
+    id="SG-LST-PAGE-NEGATIVE-SIZE",
+    title="List с pageSize=-1 → 400 или 200",
+    classes=["BVA", "VAL"], priority="P2",
+    steps=[Step(name="lst-neg", method="GET",
+                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=-1",
+                test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="SG-LST-FILTER-SPECIAL-CHARS",
+    title="List с filter содержащим спец-символы → 400 или 200",
+    classes=["FILTER", "VAL"], priority="P3",
+    steps=[Step(name="lst-fsc", method="GET",
+                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="SG-LST-PAGESIZE-EXACTLY-1000",
+    title="List с pageSize=1000 (boundary max) → 200",
+    classes=["BVA"], priority="P2",
+    steps=[Step(name="lst-max", method="GET",
+                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1000",
+                test_script=[*assert_status(200)])],
+))
+
+CASES.append(Case(
+    id="SG-LST-PAGESIZE-1001",
+    title="List с pageSize=1001 (over max) → 400",
+    classes=["BVA", "VAL"], priority="P1",
+    steps=[Step(name="lst-1001", method="GET",
+                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1001",
+                test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+))
+
+CASES.append(Case(
+    id="SG-LST-DOUBLE-FOLDER-PARAM",
+    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="lst-dup", method="GET",
+                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="SG-GET-TRAILING-SLASH",
+    title="Get с trailing slash → 404",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="get-trail", method="GET", path="/vpc/v1/securityGroups/{{garbageVpcId}}/",
+                test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
+))

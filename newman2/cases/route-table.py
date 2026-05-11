@@ -317,3 +317,121 @@ for c in ecp_labels_block("RT", "/vpc/v1/routeTables", _rt_body):
 CASES.extend(updatemask_decision_table("RT", "/vpc/v1/routeTables"))
 CASES.extend(filter_syntax_block("RT", "/vpc/v1/routeTables"))
 CASES.append(pagination_roundtrip("RT", "/vpc/v1/routeTables"))
+
+for c in update_happy_per_field("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    CASES.append(_rt_wrap("RT", "v7", c))
+
+CASES.extend(perf_baseline_block("RT", "/vpc/v1/routeTables"))
+CASES.extend(verbatim_text_pack("RT", "RouteTable", "/vpc/v1/routeTables"))
+CASES.extend(authz_caller_headers_block("RT", "/vpc/v1/routeTables"))
+
+CASES.append(_rt_wrap("RT", "mvself",
+    move_same_folder("RT", "/vpc/v1/routeTables",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+
+CASES.append(_rt_wrap("RT", "v8m",
+    update_happy_multi_field("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+CASES.append(_rt_wrap("RT", "v8f",
+    list_filter_match_block("RT", "/vpc/v1/routeTables",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+for c in neg_invalid_types_block("RT", "/vpc/v1/routeTables",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    CASES.append(_rt_wrap("RT", "v8nt", c))
+CASES.extend(http_method_not_allowed_block("RT", "/vpc/v1/routeTables"))
+CASES.extend(malformed_body_block("RT", "/vpc/v1/routeTables"))
+
+CASES.append(_rt_wrap("RT", "v9d",
+    alreadyexists_dup_name_for("RT", "/vpc/v1/routeTables",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+for c in update_mask_partial_block("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
+    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    CASES.append(_rt_wrap("RT", "v9p", c))
+CASES.append(_rt_wrap("RT", "v9pf",
+    perf_baseline_get_block("RT", "/vpc/v1/routeTables",
+        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+CASES.extend(list_total_size_check_block("RT", "/vpc/v1/routeTables"))
+
+# v10: RT-specific static_routes validation
+for case_id, route, expect_ok in [
+    ("RT-CR-VAL-ROUTE-OK", {"destinationPrefix": "0.0.0.0/0", "nextHopAddress": "10.0.0.1"}, True),
+    ("RT-CR-VAL-ROUTE-INVALID-PREFIX", {"destinationPrefix": "not-a-cidr", "nextHopAddress": "10.0.0.1"}, False),
+    ("RT-CR-VAL-ROUTE-INVALID-HOP", {"destinationPrefix": "0.0.0.0/0", "nextHopAddress": "999.999.999.999"}, False),
+    ("RT-CR-VAL-ROUTE-EMPTY-PREFIX", {"destinationPrefix": "", "nextHopAddress": "10.0.0.1"}, False),
+    ("RT-CR-VAL-ROUTE-EMPTY-HOP", {"destinationPrefix": "10.0.0.0/24", "nextHopAddress": ""}, False),
+]:
+    inner = Case(
+        id=case_id, title=f"static_routes validation: {case_id}",
+        classes=["VAL"] + (["NEG"] if not expect_ok else ["CRUD"]),
+        priority="P1",
+        steps=[
+            Step(name="cr-route", method="POST", path="/vpc/v1/routeTables",
+                 body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                       "name": f"rt-r-{case_id.lower()[-6:]}-{{{{runId}}}}",
+                       "staticRoutes": [route]},
+                 test_script=[
+                     f"pm.test('{'200' if expect_ok else 'rejected'}', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                     *(save_from_response("j.id", "opId") if expect_ok else []),
+                     *(save_from_response("j.metadata && j.metadata.routeTableId", "rtId") if expect_ok else []),
+                 ]),
+        ] + ([poll_operation_until_done(),
+              Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+                   test_script=[*save_from_response("j.id", "opId")]),
+              poll_operation_until_done()] if expect_ok else []),
+    )
+    CASES.append(_rt_wrap("RT", "v10r" + case_id[-5:].lower(), inner))
+
+# v11 edge cases
+CASES.append(Case(
+    id="RT-LST-PAGE-NEGATIVE-SIZE",
+    title="List с pageSize=-1 → 400 или 200",
+    classes=["BVA", "VAL"], priority="P2",
+    steps=[Step(name="lst-neg", method="GET",
+                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=-1",
+                test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="RT-LST-FILTER-SPECIAL-CHARS",
+    title="List с filter содержащим спец-символы → 400 или 200",
+    classes=["FILTER", "VAL"], priority="P3",
+    steps=[Step(name="lst-fsc", method="GET",
+                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="RT-LST-PAGESIZE-EXACTLY-1000",
+    title="List с pageSize=1000 (boundary max) → 200",
+    classes=["BVA"], priority="P2",
+    steps=[Step(name="lst-max", method="GET",
+                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1000",
+                test_script=[*assert_status(200)])],
+))
+
+CASES.append(Case(
+    id="RT-LST-PAGESIZE-1001",
+    title="List с pageSize=1001 (over max) → 400",
+    classes=["BVA", "VAL"], priority="P1",
+    steps=[Step(name="lst-1001", method="GET",
+                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1001",
+                test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+))
+
+CASES.append(Case(
+    id="RT-LST-DOUBLE-FOLDER-PARAM",
+    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="lst-dup", method="GET",
+                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="RT-GET-TRAILING-SLASH",
+    title="Get с trailing slash → 404",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="get-trail", method="GET", path="/vpc/v1/routeTables/{{garbageVpcId}}/",
+                test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
+))

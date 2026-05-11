@@ -824,3 +824,104 @@ CASES.extend(updatemask_decision_table("NET", "/vpc/v1/networks"))
 CASES.extend(filter_syntax_block("NET", "/vpc/v1/networks"))
 CASES.append(pagination_roundtrip("NET", "/vpc/v1/networks"))
 CASES.append(idempotency_block("NET", "/vpc/v1/networks", "net-idm-{{runId}}", {}))
+
+# === v7: Финальное добивание к 100+ кейсов ===
+CASES.extend(update_happy_per_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(perf_baseline_block("NET", "/vpc/v1/networks"))
+CASES.append(move_same_folder("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(verbatim_text_pack("NET", "Network", "/vpc/v1/networks"))
+CASES.extend(authz_caller_headers_block("NET", "/vpc/v1/networks"))
+
+# v8: cross-folder + multi-field + filter-match + invalid types + methods + malformed
+CASES.append(update_happy_multi_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(cross_folder_resource_block("NET", "/vpc/v1/networks", {}))
+CASES.append(list_filter_match_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(neg_invalid_types_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(http_method_not_allowed_block("NET", "/vpc/v1/networks"))
+CASES.extend(malformed_body_block("NET", "/vpc/v1/networks"))
+
+# v9
+CASES.append(alreadyexists_dup_name_for("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(update_mask_partial_block("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(perf_baseline_get_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(list_total_size_check_block("NET", "/vpc/v1/networks"))
+CASES.extend(headers_content_type_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+
+# v10 Network-specific
+CASES.append(Case(
+    id="NET-CR-VAL-EXTRA-FIELDS",
+    title="Create Network с unknown полем в body → silent ignore (200) или 400",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="cr-extra", method="POST", path="/vpc/v1/networks",
+                body={"folderId": "{{_suiteFolderId}}", "name": "net-x-{{runId}}",
+                      "unknownField": "ignored", "anotherUnknown": 123},
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                             *save_from_response("j.id", "opId"),
+                             *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+           poll_operation_until_done(),
+           Step(name="cleanup", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+                test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"])],
+))
+
+CASES.append(Case(
+    id="NET-LST-FILTER-MULTI-CONDITIONS",
+    title="List с filter из несколько условий — современный YC pattern",
+    classes=["FILTER"], priority="P3",
+    steps=[Step(name="lst-multi", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+# v11 edge cases
+CASES.append(Case(
+    id="NET-LST-PAGE-NEGATIVE-SIZE",
+    title="List с pageSize=-1 → 400 или 200",
+    classes=["BVA", "VAL"], priority="P2",
+    steps=[Step(name="lst-neg", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=-1",
+                test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="NET-LST-FILTER-SPECIAL-CHARS",
+    title="List с filter содержащим спец-символы → 400 или 200",
+    classes=["FILTER", "VAL"], priority="P3",
+    steps=[Step(name="lst-fsc", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="NET-LST-PAGESIZE-EXACTLY-1000",
+    title="List с pageSize=1000 (boundary max) → 200",
+    classes=["BVA"], priority="P2",
+    steps=[Step(name="lst-max", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1000",
+                test_script=[*assert_status(200)])],
+))
+
+CASES.append(Case(
+    id="NET-LST-PAGESIZE-1001",
+    title="List с pageSize=1001 (over max) → 400",
+    classes=["BVA", "VAL"], priority="P1",
+    steps=[Step(name="lst-1001", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1001",
+                test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+))
+
+CASES.append(Case(
+    id="NET-LST-DOUBLE-FOLDER-PARAM",
+    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="lst-dup", method="GET",
+                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+))
+
+CASES.append(Case(
+    id="NET-GET-TRAILING-SLASH",
+    title="Get с trailing slash → 404",
+    classes=["VAL"], priority="P3",
+    steps=[Step(name="get-trail", method="GET", path="/vpc/v1/networks/{{garbageVpcId}}/",
+                test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
+))

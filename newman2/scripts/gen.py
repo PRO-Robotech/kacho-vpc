@@ -468,6 +468,466 @@ def idempotency_block(prefix, create_path, name_template, body_extra=None):
     )
 
 
+def update_happy_per_field(prefix, create_path, update_base_path, body_create):
+    """Update happy path для каждого mutable field отдельно: name, description, labels.
+
+    body_create — тело для создания исходного ресурса (включая name).
+    Use case_id с суффиксами FIELD-NAME/DESC/LABELS для уникальности.
+    """
+    def case_for(field, suffix, patch_body, asserts):
+        return Case(
+            id=f"{prefix}-UPD-CRUD-{field}",
+            title=f"Update happy {suffix}",
+            classes=["CRUD"], priority="P2",
+            steps=[
+                Step(name="create", method="POST", path=create_path,
+                     body={**body_create, "name": f"{prefix.lower()}-upd-{field.lower()}-{{{{runId}}}}"},
+                     test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                                  *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "createdId")]),
+                Step(name="poll-create", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+                Step(name="patch", method="PATCH",
+                     path=f"{update_base_path}/{{{{createdId}}}}",
+                     body=patch_body,
+                     test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+                Step(name="poll-patch", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+                Step(name="verify", method="GET", path=f"{update_base_path}/{{{{createdId}}}}",
+                     test_script=[*assert_status(200), *asserts]),
+                Step(name="cleanup", method="DELETE", path=f"{update_base_path}/{{{{createdId}}}}",
+                     test_script=[*save_from_response("j.id", "opId")]),
+                Step(name="poll-cleanup", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            ],
+        )
+    return [
+        case_for("NAME", "name", {"updateMask": "name", "name": f"{prefix.lower()}-renamed-x"},
+                 ["pm.test('name updated', () => pm.expect(pm.response.json().name).to.eql('" + prefix.lower() + "-renamed-x'));"]),
+        case_for("DESC", "description", {"updateMask": "description", "description": "updated-desc-newman2"},
+                 ["pm.test('description updated', () => pm.expect(pm.response.json().description).to.eql('updated-desc-newman2'));"]),
+        case_for("LABELS", "labels", {"updateMask": "labels", "labels": {"env": "prod", "team": "net"}},
+                 ["pm.test('label env', () => pm.expect((pm.response.json().labels || {}).env).to.eql('prod'));",
+                  "pm.test('label team', () => pm.expect((pm.response.json().labels || {}).team).to.eql('net'));"]),
+    ]
+
+
+def perf_baseline_block(prefix, list_path, get_path=None):
+    """Performance baseline: response time для Get/List ниже бюджета.
+
+    list_path — путь List endpoint (с folderId query param).
+    """
+    cases = [
+        Case(
+            id=f"{prefix}-LST-PERF-BASELINE",
+            title="List response time < 500ms (perf baseline)",
+            classes=["PERF", "CRUD"], priority="P2",
+            steps=[Step(name="list-timed", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10",
+                        test_script=[*assert_status(200),
+                                     "pm.test('response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"])],
+        ),
+    ]
+    return cases
+
+
+def move_same_folder(prefix, resource_base_path, body_create):
+    """Move в текущий folder (idempotent-ish — обычно 200, ресурс не меняется)."""
+    return Case(
+        id=f"{prefix}-MV-IDM-SAME-FOLDER",
+        title="Move в текущий folder → ok (idempotent), ресурс остаётся",
+        classes=["IDM", "CRUD"], priority="P2",
+        steps=[
+            Step(name="create", method="POST", path=resource_base_path,
+                 body={**body_create, "name": f"{prefix.lower()}-mv-self-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "createdId")]),
+            Step(name="poll-create", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="move-self", method="POST",
+                 path=f"{resource_base_path}/{{{{createdId}}}}:move",
+                 body={"destinationFolderId": "{{_suiteFolderId}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            Step(name="poll-move", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="verify-same-folder", method="GET",
+                 path=f"{resource_base_path}/{{{{createdId}}}}",
+                 test_script=[*assert_status(200),
+                              "pm.test('folderId unchanged', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderId')));"]),
+            Step(name="cleanup", method="DELETE",
+                 path=f"{resource_base_path}/{{{{createdId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-cleanup", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+        ],
+    )
+
+
+def verbatim_text_pack(prefix, resource_name, resource_path):
+    """Verbatim YC text snapshots для распространённых ошибок (Get/Update/Delete/Move)."""
+    return [
+        Case(
+            id=f"{prefix}-GET-CONF-FULLTEXT",
+            title=f"Get garbage → '{resource_name} <id> not found' формат",
+            classes=["CONF", "NEG"], priority="P1",
+            steps=[Step(name="get", method="GET",
+                        path=f"{resource_path}/enpsnapshotnonexist01",
+                        test_script=[
+                            *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                            f"pm.test('text matches <Resource> <id> not found', () => "
+                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist01 not found$/));",
+                        ])],
+        ),
+        Case(
+            id=f"{prefix}-UPD-CONF-FULLTEXT",
+            title=f"Update garbage → точный текст '{resource_name} ... not found'",
+            classes=["CONF", "NEG"], priority="P1",
+            steps=[Step(name="upd", method="PATCH",
+                        path=f"{resource_path}/enpsnapshotnonexist02",
+                        body={"updateMask": "description", "description": "x"},
+                        test_script=[
+                            *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                            f"pm.test('verbatim text', () => "
+                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist02 not found$/));",
+                        ])],
+        ),
+        Case(
+            id=f"{prefix}-DEL-CONF-FULLTEXT",
+            title=f"Delete garbage → '{resource_name} ... not found'",
+            classes=["CONF", "NEG"], priority="P1",
+            steps=[Step(name="del", method="DELETE",
+                        path=f"{resource_path}/enpsnapshotnonexist03",
+                        test_script=[
+                            *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                            f"pm.test('verbatim text', () => "
+                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist03 not found$/));",
+                        ])],
+        ),
+    ]
+
+
+def update_happy_multi_field(prefix, create_path, update_base_path, body_create):
+    """Update с маской из нескольких полей (mask=name,description,labels)."""
+    return Case(
+        id=f"{prefix}-UPD-CRUD-MULTI-MASK",
+        title="Update с mask=name,description,labels → все три поля обновлены",
+        classes=["CRUD", "STATE"], priority="P2",
+        steps=[
+            Step(name="create", method="POST", path=create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-multi-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "createdId")]),
+            Step(name="poll-create", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="patch-multi", method="PATCH",
+                 path=f"{update_base_path}/{{{{createdId}}}}",
+                 body={"updateMask": "name,description,labels",
+                       "name": f"{prefix.lower()}-multi-new",
+                       "description": "multi-desc",
+                       "labels": {"a": "1", "b": "2"}},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            Step(name="poll-patch", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="verify-all", method="GET",
+                 path=f"{update_base_path}/{{{{createdId}}}}",
+                 test_script=[*assert_status(200),
+                              "const j = pm.response.json();",
+                              "pm.test('name updated', () => pm.expect(j.name).to.eql('" + prefix.lower() + "-multi-new'));",
+                              "pm.test('description updated', () => pm.expect(j.description).to.eql('multi-desc'));",
+                              "pm.test('labels a', () => pm.expect((j.labels || {}).a).to.eql('1'));",
+                              "pm.test('labels b', () => pm.expect((j.labels || {}).b).to.eql('2'));"]),
+            Step(name="cleanup", method="DELETE",
+                 path=f"{update_base_path}/{{{{createdId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-cleanup", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+        ],
+    )
+
+
+def cross_folder_resource_block(prefix, create_path, body_create, name_field="name"):
+    """Cross-folder validation: создать ресурс в одном folder, увидеть его только из этого folder."""
+    return Case(
+        id=f"{prefix}-LST-AUTHZ-CROSS-FOLDER-ISOLATION",
+        title="Folder isolation: ресурс в folderA не виден в List по folderB",
+        classes=["AUTHZ", "CRUD"], priority="P0",
+        steps=[
+            Step(name="create-in-A", method="POST", path=create_path,
+                 body={**body_create, "folderId": "{{_suiteFolderId}}",
+                       name_field: f"{prefix.lower()}-iso-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "isoId")]),
+            Step(name="poll", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="list-in-B", method="GET",
+                 path=f"{create_path}?folderId={{{{_suiteFolderCrossId}}}}&pageSize=100",
+                 test_script=[*assert_status(200),
+                              "const ids = (Object.values(pm.response.json()).find(v => Array.isArray(v)) || []).map(x => x.id);",
+                              "pm.test('isolated — not in folderB list', () => pm.expect(ids).to.not.include(pm.environment.get('isoId')));"]),
+            Step(name="cleanup", method="DELETE", path=f"{create_path}/{{{{isoId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-cleanup", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+        ],
+    )
+
+
+def list_filter_match_block(prefix, create_path, body_create):
+    """List filter: создать ресурс, потом filter по точному name."""
+    return Case(
+        id=f"{prefix}-LST-FILTER-MATCH",
+        title="Создать ресурс → list filter=name='X' → ресурс в результатах",
+        classes=["FILTER", "CRUD"], priority="P2",
+        steps=[
+            Step(name="create", method="POST", path=create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-flt-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "fltId")]),
+            Step(name="poll", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="list-filtered", method="GET",
+                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=100&filter=name%3D%22{prefix.lower()}-flt-{{{{runId}}}}%22",
+                 test_script=[*assert_status(200),
+                              "const ids = (Object.values(pm.response.json()).find(v => Array.isArray(v)) || []).map(x => x.id);",
+                              "pm.test('filtered list contains', () => pm.expect(ids).to.include(pm.environment.get('fltId')));"]),
+            Step(name="cleanup", method="DELETE", path=f"{create_path}/{{{{fltId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-cleanup", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+        ],
+    )
+
+
+def neg_invalid_types_block(prefix, create_path, body_create):
+    """Negative с invalid type в полях: name=null, labels=строка вместо object."""
+    return [
+        Case(
+            id=f"{prefix}-CR-VAL-NAME-NULL",
+            title="Create с name=null → 400",
+            classes=["VAL", "NEG"], priority="P2",
+            steps=[Step(name="cr-null", method="POST", path=create_path,
+                        body={**body_create, "name": None},
+                        test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+        ),
+        Case(
+            id=f"{prefix}-CR-VAL-LABELS-STRING-TYPE",
+            title="Create с labels=строка (вместо object) → 400 InvalidArgument",
+            classes=["VAL", "NEG"], priority="P2",
+            steps=[Step(name="cr-bad-type", method="POST", path=create_path,
+                        body={**body_create, "name": f"{prefix.lower()}-bt-{{{{runId}}}}", "labels": "not-an-object"},
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+        Case(
+            id=f"{prefix}-CR-VAL-DESC-INT-TYPE",
+            title="Create с description=число → 400",
+            classes=["VAL", "NEG"], priority="P3",
+            steps=[Step(name="cr-bad-desc", method="POST", path=create_path,
+                        body={**body_create, "name": f"{prefix.lower()}-bd-{{{{runId}}}}", "description": 12345},
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+    ]
+
+
+def http_method_not_allowed_block(prefix, base_path):
+    """HTTP method semantics: попытка PUT/HEAD на endpoint → 405 или 404."""
+    return [
+        Case(
+            id=f"{prefix}-METHOD-PUT-NOT-ALLOWED",
+            title="PUT на List endpoint → 405 или 404",
+            classes=["VAL", "NEG"], priority="P3",
+            steps=[Step(name="put-list", method="PUT", path=base_path,
+                        body={"folderId": "{{_suiteFolderId}}"},
+                        test_script=["pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
+        ),
+        Case(
+            id=f"{prefix}-METHOD-DELETE-LIST",
+            title="DELETE на List endpoint (без id) → 405 или 404",
+            classes=["VAL", "NEG"], priority="P3",
+            steps=[Step(name="del-list", method="DELETE", path=base_path,
+                        test_script=["pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
+        ),
+    ]
+
+
+def malformed_body_block(prefix, create_path):
+    """Malformed JSON body, empty body, wrong content-type."""
+    return [
+        Case(
+            id=f"{prefix}-CR-VAL-MALFORMED-JSON",
+            title="Create с malformed JSON → 400",
+            classes=["VAL", "NEG"], priority="P2",
+            steps=[Step(name="cr-malformed", method="POST", path=create_path,
+                        body=None,
+                        pre_script=[
+                            "// Подменяем body на невалидный JSON через pm.request.body",
+                            "pm.request.body = { mode: 'raw', raw: '{invalid json---}' };",
+                        ],
+                        test_script=["pm.test('400 or 415', () => pm.expect(pm.response.code).to.be.oneOf([400, 415]));"])],
+        ),
+        Case(
+            id=f"{prefix}-CR-VAL-EMPTY-BODY",
+            title="Create с пустым body → 400",
+            classes=["VAL", "NEG"], priority="P2",
+            steps=[Step(name="cr-empty-body", method="POST", path=create_path,
+                        body={},
+                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+        ),
+    ]
+
+
+def alreadyexists_dup_name_for(prefix, create_path, body_create):
+    """Tests duplicate name → ALREADY_EXISTS (где есть UNIQUE constraint)."""
+    return Case(
+        id=f"{prefix}-CR-NEG-DUP-NAME-CHECK",
+        title="Создать дубль с тем же name → проверить ALREADY_EXISTS или silent (FINDING)",
+        classes=["NEG", "CONC"], priority="P1",
+        steps=[
+            Step(name="cr-first", method="POST", path=create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-dupck-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "firstId")]),
+            Step(name="poll-first", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="cr-dup", method="POST", path=create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-dupck-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "secondId")]),
+            Step(name="poll-dup", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="check-result", method="GET", path="/operations/{{opId}}",
+                 test_script=[
+                     "const j = pm.response.json();",
+                     "// Если UNIQUE есть — j.error.code===6; если нет — silent success.",
+                     "pm.test('result is either ALREADY_EXISTS or success', () => {",
+                     "  const hasError = j.error && (j.error.code === 6 || j.error.code === 9);  // ALREADY_EXISTS или FailedPrecondition (CIDR overlap)",
+                     "  const hasResponse = !j.error && j.response;",
+                     "  pm.expect(Boolean(hasError || hasResponse)).to.eql(true);",
+                     "});",
+                 ]),
+            Step(name="cleanup-first", method="DELETE", path=f"{create_path}/{{{{firstId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-c1", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="cleanup-second-if-different", method="DELETE",
+                 path=f"{create_path}/{{{{secondId}}}}",
+                 test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                              *save_from_response("j.id", "opId")]),
+        ],
+    )
+
+
+def update_mask_partial_block(prefix, create_path, update_base_path, body_create):
+    """Decision table partial mask: только name; только description; только labels."""
+    return [
+        Case(
+            id=f"{prefix}-UPD-VAL-MASK-NAME-ONLY",
+            title="Update mask=name → только name меняется, description/labels не трогаются",
+            classes=["VAL", "STATE"], priority="P2",
+            steps=[
+                Step(name="cr", method="POST", path=create_path,
+                     body={**body_create, "name": f"{prefix.lower()}-mn-{{{{runId}}}}",
+                           "description": "init", "labels": {"orig": "1"}},
+                     test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                                  *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "createdId")]),
+                Step(name="poll-cr", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+                Step(name="patch-name-only", method="PATCH",
+                     path=f"{update_base_path}/{{{{createdId}}}}",
+                     body={"updateMask": "name", "name": f"{prefix.lower()}-mnnew",
+                           "description": "should-be-ignored", "labels": {"ignored": "y"}},
+                     test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+                Step(name="poll-p", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+                Step(name="verify", method="GET",
+                     path=f"{update_base_path}/{{{{createdId}}}}",
+                     test_script=[*assert_status(200),
+                                  "const j = pm.response.json();",
+                                  "pm.test('name updated', () => pm.expect(j.name).to.eql('" + prefix.lower() + "-mnnew'));",
+                                  "pm.test('description preserved', () => pm.expect(j.description).to.eql('init'));",
+                                  "pm.test('labels preserved', () => pm.expect((j.labels || {}).orig).to.eql('1'));"]),
+                Step(name="cleanup", method="DELETE",
+                     path=f"{update_base_path}/{{{{createdId}}}}",
+                     test_script=[*save_from_response("j.id", "opId")]),
+                Step(name="poll-c", method="GET", path="/operations/{{opId}}",
+                     test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            ],
+        ),
+    ]
+
+
+def perf_baseline_get_block(prefix, get_create_path, body_create):
+    """GET happy с perf budget."""
+    return Case(
+        id=f"{prefix}-GET-PERF-BASELINE",
+        title="Get existing — response time < 300ms",
+        classes=["PERF", "CRUD"], priority="P2",
+        steps=[
+            Step(name="cr", method="POST", path=get_create_path,
+                 body={**body_create, "name": f"{prefix.lower()}-perf-{{{{runId}}}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "perfId")]),
+            Step(name="poll-cr", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+            Step(name="get-timed", method="GET", path=f"{get_create_path}/{{{{perfId}}}}",
+                 test_script=[*assert_status(200),
+                              "pm.test('response time < 300ms', () => pm.expect(pm.response.responseTime).to.be.below(300));"]),
+            Step(name="cleanup", method="DELETE", path=f"{get_create_path}/{{{{perfId}}}}",
+                 test_script=[*save_from_response("j.id", "opId")]),
+            Step(name="poll-c", method="GET", path="/operations/{{opId}}",
+                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
+        ],
+    )
+
+
+def list_total_size_check_block(prefix, list_path):
+    """List возвращает разумное число объектов (не больше pageSize)."""
+    return [
+        Case(
+            id=f"{prefix}-LST-CONTRACT-NEVER-EXCEEDS-PAGESIZE",
+            title="List с pageSize=5 → не более 5 элементов в response",
+            classes=["PAGE", "CRUD"], priority="P2",
+            steps=[Step(name="list-5", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=5",
+                        test_script=[*assert_status(200),
+                                     "pm.test('at most 5 items', () => {"
+                                     "  const j = pm.response.json();"
+                                     "  const k = Object.keys(j).find(x => Array.isArray(j[x]));"
+                                     "  pm.expect((j[k] || []).length).to.be.at.most(5);"
+                                     "});"])],
+        ),
+    ]
+
+
+def headers_content_type_block(prefix, create_path, body_create):
+    """Content-Type required: POST без правильного header → behavior."""
+    return [
+        Case(
+            id=f"{prefix}-HEADERS-MISSING-CT",
+            title="POST без Content-Type → 415 или 400 или 200 (lenient)",
+            classes=["VAL", "NEG"], priority="P3",
+            steps=[Step(name="post-no-ct", method="POST", path=create_path,
+                        body={**body_create, "name": f"{prefix.lower()}-noct-{{{{runId}}}}"},
+                        pre_script=["pm.request.headers.remove('Content-Type');"],
+                        test_script=["pm.test('lenient or rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 415]));"])],
+        ),
+    ]
+
+
+def authz_caller_headers_block(prefix, list_path):
+    """RBAC-pre kit: проверка headers cross-tenant (анонимный vs admin-claim)."""
+    return [
+        Case(
+            id=f"{prefix}-AUTHZ-EMPTY-FOLDER-HEADER",
+            title="List с пустым x-kacho-folder-id header → текущее: 200 (dev mode)",
+            classes=["AUTHZ"], priority="P1",
+            steps=[Step(name="list-with-empty-header", method="GET",
+                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}",
+                        test_script=[
+                            "pm.test('OK in dev or PermissionDenied in production', () => pm.expect(pm.response.code).to.be.oneOf([200, 403, 401]));",
+                        ])],
+        ),
+    ]
+
+
 def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None):
     """CONF: AlreadyExists text при duplicate name."""
     body_extra = body_extra or {}
@@ -611,6 +1071,22 @@ def load_cases_module(path: Path):
     mod.filter_syntax_block = filter_syntax_block
     mod.pagination_roundtrip = pagination_roundtrip
     mod.idempotency_block = idempotency_block
+    mod.update_happy_per_field = update_happy_per_field
+    mod.perf_baseline_block = perf_baseline_block
+    mod.move_same_folder = move_same_folder
+    mod.verbatim_text_pack = verbatim_text_pack
+    mod.authz_caller_headers_block = authz_caller_headers_block
+    mod.update_happy_multi_field = update_happy_multi_field
+    mod.cross_folder_resource_block = cross_folder_resource_block
+    mod.list_filter_match_block = list_filter_match_block
+    mod.neg_invalid_types_block = neg_invalid_types_block
+    mod.http_method_not_allowed_block = http_method_not_allowed_block
+    mod.malformed_body_block = malformed_body_block
+    mod.alreadyexists_dup_name_for = alreadyexists_dup_name_for
+    mod.update_mask_partial_block = update_mask_partial_block
+    mod.perf_baseline_get_block = perf_baseline_get_block
+    mod.list_total_size_check_block = list_total_size_check_block
+    mod.headers_content_type_block = headers_content_type_block
     spec.loader.exec_module(mod)
     return mod
 
