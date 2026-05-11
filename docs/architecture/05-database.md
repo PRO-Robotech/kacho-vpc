@@ -141,6 +141,27 @@ address_pool_network_default(network_id PK, pool_id FK→address_pools)
 address_pool_address_override(address_id PK, pool_id FK→address_pools)
 ```
 
+### `address_references` (миграция 0003)
+
+Referrer-tracking «кто использует адрес» (YC-like). Один referrer на адрес.
+
+```
+address_id     TEXT  PK  FK→addresses ON DELETE CASCADE
+referrer_type  TEXT      ("compute_instance" — расширяемо)
+referrer_id    TEXT      (id ресурса-владельца, напр. id ВМ)
+referrer_name  TEXT      ('' если не задано; best-effort на момент привязки)
+attached_at    TIMESTAMPTZ DEFAULT now()
+
+index address_references_referrer_idx (referrer_type, referrer_id)
+```
+
+`addresses.used` поддерживается сервис-слоем синхронно: `true` ⇔ существует
+referrer-row (SetReference выставляет, ClearReference снимает; FK CASCADE
+убирает row при удалении адреса). Управляется через
+`InternalAddressService.{Set,Clear,Get}AddressReference`; surfaced через
+`SubnetService.ListUsedAddresses` (`UsedAddress.references[]`). kacho-compute
+привязывает эфемерные NIC-адреса ВМ через эти RPC.
+
 ### `vpc_outbox`
 
 ```

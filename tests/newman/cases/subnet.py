@@ -265,8 +265,8 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-UPD-STATE-IMMUTABLE-CIDR",
-    title="Update с mask=v4_cidr_blocks → InvalidArgument (immutable)",
-    classes=["STATE", "VAL"],
+    title="Update с mask=v4_cidr_blocks → принимается (200); YC мутирует CIDR, мы — no-op (kacho-vpc#10)",
+    classes=["STATE", "CRUD"],
     priority="P1",
     steps=[
         *_make_net("im"),
@@ -277,9 +277,14 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
         poll_operation_until_done(),
+        # verbatim YC (probe 2026-05-11, kacho-vpc#10): v4_cidr_blocks в update_mask
+        # больше НЕ отвергается — 200. (YC при этом меняет CIDR; наш repo.Update
+        # CIDR-колонки не перезаписывает → изменение CIDR через Update у нас no-op,
+        # см. 07-known-divergences.md.)
         Step(name="patch-cidr-via-mask", method="PATCH", path="/vpc/v1/subnets/{{subId}}",
              body={"updateMask": "v4_cidr_blocks", "v4CidrBlocks": ["10.31.0.0/24"]},
-             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
         Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -332,7 +337,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-REL-NEG-IN-USE",
-    title="Relocate subnet с Address-ом → FailedPrecondition 'Invalid subnet state'",
+    title="Relocate subnet (с Address-ом) → sync 400 FailedPrecondition 'Invalid subnet state' (kacho-vpc#10)",
     classes=["NEG", "CONF"],
     priority="P1",
     steps=[
@@ -351,16 +356,12 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
         poll_operation_until_done(),
+        # verbatim YC (probe 2026-05-11, kacho-vpc#10): Relocate ВСЕГДА → sync 400
+        # FailedPrecondition "Invalid subnet state" (Operation не создаётся).
         Step(name="relocate", method="POST", path="/vpc/v1/subnets/{{subId}}:relocate",
              body={"destinationZoneId": "{{existingZoneAltId}}"},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 "const j = pm.response.json();",
-                 "pm.test('error code 9 (FAILED_PRECONDITION)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
-                 "pm.test('text \"Invalid subnet state\"', () => pm.expect(j.error.message).to.include('Invalid subnet state'));",
-             ]),
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('text \"Invalid subnet state\"', () => pm.expect(pm.response.json().message).to.eql('Invalid subnet state'));"]),
         Step(name="cleanup-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -544,8 +545,8 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-REL-STATE-NO-ADDRESSES-OK",
-    title="Relocate subnet без Address → succeeds (zone_id обновляется)",
-    classes=["STATE", "CRUD"], priority="P1",
+    title="Relocate subnet без Address → YC всё равно 400 'Invalid subnet state' (kacho-vpc#10; -OK исторический)",
+    classes=["STATE", "NEG"], priority="P1",
     steps=[
         *_make_net("rels"),
         Step(name="create-sub", method="POST", path="/vpc/v1/subnets",
@@ -555,13 +556,12 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
         poll_operation_until_done(),
+        # verbatim YC (probe 2026-05-11): Relocate отвергается даже для свежей
+        # подсети без адресов — sync 400 FailedPrecondition "Invalid subnet state".
         Step(name="relocate", method="POST", path="/vpc/v1/subnets/{{subId}}:relocate",
              body={"destinationZoneId": "{{existingZoneAltId}}"},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
-        Step(name="verify-zone", method="GET", path="/vpc/v1/subnets/{{subId}}",
-             test_script=[*assert_status(200),
-                          "pm.test('zoneId updated', () => pm.expect(pm.response.json().zoneId).to.eql(pm.environment.get('existingZoneAltId')));"]),
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('text \"Invalid subnet state\"', () => pm.expect(pm.response.json().message).to.eql('Invalid subnet state'));"]),
         Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -910,28 +910,39 @@ for case_id, opts, expect_ok in [
     )
     CASES.append(_wrap_with_net("SUB", "v10dhcp" + case_id[-5:].lower(), inner))
 
-# CIDR prefix boundary
-for cidr in ["10.255.0.0/28", "10.255.0.0/29", "10.255.0.0/30", "10.255.0.0/31"]:
-    suffix = cidr.replace(".", "").replace("/", "p")[-8:]
-    CASES.append(_wrap_with_net("SUB", "v10cidr" + suffix,
+# CIDR prefix boundary — verbatim YC (probe 2026-05-11, kacho-vpc#10):
+# /28 принимается; /29, /30, /31 → 400 "Illegal argument Invalid network prefix /N".
+CASES.append(_wrap_with_net("SUB", "v10cidr28",
+    Case(
+        id="SUB-CR-BVA-CIDR-28",
+        title="Create subnet с prefix /28 → 200 (минимальный размер по YC)",
+        classes=["BVA", "CRUD"], priority="P2",
+        steps=[
+            Step(name="cr-prefix-28", method="POST", path="/vpc/v1/subnets",
+                 body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                       "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.255.0.0/28"],
+                       "name": "sub-cidr-28-{{runId}}"},
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                              *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+            poll_operation_until_done(),
+            Step(name="cleanup-28", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+            poll_operation_until_done(),
+        ],
+    )))
+for _n in ("29", "30", "31"):
+    CASES.append(_wrap_with_net("SUB", "v10cidr" + _n,
         Case(
-            id=f"SUB-CR-BVA-CIDR-{cidr.split('/')[1]}",
-            title=f"Create subnet с prefix /{cidr.split('/')[1]} → ожидаемое поведение",
-            classes=["BVA"], priority="P2",
+            id=f"SUB-CR-BVA-CIDR-{_n}",
+            title=f"Create subnet с prefix /{_n} → 400 'Illegal argument Invalid network prefix /{_n}' (verbatim YC)",
+            classes=["BVA", "VAL", "NEG"], priority="P2",
             steps=[
-                Step(name="cr-prefix", method="POST", path="/vpc/v1/subnets",
+                Step(name=f"cr-prefix-{_n}", method="POST", path="/vpc/v1/subnets",
                      body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
-                           "zoneId": "{{existingZoneId}}", "v4CidrBlocks": [cidr],
-                           "name": f"sub-cidr-{cidr.split('/')[1]}-{{{{runId}}}}"},
-                     test_script=[
-                         "pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
-                         *save_from_response("j.id", "opId"),
-                         *save_from_response("j.metadata && j.metadata.subnetId", "subId"),
-                     ]),
-                poll_operation_until_done(),
-                Step(name="cleanup", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
-                     test_script=["pm.test('cleanup', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
-                                  *save_from_response("j.id", "opId")]),
+                           "zoneId": "{{existingZoneId}}", "v4CidrBlocks": [f"10.255.0.0/{_n}"],
+                           "name": f"sub-cidr-{_n}-{{{{runId}}}}"},
+                     test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                                  f"pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Invalid network prefix /{_n}'));"]),
             ],
         )))
 

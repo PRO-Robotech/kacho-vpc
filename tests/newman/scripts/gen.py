@@ -80,6 +80,23 @@ def assert_grpc_code(code: int, code_name: str) -> List[str]:
     ]
 
 
+def assert_transcode_error() -> List[str]:
+    """400 + непустое тело. Verbatim YC на ошибки JSON-transcoding (неверный тип
+    поля, oneof задан дважды) отдаёт plain-text; наш api-gateway — JSON {code,message}.
+    Это поведение runtime-библиотеки grpc-gateway — известное расхождение
+    (07-known-divergences.md, kacho-vpc#10). Кейс остаётся defensive — лишь
+    фиксирует, что запрос отвергнут с 400 и непустым телом."""
+    return [
+        "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+        "pm.test('non-empty error body', () => {",
+        "  let m;",
+        "  try { const j = pm.response.json(); m = (j && (j.message || JSON.stringify(j))) || ''; }",
+        "  catch (e) { m = pm.response.text() || ''; }",
+        "  pm.expect(String(m).length).to.be.above(0);",
+        "});",
+    ]
+
+
 def assert_field_violation(field_name: str) -> List[str]:
     return [
         f"pm.test('field violation on \"{field_name}\"', () => {{",
@@ -538,11 +555,12 @@ def perf_baseline_block(prefix, list_path, get_path=None):
 
 
 def move_same_folder(prefix, resource_base_path, body_create):
-    """Move в текущий folder (idempotent-ish — обычно 200, ресурс не меняется)."""
+    """Move в текущий folder → verbatim YC (probe 2026-05-11, kacho-vpc#10):
+    InvalidArgument "Illegal argument Destination folder is the same as the source" (400)."""
     return Case(
         id=f"{prefix}-MV-IDM-SAME-FOLDER",
-        title="Move в текущий folder → ok (idempotent), ресурс остаётся",
-        classes=["IDM", "CRUD"], priority="P2",
+        title="Move в текущий folder → 400 'Destination folder is the same as the source'",
+        classes=["IDM", "NEG"], priority="P2",
         steps=[
             Step(name="create", method="POST", path=resource_base_path,
                  body={**body_create, "name": f"{prefix.lower()}-mv-self-{{{{runId}}}}"},
@@ -553,10 +571,9 @@ def move_same_folder(prefix, resource_base_path, body_create):
             Step(name="move-self", method="POST",
                  path=f"{resource_base_path}/{{{{createdId}}}}:move",
                  body={"destinationFolderId": "{{_suiteFolderId}}"},
-                 test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-            Step(name="poll-move", method="GET", path="/operations/{{opId}}",
-                 test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
-            Step(name="verify-same-folder", method="GET",
+                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                              "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"]),
+            Step(name="verify-unchanged", method="GET",
                  path=f"{resource_base_path}/{{{{createdId}}}}",
                  test_script=[*assert_status(200),
                               "pm.test('folderId unchanged', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderId')));"]),
@@ -569,44 +586,52 @@ def move_same_folder(prefix, resource_base_path, body_create):
     )
 
 
-def verbatim_text_pack(prefix, resource_name, resource_path):
-    """Verbatim YC text snapshots для распространённых ошибок (Get/Update/Delete/Move)."""
+def verbatim_text_pack(prefix, resource_name, resource_path, text_template=None):
+    """Verbatim YC text snapshots для распространённых ошибок (Get/Update/Delete).
+
+    text_template — шаблон not-found текста с плейсхолдером {id}; по умолчанию
+    "<resource_name> {id} not found". Для SecurityGroup передаётся
+    "Security group SecurityGroup.Id(value={id}) not found" (verbatim YC,
+    probe 2026-05-11, kacho-vpc#10)."""
+    text_template = text_template or (resource_name + " {id} not found")
+
+    def _eql_test(literal_id):
+        exact = text_template.format(id=literal_id)
+        return f"pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql({json.dumps(exact)}));"
+
     return [
         Case(
             id=f"{prefix}-GET-CONF-FULLTEXT",
-            title=f"Get garbage → '{resource_name} <id> not found' формат",
+            title=f"Get garbage → точный verbatim-YC текст not-found",
             classes=["CONF", "NEG"], priority="P1",
             steps=[Step(name="get", method="GET",
                         path=f"{resource_path}/enpsnapshotnonexist01",
                         test_script=[
                             *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                            f"pm.test('text matches <Resource> <id> not found', () => "
-                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist01 not found$/));",
+                            _eql_test("enpsnapshotnonexist01"),
                         ])],
         ),
         Case(
             id=f"{prefix}-UPD-CONF-FULLTEXT",
-            title=f"Update garbage → точный текст '{resource_name} ... not found'",
+            title=f"Update garbage → точный verbatim-YC текст not-found",
             classes=["CONF", "NEG"], priority="P1",
             steps=[Step(name="upd", method="PATCH",
                         path=f"{resource_path}/enpsnapshotnonexist02",
                         body={"updateMask": "description", "description": "x"},
                         test_script=[
                             *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                            f"pm.test('verbatim text', () => "
-                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist02 not found$/));",
+                            _eql_test("enpsnapshotnonexist02"),
                         ])],
         ),
         Case(
             id=f"{prefix}-DEL-CONF-FULLTEXT",
-            title=f"Delete garbage → '{resource_name} ... not found'",
+            title=f"Delete garbage → точный verbatim-YC текст not-found",
             classes=["CONF", "NEG"], priority="P1",
             steps=[Step(name="del", method="DELETE",
                         path=f"{resource_path}/enpsnapshotnonexist03",
                         test_script=[
                             *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                            f"pm.test('verbatim text', () => "
-                            f"pm.expect(pm.response.json().message).to.match(/^{resource_name} enpsnapshotnonexist03 not found$/));",
+                            _eql_test("enpsnapshotnonexist03"),
                         ])],
         ),
     ]
@@ -717,19 +742,19 @@ def neg_invalid_types_block(prefix, create_path, body_create):
         ),
         Case(
             id=f"{prefix}-CR-VAL-LABELS-STRING-TYPE",
-            title="Create с labels=строка (вместо object) → 400 InvalidArgument",
+            title="Create с labels=строка (вместо object) → 400 (тело: YC plain-text / наш JSON — defensive)",
             classes=["VAL", "NEG"], priority="P2",
             steps=[Step(name="cr-bad-type", method="POST", path=create_path,
                         body={**body_create, "name": f"{prefix.lower()}-bt-{{{{runId}}}}", "labels": "not-an-object"},
-                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+                        test_script=[*assert_transcode_error()])],
         ),
         Case(
             id=f"{prefix}-CR-VAL-DESC-INT-TYPE",
-            title="Create с description=число → 400",
+            title="Create с description=число → 400 (тело: YC plain-text / наш JSON — defensive)",
             classes=["VAL", "NEG"], priority="P3",
             steps=[Step(name="cr-bad-desc", method="POST", path=create_path,
                         body={**body_create, "name": f"{prefix.lower()}-bd-{{{{runId}}}}", "description": 12345},
-                        test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
+                        test_script=[*assert_transcode_error()])],
         ),
     ]
 
@@ -1173,10 +1198,13 @@ def subnet_cidr_expand_shrink_pack():
 def pairwise_subnet_pack():
     """Pairwise (§3.5) для Subnet: zone × prefix × dhcp.
     9 combinations покрывают все пары."""
+    # NB: используем только реальные YC-зоны (ru-central1-{a,b,d}); ru-central1-c
+    # в YC не существует (probe 2026-05-11 — Subnet.Create на ней → "Illegal
+    # argument zone_id"). kacho-vpc#10.
     combos = [
         ("ru-central1-a", "/24", True),  ("ru-central1-a", "/28", False), ("ru-central1-a", "/16", True),
         ("ru-central1-b", "/24", False), ("ru-central1-b", "/28", True),  ("ru-central1-b", "/16", False),
-        ("ru-central1-c", "/24", True),  ("ru-central1-c", "/28", False), ("ru-central1-c", "/16", True),
+        ("ru-central1-d", "/24", True),  ("ru-central1-d", "/28", False), ("ru-central1-d", "/16", True),
     ]
     cases = []
     for i, (zone, prefix, with_dhcp) in enumerate(combos):

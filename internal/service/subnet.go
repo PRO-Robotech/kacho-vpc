@@ -51,6 +51,10 @@ type SubnetService struct {
 	folderClient FolderClient
 	opsRepo      operations.Repo
 	zoneReg      ZoneRegistry
+	// addrRefRepo — опционально (wired через SetAddressRefRepo в cmd/vpc/main.go):
+	// используется только для обогащения ListUsedAddresses записями referrer'ов
+	// (кто использует адрес). nil → references[] пуст (graceful degradation).
+	addrRefRepo AddressRepo
 }
 
 // NewSubnetService создаёт SubnetService.
@@ -60,6 +64,10 @@ type SubnetService struct {
 func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo, zoneReg ZoneRegistry) *SubnetService {
 	return &SubnetService{repo: repo, networkRepo: networkRepo, folderClient: folderClient, opsRepo: opsRepo, zoneReg: zoneReg}
 }
+
+// SetAddressRefRepo инъектирует AddressRepo для обогащения ListUsedAddresses
+// записями referrer'ов (кто использует адрес). Вызывается из composition-root.
+func (s *SubnetService) SetAddressRefRepo(r AddressRepo) { s.addrRefRepo = r }
 
 // validateZoneID — sync-валидация zone_id: required + existence в БД.
 //
@@ -130,8 +138,9 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
 	}
 	// SU-CIDR-2: host-bits в v4CidrBlocks (например `10.0.0.5/24`) → InvalidArgument.
+	// Плюс ограничение размера префикса /28 (verbatim YC, kacho-vpc#10).
 	for i, c := range req.V4CidrBlocks {
-		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
+		if err := validateSubnetV4CIDR(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
 			return nil, err
 		}
 	}
@@ -234,12 +243,13 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 
 // Update обновляет Subnet.
 //
-// SU-CIDR-IM-1: v4_cidr_blocks / v6_cidr_blocks / network_id / zone_id —
-// immutable после Create. Поведение verbatim YC:
-//   - Если update_mask **явно** содержит immutable field → InvalidArgument.
-//   - Если клиент прислал immutable field в body без mask или с mask других
-//     полей (как обычно делает UI, шлющий full-object PATCH) → silently
-//     игнорируем. applySubnetMask не применяет immutable fields.
+// SU-CIDR-IM-1: network_id / zone_id — hard-immutable: явное указание в
+// update_mask → InvalidArgument; присланное в body без mask — silently
+// игнорируется (full-object PATCH UI). v4_cidr_blocks / v6_cidr_blocks —
+// verbatim YC (probe 2026-05-11, kacho-vpc#10) НЕ отвергает их в mask: YC
+// принимает запрос (200). Мы тоже принимаем — но репозиторный Update не
+// перезаписывает CIDR-колонки (defensive depth), т.е. изменение CIDR через
+// Update — no-op (документировано в 07-known-divergences.md).
 func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.SubnetID); err != nil {
 		return nil, err
@@ -249,7 +259,7 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 	}
 	for _, field := range req.UpdateMask {
 		switch field {
-		case "v4_cidr_blocks", "v6_cidr_blocks", "network_id", "zone_id":
+		case "network_id", "zone_id":
 			return nil, invalidArg(field, field+" is immutable after Subnet.Create")
 		}
 	}
@@ -426,7 +436,11 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+	cur, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := checkMoveDestination(ctx, s.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move subnet %s", id),
@@ -478,7 +492,7 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
 	}
 	for i, c := range v4 {
-		if err := validateCIDRPrefix(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
+		if err := validateSubnetV4CIDR(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
 			return nil, err
 		}
 	}
@@ -573,9 +587,13 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 
 // Relocate переносит подсеть в другую zone.
 //
-// YC verbatim: requires destination_zone_id, ZoneId existence-check через
-// БД. Если подсеть "in use" (есть Address-ресурсы) — FailedPrecondition
-// "Invalid subnet state".
+// Verbatim YC (probe 2026-05-11, kacho-vpc#10): Relocate ВСЕГДА отвергается
+// синхронно с FailedPrecondition "Invalid subnet state" — даже для свежей
+// подсети без адресов и валидной целевой зоны. YC требует какое-то внутреннее
+// состояние подсети, которое control-plane без data-plane не моделирует
+// (multi-zone network?). Поэтому Operation не создаётся: после format-check
+// id, валидации destination_zone_id и проверки существования подсети →
+// FAILED_PRECONDITION "Invalid subnet state".
 func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
 		return nil, err
@@ -586,57 +604,42 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 	if err := s.validateZoneID(ctx, "destination_zone_id", destZoneID); err != nil {
 		return nil, err
 	}
-	op, err := operations.New(ids.PrefixOperationVPC,
-		fmt.Sprintf("Relocate subnet %s to %s", id, destZoneID),
-		&vpcv1.RelocateSubnetMetadata{SubnetId: id})
-	if err != nil {
-		return nil, err
+	if _, err := s.repo.Get(ctx, id); err != nil {
+		return nil, mapRepoErr(err)
 	}
-	if err := s.opsRepo.Create(ctx, op); err != nil {
-		return nil, err
-	}
-	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		sub, err := s.repo.Get(ctx, id)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		if sub.ZoneID == destZoneID {
-			return anypb.New(protoconv.Subnet(sub))
-		}
-		// Если подсеть has addresses → отказ (verbatim YC text "Invalid subnet state").
-		addrs, _, err := s.repo.AddressesBySubnet(ctx, id, Pagination{PageSize: 1})
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		if len(addrs) > 0 {
-			return nil, status.Error(codes.FailedPrecondition, "Invalid subnet state")
-		}
-		updated, err := s.repo.SetZoneID(ctx, id, destZoneID)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return anypb.New(protoconv.Subnet(updated))
-	})
-	return &op, nil
+	return nil, status.Error(codes.FailedPrecondition, "Invalid subnet state")
 }
 
 // ListUsedAddresses возвращает Address-ресурсы, привязанные к подсети
-// (через internal_ipv4.subnet_id). Sync RPC, не Operation.
-func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+// (через internal_ipv4.subnet_id) + referrer-записи (кто использует адрес,
+// map address-id → reference; ключ отсутствует если referrer'а нет).
+// Sync RPC, не Operation.
+func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, map[string]*domain.AddressReference, string, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if subnetID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
+		return nil, nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
 	}
 	if _, err := s.repo.Get(ctx, subnetID); err != nil {
-		return nil, "", mapRepoErr(err)
+		return nil, nil, "", mapRepoErr(err)
 	}
 	addrs, nextToken, err := s.repo.AddressesBySubnet(ctx, subnetID, p)
 	if err != nil {
-		return nil, "", mapRepoErr(err)
+		return nil, nil, "", mapRepoErr(err)
 	}
-	return addrs, nextToken, nil
+	refs := map[string]*domain.AddressReference{}
+	if s.addrRefRepo != nil && len(addrs) > 0 {
+		idsList := make([]string, 0, len(addrs))
+		for _, a := range addrs {
+			idsList = append(idsList, a.ID)
+		}
+		refs, err = s.addrRefRepo.ReferencesForAddresses(ctx, idsList)
+		if err != nil {
+			return nil, nil, "", mapRepoErr(err)
+		}
+	}
+	return addrs, refs, nextToken, nil
 }
 
 // checkSubnetCIDROverlap — sync FAILED_PRECONDITION "Subnet CIDRs can not

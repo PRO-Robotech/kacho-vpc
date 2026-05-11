@@ -30,7 +30,7 @@ func (r *RouteTableRepo) Get(ctx context.Context, id string) (*domain.RouteTable
 	row := r.pool.QueryRow(ctx, q, id)
 	rt, err := scanRouteTable(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "RouteTable", id)
+		return nil, wrapPgErr(err, "Route table", id)
 	}
 	return rt, nil
 }
@@ -91,7 +91,7 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", wrapPgErr(err, "RouteTable", "")
+		return nil, "", wrapPgErr(err, "Route table", "")
 	}
 	defer rows.Close()
 
@@ -99,12 +99,12 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 	for rows.Next() {
 		rt, err := scanRouteTable(rows)
 		if err != nil {
-			return nil, "", wrapPgErr(err, "RouteTable", "")
+			return nil, "", wrapPgErr(err, "Route table", "")
 		}
 		result = append(result, rt)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", wrapPgErr(err, "RouteTable", "")
+		return nil, "", wrapPgErr(err, "Route table", "")
 	}
 
 	var nextToken string
@@ -143,13 +143,13 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "RouteTable", rt.Name)
+		return nil, wrapPgErr(err, "Route table", rt.Name)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "CREATED", routeTablePayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "RouteTable", rt.Name)
+		return nil, wrapPgErr(err, "Route table", rt.Name)
 	}
 	return result, nil
 }
@@ -180,13 +180,13 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "RouteTable", rt.ID)
+		return nil, wrapPgErr(err, "Route table", rt.ID)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "UPDATED", routeTablePayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "RouteTable", rt.ID)
+		return nil, wrapPgErr(err, "Route table", rt.ID)
 	}
 	return result, nil
 }
@@ -203,13 +203,13 @@ func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (
 	row := tx.QueryRow(ctx, q, id, folderID)
 	rt, err := scanRouteTable(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "RouteTable", id)
+		return nil, wrapPgErr(err, "Route table", id)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", rt.ID, "UPDATED", routeTablePayload(rt)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "RouteTable", id)
+		return nil, wrapPgErr(err, "Route table", id)
 	}
 	return rt, nil
 }
@@ -227,16 +227,16 @@ func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 			return fmt.Errorf("%w: route table is in use", service.ErrFailedPrecondition)
 		}
 		// 22P02 → InvalidArgument "invalid routetable id 'X'" (verbatim YC).
-		return wrapPgErr(err, "RouteTable", id)
+		return wrapPgErr(err, "Route table", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: RouteTable %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Route table %s not found", service.ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", id, "DELETED", map[string]any{"id": id}); err != nil {
 		return service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return wrapPgErr(err, "RouteTable", id)
+		return wrapPgErr(err, "Route table", id)
 	}
 	return nil
 }

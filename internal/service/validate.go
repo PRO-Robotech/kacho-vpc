@@ -23,6 +23,36 @@ func checkFolderExists(ctx context.Context, fc FolderClient, folderID string) er
 	return nil
 }
 
+// checkMoveDestination — verbatim YC sync precondition for Move RPCs: the
+// destination folder must differ from the resource's current folder (probe
+// 2026-05-11 — YC: InvalidArgument "Illegal argument Destination folder is the
+// same as the source") and must exist. См. kacho-vpc#10.
+func checkMoveDestination(ctx context.Context, fc FolderClient, currentFolderID, destFolderID string) error {
+	if destFolderID == currentFolderID {
+		return status.Error(codes.InvalidArgument, "Illegal argument Destination folder is the same as the source")
+	}
+	return checkFolderExists(ctx, fc, destFolderID)
+}
+
+// validateSubnetV4CIDR — host-bits=0 (см. validateCIDRPrefix) плюс ограничение
+// размера префикса: verbatim YC (probe 2026-05-11) отвергает Subnet с IPv4
+// префиксом длиннее /28 — InvalidArgument "Illegal argument Invalid network
+// prefix /<N>". См. kacho-vpc#10. (Для CIDR-блоков в SG-правилах ограничения
+// нет — там обычный validateCIDRPrefix.)
+func validateSubnetV4CIDR(field, value string) error {
+	if err := validateCIDRPrefix(field, value); err != nil {
+		return err
+	}
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		return invalidArg(field, field+" must be a valid CIDR (e.g. 10.0.0.0/24)")
+	}
+	if prefix.Addr().Is4() && prefix.Bits() > 28 {
+		return status.Errorf(codes.InvalidArgument, "Illegal argument Invalid network prefix /%d", prefix.Bits())
+	}
+	return nil
+}
+
 // validateCIDRPrefix проверяет, что value — валидный CIDR-prefix (например
 // "10.0.0.0/24") и host-bits = 0 (т.е. value совпадает с .Masked()).
 //

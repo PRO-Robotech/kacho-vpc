@@ -85,9 +85,10 @@ func TestSubnetService_Create_NetworkNotFound(t *testing.T) {
 }
 
 func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
-	// SU-CIDR-IM-1: v4_cidr_blocks immutable after Subnet.Create. Любая
-	// попытка изменить через update_mask → InvalidArgument до запуска
-	// Operation worker'а. См. SU-CIDR-IM-1-mutable-cidr.md.
+	// SU-CIDR-IM-1 (kacho-vpc#10, probe 2026-05-11): verbatim YC НЕ отвергает
+	// v4_cidr_blocks в update_mask — запрос принимается (200 → Operation), но
+	// репозиторный Update не перезаписывает CIDR-колонки (defensive depth), т.е.
+	// изменение CIDR через Update — no-op. См. 07-known-divergences.md.
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
@@ -107,18 +108,28 @@ func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
 	require.Len(t, subs, 1)
 	subID := subs[0].ID
 
-	// Попытка Update с новыми CIDRs должна провалиться синхронно.
-	_, err := svc.Update(context.Background(), UpdateSubnetReq{
+	// Update с новыми CIDRs принимается (Operation), но CIDR не меняется.
+	updOp, err := svc.Update(context.Background(), UpdateSubnetReq{
 		SubnetID:     subID,
 		Name:         "sub1",
 		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
 		UpdateMask:   []string{"v4_cidr_blocks"},
 	})
+	require.NoError(t, err)
+	awaitOpDone(t, or, updOp.ID)
+
+	// Проверяем что CIDR-блоки не изменились (no-op в repo).
+	sub, _ := svc.Get(context.Background(), subID)
+	assert.Equal(t, []string{"10.0.0.0/24"}, sub.V4CidrBlocks)
+
+	// network_id / zone_id — по-прежнему hard-immutable → InvalidArgument при
+	// явном указании в update_mask.
+	_, err = svc.Update(context.Background(), UpdateSubnetReq{
+		SubnetID:   subID,
+		Name:       "sub1",
+		UpdateMask: []string{"zone_id"},
+	})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-
-	// Проверяем что CIDR-блоки не изменились.
-	sub, _ := svc.Get(context.Background(), subID)
-	assert.Equal(t, []string{"10.0.0.0/24"}, sub.V4CidrBlocks)
 }

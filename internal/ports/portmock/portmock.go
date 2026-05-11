@@ -193,6 +193,7 @@ func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ ports.Pagi
 type AddressRepo struct {
 	mu   sync.Mutex
 	data map[string]*domain.Address
+	refs map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
 }
 
 func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.Address)} }
@@ -308,6 +309,66 @@ func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domai
 		}
 	}
 	return nil, ports.ErrNotFound
+}
+
+// SetReference upsert'ит referrer-row (если address существует) и выставляет used=true.
+func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[ref.AddressID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	a.Used = true
+	if r.refs == nil {
+		r.refs = make(map[string]*domain.AddressReference)
+	}
+	cp := *ref
+	cp.AttachedAt = time.Now()
+	r.refs[ref.AddressID] = &cp
+	return &cp, nil
+}
+
+// ClearReference удаляет referrer-row (no-op если нет) и выставляет used=false.
+func (r *AddressRepo) ClearReference(_ context.Context, addressID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[addressID]
+	if !ok {
+		return ports.ErrNotFound
+	}
+	a.Used = false
+	delete(r.refs, addressID)
+	return nil
+}
+
+// GetReference возвращает referrer-row (ErrNotFound если address или referrer нет).
+func (r *AddressRepo) GetReference(_ context.Context, addressID string) (*domain.AddressReference, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.data[addressID]; !ok {
+		return nil, ports.ErrNotFound
+	}
+	ref, ok := r.refs[addressID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	cp := *ref
+	return &cp, nil
+}
+
+// ReferencesForAddresses возвращает referrer-row'ы для набора address-id.
+func (r *AddressRepo) ReferencesForAddresses(_ context.Context, addressIDs []string) (map[string]*domain.AddressReference, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]*domain.AddressReference, len(addressIDs))
+	for _, id := range addressIDs {
+		if ref, ok := r.refs[id]; ok {
+			cp := *ref
+			out[id] = &cp
+		}
+	}
+	return out, nil
 }
 
 // ---- RouteTableRepo ----

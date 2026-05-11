@@ -329,11 +329,20 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 	if req.RuleID == "" {
 		return nil, status.Error(codes.InvalidArgument, "rule_id required")
 	}
+	// Verbatim YC (probe 2026-05-11, kacho-vpc#10): малформированный rule_id →
+	// sync InvalidArgument "Invalid rule id <ruleId>"; несуществующий SG → sync
+	// NotFound "Security group SecurityGroup.Id(value=<id>) not found".
+	if corevalidate.ResourceID("rule", "", req.RuleID) != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid rule id %s", req.RuleID)
+	}
 	if err := corevalidate.Description("description", req.Description); err != nil {
 		return nil, err
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
+	}
+	if _, err := s.repo.Get(ctx, req.SecurityGroupID); err != nil {
+		return nil, mapRepoErr(err)
 	}
 	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Update rule %s of security group %s", req.RuleID, req.SecurityGroupID),
@@ -470,7 +479,11 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+	cur, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := checkMoveDestination(ctx, s.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Move security group %s", id),

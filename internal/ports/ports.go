@@ -138,6 +138,20 @@ type AddressRepo interface {
 	// + emit outbox-event Address.UPDATED. Используется AddressAllocator.
 	// Передавайте nil для поля, которое не нужно менять; оба nil — no-op.
 	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.Address, error)
+
+	// SetReference upsert'ит referrer-row адреса И выставляет addresses.used=true
+	// в одной tx. ErrNotFound если address не существует.
+	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
+	// ClearReference удаляет referrer-row адреса (no-op если нет) И выставляет
+	// addresses.used=false в одной tx. ErrNotFound если address не существует.
+	ClearReference(ctx context.Context, addressID string) error
+	// GetReference возвращает referrer-row адреса. ErrNotFound если address
+	// не существует ИЛИ у него нет referrer'а.
+	GetReference(ctx context.Context, addressID string) (*domain.AddressReference, error)
+	// ReferencesForAddresses возвращает referrer-row'ы для набора address-id
+	// (map id→ref; отсутствующие ключи = нет referrer'а). Для batch-обогащения
+	// ListUsedAddresses. Пустой вход → пустой map.
+	ReferencesForAddresses(ctx context.Context, addressIDs []string) (map[string]*domain.AddressReference, error)
 }
 
 // SecurityGroupRepo — port-интерфейс репозитория SG.

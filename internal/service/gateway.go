@@ -284,7 +284,11 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	if err := checkFolderExists(ctx, s.folderClient, destFolderID); err != nil {
+	cur, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := checkMoveDestination(ctx, s.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(

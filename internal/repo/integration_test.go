@@ -232,6 +232,106 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	assert.Equal(t, "10.0.0.5", created2.InternalIpv4.Address)
 }
 
+func TestIntegration_AddressRepo_References(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	dsn := setupTestDB(t)
+
+	pool, err := coredb.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ar := repo.NewAddressRepo(pool)
+
+	addr := &domain.Address{
+		ID:        ids.NewUID(),
+		FolderID:  "folder-1",
+		CreatedAt: time.Now().UTC(),
+		Name:      "ref-tracked-ip",
+		Type:      domain.AddressTypeExternal,
+		IpVersion: domain.IpVersionIPv4,
+		ExternalIpv4: &domain.ExternalIpv4Spec{
+			Address: "203.0.113.77",
+			ZoneID:  "ru-central1-a",
+		},
+	}
+	created, err := ar.Insert(ctx, addr)
+	require.NoError(t, err)
+	assert.False(t, created.Used)
+
+	// No reference yet → NotFound.
+	_, err = ar.GetReference(ctx, addr.ID)
+	require.ErrorIs(t, err, service.ErrNotFound)
+
+	// SetReference → upsert + used=true.
+	ref, err := ar.SetReference(ctx, &domain.AddressReference{
+		AddressID:    addr.ID,
+		ReferrerType: "compute_instance",
+		ReferrerID:   "epdinstance00000001",
+		ReferrerName: "vm-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "compute_instance", ref.ReferrerType)
+	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
+	assert.Equal(t, "vm-1", ref.ReferrerName)
+	assert.False(t, ref.AttachedAt.IsZero())
+
+	got, err := ar.Get(ctx, addr.ID)
+	require.NoError(t, err)
+	assert.True(t, got.Used)
+
+	// Idempotent re-set with a different referrer → overwrite.
+	ref, err = ar.SetReference(ctx, &domain.AddressReference{
+		AddressID:    addr.ID,
+		ReferrerType: "compute_instance",
+		ReferrerID:   "epdinstance00000002",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "epdinstance00000002", ref.ReferrerID)
+	assert.Equal(t, "", ref.ReferrerName)
+
+	// GetReference returns the referrer.
+	ref, err = ar.GetReference(ctx, addr.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "epdinstance00000002", ref.ReferrerID)
+
+	// Batch lookup.
+	refs, err := ar.ReferencesForAddresses(ctx, []string{addr.ID, "e9bnonexistent00001"})
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, "epdinstance00000002", refs[addr.ID].ReferrerID)
+
+	// ClearReference → used=false, no referrer.
+	require.NoError(t, ar.ClearReference(ctx, addr.ID))
+	got, err = ar.Get(ctx, addr.ID)
+	require.NoError(t, err)
+	assert.False(t, got.Used)
+	_, err = ar.GetReference(ctx, addr.ID)
+	require.ErrorIs(t, err, service.ErrNotFound)
+
+	// ClearReference again → no-op (still no error, address still exists).
+	require.NoError(t, ar.ClearReference(ctx, addr.ID))
+
+	// SetReference on a non-existent address → NotFound.
+	_, err = ar.SetReference(ctx, &domain.AddressReference{
+		AddressID: "e9bnonexistent00001", ReferrerType: "compute_instance", ReferrerID: "x",
+	})
+	require.ErrorIs(t, err, service.ErrNotFound)
+
+	// FK CASCADE: deleting the address removes the reference row too. Set a
+	// referrer, then delete the address, then ensure GetReference → NotFound.
+	_, err = ar.SetReference(ctx, &domain.AddressReference{
+		AddressID: addr.ID, ReferrerType: "compute_instance", ReferrerID: "epdinstance00000003",
+	})
+	require.NoError(t, err)
+	require.NoError(t, ar.Delete(ctx, addr.ID))
+	_, err = ar.GetReference(ctx, addr.ID)
+	require.ErrorIs(t, err, service.ErrNotFound)
+}
+
 func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
