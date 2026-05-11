@@ -1,6 +1,6 @@
 # newman — индекс уникальных кейсов
 
-685 кейсов / 218 паттернов.
+686 кейсов / 218 паттернов.
 
 ## По методам
 
@@ -74,22 +74,22 @@
 | `*-CR-BVA-NAME-EMPTY` | BVA,VAL | P2 | 7 (add,gat,net,pri,rou,sec,sub) | Create с empty name → VPC permissive (200) или 400 |
 | `*-CR-BVA-NAME-MAX-63` | BVA | P2 | 7 (add,gat,net,pri,rou,sec,sub) | Create с name len=63 (max) → ok |
 | `*-CR-BVA-NAME-OVER-64` | BVA,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Create с name len=64 (over-max) → InvalidArgument |
-| `*-CR-CONF-DUP-NAME-FINDING-005` | CONF,NEG | P0 | 1 (sub) | FINDING-005: Subnet НЕ имеет UNIQUE (folder_id, name) — duplicate проходит |
 | `*-CR-CONF-FOLDER-NF-TEXT` | CONF,NEG | P1 | 2 (add,net) | Create network в garbage folder → verbatim 'Folder with id ... not found' |
 | `*-CR-CONF-NET-NF-TEXT` | CONF,NEG | P1 | 4 (pri,rou,sec,sub) | Create subnet в garbage network → verbatim text 'Network ... not found' |
 | `*-CR-CONF-SUB-NF-TEXT` | CONF,NEG | P1 | 1 (add) | Create address с garbage subnet → verbatim 'Subnet ... not found' |
 | `*-CR-CRUD-EXT` | CRUD | P1 | 1 (add) | Create external Address → IP из default pool |
 | `*-CR-CRUD-INT` | CRUD | P1 | 1 (add) | Create internal Address → IP в subnet |
 | `*-CR-CRUD-OK` | CRUD | P1 | 6 (gat,net,pri,rou,sec,sub) | Create subnet → Operation → Subnet visible in GET |
+| `*-CR-CRUD-WITH-SUBNET` | CRUD | P2 | 1 (pri) | PE Create с валидным addressSpec.internalIpv4AddressSpec.subnetId → address привязан |
 | `*-CR-IDM-RETRY` | CONC,IDM | P1 | 1 (net) | Retry-safe: повторный Create same input → consistent result |
 | `*-CR-NEG-CIDR-OVERLAP` | NEG | P0 | 1 (sub) | Create двух subnet с пересекающимися CIDR → второй FailedPrecondition |
-| `*-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 1 (net) | Create с duplicate name в folder → async ALREADY_EXISTS |
-| `*-CR-NEG-DUP-NAME-CHECK` | CONC,NEG | P1 | 6 (add,gat,net,rou,sec,sub) | Создать дубль с тем же name → проверить ALREADY_EXISTS или silent (FINDING) |
+| `*-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 2 (net,sub) | Create с duplicate name в folder → async ALREADY_EXISTS (FINDING-005 fixed) |
+| `*-CR-NEG-DUP-NAME-CHECK` | CONC,NEG | P1 | 6 (add,gat,net,rou,sec,sub) | Создать дубль с тем же name → ALREADY_EXISTS (UNIQUE есть для всех ресурсов) |
 | `*-CR-NEG-FOLDER-NF` | CONF,NEG | P0 | 1 (gat) | Create Gateway в несуществующий folder → async NotFound |
 | `*-CR-NEG-FOLDER-NOT-FOUND` | NEG | P0 | 1 (net) | Create с garbage folderId → async NOT_FOUND |
 | `*-CR-NEG-NETWORK-NF` | NEG | P0 | 2 (pri,rou) | Create в несуществующую network → async NotFound |
 | `*-CR-NEG-NETWORK-NOT-FOUND` | NEG | P0 | 1 (sub) | Create в несуществующей network → async NOT_FOUND |
-| `*-CR-NEG-SUBNET-NF-FINDING-006` | NEG | P1 | 1 (pri) | FINDING-006: PE Create с garbage subnetId silent success — нет existence validation |
+| `*-CR-NEG-SUBNET-NF` | NEG,CONF | P1 | 1 (pri) | PE Create с garbage addressSpec.internalIpv4AddressSpec.subnetId → async NotFound 'Subnet ... not found' |
 | `*-CR-NEG-SUBNET-NOT-FOUND` | NEG | P0 | 1 (add) | Create internal с garbage subnetId → async NotFound |
 | `*-CR-PAIRWISE-00` | CRUD,VAL | P2 | 1 (sub) | Pairwise [0]: zone=ru-central1-a prefix=/24 dhcp=True |
 | `*-CR-PAIRWISE-01` | CRUD,VAL | P2 | 1 (sub) | Pairwise [1]: zone=ru-central1-a prefix=/28 dhcp=False |

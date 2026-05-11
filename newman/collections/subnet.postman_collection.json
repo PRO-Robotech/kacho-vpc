@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "b66e8fcf-9a1b-434a-beea-48d629778023",
+    "_postman_id": "dec428b1-ed0b-4090-a3fb-ddf33bfa68c2",
     "name": "kacho-vpc / newman / subnet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -7043,8 +7043,8 @@
       ]
     },
     {
-      "name": "SUB-CR-CONF-DUP-NAME-FINDING-005 — FINDING-005: Subnet НЕ имеет UNIQUE (folder_id, name) — duplicate проходит",
-      "description": "class:CONF | class:NEG | priority:P0",
+      "name": "SUB-CR-NEG-DUP-NAME — Subnet duplicate name в folder → ALREADY_EXISTS (FINDING-005 fixed: migration 0002 UNIQUE)",
+      "description": "class:NEG | class:CONF | class:CONC | priority:P0",
       "item": [
         {
           "name": "pre-create-net",
@@ -7286,11 +7286,6 @@
                   "  const j = pm.response.json();",
                   "  const v = (j.id);",
                   "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.metadata && j.metadata.subnetId);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('subId2', String(v));",
                   "} catch (e) {}"
                 ]
               }
@@ -7344,7 +7339,7 @@
           ]
         },
         {
-          "name": "assert-finding-005",
+          "name": "assert-already-exists",
           "request": {
             "method": "GET",
             "header": [
@@ -7371,95 +7366,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "// FINDING-005: дубликат Subnet name не блокируется (нет UNIQUE constraint).",
-                  "// Это расхождение с YC verbatim. См. BUG-MAP.md.",
-                  "pm.test('current behavior: dup-name allowed', () => pm.expect(j.done).to.eql(true));",
-                  "pm.test('no error', () => pm.expect(j.error).to.be.undefined);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cleanup-2",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId2}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subId2}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-op",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
-                  "if (!j.done && pc < 6) {",
-                  "  pm.environment.set('_pollCount', String(pc + 1));",
-                  "  // Postman async-friendly retry: re-invoke same request name",
-                  "  postman.setNextRequest(pm.info.requestName);",
-                  "  return;",
-                  "}",
-                  "pm.environment.unset('_pollCount');",
-                  "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-                  "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
-                  "else pm.environment.unset('lastOpError');",
-                  "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
+                  "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                  "pm.test('error code 6 (ALREADY_EXISTS)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(6));"
                 ]
               }
             }

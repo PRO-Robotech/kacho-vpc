@@ -1,20 +1,24 @@
-# newman — финальный прогон (v14: pairwise + security + lifecycle)
+# newman — финальный прогон (v15: FINDING-005 fix + PE addressSpec fix)
 
 ## Сводка
 
 | Сервис | Cases | Assertions | Failed | Requests | % к 100/рес |
 |---|---|---|---|---|---|
-| subnet | 131 | 907 | 0 | 646 | **131%** ✅ |
+| subnet | 131 | 905 | 0 | 644 | **131%** ✅ |
 | network | 106 | 380 | 0 | 255 | **106%** ✅ |
 | address | 100 | 346 | 0 | 233 | **100%** ✅ |
 | security-group | 96 | 514 | 0 | 366 | 96% |
 | route-table | 91 | 434 | 0 | 309 | 91% |
 | gateway | 90 | 264 | 0 | 179 | 90% |
-| private-endpoint | 67 | 246 | 0 | 184 | 67% |
+| private-endpoint | 68 | 261 | 0 | 195 | 68% |
 | operation | 4 | 16 | 0 | 7 | (n/a) |
-| **Итого** | **685** | **3107** | **0** | **2179** | **97%** среднее |
+| **Итого** | **686** | **3120** | **0** | **2188** | **97%** среднее |
 
 **100% PASS**, target 100/ресурс **превзойдён для 3 ресурсов**.
+
+> Деплоймент-замечание: suite требует `KACHO_VPC_DEFAULT_SG_INLINE=true`
+> (default) — `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` проверяют
+> авто-создание default SG. При `=false` (load-test config) эти кейсы краснеют.
 
 ## Эволюция
 
@@ -24,7 +28,8 @@
 | v11 | 578 | 2528 | 82 | 82% |
 | v12 (FK RESTRICT delete) | 597 | 2616 | 85 | 85% |
 | v13 (Req/Immutable matrix + CIDR pack) | 624 | 2744 | 89 | 89% |
-| **v14 (pairwise + security probes + lifecycle)** | **685** | **3107** | **97** | **97%** |
+| v14 (pairwise + security probes + lifecycle) | 685 | 3107 | 97 | 97% |
+| **v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId)** | **686** | **3120** | **97** | **97%** |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 
@@ -61,5 +66,5 @@
 | FINDING-002 — REST kebab/camel inconsistency | docs | documented |
 | FINDING-003 — OpsProxy 400 для unknown prefix | docs | triaged |
 | FINDING-004 — GetByValue 404 protection | cosmetic | intentional |
-| FINDING-005 — Subnet нет UNIQUE (folder, name) | P0 | open |
-| FINDING-006 — PE Create no subnet validation | P1 | open |
+| FINDING-005 — Subnet/RT/SG/GW/PE/Address нет UNIQUE (folder, name) | P0 | **fixed** (migration `0002_resource_name_unique.sql` — partial UNIQUE `(folder_id, name) WHERE name <> ''` для всех 6 ресурсов; дубль непустого name → `ALREADY_EXISTS`) |
+| FINDING-006 — PE Create no subnet validation | — | **invalid** (test error: кейс слал плоский `subnetId`, которого нет в proto — gateway его молча отбрасывал. Реальный путь `addressSpec.internalIpv4AddressSpec.subnetId` валидируется в `private_endpoint.go::doCreate` → `NOT_FOUND`. Кейс переписан: `PE-CR-NEG-SUBNET-NF` + `PE-CR-CRUD-WITH-SUBNET`) |

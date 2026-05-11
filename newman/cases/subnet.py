@@ -599,9 +599,9 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    id="SUB-CR-CONF-DUP-NAME-FINDING-005",
-    title="FINDING-005: Subnet НЕ имеет UNIQUE (folder_id, name) — duplicate проходит",
-    classes=["CONF", "NEG"], priority="P0",
+    id="SUB-CR-NEG-DUP-NAME",
+    title="Subnet duplicate name в folder → ALREADY_EXISTS (FINDING-005 fixed: migration 0002 UNIQUE)",
+    classes=["NEG", "CONF", "CONC"], priority="P0",
     steps=[
         *_make_net("dup"),
         Step(name="create-first", method="POST", path="/vpc/v1/subnets",
@@ -614,21 +614,15 @@ CASES.append(Case(
         Step(name="create-dup", method="POST", path="/vpc/v1/subnets",
              body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sub-dup-{{runId}}", "zoneId": "{{existingZoneId}}",
-                   "v4CidrBlocks": ["10.181.0.0/24"]},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
-                          *save_from_response("j.metadata && j.metadata.subnetId", "subId2")]),
+                   "v4CidrBlocks": ["10.181.0.0/24"]},  # другой CIDR — дубль только по name
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
-        Step(name="assert-finding-005", method="GET", path="/operations/{{opId}}",
+        Step(name="assert-already-exists", method="GET", path="/operations/{{opId}}",
              test_script=[
                  "const j = pm.response.json();",
-                 "// FINDING-005: дубликат Subnet name не блокируется (нет UNIQUE constraint).",
-                 "// Это расхождение с YC verbatim. См. BUG-MAP.md.",
-                 "pm.test('current behavior: dup-name allowed', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('no error', () => pm.expect(j.error).to.be.undefined);",
+                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('error code 6 (ALREADY_EXISTS)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(6));",
              ]),
-        Step(name="cleanup-2", method="DELETE", path="/vpc/v1/subnets/{{subId2}}",
-             test_script=[*save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
         Step(name="cleanup-1", method="DELETE", path="/vpc/v1/subnets/{{subId1}}",
              test_script=[*save_from_response("j.id", "opId")]),
         poll_operation_until_done(),

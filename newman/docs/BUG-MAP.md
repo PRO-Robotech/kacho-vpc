@@ -1,10 +1,11 @@
 # Bug Map — newman findings
 
-Регистр **продуктовых** наблюдений из прогонов newman. На этом этапе
-все 467 assertions зелёные — баги (нарушение спеки) **не найдены**, но
-выявлен ряд расхождений с canonical YC pattern и documentation-gap'ов
-(пограничные между "design choice" и "improvement opportunity"). Они
-зафиксированы как FINDING-NNN (наблюдения без severity bug).
+Регистр **продуктовых** наблюдений из прогонов newman (v14: 685 кейсов /
+~3100 assertions, 0 fail). Найдено и **исправлено** одно расхождение со
+спекой (FINDING-005 — отсутствие UNIQUE `(folder_id, name)` для 6 VPC-ресурсов),
+один кейс оказался ошибкой теста (FINDING-006). Остальные FINDING-NNN —
+расхождения с canonical YC pattern / documentation-gap'ы (пограничные между
+"design choice" и "improvement opportunity").
 
 ## Формат
 
@@ -79,17 +80,63 @@
   `404 NOT_FOUND` (см. TODO #50 в kacho-vpc/TODO.md).
 - **Action**: no-op (правильное security design).
 
+### FINDING-005 — нет UNIQUE (folder_id, name) для Subnet/RouteTable/SG/Gateway/PE/Address — FIXED
+
+- **Severity**: High (parity break)
+- **Found by**: `SUB-CR-NEG-DUP-NAME` (ex-`SUB-CR-CONF-DUP-NAME-FINDING-005`),
+  `*-CR-NEG-DUP-NAME-CHECK` (add/gat/rou/sec)
+- **Status**: **fixed** (2026-05-11)
+- **Service**: kacho-vpc
+- **Method**: `{Subnet,RouteTable,SecurityGroup,Gateway,PrivateEndpoint,Address}Service.Create`
+- **Symptoms**: миграция `0001` создавала только `networks_folder_id_name_key`.
+  Остальные 6 VPC-ресурсов допускали два ресурса с одинаковым непустым `name`
+  в одном folder — расхождение с verbatim YC, где `name` уникален в folder.
+- **Root cause**: при flat-rewrite (`0001`) UNIQUE-индекс был добавлен только
+  для `networks`.
+- **Fix**: миграция `internal/migrations/0002_resource_name_unique.sql` —
+  partial UNIQUE `CREATE UNIQUE INDEX <table>_folder_id_name_key ON <table>
+  (folder_id, name) WHERE name <> ''` для всех 6 таблиц. Empty name
+  по-прежнему допускает несколько ресурсов (VPC permissive policy, verbatim YC).
+  `repo.wrapPgErr` уже маппил `23505` → `service.ErrAlreadyExists` → gRPC
+  `ALREADY_EXISTS` — repo-слой не менялся.
+- **Verification**: ручной тест (две Subnet с одинаковым name, разный CIDR) →
+  вторая Operation `error.code=6`. Newman `SUB-CR-NEG-DUP-NAME` зелёный.
+
+### FINDING-006 — PE Create без subnet existence-validation — INVALID (test error)
+
+- **Severity**: — (не bug)
+- **Found by**: `PE-CR-NEG-SUBNET-NF-FINDING-006` (удалён)
+- **Status**: **invalid** — ошибка в тесте, не в коде
+- **Service**: kacho-vpc
+- **Method**: `PrivateEndpointService.Create`
+- **Symptoms (как казалось)**: `POST /vpc/v1/endpoints` с `{"subnetId": "<garbage>"}`
+  завершался успешно — не было existence-проверки subnet.
+- **Root cause**: в proto `CreatePrivateEndpointRequest` нет плоского поля
+  `subnet_id`; subnet задаётся через `address_spec.internal_ipv4_address_spec.subnet_id`
+  (oneof). grpc-gateway отбрасывает unknown-поле `subnetId` → `req.SubnetID==""` →
+  ветка валидации `if req.SubnetID != "" { subnetRepo.Get(...) }` не выполняется →
+  PE создаётся вообще без привязки к subnet (что допустимо). Сам код subnet
+  валидирует корректно (`private_endpoint.go::doCreate` → `NOT_FOUND "Subnet ... not found"`).
+- **Action**: тест-кейс переписан на verbatim-форму:
+  - `PE-CR-NEG-SUBNET-NF` — `addressSpec.internalIpv4AddressSpec.subnetId = garbage` →
+    async `NOT_FOUND`, verbatim `^Subnet .* not found$`.
+  - `PE-CR-CRUD-WITH-SUBNET` — валидный subnetId → `address.subnetId` привязан в GET.
+  - Прочие PE-кейсы по-прежнему используют плоский `subnetId` (молча игнорируется);
+    это не bug, но потенциальная очистка test-фикстур — backlog, см. REQUIREMENTS.
+
 ---
 
 ## Active bugs (severity > cosmetic)
 
-_(пусто — на момент 2026-05-11)_
+_(пусто — на момент 2026-05-11; FINDING-005 закрыт)_
 
 ---
 
 ## Closed
 
-_(пусто)_
+| ID | Severity | Closed | Fix |
+|---|---|---|---|
+| FINDING-005 — нет UNIQUE (folder, name) для 6 VPC-ресурсов | High | 2026-05-11 | migration `0002_resource_name_unique.sql` |
 
 ---
 
@@ -98,12 +145,13 @@ _(пусто)_
 | Severity | Open | Fixed | Total |
 |---|---|---|---|
 | Critical | 0 | 0 | 0 |
-| High | 0 | 0 | 0 |
+| High | 0 | 1 | 1 |
 | Medium | 0 | 0 | 0 |
 | Low | 0 | 0 | 0 |
 | Cosmetic | 0 | 0 | 0 |
-| **Bugs total** | **0** | **0** | **0** |
+| **Bugs total** | **0** | **1** | **1** |
 | Findings (informational) | 4 | — | 4 |
+| Findings (invalid / test errors) | — | — | 1 (FINDING-006) |
 
 ---
 
@@ -116,3 +164,4 @@ _(пусто)_
 | GetByValue → NotFound для cross-tenant IP | Intentional — info-leak prevention (TODO #50) |
 | OpsProxy 400 для unknown prefix | Architectural choice — fail-fast routing, не bug. См. FINDING-003 |
 | `RouteTable` enp-prefix вместо `rtb` | Architectural — все VPC ресурсы под `enp` для 3-char routing |
+| PE Create с плоским `subnetId` "тихо успешен" | Test error — поля нет в proto; verbatim-форма `addressSpec.internalIpv4AddressSpec.subnetId` валидируется. См. FINDING-006 |
