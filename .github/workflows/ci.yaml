@@ -92,6 +92,13 @@ jobs:
 
   newman:
     name: newman E2E (docker compose stack)
+    # ⛔ disabled: для E2E-стека нужен образ kacho-api-gateway:dev, чей Dockerfile делает
+    # `COPY kacho-yc-shim`, а репозитория PRO-Robotech/kacho-yc-shim на GitHub НЕТ (есть только
+    # локально через bootstrap.sh). Без него compose-стек в CI не собрать. Re-enable когда
+    # kacho-yc-shim опубликуют ИЛИ api-gateway Dockerfile перестанет зависеть от yc-shim.
+    # Сьюта полностью прогоняется локально: `make -C kacho-deploy ci-up` → `tests/newman/scripts/run.sh`
+    # (или против kind-стенда с port-forward 18080) — см. tests/newman/README.md.
+    if: false
     runs-on: ubuntu-latest
     needs: [build-vet-test]
     steps:
