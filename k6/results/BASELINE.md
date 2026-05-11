@@ -206,3 +206,51 @@ dev-машине, "use of closed network connection"), не ошибки kacho-v
 | 8000 | 4.11ms | 12.51ms | **18.63ms** | ⚠️ p99 > 10ms |
 
 → Read p99 ≤ 10ms держится до ~6000 RPS на 1 pod.
+
+---
+
+## Horizontal scaling test: 5 pod vpc
+
+Setup: `kubectl scale deploy/vpc --replicas=5`, каждый pod `KACHO_VPC_DB_MAX_CONNS=50`
+(5×50=250 < Postgres `max_connections=300`). port-forward на каждый pod
+отдельно (kubectl port-forward svc/vpc балансит на 1 pod, не L4 LB), 5 параллельных
+ghz Create burst (по 80000 запросов на pod).
+
+| Pod | RPS achieved | p99 | Errors |
+|---|---|---|---|
+| vpc-1 | 986 | 214ms | 0 |
+| vpc-2 | 981 | 222ms | 0 |
+| vpc-3 | 982 | 218ms | 0 |
+| vpc-4 | 983 | 216ms | 0 |
+| vpc-5 | 982 | 214ms | 0 |
+| **AGGREGATE** | **~4915 Create/sec** | ~215ms на pod | 0 |
+
+### ⚠️ Ключевой вывод: horizontal scaling vpc НЕ масштабирует write
+
+| Конфигурация | Aggregate Create/sec |
+|---|---|
+| 1 pod (pool=280) | ~5000/sec @ p99 28ms |
+| **5 pod** (pool=50 каждый) | **~4915/sec @ p99 ~215ms на pod** |
+
+5 pod дали **тот же суммарный throughput** что 1 pod. Причина — **single-instance
+Postgres стал bottleneck**: все 5 pod'ов делают INSERT в одну БД (3 INSERT/Create:
+operations + networks + outbox + триггеры). С `synchronous_commit=off` Postgres
+single-instance упирается в ~5000 Create/sec total независимо от числа vpc-pod'ов.
+
+p99 на каждом pod **выросла** (28ms@1pod → 215ms@5pod) — суммарная нагрузка на DB
+та же ~5000/sec, но теперь распределена через 5 pod'ов конкурирующих за DB
+connections, lock'и, WAL.
+
+### Что нужно для масштабирования write past 5000/sec
+
+| Подход | Эффект |
+|---|---|
+| **Database sharding** (database-per-tenant/region) | linear scaling — каждый шард ~5000/sec |
+| **Batch operations INSERT** (накапливать N Create в один TX) | снижает DB-операции 3× → ~15K/sec на 1 DB |
+| **Убрать operations sync INSERT из hot-path** | -1 INSERT/Create (но меняет LRO contract) |
+| **Read-replicas** | помогает только read, не write |
+| Просто больше vpc-pod'ов | НЕ помогает (DB shared) ❌ |
+
+**Architectural takeaway:** kacho-vpc write-path — **DB-bound, не CPU-bound**.
+Horizontal scaling vpc без шардинга БД не увеличивает write throughput.
+1 pod уже выжимает ~5000 Create/sec из single Postgres.
