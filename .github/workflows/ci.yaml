@@ -25,11 +25,11 @@ jobs:
     name: build + vet + test (unit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
@@ -42,11 +42,11 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
@@ -59,11 +59,11 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
@@ -76,11 +76,11 @@ jobs:
     name: integration (testcontainers Postgres)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
       - uses: actions/setup-go@v5
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
@@ -97,21 +97,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-vet-test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       # siblings: нужны как Go-deps (corelib/proto) и как Docker build-context
       # (Dockerfile'ы COPY ../kacho-corelib и т.п.; PROJECT_ROOT в kacho-deploy/Makefile = $(abspath ..))
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-corelib, ref: feat/operations-graceful-shutdown, path: kacho-corelib }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-proto }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-resource-manager, ref: feat/clouds-org-name-unique, path: kacho-resource-manager }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-api-gateway, ref: feat/vpc-ipam-cloud-selector-and-admin, path: kacho-api-gateway }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-yc-shim, path: kacho-yc-shim }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-deploy, ref: feat/vpc-internal-port-network-policy, path: kacho-deploy }
 
       - uses: actions/setup-node@v4
