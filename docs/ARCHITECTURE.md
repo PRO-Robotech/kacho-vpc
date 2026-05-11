@@ -1051,7 +1051,7 @@ partial UNIQUE на `(folder_id, name)`). При первом запуске goo
 ### 10.4 Observability
 
 - Логи — `kacho-corelib/observability.NewSlogger` (slog в JSON или text).
-- Метрики — не вынесены (TODO); ожидается prometheus exporter на отдельном порту.
+- Метрики — не вынесены (GitHub Issue — observability gap); ожидается prometheus exporter на отдельном порту.
 - Trace — не реализован.
 
 ### 10.5 Деплой через Helm
@@ -1107,7 +1107,8 @@ IAM sidecar — иначе anonymous = root.
 В `internal/service/*_test.go` и `internal/handler/*_test.go`. Используют
 ручные моки port-интерфейсов (`internal/service/mock_test.go` —
 `fakeNetworkRepo`, `fakeFolderClient`, и т.д.). Worker-горутины
-`operations.Run` ждутся через `time.Sleep` (TODO — заменить на `assert.Eventually`).
+`operations.Run` дожидаются детерминированно через `portmock.AwaitOpDone` /
+`AwaitAllOpsDone` (poll до `Operation.Done` с дедлайном 2s — не фиксированный `time.Sleep`).
 
 Запуск: `make test-short`.
 
@@ -1138,7 +1139,7 @@ tests/newman/
 ├── scripts/
 │   ├── gen.py                   — генератор коллекций из cases/* (источник истины — cases/)
 │   └── run.sh                   — прогон одного/всех сервисов → out/{svc}.json + out/summary.txt
-├── docs/                        — TAXONOMY / TEST-PLAN / CASES-INDEX / REQUIREMENTS / RESULTS (баги — в TODO.md)
+├── docs/                        — TAXONOMY / TEST-PLAN / CASES-INDEX / REQUIREMENTS / RESULTS (баги — в GitHub Issues)
 └── out/                         — newman raw output (gitignored snap-логи)
 ```
 
@@ -1365,7 +1366,7 @@ kacho-vpc/
 ├── tests/newman/                        — E2E/regression suite (Postman, генерится из cases/*.py)
 ├── tests/k6/                            — нагрузочные сценарии (k6 + ghz Jobs, см. tests/k6/README.md)
 ├── .claude/{agents,skills}/       — VPC-специфичные субагенты и скилы
-├── Makefile, Dockerfile, README.md, TODO.md
+├── Makefile, Dockerfile, README.md
 └── go.mod, go.sum
 ```
 
@@ -1396,4 +1397,5 @@ kacho-vpc/
 | `docs/architecture/06-conventions.md` | Правила и lesson-learned |
 | `CLAUDE.md` | Service-specific инструкции для Claude Code |
 | `README.md` | Quick-start и руководство контрибьютора |
-| `TODO.md` | Outstanding tech-debt |
+| `docs/architecture/07-known-divergences.md` | Registry by-design расхождений с verbatim YC |
+| GitHub Issues (`github.com/PRO-Robotech/kacho-vpc/issues`) | Outstanding tech-debt / баги / задачи |

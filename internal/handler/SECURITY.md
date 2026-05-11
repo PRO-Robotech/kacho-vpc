@@ -2,8 +2,8 @@
 
 > Снимок состояния AuthZ / AuthN / transport-security на уровне handler'ов.
 > Здесь — что **уже сделано** (чтобы не «исправлять» исправленное) и что
-> осталось. Открытые задачи дублируются в `../../TODO.md` (раздел «Carry-over
-> в IAM design phase») — там же причины отложенности.
+> осталось. Открытые задачи — GitHub Issues `PRO-Robotech/kacho-vpc` с меткой
+> `blocked:kacho-iam` (там же причины отложенности).
 
 ## Что сделано
 
@@ -49,7 +49,7 @@ hostname/db/query-fragment в тексте. Прямых `status.Errorf(codes.In
   для gRPC-клиента к resource-manager (`cmd/vpc/main.go::dialResourceManager`).
 - `production-strict`-mode проверяет, что оба включены (иначе старт падает).
 
-## Что осталось (всё — `kacho-iam` design phase, см. `../../TODO.md`)
+## Что осталось (всё — `kacho-iam` design phase; GitHub Issues, метка `blocked:kacho-iam`)
 
 - **Реальный AuthN (JWT-validating interceptor)** — сейчас claims приходят от
   upstream-proxy без валидации токена и без реальной проверки членства в
@@ -57,9 +57,9 @@ hostname/db/query-fragment в тексте. Прямых `status.Errorf(codes.In
   `AssertFolderOwnership` спроектирован так, чтобы interceptor можно было
   заменить без правок handler'ов. (`kacho-iam` ещё не реализован.)
 - **`OperationService.Get(operation_id)` без folder-ownership-check** —
-  единственный public RPC без проверки (см. `../../TODO.md` → «OperationService AuthZ»).
-  Требует `folder_id` на таблице `operations` (она в `kacho-corelib`, shared) либо
-  резолва через `metadata.resource_id` → ресурс → folder; делается в IAM-фазе.
+  единственный public RPC без проверки. Требует `folder_id` на таблице `operations`
+  (она в `kacho-corelib`, shared) либо резолва через `metadata.resource_id` →
+  ресурс → folder; делается в IAM-фазе.
 - **mTLS на `:9091`** — 4-й слой поверх NetworkPolicy + admin-check + prod-mode;
   требует cert-management (issuer/ротация/mount) — `kacho-deploy`-scope + IAM/mesh-дизайн.
 - **`InternalWatchService.Watch` без folder-filter** — раздаёт весь outbox

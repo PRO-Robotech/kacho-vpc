@@ -27,7 +27,7 @@
 | # | Файл | Что |
 |---|---|---|
 | 0001 | `0001_initial.sql` | **squashed baseline** — все таблицы (`operations`, `networks`, `subnets`, `addresses`, `route_tables`, `security_groups`, `gateways`, `private_endpoints`, `regions`, `zones`, `address_pools`, binding-таблицы, `cloud_pool_selector`, `vpc_outbox`, `vpc_watch_cursors`), индексы, EXCLUDE/UNIQUE constraints, generated columns, outbox trigger. Id-колонки — `TEXT`. `networks_folder_id_name_key` — non-partial UNIQUE `(folder_id, name)` |
-| 0002 | `0002_resource_name_unique.sql` | partial UNIQUE `(folder_id, name) WHERE name <> ''` для `subnets`/`route_tables`/`security_groups`/`gateways`/`private_endpoints`/`addresses` (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network; см. FINDING-005 в `TODO.md` (раздел «Найденные баги»)) |
+| 0002 | `0002_resource_name_unique.sql` | partial UNIQUE `(folder_id, name) WHERE name <> ''` для `subnets`/`route_tables`/`security_groups`/`gateways`/`private_endpoints`/`addresses` (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network; commit `ee07a7e`) |
 
 `migrations/` в корне репо — staging для `make sync-migrations` (только
 `0001_operations.sql` от corelib; источник истины не здесь, в `0001_initial.sql`

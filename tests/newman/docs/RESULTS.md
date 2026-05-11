@@ -71,8 +71,6 @@ kacho-only RPC проброшены через api-gateway cluster-internal mux,
 
 ## Findings
 
-Найденные баги / расхождения / informational-наблюдения — в **`../../../TODO.md`** (раздел
-«Найденные баги / наблюдения из тестов»: «Исправленные» + «Известные расхождения / informational»).
-Отдельного `BUG-MAP.md` больше нет — единый реестр в `TODO.md` (см. `kacho-vpc/CLAUDE.md` §14.4).
-Кратко на момент v16: FINDING-005 / FINDING-008 / created_at-в-Operation.response — fixed;
-FINDING-006 — invalid (ошибка теста); FINDING-001..004 / 007 / 009 — by-design / documented divergences.
+Найденные баги / расхождения — заводятся в GitHub Issues (`PRO-Robotech/kacho-vpc`, см.
+`kacho-vpc/CLAUDE.md` §14.4); by-design расхождения с verbatim-YC — `docs/architecture/07-known-divergences.md`.
+Отдельного bug-map / FINDING-реестра больше нет.

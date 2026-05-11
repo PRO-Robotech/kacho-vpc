@@ -85,8 +85,8 @@ GET/POST/PATCH/DELETE /vpc/v1/endpoints[/{id}]
 GET    /vpc/v1/endpoints/{private_endpoint_id}/operations
 ```
 
-> ⚠️ REST-пути неоднородны (наследие proto-аннотаций, см. FINDING-002 в
-> `TODO.md` (раздел «Найденные баги»)): child-list `security_groups`/`route_tables` —
+> ⚠️ REST-пути неоднородны (наследие proto-аннотаций, proto-decided; см.
+> `docs/architecture/07-known-divergences.md`): child-list `security_groups`/`route_tables` —
 > snake_case, top-level `routeTables`/`securityGroups`/`addressPools` — camelCase,
 > custom-методы — kebab с двоеточием (`:add-cidr-blocks`, `:move`),
 > `OperationService.Get` — `/operations/{id}` (без `/vpc/v1/`), PE — `/endpoints`.
@@ -161,7 +161,7 @@ service NetworkService {
 `/operations/{id}` маршрутизируется по 3-char prefix ID на нужный backend
 (`enp...` → kacho-vpc; `b1g...` → resource-manager). `PrefixOperationVPC == PrefixNetwork == "enp"`.
 Неизвестный prefix → `400 INVALID_ARGUMENT "unknown prefix"` (intentional fail-fast
-перед роутингом; задокументировано в `TODO.md` → «известные расхождения»).
+перед роутингом; см. `docs/architecture/07-known-divergences.md`).
 
 Все 6 Delete RPC возвращают `google.protobuf.Empty` в `response` (verbatim YC);
 `DeleteXxxMetadata` лежит в `Operation.metadata`, как и положено по proto-options.

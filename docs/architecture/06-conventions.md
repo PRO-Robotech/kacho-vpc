@@ -160,6 +160,7 @@ Zero-overhead, миграция не нужна.
 ## Ссылки в репо
 
 - `../../CLAUDE.md` — operational правила, project-level subagents.
-- `../../TODO.md` — долги (например, Delete RPC возвращают неправильный response).
-- `../../TODO.md` — registry verbatim-YC расхождений.
+- GitHub Issues (`github.com/PRO-Robotech/kacho-vpc/issues`) — долги, баги, задачи, tech-debt
+  (verbatim-YC: Delete RPC возвращают `google.protobuf.Empty` — сделано; см. `04-api-surface.md`).
+- [07-known-divergences.md](07-known-divergences.md) — registry by-design расхождений с verbatim YC.
 - `../../tests/newman/docs/TAXONOMY.md` — class taxonomy для regression-кейсов.

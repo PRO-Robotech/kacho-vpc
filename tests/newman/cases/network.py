@@ -377,8 +377,9 @@ CASES.append(Case(
             path="/vpc/v1/networks/{{garbageId}}",
             body={"updateMask": "description", "description": "x"},
             test_script=[
-                # Документированное поведение: gateway отсекает id без 3-char
-                # VPC-префикса синхронно (см. TODO.md «Известные расхождения» / REQUIREMENTS).
+                # Документированное поведение: garbage id на resource-path →
+                # async-style 404 от repo.Get, не sync InvalidArgument
+                # (gotcha #1; см. docs/architecture/06-conventions.md + 07-known-divergences.md).
                 *assert_status(404),
                 *assert_grpc_code(5, "NOT_FOUND"),
             ],

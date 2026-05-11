@@ -170,5 +170,6 @@ internal/
 
 Дополнительно:
 - `../../CLAUDE.md` — operational правила для AI agents (компактнее).
-- `../../TODO.md` — долги и planned issues.
+- GitHub Issues (`github.com/PRO-Robotech/kacho-vpc/issues`) — долги, баги, planned issues.
+- [07-known-divergences.md](07-known-divergences.md) — registry by-design расхождений с verbatim YC.
 - `../../tests/newman/` — e2e regression suite.

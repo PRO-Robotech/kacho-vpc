@@ -128,7 +128,8 @@ error"` через `mapRepoErr(ErrInternal)`.
   - Create → `anypb.New(domainXxxToProto(created))` — сам ресурс.
   - Update → `anypb.New(domainXxxToProto(updated))`.
   - **Delete → `anypb.New(&emptypb.Empty{})`** — НЕ DeleteXxxMetadata.
-    Proto-options: `response: "google.protobuf.Empty"`. См. TODO.md #1.
+    Proto-options: `response: "google.protobuf.Empty"` (verbatim-YC: Delete RPC
+    возвращают `google.protobuf.Empty` — сделано; см. `docs/architecture/04-api-surface.md`).
   - Move → `anypb.New(domainXxxToProto(moved))`.
 - [ ] Worker возвращает error → operation помечается failed с `google.rpc.Status`
   (внутри corelib `operations.Run`).
@@ -174,7 +175,7 @@ YC verbatim semantics:
 - [ ] `Move` принимает `destination_folder_id`, sync-check non-empty,
   async-check existence.
 - [ ] `cloud_id` / `organization_id` пока **не используются** в фильтрах —
-  это TODO для следующей фазы.
+  это задача следующей фазы (GitHub Issue, метка `enhancement`).
 
 ### 3.11 Default Security Group
 
@@ -250,7 +251,8 @@ YC verbatim semantics:
 - `corevalidate.NameVPC` / `Name` / `ZoneId` / `DhcpDomainName` / `DdosProvider`
   / `IPAddress` / `Description` / `Labels` / `PageSize` / `UpdateMask` — единая
   библиотека правил.
-- Текущий TODO.md в репо — список известных нарушений parity.
+- `docs/architecture/07-known-divergences.md` — registry by-design расхождений с verbatim YC;
+  GitHub Issues (`PRO-Robotech/kacho-vpc`) — открытые баги / parity-нарушения.
 
 ## 8. Чек-лист быстрого скана для нового RPC
 

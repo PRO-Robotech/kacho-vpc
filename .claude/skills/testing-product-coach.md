@@ -909,4 +909,5 @@ e2e через клиента.
 | "The Art of Software Testing" (Myers) | ECP/BVA/Cause-Effect Graphing |
 | `kacho-workspace/docs/TESTING.md` | Парный документ — тестирование кода |
 | `kacho-vpc/tests/newman/docs/TAXONOMY.md` | Class taxonomy конкретно для Kachō |
-| `kacho-vpc/TODO.md` | Registry расхождений с reference |
+| `kacho-vpc/docs/architecture/07-known-divergences.md` | Registry by-design расхождений с reference |
+| GitHub Issues (`PRO-Robotech/kacho-vpc`) | Найденные баги / tech-debt из тестов |

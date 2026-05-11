@@ -28,11 +28,12 @@ tests/newman/
 │   ├── TAXONOMY.md          — классы кейсов и naming convention
 │   ├── TEST-PLAN.md         — карта покрытия (RPC × класс)
 │   ├── CASES-INDEX.md       — каталог уникальных паттернов кейсов
-│   ├── TODO.md           — найденные дефекты/наблюдения (FINDING-NNN)
 │   ├── REQUIREMENTS.md      — требования к продукту из тестового анализа
 │   └── RESULTS.md           — последний прогон pass/fail + история версий + skill-mapping
 └── out/                     — newman raw output + summary.txt (gitignored snap-логи)
 ```
+(Найденные дефекты/наблюдения — в GitHub Issues `PRO-Robotech/kacho-vpc`, см. `kacho-vpc/CLAUDE.md` §14.4;
+by-design расхождения с verbatim YC — `docs/architecture/07-known-divergences.md`. Отдельного bug-map больше нет.)
 
 ## Быстрый старт
 
