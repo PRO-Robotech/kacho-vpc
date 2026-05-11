@@ -925,3 +925,141 @@ CASES.append(Case(
     steps=[Step(name="get-trail", method="GET", path="/vpc/v1/networks/{{garbageVpcId}}/",
                 test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
 ))
+
+# === Delete с зависимыми ресурсами (FK RESTRICT) ===
+
+CASES.append(Case(
+    id="NET-DEL-NEG-HAS-SUBNETS",
+    title="Delete Network c Subnet → FailedPrecondition (FK RESTRICT)",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-hasub-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-hasub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.250.1.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('error code 9 (FAILED_PRECONDITION)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+                 "pm.test('text mentions network not empty', () => pm.expect((j.error.message || '').toLowerCase()).to.match(/not empty|has subnet|in use|cannot|fk|reference/));",
+             ]),
+        # cleanup в обратном порядке
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-DEL-NEG-HAS-ROUTE-TABLE",
+    title="Delete Network c RouteTable → FailedPrecondition",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-hart-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="cr-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-hart-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 9', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+             ]),
+        Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-DEL-NEG-HAS-NONDEFAULT-SG",
+    title="Delete Network с НЕ-default SG → FailedPrecondition (RESTRICT FK)",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-hasg-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        # Создаём дополнительный (non-default) SG
+        Step(name="cr-sg", method="POST", path="/vpc/v1/securityGroups",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-hasg-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('error code 9 (FailedPrecondition) — RESTRICT FK', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+             ]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="NET-DEL-CRUD-ONLY-DEFAULT-SG",
+    title="Delete Network у которой есть только default-SG → OK (auto-cleanup default)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        # Создаём network — default SG создается inline в doCreate автоматически
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        # Проверка что default SG действительно создался
+        Step(name="check-default-sg", method="GET",
+             path="/vpc/v1/networks/{{netId}}/security_groups",
+             test_script=[*assert_status(200),
+                          "const sgs = pm.response.json().securityGroups || [];",
+                          "pm.test('exactly 1 default SG present', () => pm.expect(sgs.filter(s => s.defaultForNetwork === true).length).to.eql(1));"]),
+        # Delete network — должен пройти (default SG автоматически чистится service-кодом)
+        Step(name="del-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-success", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('no error — delete with only default-SG succeeds', () => pm.expect(j.error).to.be.undefined);",
+             ]),
+        Step(name="get-after-del", method="GET", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+    ],
+))

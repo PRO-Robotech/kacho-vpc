@@ -958,3 +958,69 @@ for cidr in ["10.255.0.0/28", "10.255.0.0/29", "10.255.0.0/30", "10.255.0.0/31"]
                                   *save_from_response("j.id", "opId")]),
             ],
         )))
+
+# === Delete Subnet с зависимыми Address ===
+
+CASES.append(Case(
+    id="SUB-DEL-NEG-HAS-ADDRESSES",
+    title="Delete Subnet с internal Address → FailedPrecondition (FK RESTRICT)",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        *_make_net("hasad"),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-hasad-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.251.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="cr-internal-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-hasad-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="del-sub-blocked", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-failed-precondition", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('error code 9 (FailedPrecondition)', () => pm.expect(j.error && j.error.code, JSON.stringify(j)).to.eql(9));",
+             ]),
+        # cleanup
+        Step(name="cleanup-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="SUB-DEL-CRUD-EMPTY-OK",
+    title="Delete Subnet без зависимостей → OK",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_make_net("delempty"),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-delempty-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.252.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="del-empty-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-success", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "pm.test('done with no error', () => pm.expect(j.done && !j.error).to.eql(true));",
+             ]),
+        _cleanup_net(),
+    ],
+))

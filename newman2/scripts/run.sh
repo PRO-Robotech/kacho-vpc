@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 SERVICE=""
 BAIL=""
-DELAY="50"
+DELAY="100"
 EXTRA=()
 
 while [[ $# -gt 0 ]]; do

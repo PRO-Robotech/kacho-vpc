@@ -956,9 +956,8 @@ def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None
 
 
 def poll_operation_until_done() -> Step:
-    """Reusable poll step. Кейс должен предварительно сохранить opId.
-    Note: api-gateway маршрутизирует OperationService на /operations/{id}
-    (не /vpc/v1/operations) — 3-char prefix routing по op.id.
+    """Reusable poll step с retry-на-not-done через setNextRequest.
+    До 6 попыток, потом fail если done остался false.
     """
     return Step(
         name="poll-op",
@@ -967,8 +966,15 @@ def poll_operation_until_done() -> Step:
         test_script=[
             "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
             "const j = pm.response.json();",
+            "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
+            "if (!j.done && pc < 6) {",
+            "  pm.environment.set('_pollCount', String(pc + 1));",
+            "  // Postman async-friendly retry: re-invoke same request name",
+            "  postman.setNextRequest(pm.info.requestName);",
+            "  return;",
+            "}",
+            "pm.environment.unset('_pollCount');",
             "pm.test('operation done', () => pm.expect(j.done, JSON.stringify(j)).to.eql(true));",
-            "// сохранить error/response для последующих ассертов",
             "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
             "else pm.environment.unset('lastOpError');",
             "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));",

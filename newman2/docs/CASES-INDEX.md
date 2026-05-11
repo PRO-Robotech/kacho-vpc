@@ -1,10 +1,7 @@
 # newman2 — индекс уникальных кейсов
 
-Сгенерированный индекс 571 тест-сценариев, сгруппированных по
-170 уникальным паттернам (по RPC-методу × классу × детали).
-
-Один паттерн = конкретная проверка, применённая к одному или нескольким
-ресурсам. Например, `*-LST-BVA-PAGESIZE-ZERO` применён к 7 List RPC.
+578 тест-сценариев, сгруппированных по 177 уникальным
+паттернам (case-id с заменой domain-префикса на `*`).
 
 ## Сводка по методам
 
@@ -13,7 +10,7 @@
 | - | 5 | HTTP-level / cross-method |
 | AddCidrBlocks | 3 | Subnet: добавить CIDR-блоки |
 | Create | 64 | Создание ресурса (async, возвращает Operation) |
-| Delete | 5 | Удаление (async, sync-NF от AuthZ-Get) |
+| Delete | 12 | Удаление (async, sync-NF от AuthZ-Get; FK RESTRICT) |
 | Get | 13 | Чтение по id (sync, может быть NotFound) |
 | GetByValue | 4 | Address: lookup по конкретному IP |
 | List | 26 | Листинг с фильтром по folder_id + пагинацией |
@@ -30,28 +27,9 @@
 | UpdateRule | 3 | SG: единичное правило |
 | UpdateRules | 7 | SG: batch обновление правил (xmin OCC) |
 
-## Сводка по классам
-
-| Класс | Описание |
-|---|---|
-| CRUD | happy path сценарий |
-| NEG | negative scenario (NotFound, conflict) |
-| VAL | sync-валидация: required, format, regex |
-| AUTHZ | AuthZ check (cross-tenant, sync-NF guard) |
-| BVA | Boundary Value Analysis (page_size 0/1/1000/1001/10000, len 63/64/256/257, labels 64/65) |
-| PAGE | Pagination semantics (token, page boundary) |
-| STATE | State transition (immutable fields, status, idempotency) |
-| CONF | Verbatim YC text conformance |
-| FILTER | Filter syntax (name=, garbage, unknown field) |
-| IDM | Idempotency (retry-safe) |
-| CONC | Concurrency invariant (dup-name race) |
-| PERF | Performance baseline (response time budget) |
-
 ---
 
 ## Кейсы по методам
-
-Формат: `case-id-pattern` | классы | P | ресурсы | что проверяем
 
 
 ### Cross-method (HTTP-level)
@@ -149,15 +127,22 @@
 
 ### Delete
 
-*Удаление (async, sync-NF от AuthZ-Get)*
+*Удаление (async, sync-NF от AuthZ-Get; FK RESTRICT)*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `*-DEL-AUTHZ-NF-SYNC` | AUTHZ,NEG | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Delete несуществующего → sync 404 |
 | `*-DEL-CONF-FULLTEXT` | CONF,NEG | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Delete garbage → 'Subnet ... not found' |
 | `*-DEL-CONF-NF-TEXT` | CONF,NEG | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Delete несуществующего Subnet → verbatim 'Subnet ... not found' |
+| `*-DEL-CRUD-EMPTY-OK` | CRUD | P1 | 1 (sub) | Delete Subnet без зависимостей → OK |
 | `*-DEL-CRUD-OK` | CRUD | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Subnet Delete happy path |
+| `*-DEL-CRUD-ONLY-DEFAULT-SG` | CRUD,STATE | P1 | 1 (net) | Delete Network у которой есть только default-SG → OK (auto-cleanup default) |
+| `*-DEL-NEG-HAS-ADDRESSES` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с internal Address → FailedPrecondition (FK RESTRICT) |
+| `*-DEL-NEG-HAS-NONDEFAULT-SG` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network с НЕ-default SG → FailedPrecondition (RESTRICT FK) |
+| `*-DEL-NEG-HAS-ROUTE-TABLE` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c RouteTable → FailedPrecondition |
+| `*-DEL-NEG-HAS-SUBNETS` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c Subnet → FailedPrecondition (FK RESTRICT) |
 | `*-DEL-NEG-NF-INVALID-PREFIX` | NEG,STATE | P1 | 1 (net) | Delete с id без VPC-префикса → sync 404 |
+| `*-DEL-STATE-DEFAULT-SG` | NEG,STATE | P1 | 1 (sec) | Delete default-SG напрямую → должен fail (нельзя delete default SG в обход) |
 
 ### Get
 

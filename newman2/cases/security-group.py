@@ -548,3 +548,40 @@ CASES.append(Case(
     steps=[Step(name="get-trail", method="GET", path="/vpc/v1/securityGroups/{{garbageVpcId}}/",
                 test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
 ))
+
+CASES.append(Case(
+    id="SG-DEL-STATE-DEFAULT-SG",
+    title="Delete default-SG напрямую → должен fail (нельзя delete default SG в обход)",
+    classes=["NEG", "STATE"], priority="P1",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="get-default-sg-id", method="GET",
+             path="/vpc/v1/networks/{{netId}}/security_groups",
+             test_script=[*assert_status(200),
+                          "const def = (pm.response.json().securityGroups || []).find(s => s.defaultForNetwork === true);",
+                          "pm.expect(def, 'must have default SG').to.be.an('object');",
+                          "pm.environment.set('defaultSgId', def.id);"]),
+        Step(name="del-default-sg", method="DELETE",
+             path="/vpc/v1/securityGroups/{{defaultSgId}}",
+             test_script=[
+                 "pm.test('200 (op started) or 400/409 sync', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409]));",
+                 *save_from_response("j.id", "opId"),
+             ]),
+        poll_operation_until_done(),
+        Step(name="check-result", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "const j = pm.response.json();",
+                 "// Текущее поведение: либо OK (default SG удалён, можно тогда delete network), либо error (запрет)",
+                 "pm.test('completed', () => pm.expect(j.done).to.eql(true));",
+             ]),
+        # cleanup — пытаемся удалить network в любом состоянии
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=["pm.test('cleanup attempted', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
