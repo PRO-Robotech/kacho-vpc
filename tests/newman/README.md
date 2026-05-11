@@ -1,17 +1,18 @@
-# newman — публичный API kacho-vpc, 100% coverage suite
+# tests/newman — публичный API kacho-vpc, 100% coverage suite
 
-**Главная regression-инфраструктура** kacho-vpc. Black-box покрытие всех публичных
-RPC, спроектирована по `testing-product-coach` (формальные техники test design) с
-naming/structure по `testing-code-coach`. Источник истины — декларативные case-файлы
-`cases/*.py`; коллекции в `collections/` **генерируются** скриптом `scripts/gen.py`.
+**Главная regression-инфраструктура** kacho-vpc (`tests/newman/`; рядом `tests/k6/` —
+нагрузочные сценарии). Black-box покрытие всех публичных RPC, спроектирована по
+`testing-product-coach` (формальные техники test design) с naming/structure по
+`testing-code-coach`. Источник истины — декларативные case-файлы `cases/*.py`;
+коллекции в `collections/` **генерируются** скриптом `scripts/gen.py`.
 
-> `newman_legacy/` (в корне репо) — старая quota-aware 3-suite сьюта против реального
-> YC API (RO/LIGHT/SEQ, master collection); сохранена как baseline, активно не используется.
+> Старая quota-aware 3-suite сьюта против реального YC API (`newman_legacy/`,
+> RO/LIGHT/SEQ, master collection) удалена — история в git.
 
 ## Структура
 
 ```
-newman/
+tests/newman/
 ├── README.md                — этот файл
 ├── cases/                   — ИСТОЧНИК ИСТИНЫ: декларативные case-наборы (Python), по сервису
 │   └── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py

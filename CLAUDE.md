@@ -329,7 +329,7 @@ CreatedAt: timestamppb.New(s.CreatedAt.Truncate(time.Second))
 - `0002_resource_name_unique.sql` — partial UNIQUE `(folder_id, name) WHERE name <> ''`
   для `subnets`/`route_tables`/`security_groups`/`gateways`/`private_endpoints`/`addresses`
   (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network;
-  см. FINDING-005 в `newman/docs/BUG-MAP.md`).
+  см. FINDING-005 в `tests/newman/docs/BUG-MAP.md`).
 
 `migrations/` (в корне репо) — staging для `make sync-migrations` (только
 `0001_operations.sql` от corelib; в `0001_initial.sql` схема `operations` уже включена).
@@ -389,8 +389,8 @@ make test-short
 make test
 
 # Newman regression (нужен port-forward api-gateway → localhost:18080)
-python3 newman/scripts/gen.py            # перегенерить коллекции из cases/*.py
-newman/scripts/run.sh                    # все сервисы; --service network для одного
+python3 tests/newman/scripts/gen.py            # перегенерить коллекции из cases/*.py
+tests/newman/scripts/run.sh                    # все сервисы; --service network для одного
 ```
 
 ## 14. Тесты
@@ -416,7 +416,7 @@ CI пропускает через `-short` (TODO #17). Покрывает:
 - UNIQUE violations (duplicate name → 23505).
 - Outbox emit транзакционность.
 
-### 14.3 E2E / Postman (`newman/`)
+### 14.3 E2E / Postman (`tests/newman/`)
 
 **Главная regression-инфраструктура** — black-box покрытие всех публичных RPC
 (спроектировано по `testing-product-coach`/`testing-code-coach`). Только HTTP
@@ -424,7 +424,7 @@ CI пропускает через `-short` (TODO #17). Покрывает:
 case-файлы на Python → `gen.py` → Postman-коллекции по сервису.
 
 ```
-newman/
+tests/newman/
 ├─ cases/                       — декларативные case-наборы по сервису (Python)
 │  ├─ network.py / subnet.py / address.py / route-table.py /
 │  │  security-group.py / gateway.py / private-endpoint.py / operation.py
@@ -446,10 +446,10 @@ newman/
 
 **Запуск:**
 ```bash
-python3 newman/scripts/gen.py            # перегенерить ВСЕ коллекции (или: gen.py network)
-newman/scripts/run.sh                    # все 8 сервисов; сводка в out/summary.txt
-newman/scripts/run.sh --service network  # один сервис
-newman/scripts/run.sh --service subnet --delay 60 --bail
+python3 tests/newman/scripts/gen.py            # перегенерить ВСЕ коллекции (или: gen.py network)
+tests/newman/scripts/run.sh                    # все 8 сервисов; сводка в out/summary.txt
+tests/newman/scripts/run.sh --service network  # один сервис
+tests/newman/scripts/run.sh --service subnet --delay 60 --bail
 ```
 
 **Контракт изоляции кейса**: каждый case — внутри своего `runId`; suite работает
@@ -461,10 +461,10 @@ newman/scripts/run.sh --service subnet --delay 60 --bail
 `*-DEL-STATE-DEFAULT-SG` проверяют авто-создание default SG. При `=false` (load-test
 config) эти кейсы краснеют.
 
-Текущий результат: 686 кейсов / ~3120 assertions / 0 fail (v15; см. `newman/docs/RESULTS.md`).
+Текущий результат: 686 кейсов / ~3120 assertions / 0 fail (v15; см. `tests/newman/docs/RESULTS.md`).
 Подробности добавления нового кейса, разрешённых паттернов и common pitfalls
-см. в агенте `vpc-newman-author`. (`newman_legacy/` — старая quota-aware 3-suite
-сьюта против реального YC API; не трогается.)
+см. в агенте `vpc-newman-author`. (Старая quota-aware 3-suite сьюта против реального
+YC API — `newman_legacy/` — удалена; история — в git.)
 
 ## 15. Top-10 gotchas (из истории фиксов)
 
@@ -694,7 +694,7 @@ kachoctl ipam check
 - `vpc-outbox-watch-engineer` — outbox + LISTEN/NOTIFY + InternalWatchService
   + InternalAddressService.
 - `vpc-newman-author` — newman regression suites (декларативные `cases/*.py` → `gen.py`).
-- `vpc-load-testing` — нагрузочные сценарии VPC (k6 + ghz Jobs, см. `k6/`; defers
+- `vpc-load-testing` — нагрузочные сценарии VPC (k6 + ghz Jobs, см. `tests/k6/`; defers
   generic-методологию `load-testing-coach`).
 
 **Testing coaches / load (skills в `.claude/skills/`):**
@@ -707,7 +707,7 @@ kachoctl ipam check
   как чёрного ящика: 11 формальных техник (ECP, BVA, decision tables, state
   transition, pairwise, use-case, error guessing, exploratory, property-based,
   risk-based, conformance), 14 типов тестов, метрики покрытия для black-box,
-  применение к `newman/` suite + `newman/docs/BUG-MAP.md`.
+  применение к `tests/newman/` suite + `tests/newman/docs/BUG-MAP.md`.
 - `vpc-load-testing` (skill) + `load-testing-coach` (workspace skill) — нагрузочное тестирование.
 
 Использовать после соответствующих этапов: yc-parity-auditor — после

@@ -1127,7 +1127,7 @@ IAM sidecar — иначе anonymous = root.
 Декларативный генератор: case-файлы на Python → `gen.py` → Postman-коллекции по сервису.
 
 ```
-newman/
+tests/newman/
 ├── cases/                       — декларативные case-наборы (Python), по сервису
 │   └── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py
 ├── collections/                 — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису)
@@ -1140,14 +1140,15 @@ newman/
 └── out/                         — newman raw output (gitignored snap-логи)
 ```
 
-Запуск: `python3 newman/scripts/gen.py` (перегенерить коллекции) → `newman/scripts/run.sh`
+Запуск: `python3 tests/newman/scripts/gen.py` (перегенерить коллекции) → `tests/newman/scripts/run.sh`
 (все 8 сервисов; `--service network` для одного). Изоляция: каждый case — внутри своего
 `runId`, suite — внутри pre-allocated `existingFolderId`/`existingFolderCrossId` (env), Org/Cloud/Folder
 не создаёт. Требует `KACHO_VPC_DEFAULT_SG_INLINE=true` (default; иначе default-SG-кейсы краснеют).
-Текущий результат — `newman/docs/RESULTS.md` (v15: 686 кейсов / ~3120 assertions / 0 fail).
+Текущий результат — `tests/newman/docs/RESULTS.md` (v15: 686 кейсов / ~3120 assertions / 0 fail).
 
-`newman_legacy/` — старая quota-aware 3-suite сьюта против реального YC API (RO/LIGHT/SEQ
-с rate-limit ~2 POST/sec); сохранена как baseline, активно не используется.
+(Старая quota-aware 3-suite сьюта против реального YC API — `newman_legacy/` — удалена;
+история в git. Нагрузочные сценарии — рядом, `tests/k6/` (k6 HTTP + ghz gRPC Jobs),
+baseline в `tests/k6/results/BASELINE.md`.)
 
 ### 12.4 Coverage
 
@@ -1286,7 +1287,7 @@ newman/
 1. Unit-тесты со своими `fake*Repo` моками портов — на каждый service-метод.
 2. Integration-тесты в `repo/integration_test.go` с testcontainers — на FK,
    EXCLUDE, UNIQUE.
-3. Newman-сьют в `newman/` по схеме из §12.3.
+3. Newman-сьют в `tests/newman/` по схеме из §12.3.
 4. Skeleton CI: `make test-short` (fast), `make test` (full).
 
 ### 14.11 Чек-лист итоговой проверки
@@ -1297,7 +1298,7 @@ newman/
 | Линтер | `golangci-lint run` чистый |
 | Миграции | `bin/kacho-vpc migrate up` идемпотентен |
 | Service start | `bin/kacho-vpc serve` слушает 9090 и 9091 |
-| Newman | `python3 newman/scripts/gen.py && newman/scripts/run.sh` — 0 failures (нужен port-forward api-gateway → 18080 + `KACHO_VPC_DEFAULT_SG_INLINE=true`) |
+| Newman | `python3 tests/newman/scripts/gen.py && tests/newman/scripts/run.sh` — 0 failures (нужен port-forward api-gateway → 18080 + `KACHO_VPC_DEFAULT_SG_INLINE=true`) |
 | Watch stream | Создание Network → событие в outbox → пришло в подписку |
 | Allocate IP | `InternalAddressService.AllocateExternalIP` возвращает IP из настроенного pool'а |
 | Cascade | Изменение CloudPoolSelector меняет выбираемый pool без рестарта |
@@ -1361,8 +1362,8 @@ kacho-vpc/
 ├── deploy/                        — Helm chart
 ├── docs/architecture/             — детальные арх-документы (00-09)
 ├── docs/ARCHITECTURE.md           — этот документ
-├── newman/                        — E2E/regression suite (Postman, генерится из cases/*.py)
-├── k6/                            — нагрузочные сценарии (k6 + ghz Jobs, см. k6/README.md)
+├── tests/newman/                        — E2E/regression suite (Postman, генерится из cases/*.py)
+├── tests/k6/                            — нагрузочные сценарии (k6 + ghz Jobs, см. tests/k6/README.md)
 ├── .claude/{agents,skills}/       — VPC-специфичные субагенты и скилы
 ├── Makefile, Dockerfile, README.md, TODO.md
 └── go.mod, go.sum

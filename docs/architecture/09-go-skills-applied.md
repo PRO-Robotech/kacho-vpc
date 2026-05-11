@@ -156,7 +156,7 @@ Pure-VPC код прошёл 4 round'а ужесточения и достиг s
 
 | Item из reviewer-сводки | Статус |
 |---|---|
-| Concurrency P0 #3 — `pgxpool.MaxConns` не сконфигурирован | ✅ `KACHO_VPC_DB_MAX_CONNS` env (default `0` = pgx default). ⚠️ Параметр прокидывается в DSN как `pool_max_conns` **только** для pgxpool — `migrate` использует `MigrateDSN()` без него (иначе `database/sql` шлёт серверу unknown PG-param → `FATAL`; см. FINDING-007 в `newman/docs/BUG-MAP.md`) |
+| Concurrency P0 #3 — `pgxpool.MaxConns` не сконфигурирован | ✅ `KACHO_VPC_DB_MAX_CONNS` env (default `0` = pgx default). ⚠️ Параметр прокидывается в DSN как `pool_max_conns` **только** для pgxpool — `migrate` использует `MigrateDSN()` без него (иначе `database/sql` шлёт серверу unknown PG-param → `FATAL`; см. FINDING-007 в `tests/newman/docs/BUG-MAP.md`) |
 | Security P0 #7 — Tenant-isolation / AuthN | частично: добавлен `KACHO_VPC_AUTH_MODE` (`dev`/`production`/`production-strict`) + `TenantUnaryInterceptor`/`TenantStreamInterceptor` + `AssertFolderOwnership`. Полноценный IAM (claims-extraction, folder-membership через RM) — всё ещё scope |
 | Security P0 #8 — `:9091` без NetworkPolicy | ✅ `networkpolicy-vpc-internal.yaml` в `kacho-deploy` umbrella chart. mTLS — ещё нет |
 | Security P0 #9 — plaintext gRPC к RM | конфигурируемо: `KACHO_VPC_RESOURCE_MANAGER_TLS` (default `false` для dev; `production-strict` требует `true`) |

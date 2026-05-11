@@ -47,7 +47,7 @@ k6 run --out json=results/network-create-burst.json scripts/network-create-burst
 ## Files
 
 ```
-k6/
+tests/k6/
 ├── scripts/
 │   ├── lib/
 │   │   ├── client.js     — common HTTP + auth headers

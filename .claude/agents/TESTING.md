@@ -785,7 +785,7 @@ CI должен дать обратную связь в течение 10 мин
 ### 10.3 Postman / Newman
 
 Quota-aware 3-suite split (RO / LIGHT / SEQ) — описан в
-`kacho-vpc/CLAUDE.md §14.3` и `kacho-vpc/newman/README.md`. Ключевое:
+`kacho-vpc/CLAUDE.md §14.3` и `kacho-vpc/tests/newman/README.md`. Ключевое:
 
 - Каждая suite-collection начинается с `00-preflight` и
   заканчивается `99-teardown`.
@@ -901,8 +901,8 @@ Quota-aware 3-suite split (RO / LIGHT / SEQ) — описан в
 | `kacho-workspace/CLAUDE.md` | Архитектурные правила полирепо |
 | `kacho-vpc/CLAUDE.md §14` | Уровни тестирования в VPC |
 | `kacho-vpc/docs/ARCHITECTURE.md §XII` | Тестирование VPC в общей картине |
-| `kacho-vpc/newman/README.md` | Newman quota-aware pipeline |
-| `kacho-vpc/newman/docs/TESTCASES.md` | Class taxonomy (CRUD/BVA/VAL/NEG) |
+| `kacho-vpc/tests/newman/README.md` | Newman quota-aware pipeline |
+| `kacho-vpc/tests/newman/docs/TAXONOMY.md` | Class taxonomy (CRUD/BVA/VAL/NEG) |
 | Standard book | "xUnit Test Patterns" (Gerard Meszaros) — справочник по test doubles и анти-паттернам |
 | Standard book | "Growing Object-Oriented Software, Guided by Tests" (Freeman & Pryce) — fake vs mock, state-based vs interaction |
 | Standard book | "Working Effectively with Legacy Code" (Michael Feathers) — seams, testability |

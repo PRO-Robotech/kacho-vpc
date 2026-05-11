@@ -60,17 +60,24 @@ worker) — existence checks, FK, EXCLUDE constraints. Маппинг через
 
 ## Тестирование
 
-Три уровня (детали — `CLAUDE.md` §14):
+Уровни (детали — `CLAUDE.md` §14):
 
 ```bash
-make test-short              # unit (моки, без Docker)
-make test                    # unit + integration (testcontainers)
-cd newman && ./scripts/run.sh --env local   # e2e через api-gateway
+make test-short                          # unit (моки, без Docker)
+make test                                # unit + integration (testcontainers)
+# E2E newman (нужен port-forward api-gateway → localhost:18080, KACHO_VPC_DEFAULT_SG_INLINE=true):
+python3 tests/newman/scripts/gen.py      # перегенерить коллекции из cases/*.py
+tests/newman/scripts/run.sh              # все сервисы; --service network для одного
+# Нагрузочные (k6 + ghz):
+tests/k6/run-all.sh                      # быстрый набор сценариев; см. tests/k6/README.md
 ```
 
-Newman quota-aware 3-suite pipeline (RO / LIGHT / SEQ) — против local Kachō
-и реального YC API. Variable convention, class taxonomy, PARITY.md registry —
-см. `newman/README.md` и `vpc-newman-author` агента.
+`tests/newman/` — главная regression-сьюта: декларативные `cases/*.py` → `gen.py` →
+Postman-коллекции по сервису; black-box покрытие всех публичных RPC. Документооборот —
+`tests/newman/docs/` (TAXONOMY / TEST-PLAN / CASES-INDEX / BUG-MAP / REQUIREMENTS / RESULTS).
+Подробности — `tests/newman/README.md` и `vpc-newman-author` агент.
+`tests/k6/` — нагрузочные сценарии (k6 HTTP + ghz gRPC, in-cluster Jobs); baseline —
+`tests/k6/results/BASELINE.md`. См. `vpc-load-testing` агент/скил.
 
 ## Migrations
 
@@ -103,4 +110,4 @@ KACHO_VPC_DB_PASSWORD=secret bin/kacho-vpc migrate status
 - `vpc-newman-author` — Postman/Newman regression suites
 - `testing-code-coach` — эталонные практики тестирования кода (TESTING.md)
 - `testing-product-coach` — black-box product testing техники (TESTING-PRODUCT.md)
-- `vpc-load-testing` — k6/ghz нагрузочные сценарии VPC (см. `k6/`)
+- `vpc-load-testing` — k6/ghz нагрузочные сценарии VPC (см. `tests/k6/`)

@@ -17,7 +17,7 @@
 - pg_notify trigger `vpc_outbox_notify_trg` disabled (для чистого write throughput; в production нужен batch-notify или disable Watch)
 - прямой gRPC к `vpc:9090` (минуя api-gateway proxy, у которого ~3500 RPS limit на 1 pod)
 
-Запуск: `k6/ghz/network-create-direct.sh` (требует `kubectl port-forward svc/vpc 19090:9090`).
+Запуск: `tests/k6/ghz/network-create-direct.sh` (требует `kubectl port-forward svc/vpc 19090:9090`).
 
 ## Эволюция оптимизации
 
@@ -84,12 +84,12 @@ Fix: `config.MigrateDSN()` (= baseDSN без pgxpool-параметров) дл�
 
 ```bash
 # k6 (через api-gateway)
-k6 run --env BASE_URL=http://localhost:18080 --env FOLDER_ID=<id> --env ZONE_ID=ru-central1-a k6/scripts/<scenario>.js
+k6 run --env BASE_URL=http://localhost:18080 --env FOLDER_ID=<id> --env ZONE_ID=ru-central1-a tests/k6/scripts/<scenario>.js
 ./run-all.sh
 
 # ghz (прямой gRPC, для max write throughput)
 kubectl -n kacho port-forward svc/vpc 19090:9090 &
-./k6/ghz/network-create-direct.sh
+./tests/k6/ghz/network-create-direct.sh
 ```
 
 ## Backlog
@@ -182,7 +182,7 @@ pg_notify trigger ON.
 | **10000** | **4107** | 96.57ms | 118.20ms | **129.27ms** | 0* | ⚠️ потолок 1 pod |
 | burst (uncontrolled, concurrency 300) | 4815 | 60.33ms | 72.49ms | **90.68ms** | 0 | ⚠️ |
 
-\* Unavailable-ответы — port-forward TCP closed (k6/ghz/Docker contention на
+\* Unavailable-ответы — port-forward TCP closed (tests/k6/ghz/Docker contention на
 dev-машине, "use of closed network connection"), не ошибки kacho-vpc.
 
 ### Выводы

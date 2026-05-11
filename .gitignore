@@ -9,9 +9,9 @@ coverage-full.out
 /vpc
 
 # Newman snapshots and run logs (audit trail, локально, не commit)
-newman/out/snap*-local-*.json
-newman/out/snap*-local-run.log
-newman/out/baseline-yc-*.json
+tests/newman/out/snap*-local-*.json
+tests/newman/out/snap*-local-run.log
+tests/newman/out/baseline-yc-*.json
 
 # IDE
 .idea/

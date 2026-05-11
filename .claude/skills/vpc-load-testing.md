@@ -110,7 +110,7 @@ Result: ожидаемый overhead ≤ 5%.
 ## 8. Layout k6 скриптов
 
 ```
-k6/
+tests/k6/
 ├── scripts/
 │   ├── lib/
 │   │   ├── client.js          — общий HTTP client + auth headers

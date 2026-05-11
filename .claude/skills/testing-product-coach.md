@@ -42,7 +42,7 @@ description: Use when designing or extending product-level tests against the dep
 ## 5. Обязательно: каждый уникальный кейс → в CASES-INDEX.md
 
 При добавлении нового case-паттерна **обязательно** регенерирую/обновляю
-`newman/docs/CASES-INDEX.md` (или альтернативный путь в проекте). Этот
+`tests/newman/docs/CASES-INDEX.md` (или альтернативный путь в проекте). Этот
 файл — единый каталог уникальных проверок:
 
 - Group by RPC method (`Create`, `Get`, `List`, `Update`, `Delete`, `Move`,
@@ -908,5 +908,5 @@ e2e через клиента.
 | "How Google Tests Software" (Whittaker/Arbon/Carollo) | Test pyramid в большом масштабе |
 | "The Art of Software Testing" (Myers) | ECP/BVA/Cause-Effect Graphing |
 | `kacho-workspace/docs/TESTING.md` | Парный документ — тестирование кода |
-| `kacho-vpc/newman/docs/TESTCASES.md` | Class taxonomy конкретно для Kachō |
-| `kacho-vpc/newman/PARITY.md` | Registry расхождений с reference |
+| `kacho-vpc/tests/newman/docs/TAXONOMY.md` | Class taxonomy конкретно для Kachō |
+| `kacho-vpc/tests/newman/docs/BUG-MAP.md` | Registry расхождений с reference |

@@ -69,7 +69,7 @@
 | Зона | Причина | Альтернатива |
 |---|---|---|
 | Internal RPC (`:9091`) | Не публичный API | Отдельная suite `internal/` (вне scope newman) |
-| Verbatim YC текст byte-level | Reference YC недоступен в этой сьюте (только local) | Зеркало в `newman/` с `--env yc` |
+| Verbatim YC текст byte-level | Reference YC недоступен в этой сьюте (только local) | Зеркало в `tests/newman/` с `--env yc` |
 | Performance / load | Не функциональная проверка | Отдельный k6 setup |
 | UI behaviour | Backend test, не frontend | `kacho-ui` E2E |
 | Migration up/down | Operational, не product | `kacho-deploy` smoke |

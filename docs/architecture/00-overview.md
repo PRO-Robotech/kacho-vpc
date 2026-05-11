@@ -171,4 +171,4 @@ internal/
 Дополнительно:
 - `../../CLAUDE.md` — operational правила для AI agents (компактнее).
 - `../../TODO.md` — долги и planned issues.
-- `../../newman/` — e2e regression suite.
+- `../../tests/newman/` — e2e regression suite.

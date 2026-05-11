@@ -5,8 +5,8 @@ fix + #23/#27/#37/#25 closures + перепаковка миграций (`55813
 FINDING-005 fix (`0002_resource_name_unique.sql`).
 
 Verified Newman regression: **686 кейсов / ~3120 assertions / 0 failures**
-(v15; коллекции в `newman/collections/`, генерятся из `newman/cases/*.py`
-через `newman/scripts/gen.py`; прогон — `newman/scripts/run.sh`). Требует
+(v15; коллекции в `tests/newman/collections/`, генерятся из `tests/newman/cases/*.py`
+через `tests/newman/scripts/gen.py`; прогон — `tests/newman/scripts/run.sh`). Требует
 `KACHO_VPC_DEFAULT_SG_INLINE=true` (default) — иначе default-SG-кейсы краснеют.
 
 ## Status table
@@ -131,11 +131,11 @@ overhead без real benefit. См. invariant-comment в `internal/repo/jsonb.go
 
 ## Снапшоты Newman (audit trail)
 
-- `newman/out/*.json` — per-service JSON reporter последнего прогона
-  `newman/scripts/run.sh` (агрегируется в `newman/out/summary.txt`).
+- `tests/newman/out/*.json` — per-service JSON reporter последнего прогона
+  `tests/newman/scripts/run.sh` (агрегируется в `tests/newman/out/summary.txt`).
 - Текущий результат: 686 кейсов / ~3120 assertions / 0 fail (v15).
-- История версий и mapping техник тестирования — `newman/docs/RESULTS.md`;
-  карта багов/наблюдений — `newman/docs/BUG-MAP.md`; каталог паттернов — `newman/docs/CASES-INDEX.md`.
+- История версий и mapping техник тестирования — `tests/newman/docs/RESULTS.md`;
+  карта багов/наблюдений — `tests/newman/docs/BUG-MAP.md`; каталог паттернов — `tests/newman/docs/CASES-INDEX.md`.
 
 ---
 

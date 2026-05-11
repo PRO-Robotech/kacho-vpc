@@ -91,16 +91,16 @@ jobs:
           # стенда: kacho-deploy/docker-compose или kind. Пока — placeholder.
           echo "TODO: compose up — see kacho-deploy/Makefile dev-up"
 
-      - name: Run RO + LIGHT suites against local
+      - name: Run newman suites against local
         if: false  # disabled until compose-up step is wired
         run: |
-          cd newman
-          ./scripts/run.sh --env local --suite ro --no-precleanup
-          ./scripts/run.sh --env local --suite light --no-precleanup --no-rebuild
+          python3 tests/newman/scripts/gen.py
+          tests/newman/scripts/run.sh                  # все сервисы; нужен KACHO_VPC_DEFAULT_SG_INLINE=true
+          # TODO: fail job если в tests/newman/out/summary.txt колонка FAILED > 0 (awk-парсинг)
 
-      - name: Upload Newman reports
+      - name: Upload newman reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: newman-reports
-          path: newman/out/last-run-*.json
+          path: tests/newman/out/*.json

@@ -33,7 +33,7 @@
 - **Rationale**: после каждого `make dev-up` `local.postman_environment.json`
   устаревает — IDs новых folders случайны, env приходится править руками.
 - **Impact**: zero-touch repeatable runs.
-- **Owner**: `kacho-deploy` + `newman/scripts/`.
+- **Owner**: `kacho-deploy` + `tests/newman/scripts/`.
 
 ### REQ-003 — Документ REST endpoints map
 
@@ -74,7 +74,7 @@
 - **Rationale**: UpdateMask — критичная точка контракта (verbatim YC), сейчас
   слабо покрыта. См. TESTING-PRODUCT §3.3 (decision tables).
 - **Impact**: вылавливание регрессий verbatim-parity при изменении handler-ов.
-- **Owner**: `newman/cases/` v2.
+- **Owner**: `tests/newman/cases/` v2.
 
 ### REQ-006 — Cross-tenant AuthZ test matrix
 
@@ -87,7 +87,7 @@
   не проверен.
 - **Rationale**: критическая security проверка перед IAM merge.
 - **Impact**: гарантия отсутствия cross-tenant data leak.
-- **Owner**: `newman/cases/` v2 + setup environment с двумя header sets.
+- **Owner**: `tests/newman/cases/` v2 + setup environment с двумя header sets.
 
 ### REQ-007 — Concurrency invariant tests (allocator race, parallel Create)
 
@@ -99,7 +99,7 @@
   - 10 одновременных `AllocateExternalIP` → все 10 уникальны IP (no race).
 - **Rationale**: race-free constraint — критичный инвариант.
 - **Impact**: ловля concurrency-регрессий до prod.
-- **Owner**: `newman/cases/concurrency.py` (новый file).
+- **Owner**: `tests/newman/cases/concurrency.py` (новый file).
 
 ### REQ-008 — Differential conformance suite (--env yc)
 
@@ -112,7 +112,7 @@
   kacho-only).
 - **Rationale**: единственный способ гарантировать verbatim-parity.
 - **Impact**: high-confidence release readiness.
-- **Owner**: `newman/` v2.
+- **Owner**: `tests/newman/` v2.
 
 ---
 
@@ -130,7 +130,7 @@
 - **Type**: dx
 - **Priority**: P2
 - **Description**: GitHub Actions job который deploy'ит kind + Postgres + сервисы,
-  делает port-forward на 18080, прогоняет `newman/scripts/run.sh`. Сейчас
+  делает port-forward на 18080, прогоняет `tests/newman/scripts/run.sh`. Сейчас
   newman только локально.
 
 ---

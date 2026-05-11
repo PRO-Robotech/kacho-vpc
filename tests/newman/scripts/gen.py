@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-newman/scripts/gen.py — генератор Postman collections из декларативных case-файлов.
+tests/newman/scripts/gen.py — генератор Postman collections из декларативных case-файлов.
 
 Использование:
     python3 scripts/gen.py             # все сервисы
     python3 scripts/gen.py network     # один сервис
 
-Источник истины — модули в newman/cases/<service>.py, каждый экспортирует
+Источник истины — модули в tests/newman/cases/<service>.py, каждый экспортирует
 переменную CASES — список объектов Case (см. ниже).
 """
 from __future__ import annotations

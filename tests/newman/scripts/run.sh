@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# newman/scripts/run.sh — прогон newman коллекций.
+# tests/newman/scripts/run.sh — прогон newman коллекций.
 #
 # Usage:
 #   ./scripts/run.sh                          # все коллекции, сводный отчёт

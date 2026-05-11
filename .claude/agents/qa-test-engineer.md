@@ -293,7 +293,7 @@ kacho-test/collections/kacho-qa.postman_collection.json
 
 Когда поднимаешь новый local стенд:
 1. Создай через REST: `POST /resource-manager/v1/folders` для main folder + cross folder.
-2. Запиши IDs в `newman/environments/local.postman_environment.json` как `existingFolderId` / `existingFolderCrossId`.
+2. Запиши IDs в `tests/newman/environments/local.postman_environment.json` как `existingFolderId` / `existingFolderCrossId`.
 3. Запиши `existingOrgId` (default org) и `existingCloudId` (default cloud).
 
 Это **разовая настройка стенда**, не часть test design. НЕ правь preflight-кейсы — поправь env-файл.
@@ -408,7 +408,7 @@ Probe реального YC API при сомнении и фиксируй то
 
 ### 15.7 PARITY.md — registry для design mismatch
 
-Не каждое расхождение Kachō ↔ YC — баг. Sync vs async errors (Kachō возвращает Operation для всего, YC sync 409/404 для duplicate name) — задокументированный design choice. Такие кейсы → `pending-parity` в `newman/PARITY.md` с blocking-PR описанием.
+Не каждое расхождение Kachō ↔ YC — баг. Sync vs async errors (Kachō возвращает Operation для всего, YC sync 409/404 для duplicate name) — задокументированный design choice. Такие кейсы → `pending-parity` в `tests/newman/PARITY.md` с blocking-PR описанием.
 
 При обнаружении нового расхождения:
 1. Probe YC и Kachō, зафиксируй точные responses.
