@@ -10,7 +10,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{_suiteFolderId}}", "name": "gw-cr-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.gatewayId", "gwId")]),
         poll_operation_until_done(),
@@ -30,7 +30,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="cr", method="POST", path="/vpc/v1/gateways",
-             body={"name": "gw-nf-{{runId}}", "sharedEgressGateway": {}},
+             body={"name": "gw-nf-{{runId}}", "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
 ))
@@ -106,7 +106,7 @@ CASES.append(Case(
     steps=[
         Step(name="create-gw", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{_suiteFolderId}}", "name": "gw-lop-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.gatewayId", "gwId")]),
         poll_operation_until_done(),
@@ -132,7 +132,7 @@ CASES.append(Case(
     steps=[
         Step(name="create-gw", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{_suiteFolderId}}", "name": "gw-mv-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.gatewayId", "gwId")]),
         poll_operation_until_done(),
@@ -153,7 +153,7 @@ CASES.append(Case(
     steps=[
         Step(name="create-gw", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{_suiteFolderId}}", "name": "gw-upd-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.gatewayId", "gwId")]),
         poll_operation_until_done(),
@@ -222,7 +222,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{_suiteFolderId}}", "name": "gw-delok-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.gatewayId", "gwId")]),
         poll_operation_until_done(),
@@ -239,7 +239,7 @@ CASES.append(Case(
     steps=[
         Step(name="create-bad-folder", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{garbageId}}", "name": "gw-fnf-{{runId}}",
-                   "sharedEgressGateway": {}},
+                   "sharedEgressGatewaySpec": {}},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                  "pm.test('mentions folder not found', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('folder'));",
@@ -258,49 +258,54 @@ CASES.append(Case(
     ],
 ))
 
-CASES.extend(ecp_name_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
-CASES.extend(ecp_description_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
-CASES.extend(ecp_labels_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
+CASES.extend(ecp_name_block("GW", "/vpc/v1/gateways", {"sharedEgressGatewaySpec": {}}))
+CASES.extend(ecp_description_block("GW", "/vpc/v1/gateways", {"sharedEgressGatewaySpec": {}}))
+CASES.extend(ecp_labels_block("GW", "/vpc/v1/gateways", {"sharedEgressGatewaySpec": {}}))
 CASES.extend(updatemask_decision_table("GW", "/vpc/v1/gateways"))
 CASES.extend(filter_syntax_block("GW", "/vpc/v1/gateways"))
 CASES.append(pagination_roundtrip("GW", "/vpc/v1/gateways"))
 
 CASES.extend(update_happy_per_field("GW", "/vpc/v1/gateways", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.extend(perf_baseline_block("GW", "/vpc/v1/gateways"))
 CASES.append(move_same_folder("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.extend(verbatim_text_pack("GW", "Gateway", "/vpc/v1/gateways"))
 CASES.extend(authz_caller_headers_block("GW", "/vpc/v1/gateways"))
 
 CASES.append(update_happy_multi_field("GW", "/vpc/v1/gateways", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
-CASES.append(cross_folder_resource_block("GW", "/vpc/v1/gateways", {"sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
+CASES.append(cross_folder_resource_block("GW", "/vpc/v1/gateways", {"sharedEgressGatewaySpec": {}}))
 CASES.append(list_filter_match_block("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.extend(neg_invalid_types_block("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.extend(http_method_not_allowed_block("GW", "/vpc/v1/gateways"))
 CASES.extend(malformed_body_block("GW", "/vpc/v1/gateways"))
 
-CASES.append(alreadyexists_dup_name_for("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+# NB: имена Gateway в YC НЕ уникальны (probe 2026-05-11) — дубль-имя создаётся успешно;
+# generated alreadyexists_dup_name_for("GW", ...) убран (kacho-vpc#9).
 CASES.extend(update_mask_partial_block("GW", "/vpc/v1/gateways", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.append(perf_baseline_get_block("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.extend(list_total_size_check_block("GW", "/vpc/v1/gateways"))
 CASES.extend(headers_content_type_block("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 
 # v10 Gateway-specific
 CASES.append(Case(
     id="GW-CR-VAL-MISSING-TYPE",
-    title="Create Gateway без gateway type oneof → 400",
+    title="Create Gateway без gateway-type oneof → 400 InvalidArgument 'Illegal argument gateway'",
     classes=["VAL", "NEG"], priority="P1",
     steps=[Step(name="cr-notype", method="POST", path="/vpc/v1/gateways",
                 body={"folderId": "{{_suiteFolderId}}", "name": "gw-nt-{{runId}}"},
-                test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
+                test_script=[
+                    # verbatim-YC (probe 2026-05-11, kacho-vpc#9): без gateway-type oneof
+                    # (или с нераспознанным телом) → 400 InvalidArgument "Illegal argument gateway".
+                    *assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                    "pm.test('mentions gateway', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('gateway'));",
+                ])],
 ))
 
 CASES.append(Case(
@@ -387,12 +392,12 @@ CASES.append(Case(
 
 CASES.extend(required_fields_matrix("GW", "/vpc/v1/gateways",
     {"folderId": "{{_suiteFolderId}}", "name": "gw-req-{{runId}}",
-     "sharedEgressGateway": {}},
+     "sharedEgressGatewaySpec": {}},
     ["folderId", "name"]))
 CASES.extend(immutable_fields_matrix("GW", "/vpc/v1/gateways",
     ["folder_id"]))
 
 CASES.extend(security_injection_block("GW", "/vpc/v1/gateways", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))
 CASES.append(conformance_lifecycle_pack("GW", "/vpc/v1/gateways",
-    {"folderId": "{{_suiteFolderId}}", "sharedEgressGateway": {}}))
+    {"folderId": "{{_suiteFolderId}}", "sharedEgressGatewaySpec": {}}))

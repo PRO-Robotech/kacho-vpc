@@ -84,21 +84,19 @@ func (s *GatewayService) Create(ctx context.Context, req CreateGatewayReq) (*ope
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
 	}
+	// Verbatim YC (probe 2026-05-11): gateway-type oneof обязателен — без него (или с
+	// нераспознанным телом, напр. `sharedEgressGateway` вместо `sharedEgressGatewaySpec`)
+	// YC отвечает InvalidArgument "Illegal argument gateway". Сейчас единственный тип —
+	// shared_egress (SharedEgressGatewaySpec). kacho-vpc#9.
+	if req.GatewayType != "shared_egress" {
+		return nil, status.Error(codes.InvalidArgument, "Illegal argument gateway")
+	}
 
-	// Verbatim YC: folder existence + name uniqueness are sync preconditions,
-	// checked BEFORE the Operation. The async folder check in doCreate stays as
-	// a defensive backstop. См. kacho-vpc#8.
+	// Verbatim YC: folder existence — sync precondition до Operation (async-проверка
+	// в doCreate остаётся backstop'ом). NB: имена Gateway в YC НЕ уникальны (probe
+	// 2026-05-11) — name-uniqueness тут НЕ проверяем (в отличие от Network/Subnet/RT/SG). kacho-vpc#8/#9.
 	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
 		return nil, err
-	}
-	if req.Name != "" {
-		existing, _, lerr := s.repo.List(ctx, GatewayFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
-		if lerr != nil {
-			return nil, mapRepoErr(lerr)
-		}
-		if len(existing) > 0 {
-			return nil, status.Errorf(codes.AlreadyExists, "Gateway with name %s already exists", req.Name)
-		}
 	}
 
 	gwID := ids.NewID(ids.PrefixGateway)

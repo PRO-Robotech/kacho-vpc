@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "1de4fa9a-9b3d-4d45-9bef-59c49b7a3c8a",
+    "_postman_id": "9b1dc99b-3552-4123-aa75-7a502a077ac8",
     "name": "kacho-vpc / newman / gateway",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -50,7 +50,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-cr-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-cr-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -277,7 +277,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"gw-nf-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"name\": \"gw-nf-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -560,7 +560,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lop-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lop-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1066,7 +1066,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-mv-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-mv-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1352,7 +1352,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-upd-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-upd-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1935,7 +1935,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-delok-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-delok-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2126,7 +2126,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{garbageId}}\", \"name\": \"gw-fnf-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{garbageId}}\", \"name\": \"gw-fnf-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2222,7 +2222,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2271,7 +2271,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2325,7 +2325,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2378,7 +2378,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2427,7 +2427,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2480,7 +2480,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2533,7 +2533,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2586,7 +2586,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2640,7 +2640,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2693,7 +2693,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}, \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}, \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2746,7 +2746,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}, \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}, \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2799,7 +2799,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}, \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}, \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2853,7 +2853,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}, \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}, \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3204,7 +3204,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-upd-name-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-upd-name-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3486,7 +3486,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-upd-desc-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-upd-desc-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3768,7 +3768,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-upd-labels-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-upd-labels-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4092,7 +4092,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-mv-self-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-mv-self-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4561,7 +4561,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-multi-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-multi-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4847,7 +4847,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"sharedEgressGateway\": {}, \"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-iso-{{runId}}\"}",
+              "raw": "{\"sharedEgressGatewaySpec\": {}, \"folderId\": \"{{_suiteFolderId}}\", \"name\": \"gw-iso-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5047,7 +5047,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-flt-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-flt-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5247,7 +5247,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": null}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": null}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5296,7 +5296,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5349,7 +5349,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-bd-{{runId}}\", \"description\": 12345}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-bd-{{runId}}\", \"description\": 12345}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5568,218 +5568,6 @@
       ]
     },
     {
-      "name": "GW-CR-NEG-DUP-NAME-CHECK — Создать дубль с тем же name → sync 409 ALREADY_EXISTS (kacho-vpc#8)",
-      "description": "class:NEG | class:CONC | priority:P1",
-      "item": [
-        {
-          "name": "cr-first",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/gateways",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "gateways"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-dupck-{{runId}}\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = ((j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || '');",
-                  "  if (v !== undefined && v !== null) pm.environment.set('firstId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-first",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cr-dup",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/gateways",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "gateways"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-dupck-{{runId}}\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 409', () => pm.expect(pm.response.code).to.eql(409));",
-                  "pm.test('grpc code 6 (ALREADY_EXISTS)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(6);",
-                  "});",
-                  "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "cleanup-first",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/gateways/{{firstId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "gateways",
-                "{{firstId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-c1",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "GW-UPD-VAL-MASK-NAME-ONLY — Update mask=name → только name меняется, description/labels не трогаются",
       "description": "class:VAL | class:STATE | priority:P2",
       "item": [
@@ -5806,7 +5594,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6091,7 +5879,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-perf-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-perf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6332,7 +6120,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-noct-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-noct-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6364,7 +6152,7 @@
       ]
     },
     {
-      "name": "GW-CR-VAL-MISSING-TYPE — Create Gateway без gateway type oneof → 400",
+      "name": "GW-CR-VAL-MISSING-TYPE — Create Gateway без gateway-type oneof → 400 InvalidArgument 'Illegal argument gateway'",
       "description": "class:VAL | class:NEG | priority:P1",
       "item": [
         {
@@ -6404,7 +6192,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
+                  "});",
+                  "pm.test('mentions gateway', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('gateway'));"
                 ]
               }
             }
@@ -6806,7 +6599,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"gw-req-{{runId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"name\": \"gw-req-{{runId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6856,7 +6649,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6960,7 +6753,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"test' OR 1=1--\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"test' OR 1=1--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7017,7 +6810,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"x' UNION SELECT * FROM operations--\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"x' UNION SELECT * FROM operations--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7074,7 +6867,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"<script>alert(1)</script>\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"<script>alert(1)</script>\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7131,7 +6924,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"; rm -rf / ;\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"; rm -rf / ;\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7188,7 +6981,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"../../etc/passwd\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"../../etc/passwd\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7245,7 +7038,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"x y\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"x y\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7302,7 +7095,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7400,7 +7193,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGateway\": {}, \"name\": \"gw-life-{{runId}}\"}",
+              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"sharedEgressGatewaySpec\": {}, \"name\": \"gw-life-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
