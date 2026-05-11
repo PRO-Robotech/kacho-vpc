@@ -27,7 +27,7 @@ import (
 func TestNetworkHandler_Update_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or)
+	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
 	h := NewNetworkHandler(networkSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n1"})
@@ -48,7 +48,7 @@ func TestNetworkHandler_Update_OK(t *testing.T) {
 
 func TestNetworkHandler_Update_InvalidArg(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.Update(context.Background(), &vpcv1.UpdateNetworkRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -56,7 +56,7 @@ func TestNetworkHandler_Update_InvalidArg(t *testing.T) {
 
 func TestNetworkHandler_Move_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -64,7 +64,7 @@ func TestNetworkHandler_Move_Validates(t *testing.T) {
 
 func TestNetworkHandler_ListOperations_RequiresID(t *testing.T) {
 	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or))
+	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListNetworkOperationsRequest{NetworkId: ""})
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

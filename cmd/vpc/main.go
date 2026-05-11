@@ -111,9 +111,20 @@ func runServe(cfg config.Config) error {
 	regionRepo := repo.NewRegionRepo(pool)
 	zoneRepo := repo.NewZoneRepo(pool)
 
+	// Inline default-SG creation в request-path NetworkService.doCreate.
+	// Отключается через KACHO_VPC_DEFAULT_SG_INLINE=false (verbatim YC: SG
+	// создаётся reconciler'ом, не VPC-сервисом) — убирает 2 INSERT + 1 UPDATE
+	// из hot-path → существенный прирост write-throughput. nil → не создаём.
+	var defaultSGRepo service.SecurityGroupRepo
+	if cfg.DefaultSGInline {
+		defaultSGRepo = sgRepo
+	} else {
+		logger.Warn("KACHO_VPC_DEFAULT_SG_INLINE=false — Network.Create НЕ создаёт default SG")
+	}
+
 	// Services.
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
-	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo)
+	networkSvc := service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, zoneRepo)
 	routeTableSvc := service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo)
 	gatewaySvc := service.NewGatewayService(gatewayRepo, folderClient, opsRepo)
@@ -123,16 +134,6 @@ func runServe(cfg config.Config) error {
 	networkInternalSvc := service.NewNetworkInternal(networkRepo, sgRepo)
 	regionSvc := service.NewRegionService(regionRepo)
 	zoneSvc := service.NewZoneService(zoneRepo, regionRepo)
-
-	// Inline default-SG creation в request-path NetworkService.doCreate.
-	// Отключается через KACHO_VPC_DEFAULT_SG_INLINE=false (verbatim YC: SG
-	// создаётся reconciler'ом, не VPC-сервисом) — убирает 2 INSERT + 1 UPDATE
-	// из hot-path → существенный прирост write-throughput.
-	if cfg.DefaultSGInline {
-		networkSvc.SetSGRepo(sgRepo)
-	} else {
-		logger.Warn("KACHO_VPC_DEFAULT_SG_INLINE=false — Network.Create НЕ создаёт default SG")
-	}
 
 	// production-mode fail-closed guard: KACHO_VPC_AUTH_MODE=production →
 	// anonymous caller отвергается с PermissionDenied сразу. Защита от

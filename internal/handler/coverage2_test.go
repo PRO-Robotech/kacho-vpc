@@ -326,7 +326,7 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 func TestNetworkHandler_Update_Happy(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, newMockFolderClient(true), or)
+	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, newMockFolderClient(true), or, nil)
 	h := NewNetworkHandler(networkSvc)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})

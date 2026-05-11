@@ -49,24 +49,23 @@ type NetworkService struct {
 //
 // subnetRepo / routeTableRepo используются для per-network children endpoints
 // (ListSubnets / ListRouteTables). Могут быть nil — тогда соответствующие
-// методы вернут empty list.
+// методы вернут empty list. sgService nil — disable auto-create/cleanup default SG.
 //
-// sgService nil — disable auto-create default SG (для unit-тестов или
-// если фича отключена).
-func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, sgService *SecurityGroupService, folderClient FolderClient, opsRepo operations.Repo) *NetworkService {
+// sgRepo: если не nil — Network.Create синхронно создаёт inline default SG в
+// worker'е (KACHO_VPC_DEFAULT_SG_INLINE=true). Если nil — Network.Create не создаёт SG
+// (verbatim YC: SG создаётся внешним reconciler'ом). Передаётся конструктором, а не
+// setter'ом — composition root решает по флагу до сборки сервиса.
+func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo RouteTableRepo, sgService *SecurityGroupService, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *NetworkService {
 	return &NetworkService{
 		repo:           repo,
 		subnetRepo:     subnetRepo,
 		routeTableRepo: routeTableRepo,
 		sgService:      sgService,
+		sgRepo:         sgRepo,
 		folderClient:   folderClient,
 		opsRepo:        opsRepo,
 	}
 }
-
-// SetSGRepo wires SG repo для inline default-SG creation. Должно вызываться
-// composition root после конструирования. Если nil — default SG не создаётся.
-func (s *NetworkService) SetSGRepo(r SecurityGroupRepo) { s.sgRepo = r }
 
 // ListSubnets возвращает подсети, принадлежащие данной сети.
 // Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).

@@ -21,7 +21,7 @@ import (
 
 func TestNetworkService_Move_Validates(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or)
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
 	_, err := svc.Move(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -33,7 +33,7 @@ func TestNetworkService_Move_Validates(t *testing.T) {
 func TestNetworkService_Delete_OK(t *testing.T) {
 	nr := newMockNetworkRepo()
 	or := newMockOpsRepo()
-	svc := NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or)
+	svc := NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
 
 	createOp, _ := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "n"})
 	awaitOpDone(t, or, createOp.ID)
@@ -49,7 +49,7 @@ func TestNetworkService_Delete_OK(t *testing.T) {
 
 func TestNetworkService_ListOperations_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or)
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
 	_, _, err := svc.ListOperations(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -57,7 +57,7 @@ func TestNetworkService_ListOperations_NotFound(t *testing.T) {
 
 func TestNetworkService_ListSubnets_NetworkNotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), newMockSubnetRepo(), nil, nil, newMockFolderClient(true), or)
+	svc := NewNetworkService(newMockNetworkRepo(), newMockSubnetRepo(), nil, nil, newMockFolderClient(true), or, nil)
 	_, _, err := svc.ListSubnets(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -449,7 +449,7 @@ func TestGatewayService_List_Empty(t *testing.T) {
 func TestNetworkService_ListSecurityGroups_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
 	sgSvc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, sgSvc, newMockFolderClient(true), or)
+	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, sgSvc, newMockFolderClient(true), or, nil)
 	_, _, err := svc.ListSecurityGroups(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -457,7 +457,7 @@ func TestNetworkService_ListSecurityGroups_NotFound(t *testing.T) {
 
 func TestNetworkService_ListRouteTables_NotFound(t *testing.T) {
 	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, newMockRouteTableRepo(), nil, newMockFolderClient(true), or)
+	svc := NewNetworkService(newMockNetworkRepo(), nil, newMockRouteTableRepo(), nil, newMockFolderClient(true), or, nil)
 	_, _, err := svc.ListRouteTables(context.Background(), ids.NewUID(), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
