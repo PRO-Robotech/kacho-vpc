@@ -32,7 +32,7 @@ status codes, timestamp precision, regex'ы, behavioural semantics).
 Вне скоупа:
 - Реальный data plane (это control plane only, как и весь Kachō).
 - DNS-records для Address — proto-поля есть (`dns_record_specs`), но сервис их
-  пока игнорирует (TODO в `TODO.md`).
+  пока игнорирует (GitHub Issue, метка `blocked:kacho-dns`).
 
 ## 2. Доменная модель и связи
 
@@ -328,8 +328,7 @@ CreatedAt: timestamppb.New(s.CreatedAt.Truncate(time.Second))
   `networks_folder_id_name_key` — non-partial UNIQUE `(folder_id, name)`.
 - `0002_resource_name_unique.sql` — partial UNIQUE `(folder_id, name) WHERE name <> ''`
   для `subnets`/`route_tables`/`security_groups`/`gateways`/`private_endpoints`/`addresses`
-  (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network;
-  см. FINDING-005 в `TODO.md` (раздел «Найденные баги»)).
+  (закрыл расхождение с verbatim YC — раньше UNIQUE был только у Network; commit `ee07a7e`).
 
 `migrations/` (в корне репо) — staging для `make sync-migrations` (только
 `0001_operations.sql` от corelib; в `0001_initial.sql` схема `operations` уже включена).
@@ -448,7 +447,7 @@ tests/newman/
 │  └─ RESULTS.md                — последний прогон pass/fail + история версий + skill-mapping
 └─ out/                         — newman raw output + summary.txt (gitignored snap-логи)
 ```
-(Найденные дефекты/наблюдения — НЕ здесь, а в `TODO.md` (раздел «Найденные баги»), см. §14.4.)
+(Найденные дефекты/наблюдения — НЕ здесь, а GitHub Issues, см. §14.4.)
 
 **Запуск:**
 ```bash
@@ -472,17 +471,24 @@ config) эти кейсы краснеют.
 см. в агенте `vpc-newman-author`. (Старая quota-aware 3-suite сьюта против реального
 YC API — `newman_legacy/` — удалена; история — в git.)
 
-### 14.4 Где фиксировать найденные баги (ОБЯЗАТЕЛЬНО)
+### 14.4 Где фиксировать найденные баги и задачи (ОБЯЗАТЕЛЬНО)
 
-**Любой баг / расхождение с verbatim YC / observability-gap, найденный в newman, k6,
-integration- или unit-тестах (или при ревью/прогоне) фиксируется ТОЛЬКО в `TODO.md`**
-— в разделе «Найденные баги / наблюдения из тестов» (если open / by-design) либо в его
-подразделе «Исправленные» (если уже закрыт — с ссылкой на commit). Отдельных bug-map'ов
-(`TODO.md`, FINDING-NNN-реестров и т.п.) **не вести** — единый реестр в `TODO.md`.
-Исправил баг → переносишь запись в «Исправленные» / убираешь, фикс описываешь в commit message.
-Не баг (by-design / documented divergence) → оставляешь в «Известные расхождения» с обоснованием.
-В тест-кейсах допустим короткий комментарий-аннотация (`# verifies <короткое описание>`),
-но **не** дублирование описания бага — только в `TODO.md`.
+**Любой баг / расхождение с verbatim YC / observability-gap / доп-задача, найденная в
+newman, k6, integration- или unit-тестах (или при ревью/прогоне) → GitHub Issue в
+`PRO-Robotech/kacho-vpc`** (если не VPC-specific, а общий — в `PRO-Robotech/kacho-workspace`).
+**`TODO.md` упразднён** — теперь это stub со ссылкой на Issues; источник истины «что надо
+сделать» — открытые issues, не файлы в репо. (Полная конвенция — workspace `CLAUDE.md` →
+«Баги, задачи, tech-debt — GitHub Issues» + «Кросс-репо зависимости и порядок выполнения».)
+
+- Метки: `bug` / `tech-debt` / `enhancement`. Заблокировано ещё-не-реализованным сервисом →
+  `blocked:kacho-dns` / `blocked:kacho-iam` + в теле issue «при каких условиях браться».
+  Кросс-репо эпик → tracking-issue в `kacho-workspace` (метка `epic`), per-repo issue помечает
+  `Blocked by PRO-Robotech/<repo>#<n>`.
+- Коммит, закрывающий issue — trailer `Closes #N` (или `Closes PRO-Robotech/<repo>#N` для кросс-репо).
+- В тест-кейсе допустима короткая аннотация `# verifies <короткое описание>` (можно со ссылкой
+  на issue) — но **не** дублирование описания бага.
+- **Не баг** (by-design / documented divergence с verbatim YC) → **не issue**, а запись в
+  `docs/architecture/07-known-divergences.md`. Отдельных bug-map'ов / FINDING-NNN-реестров — не вести.
 
 ## 15. Top-10 gotchas (из истории фиксов)
 
@@ -694,7 +700,8 @@ curl "$BASE/vpc/v1/addressPools:check?zoneId=ru-central1-a"
 - Workspace правила: `../../CLAUDE.md`
 - Acceptance документ: `../../docs/specs/sub-phase-0.3-vpc-acceptance.md`
 - Proto: `../kacho-proto/proto/kacho/cloud/vpc/v1/`
-- Outstanding TODO: `./TODO.md`
+- Открытые задачи / баги / tech-debt: GitHub Issues — github.com/PRO-Robotech/kacho-vpc/issues
+  (`TODO.md` упразднён, см. §14.4). Известные by-design расхождения с verbatim YC: `docs/architecture/07-known-divergences.md`
 - Spec data model: `../../docs/specs/02-data-model-and-conventions.md`
 
 ## 18. VPC-specific subagents
@@ -724,7 +731,7 @@ curl "$BASE/vpc/v1/addressPools:check?zoneId=ru-central1-a"
   как чёрного ящика: 11 формальных техник (ECP, BVA, decision tables, state
   transition, pairwise, use-case, error guessing, exploratory, property-based,
   risk-based, conformance), 14 типов тестов, метрики покрытия для black-box,
-  применение к `tests/newman/` suite + `TODO.md` (раздел «Найденные баги»).
+  применение к `tests/newman/` suite + заведение находок в GitHub Issues (§14.4).
 - `vpc-load-testing` (skill) + `load-testing-coach` (workspace skill) — нагрузочное тестирование.
 
 Использовать после соответствующих этапов: yc-parity-auditor — после
