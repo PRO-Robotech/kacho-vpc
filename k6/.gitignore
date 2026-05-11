@@ -1,1 +1,4 @@
-results/
+results/*.json
+results/*.log
+results/*.html
+results/*.csv
