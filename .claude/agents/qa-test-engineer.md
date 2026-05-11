@@ -406,11 +406,20 @@ pm.expect(op.error.message).to.include("overlap");
 
 Probe реального YC API при сомнении и фиксируй точный текст в комментарии теста.
 
-### 15.7 PARITY.md — registry для design mismatch
+### 15.7 PARITY.md → теперь `docs/architecture/07-known-divergences.md` + GitHub Issues
 
-Не каждое расхождение Kachō ↔ YC — баг. Sync vs async errors (Kachō возвращает Operation для всего, YC sync 409/404 для duplicate name) — задокументированный design choice. Такие кейсы → `pending-parity` в `tests/newman/PARITY.md` с blocking-PR описанием.
+Не каждое расхождение Kachō ↔ YC — баг. Намеренные расхождения (sync vs async, и т.п.) →
+`kacho-vpc/docs/architecture/07-known-divergences.md` (это исключения из регламента, см. §15.8).
+Баг → GitHub Issue (`PRO-Robotech/kacho-vpc`, см. `CLAUDE.md` §14.4) + регрессионный кейс (RED до фикса).
+При обнаружении нового расхождения: probe YC и Kachō → реши design-choice (→ 07-known-divergences) vs bug (→ issue).
 
-При обнаружении нового расхождения:
-1. Probe YC и Kachō, зафиксируй точные responses.
-2. Реши: design choice (→ PARITY.md) vs bug (→ PR в kacho-vpc).
-3. Если design — кейс **не идёт** в unified suite, идёт в `kacho-vpc-pending.postman_collection.json`.
+### 15.8 Регламент продуктовых требований — `tests/newman/docs/PRODUCT-REQUIREMENTS.md` (ты его ведёшь)
+
+Нормативный список `REQ-*` (что продукт ДОЛЖЕН / НЕ ДОЛЖЕН), выведенный из `CASES-INDEX.md`. На соответствие
+ему проверяет `vpc-yc-parity-auditor` при ревью изменений. **Твоя ответственность как QA:**
+- Новое выявленное требование (из ревью / прогона / probe YC) → добавь новый `REQ-<AREA>-<NN>` (формат — в шапке файла):
+  нормативная формулировка + `Validated-by:` (case-id-паттерны) + `Agent-check:` (где проверять) + `[приоритет]` + `Divergence:` если это исключение.
+- Каждый новый кейс в `cases/*.py` должен мапиться на `REQ-*`: добавь его case-id в `Validated-by` соответствующего REQ;
+  нет подходящего REQ → сначала заведи REQ, потом кейс. Кейс без REQ — пробел в регламенте.
+- Требование без кейса (`gap`) → запись в секции «Покрытие регламента (gaps)» + тикет/бэклог.
+- Не путать с `REQUIREMENTS.md` (бэклог *улучшений*, не нормативный) и `07-known-divergences.md` (исключения).

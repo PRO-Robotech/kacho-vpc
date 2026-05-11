@@ -64,7 +64,8 @@ tests/newman/
 │  ├─ TAXONOMY.md                  — классы кейсов (CRUD/VAL/NEG/BVA/CONF/STATE/AUTHZ/FILTER/PAGE/IDM/CONC/PERF/…) + naming convention
 │  ├─ TEST-PLAN.md                 — карта покрытия (RPC × класс)
 │  ├─ CASES-INDEX.md               — каталог уникальных паттернов кейсов
-│  ├─ REQUIREMENTS.md              — требования из тестового анализа
+│  ├─ PRODUCT-REQUIREMENTS.md      — НОРМАТИВНЫЙ регламент REQ-* (выведен из CASES-INDEX; vpc-yc-parity-auditor проверяет соответствие)
+│  ├─ REQUIREMENTS.md              — бэклог *улучшений* (testability/contract-clarification — не нормативный)
 │  └─ RESULTS.md                   — последний прогон pass/fail + история версий + skill-mapping (testing-product-coach §3/§4)
 └─ out/                            — newman raw output (gitignored snap-логи)
 ```
@@ -327,11 +328,14 @@ e2e-newman:
 5. ☐ Self-cleanup в финальном test-step.
 6. ☐ Mutation → polling до `done=true` (15s timeout).
 7. ☐ Assertion на verbatim YC error text (если negative case).
-8. ☐ Class из TESTCASES.md проставлен; если новый — обновлён TESTCASES.md.
-9. ☐ После прогона `build-suite.py` — кейс в правильном sub-suite.
-10. ☐ Локальный прогон `./scripts/run.sh --env local --folder <CASE-ID>` зелёный.
-11. ☐ YC-прогон (если кейс не kacho-only) `./scripts/run.sh --env yc --folder <CASE-ID>` зелёный.
-12. ☐ PARITY.md обновлён, если отметил расхождение.
+8. ☐ Class из `TAXONOMY.md` проставлен; если новый — обновлён `TAXONOMY.md`.
+9. ☐ Перегенерены коллекции: `python3 scripts/gen.py <service>`.
+10. ☐ Локальный прогон `./scripts/run.sh --service <svc>` зелёный.
+11. ☐ Уникальный паттерн зафиксирован в `CASES-INDEX.md`.
+12. ☐ **Кейс смаплен на регламент**: case-id добавлен в `Validated-by` соответствующего `REQ-*`
+    в `PRODUCT-REQUIREMENTS.md`. Нет подходящего REQ → сначала заведи REQ (вместе с `qa-test-engineer`), потом кейс.
+    Кейс без REQ = пробел в регламенте, не оставлять.
+13. ☐ Расхождение с verbatim-YC, если заметил → `docs/architecture/07-known-divergences.md` (намеренное) или GitHub Issue (баг).
 
 ## 13. Распространённые ошибки
 
@@ -398,6 +402,7 @@ operation polling.
   block-генераторы `ecp_name_block`/`updatemask_decision_table`/`pagination_roundtrip`/…).
 - `tests/newman/scripts/run.sh` — прогон одного/всех сервисов (`--service <svc>`, `--delay`, `--bail`).
 - `tests/newman/docs/` — `TAXONOMY.md` (классы кейсов + naming), `TEST-PLAN.md` (RPC × класс),
-  `CASES-INDEX.md` (каталог паттернов), `REQUIREMENTS.md`, `RESULTS.md`.
+  `CASES-INDEX.md` (каталог паттернов), `PRODUCT-REQUIREMENTS.md` (нормативный регламент `REQ-*` — каждый кейс мапится сюда),
+  `REQUIREMENTS.md` (бэклог улучшений), `RESULTS.md`.
 - Найденные баги — GitHub Issues (`PRO-Robotech/kacho-vpc`, см. `CLAUDE.md` §14.4);
   by-design расхождения — `docs/architecture/07-known-divergences.md`.

@@ -443,7 +443,8 @@ tests/newman/
 │  ├─ TAXONOMY.md               — классы кейсов + naming convention (CRUD/VAL/NEG/BVA/CONF/STATE/...)
 │  ├─ TEST-PLAN.md              — карта покрытия (RPC × класс)
 │  ├─ CASES-INDEX.md            — каталог уникальных паттернов кейсов
-│  ├─ REQUIREMENTS.md           — требования из тестового анализа
+│  ├─ PRODUCT-REQUIREMENTS.md   — НОРМАТИВНЫЙ регламент REQ-* (от QA; выведен из CASES-INDEX; vpc-yc-parity-auditor проверяет соответствие)
+│  ├─ REQUIREMENTS.md           — бэклог улучшений (testability/contract-clarification — не нормативный)
 │  └─ RESULTS.md                — последний прогон pass/fail + история версий + skill-mapping
 └─ out/                         — newman raw output + summary.txt (gitignored snap-логи)
 ```
@@ -489,6 +490,9 @@ newman, k6, integration- или unit-тестах (или при ревью/пр
   на issue) — но **не** дублирование описания бага.
 - **Не баг** (by-design / documented divergence с verbatim YC) → **не issue**, а запись в
   `docs/architecture/07-known-divergences.md`. Отдельных bug-map'ов / FINDING-NNN-реестров — не вести.
+- **Новое продуктовое требование** (что продукт ДОЛЖЕН делать, выявлено из тест-анализа) → новый `REQ-*` в
+  `tests/newman/docs/PRODUCT-REQUIREMENTS.md` (нормативный регламент от QA; на соответствие ему проверяет
+  агент `vpc-yc-parity-auditor` §3.13 при ревью изменений). Каждый newman-кейс мапится на `REQ-*`.
 
 ## 15. Top-10 gotchas (из истории фиксов)
 

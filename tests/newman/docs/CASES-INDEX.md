@@ -2,6 +2,11 @@
 
 731 кейсов / 218+ паттернов.
 
+> Из этого каталога выведен **нормативный регламент продуктовых требований** —
+> `PRODUCT-REQUIREMENTS.md` (`REQ-*`: что продукт ДОЛЖЕН / НЕ ДОЛЖЕН; ведут тестировщики).
+> Агент `vpc-yc-parity-auditor` проверяет соответствие регламенту при ревью изменений
+> (см. его §3.13). Каждый кейс должен мапиться на `REQ-*` (поле `Validated-by` в регламенте).
+
 > v16 (TODO #35): + 45 кейсов для internal/admin-only IPAM RPC —
 > `internal-pool` (26: AddressPool CRUD + bindings + Check/ExplainResolution/Utilization/ListAddresses,
 > prefix `IPL-*`), `internal-region-zone` (15: Region/Zone CRUD + FK-empty-checks, prefix `RGN-*`/`ZON-*`),

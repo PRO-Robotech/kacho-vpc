@@ -25,11 +25,12 @@ tests/newman/
 │   ├── gen.py               — генератор коллекций из cases/* (Postman v2.1 JSON)
 │   └── run.sh               — прогон одного/всех сервисов (newman + JSON reporter → out/)
 ├── docs/
-│   ├── TAXONOMY.md          — классы кейсов и naming convention
-│   ├── TEST-PLAN.md         — карта покрытия (RPC × класс)
-│   ├── CASES-INDEX.md       — каталог уникальных паттернов кейсов
-│   ├── REQUIREMENTS.md      — требования к продукту из тестового анализа
-│   └── RESULTS.md           — последний прогон pass/fail + история версий + skill-mapping
+│   ├── TAXONOMY.md            — классы кейсов и naming convention
+│   ├── TEST-PLAN.md           — карта покрытия (RPC × класс)
+│   ├── CASES-INDEX.md         — каталог уникальных паттернов кейсов
+│   ├── PRODUCT-REQUIREMENTS.md — НОРМАТИВНЫЙ регламент REQ-* (от QA; выведен из CASES-INDEX; vpc-yc-parity-auditor проверяет соответствие)
+│   ├── REQUIREMENTS.md        — бэклог *улучшений* (testability / contract-clarification asks — не нормативный)
+│   └── RESULTS.md             — последний прогон pass/fail + история версий + skill-mapping
 └── out/                     — newman raw output + summary.txt (gitignored snap-логи)
 ```
 (Найденные дефекты/наблюдения — в GitHub Issues `PRO-Robotech/kacho-vpc`, см. `kacho-vpc/CLAUDE.md` §14.4;
