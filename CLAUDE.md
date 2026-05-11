@@ -389,7 +389,8 @@ make test
 
 # Newman regression (нужен port-forward api-gateway → localhost:18080)
 python3 tests/newman/scripts/gen.py            # перегенерить коллекции из cases/*.py
-tests/newman/scripts/run.sh                    # все сервисы; --service network для одного
+tests/newman/scripts/run.sh                    # все сервисы целиком; --service network для одного
+tests/newman/scripts/run-incremental.sh        # ПО ОДНОМУ кейсу за раз + зачистка после каждого (quota-safe; --resume / --cleanup-only)
 ```
 
 ## 14. Тесты
@@ -438,7 +439,8 @@ tests/newman/
 ├─ environments/local.postman_environment.json   — local stand (port-forward 18080)
 ├─ scripts/
 │  ├─ gen.py                    — генератор коллекций из cases/*.py
-│  └─ run.sh                    — прогон одного / всех сервисов (newman + JSON reporter → out/)
+│  ├─ run.sh                    — прогон одного / всех сервисов целиком (newman + JSON reporter → out/)
+│  └─ run-incremental.{sh,js}   — прогон по одному кейсу за раз + зачистка ресурсов (quota-safe; --resume / --cleanup-only)
 ├─ docs/
 │  ├─ TAXONOMY.md               — классы кейсов + naming convention (CRUD/VAL/NEG/BVA/CONF/STATE/...)
 │  ├─ TEST-PLAN.md              — карта покрытия (RPC × класс)

@@ -307,31 +307,14 @@ Local БД хранит ресурсы между прогонами. После
 - List with pageSize=50 не возвращает recently created (он на странице 2+).
 - Тесты `nlf.1: contains both qa-* networks` фейлятся.
 
-**Решение**: cleanup перед full pipeline:
+**Решение**: вместо inline-bash — готовый скрипт `tests/newman/scripts/run-incremental.sh`:
+- `--cleanup-only` — стереть все throwaway-ресурсы в тест-папках (`existingFolder*` из env), FK-safe порядок,
+  несколько проходов на async-Delete, default-SG не трогает (уходит с network). Запускать перед/после прогона.
+- без флага — прогоняет сьюту **по одному кейсу за раз** и periodic-cleanup каждые `CLEANUP_EVERY` кейсов
+  (default 25) + cleanup после каждого упавшего → resource-footprint остаётся ~0 (quota-safe, как нужно для YC).
+- `--resume` — продолжить прерванный прогон (читает `out/incremental/progress.tsv`).
 
-```bash
-# YC env (script готов):
-./scripts/cleanup-vpc.sh -y
-
-# Local env (script нет — bash inline):
-for fid in $FID $FCROSS; do
-  for kind in subnets addresses routeTables gateways; do
-    while true; do
-      IDS=$(curl -s ".../${kind}?folderId=${fid}&pageSize=100" | jq -r '.[][]?.id')
-      [ -z "$IDS" ] && break
-      while read id; do curl -s -X DELETE ".../${kind}/${id}"; done <<< "$IDS"
-    done
-  done
-  # passes for non-default SGs (cross-refs)
-  for pass in 1 2 3; do
-    IDS=$(curl ... | jq '.[]|select(.defaultForNetwork==false)|.id')
-    ...
-  done
-  # networks last (default SG goes with network)
-done
-```
-
-⚠️ Не cleanup'ай default org/cloud/folder. Только содержимое.
+⚠️ Чистит только содержимое тест-папок; default org/cloud/folder не трогает.
 
 ### 15.3 Snapshot-discipline для diff-а
 

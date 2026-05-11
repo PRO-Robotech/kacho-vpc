@@ -22,8 +22,10 @@ tests/newman/
 ├── environments/
 │   └── local.postman_environment.json   — local stand (port-forward api-gateway → 18080)
 ├── scripts/
-│   ├── gen.py               — генератор коллекций из cases/* (Postman v2.1 JSON)
-│   └── run.sh               — прогон одного/всех сервисов (newman + JSON reporter → out/)
+│   ├── gen.py                — генератор коллекций из cases/* (Postman v2.1 JSON)
+│   ├── run.sh                — прогон одного/всех сервисов целиком (newman + JSON reporter → out/)
+│   ├── run-incremental.sh    — прогон ПО ОДНОМУ кейсу за раз + зачистка ресурсов после каждого (quota-safe, как для YC); --resume / --cleanup-only
+│   └── run-incremental.js    — драйвер (newman library API — без per-case process startup)
 ├── docs/
 │   ├── TAXONOMY.md            — классы кейсов и naming convention
 │   ├── TEST-PLAN.md           — карта покрытия (RPC × класс)
@@ -42,11 +44,16 @@ by-design расхождения с verbatim YC — `docs/architecture/07-known-
 # 1. Поднять стенд + port-forward api-gateway → localhost:18080 (см. kacho-deploy)
 # 2. Перегенерить коллекции из cases/*.py (если меняли cases или код)
 python3 scripts/gen.py            # все сервисы; или: python3 scripts/gen.py network
-# 3. Прогнать всё
+# 3a. Прогнать всё одним махом (быстро, но во время прогона создаётся много ресурсов разом)
 ./scripts/run.sh                  # сводка в out/summary.txt
-# Один сервис / с задержкой / fail-fast
-./scripts/run.sh --service network
-./scripts/run.sh --service subnet --delay 60 --bail
+./scripts/run.sh --service network                 # один сервис
+# 3b. Прогнать ПО ОДНОМУ кейсу за раз с зачисткой ресурсов после каждого
+#     (низкий resource-footprint в любой момент → безопасно при quota-guard, как у YC)
+./scripts/run-incremental.sh                        # все ~731 кейс; сводка → out/incremental/summary.txt
+./scripts/run-incremental.sh --resume               # продолжить прерванный прогон
+./scripts/run-incremental.sh --service subnet       # один сервис
+./scripts/run-incremental.sh --cleanup-only         # просто стереть throwaway-ресурсы в тест-папках
+#     тюнинг через env: CLEANUP_EVERY (как часто periodic-cleanup, default 25), DELAY_REQUEST (ms, default 30)
 
 # Требует KACHO_VPC_DEFAULT_SG_INLINE=true (default) — иначе кейсы default-SG краснеют.
 ```
