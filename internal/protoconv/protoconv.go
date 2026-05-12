@@ -48,21 +48,20 @@ func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
 // (публичная проекция — БЕЗ data-plane-полей; те — в InternalNetworkInterface).
 func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 	return &vpcv1.NetworkInterface{
-		Id:                   n.ID,
-		FolderId:             n.FolderID,
-		CreatedAt:            ts(n.CreatedAt),
-		Name:                 n.Name,
-		Description:          n.Description,
-		Labels:               n.Labels,
-		SubnetId:             n.SubnetID,
-		NetworkId:            n.NetworkID,
-		PrimaryV4Address:     n.PrimaryV4Address,
-		SecondaryV4Addresses: n.SecondaryV4Addresses,
-		V6Addresses:          n.V6Addresses,
-		SecurityGroupIds:     n.SecurityGroupIDs,
-		InstanceId:           n.InstanceID,
-		Index:                n.Index,
-		Status:               vpcv1.NetworkInterface_Status(n.Status),
+		Id:               n.ID,
+		FolderId:         n.FolderID,
+		CreatedAt:        ts(n.CreatedAt),
+		Name:             n.Name,
+		Description:      n.Description,
+		Labels:           n.Labels,
+		SubnetId:         n.SubnetID,
+		NetworkId:        n.NetworkID,
+		V4AddressIds:     n.V4AddressIDs,
+		V6AddressIds:     n.V6AddressIDs,
+		SecurityGroupIds: n.SecurityGroupIDs,
+		InstanceId:       n.InstanceID,
+		Index:            n.Index,
+		Status:           vpcv1.NetworkInterface_Status(n.Status),
 	}
 }
 
@@ -71,6 +70,8 @@ func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 func InternalNetworkInterface(n *domain.NetworkInterface) *vpcv1.InternalNetworkInterface {
 	out := &vpcv1.InternalNetworkInterface{
 		NetworkInterface:  NetworkInterface(n),
+		V4Addresses:       n.V4Addresses,
+		V6Addresses:       n.V6Addresses,
 		HypervisorId:      n.Dataplane.HVID,
 		Sid:               n.Dataplane.SID,
 		SidSeq:            n.Dataplane.SIDSeq,

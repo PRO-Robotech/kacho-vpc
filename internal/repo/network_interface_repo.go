@@ -23,18 +23,18 @@ func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
 	return &NetworkInterfaceRepo{pool: pool}
 }
 
-const niCols = `id, folder_id, created_at, name, description, labels, subnet_id, network_id, primary_v4_address,
-	secondary_v4_addresses, v6_addresses, security_group_ids, instance_id, ni_index, status,
+const niCols = `id, folder_id, created_at, name, description, labels, subnet_id, network_id,
+	v4_address_ids, v6_address_ids, security_group_ids, instance_id, ni_index, status,
 	hv_id, sid, sid_seq, host_iface, netns, gateway_ip, container_id, status_error, dataplane_revision, dataplane_updated_at`
 
 func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	var n domain.NetworkInterface
-	var labelsJSON, sgJSON, sec4JSON, v6JSON []byte
+	var labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON []byte
 	var statusName string
 	var sidSeq int32
 	if err := row.Scan(
-		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID, &n.NetworkID, &n.PrimaryV4Address,
-		&sec4JSON, &v6JSON, &sgJSON, &n.InstanceID, &n.Index, &statusName,
+		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID, &n.NetworkID,
+		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.InstanceID, &n.Index, &statusName,
 		&n.Dataplane.HVID, &n.Dataplane.SID, &sidSeq, &n.Dataplane.HostIface, &n.Dataplane.Netns, &n.Dataplane.GatewayIP,
 		&n.Dataplane.ContainerID, &n.Dataplane.StatusError, &n.Dataplane.Revision, &n.Dataplane.UpdatedAt,
 	); err != nil {
@@ -43,10 +43,10 @@ func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	if err := unmarshalJSONB(labelsJSON, &n.Labels, "NetworkInterface.labels"); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(sec4JSON, &n.SecondaryV4Addresses, "NetworkInterface.secondary_v4_addresses"); err != nil {
+	if err := unmarshalJSONB(v4IDsJSON, &n.V4AddressIDs, "NetworkInterface.v4_address_ids"); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(v6JSON, &n.V6Addresses, "NetworkInterface.v6_addresses"); err != nil {
+	if err := unmarshalJSONB(v6IDsJSON, &n.V6AddressIDs, "NetworkInterface.v6_address_ids"); err != nil {
 		return nil, err
 	}
 	if err := unmarshalJSONB(sgJSON, &n.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
@@ -57,11 +57,53 @@ func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	return &n, nil
 }
 
+// resolveNIAddresses обогащает n.V4Addresses/n.V6Addresses резолвленными IP-строками
+// из таблицы addresses по n.V4AddressIDs/n.V6AddressIDs (denorm для data-plane —
+// см. workspace CLAUDE.md §«Инфра-чувствительные данные»; пустые refs → пустые срезы).
+func (r *NetworkInterfaceRepo) resolveNIAddresses(ctx context.Context, n *domain.NetworkInterface) error {
+	all := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
+	if len(all) == 0 {
+		return nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, COALESCE(internal_ipv4->>'address', external_ipv4->>'address', '') FROM addresses WHERE id = ANY($1)`, all)
+	if err != nil {
+		return wrapPgErr(err, "Address", "")
+	}
+	defer rows.Close()
+	ipByID := make(map[string]string, len(all))
+	for rows.Next() {
+		var id, ip string
+		if err := rows.Scan(&id, &ip); err != nil {
+			return wrapPgErr(err, "Address", "")
+		}
+		ipByID[id] = ip
+	}
+	if err := rows.Err(); err != nil {
+		return wrapPgErr(err, "Address", "")
+	}
+	collect := func(ids []string) []string {
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if ip := ipByID[id]; ip != "" {
+				out = append(out, ip)
+			}
+		}
+		return out
+	}
+	n.V4Addresses = collect(n.V4AddressIDs)
+	n.V6Addresses = collect(n.V6AddressIDs)
+	return nil
+}
+
 // Get возвращает NIC по id.
 func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*domain.NetworkInterface, error) {
 	n, err := scanNI(r.pool.QueryRow(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE id = $1`, id))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", id)
+	}
+	if err := r.resolveNIAddresses(ctx, n); err != nil {
+		return nil, err
 	}
 	return n, nil
 }
@@ -134,7 +176,16 @@ func (r *NetworkInterfaceRepo) ListByHypervisor(ctx context.Context, hvID string
 		}
 		out = append(out, n)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgErr(err, "Network interface", "")
+	}
+	rows.Close()
+	for _, n := range out {
+		if err := r.resolveNIAddresses(ctx, n); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Insert вставляет NIC.
@@ -147,11 +198,11 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	if err != nil {
 		return nil, err
 	}
-	sec4JSON, err := marshalJSONB(orEmptyStrSlice(n.SecondaryV4Addresses), "NetworkInterface.secondary_v4_addresses")
+	v4IDsJSON, err := marshalJSONB(orEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
 	if err != nil {
 		return nil, err
 	}
-	v6JSON, err := marshalJSONB(orEmptyStrSlice(n.V6Addresses), "NetworkInterface.v6_addresses")
+	v6IDsJSON, err := marshalJSONB(orEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +212,12 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, network_id, primary_v4_address, secondary_v4_addresses, v6_addresses, security_group_ids, instance_id, ni_index, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, network_id, v4_address_ids, v6_address_ids, security_group_ids, instance_id, ni_index, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING ` + niCols
 	res, err := scanNI(tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID, n.NetworkID, n.PrimaryV4Address,
-		sec4JSON, v6JSON, sgJSON, n.InstanceID, n.Index, niStatusName(n.Status)))
+		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID, n.NetworkID,
+		v4IDsJSON, v6IDsJSON, sgJSON, n.InstanceID, n.Index, niStatusName(n.Status)))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.Name)
 	}
@@ -179,7 +230,7 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	return res, nil
 }
 
-// UpdateMeta обновляет name/description/labels/security_group_ids.
+// UpdateMeta обновляет name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
 func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
 	labelsJSON, err := marshalJSONB(n.Labels, "NetworkInterface.labels")
 	if err != nil {
@@ -189,11 +240,11 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	if err != nil {
 		return nil, err
 	}
-	sec4JSON, err := marshalJSONB(orEmptyStrSlice(n.SecondaryV4Addresses), "NetworkInterface.secondary_v4_addresses")
+	v4IDsJSON, err := marshalJSONB(orEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
 	if err != nil {
 		return nil, err
 	}
-	v6JSON, err := marshalJSONB(orEmptyStrSlice(n.V6Addresses), "NetworkInterface.v6_addresses")
+	v6IDsJSON, err := marshalJSONB(orEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
 	if err != nil {
 		return nil, err
 	}
@@ -203,8 +254,8 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	res, err := scanNI(tx.QueryRow(ctx,
-		`UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5, secondary_v4_addresses=$6, v6_addresses=$7 WHERE id=$1 RETURNING `+niCols,
-		n.ID, n.Name, n.Description, labelsJSON, sgJSON, sec4JSON, v6JSON))
+		`UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5, v4_address_ids=$6, v6_address_ids=$7 WHERE id=$1 RETURNING `+niCols,
+		n.ID, n.Name, n.Description, labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.ID)
 	}

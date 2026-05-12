@@ -287,7 +287,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		privateEndpoint:  service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo),
 		addressPool:      addressPoolSvc,
 		networkInternal:  service.NewNetworkInternal(networkRepo, sgRepo),
-		networkInterface: service.NewNetworkInterfaceService(niRepo, subnetRepo, folderClient, opsRepo),
+		networkInterface: service.NewNetworkInterfaceService(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
 		niInternal:       service.NewNetworkInterfaceInternal(niRepo),
 	}
 }

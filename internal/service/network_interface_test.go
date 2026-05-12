@@ -81,13 +81,15 @@ func TestNetworkInterface_InternalProjectionAndDataplaneWriteback(t *testing.T) 
 	ctx := context.Background()
 	repo := newNIRepoFake()
 	repo.data["nic-1"] = &domain.NetworkInterface{ID: "nic-1", FolderID: "f1", SubnetID: "s1", NetworkID: "n1",
-		PrimaryV4Address: "10.0.0.5", Status: domain.NIStatusAvailable, CreatedAt: time.Now().UTC()}
+		V4AddressIDs: []string{"e9baddr1"}, V4Addresses: []string{"10.0.0.5"},
+		Status: domain.NIStatusAvailable, CreatedAt: time.Now().UTC()}
 
 	internal := NewNetworkInterfaceInternal(repo)
 
-	// public projection — lean (no data-plane fields).
+	// public projection — lean (id-refs only, no resolved IPs, no data-plane fields).
 	pub := protoconv.NetworkInterface(repo.data["nic-1"])
-	require.Equal(t, "10.0.0.5", pub.PrimaryV4Address)
+	require.Equal(t, []string{"e9baddr1"}, pub.V4AddressIds)
+	require.Empty(t, pub.V6AddressIds)
 	require.Equal(t, vpcv1.NetworkInterface_AVAILABLE, pub.Status)
 
 	// write-back: ACTIVE -> internal fields filled, public status flips to ACTIVE.
@@ -104,6 +106,7 @@ func TestNetworkInterface_InternalProjectionAndDataplaneWriteback(t *testing.T) 
 	ipb := protoconv.InternalNetworkInterface(got)
 	require.Equal(t, "hyp-a", ipb.HypervisorId)
 	require.Equal(t, "kh-7", ipb.HostIface)
+	require.Equal(t, []string{"10.0.0.5"}, ipb.V4Addresses, "resolved IPs surfaced only in internal projection")
 	require.NotNil(t, ipb.NetworkInterface)
 
 	// stale revision -> ignored.
