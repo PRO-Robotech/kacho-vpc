@@ -134,10 +134,10 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 	if err := s.validateZoneID(ctx, "zone_id", req.ZoneID); err != nil {
 		return nil, err
 	}
-	// Proto contract: v4_cidr_blocks [(required) = true]. См. subnet_service.proto:214.
-	if len(req.V4CidrBlocks) == 0 {
-		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
-	}
+	// Proto contract: v4_cidr_blocks больше НЕ (required) — подсеть может быть
+	// создана без IPv4-диапазона (kacho-proto#8). Пустой список — легален; CIDR'ы,
+	// которые ПЕРЕДАНЫ, всё ещё валидируются (host-bits=0, /16../28, disjointness),
+	// а реальный диапазон добавляется позже через AddCidrBlocks.
 	// SU-CIDR-2: host-bits в v4CidrBlocks (например `10.0.0.5/24`) → InvalidArgument.
 	// Плюс ограничение размера префикса /28 (verbatim YC, kacho-vpc#10).
 	for i, c := range req.V4CidrBlocks {

@@ -50,14 +50,84 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    id="SG-CR-VAL-NETWORK-REQUIRED",
-    title="Create без network_id → InvalidArgument",
-    classes=["VAL"],
-    priority="P0",
+    # kacho-proto#8: network_id больше не (required) — SG может быть "глобальной"
+    # (folder-level, unbound). Без networkId Create проходит; GET → networkId пуст/отсутствует.
+    id="SG-CR-NO-NETWORK-OK",
+    title="Create SG без networkId → success → get → networkId пуст",
+    classes=["CRUD"],
+    priority="P1",
     steps=[
         Step(name="create-no-net", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "name": "sg-nn-{{runId}}"},
-             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
+             body={"folderId": "{{_suiteFolderId}}", "name": "sg-nonet-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *assert_operation_envelope(),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="get-no-net", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('networkId empty/absent', () => pm.expect(pm.response.json().networkId || '').to.eql(''));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    id="SG-CR-WITH-NETWORK-OK",
+    title="Create SG c networkId → success → get → networkId echoed",
+    classes=["CRUD"],
+    priority="P1",
+    steps=[
+        *_net_steps("withnet"),
+        Step(name="create-with-net", method="POST", path="/vpc/v1/securityGroups",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-withnet-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="get-with-net", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('networkId echoed', () => pm.expect(pm.response.json().networkId).to.eql(pm.environment.get('netId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    # filter=network_id="<id>" (proto: "filter by network_id is here") — bound SG
+    # матчится, unbound (network-less, NULL network_id) — нет.
+    id="SG-LIST-FILTER-NETWORK-OK",
+    title="List?filter=network_id=\"<id>\" — bound SG present, unbound absent",
+    classes=["CRUD"],
+    priority="P2",
+    steps=[
+        *_net_steps("fltnet"),
+        Step(name="create-bound", method="POST", path="/vpc/v1/securityGroups",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-fltbound-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "boundSgId")]),
+        poll_operation_until_done(),
+        Step(name="create-unbound", method="POST", path="/vpc/v1/securityGroups",
+             body={"folderId": "{{_suiteFolderId}}", "name": "sg-fltunbound-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "unboundSgId")]),
+        poll_operation_until_done(),
+        Step(name="list-by-network", method="GET",
+             path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1000&filter=network_id%3D%22{{netId}}%22",
+             test_script=[*assert_status(200),
+                          "const ids = (pm.response.json().securityGroups || []).map(s => s.id);",
+                          "pm.test('bound SG present', () => pm.expect(ids).to.include(pm.environment.get('boundSgId')));",
+                          "pm.test('unbound SG absent', () => pm.expect(ids).to.not.include(pm.environment.get('unboundSgId')));"]),
+        Step(name="cleanup-bound", method="DELETE", path="/vpc/v1/securityGroups/{{boundSgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-unbound", method="DELETE", path="/vpc/v1/securityGroups/{{unboundSgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
     ],
 ))
 

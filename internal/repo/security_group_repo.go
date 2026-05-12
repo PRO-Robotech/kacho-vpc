@@ -74,7 +74,11 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 		argIdx++
 	}
 	if f.Filter != "" {
-		ast, perr := filter.Parse(f.Filter, []string{"name"})
+		// network_id поддерживается в filter (см. security_group_service.proto:
+		// "filter by network_id is here") — позволяет отделить unbound (NULL
+		// network_id) SG от привязанных. NULL-строки в равенстве network_id='<id>'
+		// не матчатся, что и требуется.
+		ast, perr := filter.Parse(f.Filter, []string{"name", "network_id"})
 		if perr != nil {
 			return nil, "", invalidFilterErr(perr)
 		}
@@ -150,7 +154,9 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING ` + sgCols
 	row := tx.QueryRow(ctx, q,
-		sg.ID, sg.FolderID, sg.NetworkID, sg.CreatedAt, sg.Name, sg.Description, labelsJSON, sg.Status, sg.DefaultForNetwork, rulesJSON,
+		// network_id опционален (kacho-proto#8): пустая строка → SQL NULL, иначе
+		// FK security_groups_network_id_fkey сработал бы на '' (нет такой сети).
+		sg.ID, sg.FolderID, nullableStr(sg.NetworkID), sg.CreatedAt, sg.Name, sg.Description, labelsJSON, sg.Status, sg.DefaultForNetwork, rulesJSON,
 	)
 	result, err := scanSG(row)
 	if err != nil {
@@ -397,12 +403,16 @@ func scanSG(row scannable) (*domain.SecurityGroup, error) {
 	var sg domain.SecurityGroup
 	var labelsJSON []byte
 	var rulesJSON []byte
+	var networkID *string // nullable (kacho-proto#8: unbound / folder-level SG)
 
 	err := row.Scan(
-		&sg.ID, &sg.FolderID, &sg.NetworkID, &sg.CreatedAt, &sg.Name, &sg.Description, &labelsJSON, &sg.Status, &sg.DefaultForNetwork, &rulesJSON,
+		&sg.ID, &sg.FolderID, &networkID, &sg.CreatedAt, &sg.Name, &sg.Description, &labelsJSON, &sg.Status, &sg.DefaultForNetwork, &rulesJSON,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if networkID != nil {
+		sg.NetworkID = *networkID
 	}
 	if err := unmarshalJSONB(labelsJSON, &sg.Labels, "SecurityGroup.labels"); err != nil {
 		return nil, err
