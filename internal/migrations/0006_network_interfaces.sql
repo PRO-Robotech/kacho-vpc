@@ -15,6 +15,8 @@ CREATE TABLE network_interfaces (
   subnet_id            TEXT        NOT NULL REFERENCES subnets(id) ON DELETE RESTRICT,
   network_id           TEXT        NOT NULL DEFAULT '',
   primary_v4_address   TEXT        NOT NULL,
+  secondary_v4_addresses jsonb     NOT NULL DEFAULT '[]'::jsonb,
+  v6_addresses         jsonb       NOT NULL DEFAULT '[]'::jsonb,
   security_group_ids   jsonb       NOT NULL DEFAULT '[]'::jsonb,
   instance_id          TEXT        NOT NULL DEFAULT '',
   ni_index             TEXT        NOT NULL DEFAULT '',

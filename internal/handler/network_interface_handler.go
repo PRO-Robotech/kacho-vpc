@@ -64,15 +64,17 @@ func (h *NetworkInterfaceHandler) Create(ctx context.Context, req *vpcv1.CreateN
 		addr = req.PrimaryV4AddressSpec.Address
 	}
 	op, err := h.svc.Create(ctx, svc.CreateNICReq{
-		FolderID:         req.FolderId,
-		Name:             req.Name,
-		Description:      req.Description,
-		Labels:           req.Labels,
-		SubnetID:         req.SubnetId,
-		PrimaryV4Address: addr,
-		SecurityGroupIDs: req.SecurityGroupIds,
-		InstanceID:       req.InstanceId,
-		Index:            req.Index,
+		FolderID:             req.FolderId,
+		Name:                 req.Name,
+		Description:          req.Description,
+		Labels:               req.Labels,
+		SubnetID:             req.SubnetId,
+		PrimaryV4Address:     addr,
+		SecondaryV4Addresses: req.SecondaryV4Addresses,
+		V6Addresses:          req.V6Addresses,
+		SecurityGroupIDs:     req.SecurityGroupIds,
+		InstanceID:           req.InstanceId,
+		Index:                req.Index,
 	})
 	if err != nil {
 		return nil, err
@@ -97,7 +99,7 @@ func (h *NetworkInterfaceHandler) Update(ctx context.Context, req *vpcv1.UpdateN
 	}
 	op, err := h.svc.Update(ctx, svc.UpdateNICReq{
 		ID: req.NetworkInterfaceId, Name: req.Name, Description: req.Description, Labels: req.Labels,
-		SecurityGroupIDs: req.SecurityGroupIds, UpdateMask: mask,
+		SecurityGroupIDs: req.SecurityGroupIds, SecondaryV4Addresses: req.SecondaryV4Addresses, V6Addresses: req.V6Addresses, UpdateMask: mask,
 	})
 	if err != nil {
 		return nil, err

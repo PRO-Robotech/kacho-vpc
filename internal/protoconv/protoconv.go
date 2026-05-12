@@ -48,19 +48,21 @@ func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
 // (публичная проекция — БЕЗ data-plane-полей; те — в InternalNetworkInterface).
 func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 	return &vpcv1.NetworkInterface{
-		Id:               n.ID,
-		FolderId:         n.FolderID,
-		CreatedAt:        ts(n.CreatedAt),
-		Name:             n.Name,
-		Description:      n.Description,
-		Labels:           n.Labels,
-		SubnetId:         n.SubnetID,
-		NetworkId:        n.NetworkID,
-		PrimaryV4Address: n.PrimaryV4Address,
-		SecurityGroupIds: n.SecurityGroupIDs,
-		InstanceId:       n.InstanceID,
-		Index:            n.Index,
-		Status:           vpcv1.NetworkInterface_Status(n.Status),
+		Id:                   n.ID,
+		FolderId:             n.FolderID,
+		CreatedAt:            ts(n.CreatedAt),
+		Name:                 n.Name,
+		Description:          n.Description,
+		Labels:               n.Labels,
+		SubnetId:             n.SubnetID,
+		NetworkId:            n.NetworkID,
+		PrimaryV4Address:     n.PrimaryV4Address,
+		SecondaryV4Addresses: n.SecondaryV4Addresses,
+		V6Addresses:          n.V6Addresses,
+		SecurityGroupIds:     n.SecurityGroupIDs,
+		InstanceId:           n.InstanceID,
+		Index:                n.Index,
+		Status:               vpcv1.NetworkInterface_Status(n.Status),
 	}
 }
 

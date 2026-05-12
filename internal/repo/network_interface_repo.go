@@ -19,26 +19,34 @@ type NetworkInterfaceRepo struct {
 }
 
 // NewNetworkInterfaceRepo создаёт NetworkInterfaceRepo.
-func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo { return &NetworkInterfaceRepo{pool: pool} }
+func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
+	return &NetworkInterfaceRepo{pool: pool}
+}
 
 const niCols = `id, folder_id, created_at, name, description, labels, subnet_id, network_id, primary_v4_address,
-	security_group_ids, instance_id, ni_index, status,
+	secondary_v4_addresses, v6_addresses, security_group_ids, instance_id, ni_index, status,
 	hv_id, sid, sid_seq, host_iface, netns, gateway_ip, container_id, status_error, dataplane_revision, dataplane_updated_at`
 
 func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	var n domain.NetworkInterface
-	var labelsJSON, sgJSON []byte
+	var labelsJSON, sgJSON, sec4JSON, v6JSON []byte
 	var statusName string
 	var sidSeq int32
 	if err := row.Scan(
 		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID, &n.NetworkID, &n.PrimaryV4Address,
-		&sgJSON, &n.InstanceID, &n.Index, &statusName,
+		&sec4JSON, &v6JSON, &sgJSON, &n.InstanceID, &n.Index, &statusName,
 		&n.Dataplane.HVID, &n.Dataplane.SID, &sidSeq, &n.Dataplane.HostIface, &n.Dataplane.Netns, &n.Dataplane.GatewayIP,
 		&n.Dataplane.ContainerID, &n.Dataplane.StatusError, &n.Dataplane.Revision, &n.Dataplane.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
 	if err := unmarshalJSONB(labelsJSON, &n.Labels, "NetworkInterface.labels"); err != nil {
+		return nil, err
+	}
+	if err := unmarshalJSONB(sec4JSON, &n.SecondaryV4Addresses, "NetworkInterface.secondary_v4_addresses"); err != nil {
+		return nil, err
+	}
+	if err := unmarshalJSONB(v6JSON, &n.V6Addresses, "NetworkInterface.v6_addresses"); err != nil {
 		return nil, err
 	}
 	if err := unmarshalJSONB(sgJSON, &n.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
@@ -139,18 +147,26 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	if err != nil {
 		return nil, err
 	}
+	sec4JSON, err := marshalJSONB(orEmptyStrSlice(n.SecondaryV4Addresses), "NetworkInterface.secondary_v4_addresses")
+	if err != nil {
+		return nil, err
+	}
+	v6JSON, err := marshalJSONB(orEmptyStrSlice(n.V6Addresses), "NetworkInterface.v6_addresses")
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, network_id, primary_v4_address, security_group_ids, instance_id, ni_index, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, network_id, primary_v4_address, secondary_v4_addresses, v6_addresses, security_group_ids, instance_id, ni_index, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING ` + niCols
 	res, err := scanNI(tx.QueryRow(ctx, q,
 		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID, n.NetworkID, n.PrimaryV4Address,
-		sgJSON, n.InstanceID, n.Index, niStatusName(n.Status)))
+		sec4JSON, v6JSON, sgJSON, n.InstanceID, n.Index, niStatusName(n.Status)))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.Name)
 	}
@@ -173,14 +189,22 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	if err != nil {
 		return nil, err
 	}
+	sec4JSON, err := marshalJSONB(orEmptyStrSlice(n.SecondaryV4Addresses), "NetworkInterface.secondary_v4_addresses")
+	if err != nil {
+		return nil, err
+	}
+	v6JSON, err := marshalJSONB(orEmptyStrSlice(n.V6Addresses), "NetworkInterface.v6_addresses")
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	res, err := scanNI(tx.QueryRow(ctx,
-		`UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5 WHERE id=$1 RETURNING `+niCols,
-		n.ID, n.Name, n.Description, labelsJSON, sgJSON))
+		`UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5, secondary_v4_addresses=$6, v6_addresses=$7 WHERE id=$1 RETURNING `+niCols,
+		n.ID, n.Name, n.Description, labelsJSON, sgJSON, sec4JSON, v6JSON))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.ID)
 	}

@@ -57,25 +57,29 @@ func niResourceID(id string) error { return corevalidate.ResourceID(niResource, 
 
 // CreateNICReq — запрос на создание NIC.
 type CreateNICReq struct {
-	FolderID         string
-	Name             string
-	Description      string
-	Labels           map[string]string
-	SubnetID         string
-	PrimaryV4Address string // v1: обязателен
-	SecurityGroupIDs []string
-	InstanceID       string // опц. — сразу приаттачить
-	Index            string
+	FolderID             string
+	Name                 string
+	Description          string
+	Labels               map[string]string
+	SubnetID             string
+	PrimaryV4Address     string // v1: обязателен
+	SecondaryV4Addresses []string
+	V6Addresses          []string
+	SecurityGroupIDs     []string
+	InstanceID           string // опц. — сразу приаттачить
+	Index                string
 }
 
 // UpdateNICReq — частичное обновление NIC.
 type UpdateNICReq struct {
-	ID               string
-	Name             string
-	Description      string
-	Labels           map[string]string
-	SecurityGroupIDs []string
-	UpdateMask       []string
+	ID                   string
+	Name                 string
+	Description          string
+	Labels               map[string]string
+	SecurityGroupIDs     []string
+	SecondaryV4Addresses []string
+	V6Addresses          []string
+	UpdateMask           []string
 }
 
 // NetworkInterfaceService — бизнес-логика управления NIC.
@@ -171,19 +175,21 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 		st = domain.NIStatusActive
 	}
 	n := &domain.NetworkInterface{
-		ID:               niID,
-		FolderID:         req.FolderID,
-		CreatedAt:        time.Now().UTC(),
-		Name:             req.Name,
-		Description:      req.Description,
-		Labels:           req.Labels,
-		SubnetID:         req.SubnetID,
-		NetworkID:        sub.NetworkID,
-		PrimaryV4Address: strings.TrimSpace(req.PrimaryV4Address),
-		SecurityGroupIDs: req.SecurityGroupIDs,
-		InstanceID:       req.InstanceID,
-		Index:            req.Index,
-		Status:           st,
+		ID:                   niID,
+		FolderID:             req.FolderID,
+		CreatedAt:            time.Now().UTC(),
+		Name:                 req.Name,
+		Description:          req.Description,
+		Labels:               req.Labels,
+		SubnetID:             req.SubnetID,
+		NetworkID:            sub.NetworkID,
+		PrimaryV4Address:     strings.TrimSpace(req.PrimaryV4Address),
+		SecondaryV4Addresses: req.SecondaryV4Addresses,
+		V6Addresses:          req.V6Addresses,
+		SecurityGroupIDs:     req.SecurityGroupIDs,
+		InstanceID:           req.InstanceID,
+		Index:                req.Index,
+		Status:               st,
 	}
 	created, err := s.repo.Insert(ctx, n)
 	if err != nil {
@@ -197,7 +203,7 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 	if err := niResourceID(req.ID); err != nil {
 		return nil, err
 	}
-	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "security_group_ids": {}}
+	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "security_group_ids": {}, "secondary_v4_addresses": {}, "v6_addresses": {}}
 	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
 		return nil, err
 	}
@@ -235,6 +241,7 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 func applyNICMask(n *domain.NetworkInterface, req UpdateNICReq) {
 	if len(req.UpdateMask) == 0 {
 		n.Name, n.Description, n.Labels, n.SecurityGroupIDs = req.Name, req.Description, req.Labels, req.SecurityGroupIDs
+		n.SecondaryV4Addresses, n.V6Addresses = req.SecondaryV4Addresses, req.V6Addresses
 		return
 	}
 	for _, f := range req.UpdateMask {
@@ -247,6 +254,10 @@ func applyNICMask(n *domain.NetworkInterface, req UpdateNICReq) {
 			n.Labels = req.Labels
 		case "security_group_ids":
 			n.SecurityGroupIDs = req.SecurityGroupIDs
+		case "secondary_v4_addresses":
+			n.SecondaryV4Addresses = req.SecondaryV4Addresses
+		case "v6_addresses":
+			n.V6Addresses = req.V6Addresses
 		}
 	}
 }

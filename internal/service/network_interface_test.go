@@ -16,7 +16,9 @@ import (
 )
 
 // niRepoFake — минимальный in-memory NetworkInterfaceRepo для unit-теста internal-проекции.
-type niRepoFake struct{ data map[string]*domain.NetworkInterface }
+type niRepoFake struct {
+	data map[string]*domain.NetworkInterface
+}
 
 func newNIRepoFake() *niRepoFake { return &niRepoFake{data: map[string]*domain.NetworkInterface{}} }
 
