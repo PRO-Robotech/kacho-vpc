@@ -23,7 +23,7 @@ func NewAddressRepo(pool *pgxpool.Pool) *AddressRepo {
 	return &AddressRepo{pool: pool}
 }
 
-const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4`
+const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6`
 
 func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, error) {
 	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, addressCols)
@@ -53,6 +53,11 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	if f.Name != "" {
 		conditions = append(conditions, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, f.Name)
+		argIdx++
+	}
+	if f.SubnetID != "" {
+		conditions = append(conditions, fmt.Sprintf("(internal_ipv4->>'subnet_id' = $%d OR internal_ipv6->>'subnet_id' = $%d)", argIdx, argIdx))
+		args = append(args, f.SubnetID)
 		argIdx++
 	}
 	if f.Filter != "" {
@@ -124,6 +129,10 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	if err != nil {
 		return nil, err
 	}
+	int6JSON, err := marshalInternalIPv6(a.InternalIpv6)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -132,14 +141,14 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const q = `
-		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING ` + addressCols
 
 	row := tx.QueryRow(ctx, q,
 		a.ID, a.FolderID, a.CreatedAt, a.Name, a.Description, labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
-		extJSON, intJSON,
+		extJSON, intJSON, int6JSON,
 	)
 	result, err := scanAddress(row)
 	if err != nil {
@@ -231,6 +240,37 @@ func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.Exte
 	q += ` WHERE id = $1 RETURNING ` + addressCols
 
 	row := tx.QueryRow(ctx, q, args...)
+	a, err := scanAddress(row)
+	if err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
+		return nil, service.ErrInternal
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrapPgErr(err, "Address", id)
+	}
+	return a, nil
+}
+
+// SetInternalIPv6 атомарно обновляет internal_ipv6 JSONB-spec + emit outbox-event.
+// Используется AllocateInternalIPv6 (random-pick + retry на UNIQUE-violation —
+// constraint addresses_internal_subnet_ipv6_uniq → ErrAlreadyExists через wrapPgErr).
+func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error) {
+	if spec == nil {
+		return r.Get(ctx, id)
+	}
+	int6JSON, err := marshalJSONB(spec, "Address.internal_ipv6")
+	if err != nil {
+		return nil, err
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, service.ErrInternal
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row := tx.QueryRow(ctx, `UPDATE addresses SET internal_ipv6 = $2::jsonb WHERE id = $1 RETURNING `+addressCols, id, int6JSON)
 	a, err := scanAddress(row)
 	if err != nil {
 		return nil, wrapPgErr(err, "Address", id)
@@ -504,13 +544,13 @@ func (r *AddressRepo) ReferencesForAddresses(ctx context.Context, addressIDs []s
 
 func scanAddress(row scannable) (*domain.Address, error) {
 	var a domain.Address
-	var labelsJSON, extJSON, intJSON []byte
+	var labelsJSON, extJSON, intJSON, int6JSON []byte
 	var addrType, ipVersion int32
 
 	err := row.Scan(
 		&a.ID, &a.FolderID, &a.CreatedAt, &a.Name, &a.Description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
-		&extJSON, &intJSON,
+		&extJSON, &intJSON, &int6JSON,
 	)
 	if err != nil {
 		return nil, err
@@ -535,6 +575,13 @@ func scanAddress(row scannable) (*domain.Address, error) {
 		}
 		a.InternalIpv4 = &intSpec
 	}
+	if int6JSON != nil {
+		var int6Spec domain.InternalIpv6Spec
+		if err := unmarshalJSONB(int6JSON, &int6Spec, "Address.internal_ipv6"); err != nil {
+			return nil, err
+		}
+		a.InternalIpv6 = &int6Spec
+	}
 	return &a, nil
 }
 
@@ -550,4 +597,11 @@ func marshalInternalIPv4(i *domain.InternalIpv4Spec) ([]byte, error) {
 		return nil, nil
 	}
 	return marshalJSONB(i, "Address.internal_ipv4")
+}
+
+func marshalInternalIPv6(i *domain.InternalIpv6Spec) ([]byte, error) {
+	if i == nil {
+		return nil, nil
+	}
+	return marshalJSONB(i, "Address.internal_ipv6")
 }

@@ -34,8 +34,10 @@ type CreateAddressReq struct {
 	DeletionProtection bool
 	// Для external (если ExternalSpec != nil):
 	ExternalSpec *ExternalAddrSpec
-	// Для internal (если InternalSpec != nil):
+	// Для internal IPv4 (если InternalSpec != nil):
 	InternalSpec *InternalAddrSpec
+	// Для internal IPv6 (если InternalIpv6Spec != nil):
+	InternalIpv6Spec *InternalAddrSpec
 }
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -240,7 +242,12 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if req.ExternalSpec == nil && req.InternalSpec == nil {
+	if req.InternalIpv6Spec != nil {
+		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, req.InternalIpv6Spec.SubnetID); err != nil {
+			return nil, err
+		}
+	}
+	if req.ExternalSpec == nil && req.InternalSpec == nil && req.InternalIpv6Spec == nil {
 		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
 	// folder_id / subnet_id больше НЕ валидируются sync — async через
@@ -283,6 +290,14 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 		if _, err := s.subnetRepo.Get(ctx, req.InternalSpec.SubnetID); err != nil {
 			if errors.Is(err, ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", req.InternalSpec.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	if req.InternalIpv6Spec != nil && req.InternalIpv6Spec.SubnetID != "" {
+		if _, err := s.subnetRepo.Get(ctx, req.InternalIpv6Spec.SubnetID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", req.InternalIpv6Spec.SubnetID)
 			}
 			return nil, mapRepoErr(err)
 		}
@@ -363,7 +378,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
 			}
 		}
-	} else {
+	} else if req.InternalSpec != nil {
 		a.Type = domain.AddressTypeInternal
 		a.IpVersion = domain.IpVersionIPv4
 		subnetID := req.InternalSpec.SubnetID
@@ -379,6 +394,20 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		// аллоцирует controller.
 		a.InternalIpv4 = &domain.InternalIpv4Spec{
 			Address:  req.InternalSpec.Address,
+			SubnetID: subnetID,
+		}
+	} else {
+		// internal IPv6 Address.
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv6
+		subnetID := req.InternalIpv6Spec.SubnetID
+		if subnetID != "" {
+			if _, serr := s.subnetRepo.Get(ctx, subnetID); serr != nil {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+			}
+		}
+		a.InternalIpv6 = &domain.InternalIpv6Spec{
+			Address:  req.InternalIpv6Spec.Address,
 			SubnetID: subnetID,
 		}
 	}
@@ -409,6 +438,16 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 			}
 			created.InternalIpv4.Address = res.IP
 		}
+	}
+	// IPv6 IPAM не зависит от address-pool'ов (адрес выбирается случайно внутри
+	// subnet.v6_cidr_blocks[0]) — аллоцируем независимо от s.pools.
+	if created.InternalIpv6 != nil && created.InternalIpv6.Address == "" && created.InternalIpv6.SubnetID != "" {
+		res, aerr := s.AllocateInternalIPv6(ctx, created.ID)
+		if aerr != nil {
+			s.compensatingDelete(ctx, created.ID, "internal_ipv6", aerr)
+			return nil, aerr
+		}
+		created.InternalIpv6.Address = res.IP
 	}
 	return anypb.New(protoconv.Address(created))
 }
@@ -781,6 +820,121 @@ func (s *AddressService) AllocateInternalIP(ctx context.Context, addressID strin
 	return nil, status.Errorf(codes.ResourceExhausted,
 		"subnet %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks; %d unique-conflicts)",
 		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
+}
+
+// v6AllocateMaxAttempts — число попыток random-pick + retry-on-conflict для
+// AllocateInternalIPv6. IPv6-подсети огромные (обычно /64), коллизии редки —
+// небольшого числа попыток достаточно.
+const v6AllocateMaxAttempts = 16
+
+// AllocateInternalIPv6 — выделяет случайный свободный IPv6 внутри
+// subnet.v6_cidr_blocks[0] для Address с заполненным internal_ipv6.subnet_id.
+// Idempotent: если адрес уже выделен — возвращает existing с AlreadyAllocated.
+//
+// Алгоритм: IPv6-подсети слишком большие для sweep — берём случайные host-биты
+// внутри префикса, INSERT через SetInternalIPv6 + retry на UNIQUE-violation
+// (constraint addresses_internal_subnet_ipv6_uniq). Пропускаем all-zeros
+// (subnet-router anycast `<prefix>::`); broadcast в IPv6 нет.
+func (s *AddressService) AllocateInternalIPv6(ctx context.Context, addressID string) (*AllocateResult, error) {
+	addr, err := s.repo.Get(ctx, addressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr.InternalIpv6 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "address %s has no internal_ipv6 spec", addressID)
+	}
+	if addr.InternalIpv6.Address != "" {
+		return &AllocateResult{IP: addr.InternalIpv6.Address, AlreadyAllocated: true}, nil
+	}
+	if addr.InternalIpv6.SubnetID == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "address %s internal_ipv6.subnet_id is empty", addressID)
+	}
+	sub, err := s.subnetRepo.Get(ctx, addr.InternalIpv6.SubnetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sub.V6CidrBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has no v6_cidr_blocks", sub.ID)
+	}
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(sub.V6CidrBlocks[0]))
+	if err != nil || !prefix.Addr().Is6() || prefix.Addr().Is4In6() {
+		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has invalid v6 cidr block %q", sub.ID, sub.V6CidrBlocks[0])
+	}
+	tried := make(map[string]struct{}, v6AllocateMaxAttempts)
+	conflicts := 0
+	for attempt := 0; attempt < v6AllocateMaxAttempts; attempt++ {
+		ip, perr := pickRandomIPv6(prefix)
+		if perr != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "subnet %s: cannot pick IPv6 in %s: %v", sub.ID, prefix, perr)
+		}
+		if _, dup := tried[ip]; dup {
+			continue
+		}
+		tried[ip] = struct{}{}
+		addr.InternalIpv6.Address = ip
+		updated, uerr := s.repo.SetInternalIPv6(ctx, addressID, addr.InternalIpv6)
+		if uerr != nil {
+			if isUniqueViolation(uerr) {
+				conflicts++
+				addr.InternalIpv6.Address = ""
+				continue
+			}
+			slog.ErrorContext(ctx, "v6 allocator: SetInternalIPv6 returned non-conflict error",
+				"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", uerr)
+			return nil, uerr
+		}
+		return &AllocateResult{IP: updated.InternalIpv6.Address}, nil
+	}
+	slog.WarnContext(ctx, "v6 allocator: exhausted attempts",
+		"subnet_id", sub.ID, "address_id", addressID, "cidr", prefix.String(), "conflicts", conflicts)
+	return nil, status.Errorf(codes.ResourceExhausted,
+		"subnet %s: could not allocate a free IPv6 in %s after %d attempts (%d unique-conflicts)",
+		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
+}
+
+// pickRandomIPv6 выбирает случайный адрес внутри IPv6-префикса, заполняя
+// host-биты криптослучайными значениями. Пропускает all-zeros host (subnet-router
+// anycast `<prefix>::`); для очень узких префиксов (/127, /128) ведёт себя
+// детерминированно (там почти нет выбора).
+func pickRandomIPv6(prefix netip.Prefix) (string, error) {
+	addr := prefix.Masked().Addr()
+	base := addr.As16()
+	bits := prefix.Bits()
+	hostBits := 128 - bits
+	if hostBits <= 0 {
+		// /128 — единственный адрес.
+		return addr.String(), nil
+	}
+	var rnd [16]byte
+	for try := 0; try < 8; try++ {
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return "", err
+		}
+		out := base
+		// Накладываем случайные биты только на host-часть (последние hostBits бит).
+		for i := 0; i < 16; i++ {
+			bitIndex := i * 8 // первый бит байта i — это глобальный bit-index
+			// сколько бит этого байта попадают в host-часть
+			if bitIndex+8 <= bits {
+				continue // целиком в network-части
+			}
+			var mask byte
+			if bitIndex >= bits {
+				mask = 0xff
+			} else {
+				keep := bits - bitIndex // старшие keep бит — network
+				mask = byte(0xff >> keep)
+			}
+			out[i] = (base[i] &^ mask) | (rnd[i] & mask)
+		}
+		cand := netip.AddrFrom16(out)
+		if cand == addr {
+			continue // all-zeros host — subnet-router anycast, пропускаем
+		}
+		return cand.String(), nil
+	}
+	// Не смогли получить ненулевой host (крайне узкий префикс) — отдаём что есть.
+	return addr.String(), nil
 }
 
 // AllocateExternalIP — резолвит pool через cascade и выделяет next-free IPv4

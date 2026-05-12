@@ -95,6 +95,7 @@ func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesReque
 	addrs, nextToken, err := h.svc.List(ctx, svc.AddressFilter{
 		FolderID: req.FolderId,
 		Filter:   req.Filter,
+		SubnetID: req.SubnetId,
 	}, svc.Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -136,6 +137,11 @@ func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressReq
 		createReq.InternalSpec = &svc.InternalAddrSpec{
 			Address:  intSpec.Address,
 			SubnetID: intSpec.GetSubnetId(),
+		}
+	} else if int6Spec := req.GetInternalIpv6AddressSpec(); int6Spec != nil {
+		createReq.InternalIpv6Spec = &svc.InternalAddrSpec{
+			Address:  int6Spec.Address,
+			SubnetID: int6Spec.GetSubnetId(),
 		}
 	}
 

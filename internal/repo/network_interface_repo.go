@@ -23,8 +23,8 @@ func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
 	return &NetworkInterfaceRepo{pool: pool}
 }
 
-const niCols = `id, folder_id, created_at, name, description, labels, subnet_id, network_id,
-	v4_address_ids, v6_address_ids, security_group_ids, instance_id, ni_index, status,
+const niCols = `id, folder_id, created_at, name, description, labels, subnet_id,
+	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, status,
 	hv_id, sid, sid_seq, host_iface, netns, gateway_ip, container_id, status_error, dataplane_revision, dataplane_updated_at`
 
 func scanNI(row scannable) (*domain.NetworkInterface, error) {
@@ -33,8 +33,8 @@ func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	var statusName string
 	var sidSeq int32
 	if err := row.Scan(
-		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID, &n.NetworkID,
-		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.InstanceID, &n.Index, &statusName,
+		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID,
+		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.UsedByType, &n.UsedByID, &n.UsedByName, &statusName,
 		&n.Dataplane.HVID, &n.Dataplane.SID, &sidSeq, &n.Dataplane.HostIface, &n.Dataplane.Netns, &n.Dataplane.GatewayIP,
 		&n.Dataplane.ContainerID, &n.Dataplane.StatusError, &n.Dataplane.Revision, &n.Dataplane.UpdatedAt,
 	); err != nil {
@@ -123,9 +123,16 @@ func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterf
 		args = append(args, val)
 		conds = append(conds, fmt.Sprintf("%s = $%d", col, len(args)))
 	}
-	add("instance_id", f.InstanceID)
+	// instance_id-фильтр маппится на denorm used_by (referrer={compute_instance,<id>}).
+	if f.InstanceID != "" {
+		args = append(args, "compute_instance")
+		conds = append(conds, fmt.Sprintf("used_by_type = $%d", len(args)))
+		args = append(args, f.InstanceID)
+		conds = append(conds, fmt.Sprintf("used_by_id = $%d", len(args)))
+	}
 	add("subnet_id", f.SubnetID)
-	add("network_id", f.NetworkID)
+	// network_id-фильтр больше не поддерживается: NIC не хранит network_id
+	// (выводится транзитивно через subnet). Игнорируется (no-op).
 	if p.PageToken != "" {
 		ts, id, derr := decodePageToken(p.PageToken)
 		if derr != nil {
@@ -212,12 +219,12 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, network_id, v4_address_ids, v6_address_ids, security_group_ids, instance_id, ni_index, status)
+		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING ` + niCols
 	res, err := scanNI(tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID, n.NetworkID,
-		v4IDsJSON, v6IDsJSON, sgJSON, n.InstanceID, n.Index, niStatusName(n.Status)))
+		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID,
+		v4IDsJSON, v6IDsJSON, sgJSON, n.UsedByType, n.UsedByID, n.UsedByName, niStatusName(n.Status)))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.Name)
 	}
@@ -268,16 +275,20 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	return res, nil
 }
 
-// SetInstance аттачит/детачит NIC (instanceID="" — детач) и выставляет status.
-func (r *NetworkInterfaceRepo) SetInstance(ctx context.Context, id, instanceID, niIndex string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
+// SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка =
+// detach) и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
+func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
+	if refID == "" {
+		refType, refName = "", ""
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	res, err := scanNI(tx.QueryRow(ctx,
-		`UPDATE network_interfaces SET instance_id=$2, ni_index=$3, status=$4 WHERE id=$1 RETURNING `+niCols,
-		id, instanceID, niIndex, niStatusName(st)))
+		`UPDATE network_interfaces SET used_by_type=$2, used_by_id=$3, used_by_name=$4, status=$5 WHERE id=$1 RETURNING `+niCols,
+		id, refType, refID, refName, niStatusName(st)))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", id)
 	}

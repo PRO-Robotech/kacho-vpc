@@ -53,6 +53,23 @@ func validateSubnetV4CIDR(field, value string) error {
 	return nil
 }
 
+// validateSubnetV6CIDR — host-bits=0 (canonical form) + проверка, что префикс
+// действительно IPv6. (Размерных ограничений как у v4 /≤28 для v6 нет — IPv6
+// подсети обычно /64.)
+func validateSubnetV6CIDR(field, value string) error {
+	if err := validateCIDRPrefix(field, value); err != nil {
+		return err
+	}
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		return invalidArg(field, field+" must be a valid IPv6 CIDR (e.g. 2001:db8::/64)")
+	}
+	if !prefix.Addr().Is6() || prefix.Addr().Is4In6() {
+		return invalidArg(field, field+" must be an IPv6 CIDR (e.g. 2001:db8::/64)")
+	}
+	return nil
+}
+
 // validateCIDRPrefix проверяет, что value — валидный CIDR-prefix (например
 // "10.0.0.0/24") и host-bits = 0 (т.е. value совпадает с .Masked()).
 //
