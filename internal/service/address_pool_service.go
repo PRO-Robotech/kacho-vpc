@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -30,6 +31,7 @@ type AddressPoolService struct {
 	netRepo      NetworkRepo
 	subnetRepo   SubnetRepo
 	folderClient FolderClient // для folder_id → cloud_id resolve в cascade
+	zoneReg      ZoneRegistry // существование zone_id (Geography — домен kacho-compute, эпик KAC-15); nil → проверка пропускается
 }
 
 func NewAddressPoolService(
@@ -40,11 +42,12 @@ func NewAddressPoolService(
 	net NetworkRepo,
 	sub SubnetRepo,
 	folderClient FolderClient,
+	zoneReg ZoneRegistry,
 ) *AddressPoolService {
 	return &AddressPoolService{
 		pools: p, bindings: b, cloudSel: cloudSel,
 		addrRepo: addr, netRepo: net, subnetRepo: sub,
-		folderClient: folderClient,
+		folderClient: folderClient, zoneReg: zoneReg,
 	}
 }
 
@@ -86,6 +89,17 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 		if p.Masked() != p {
 			return nil, status.Errorf(codes.InvalidArgument,
 				"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
+		}
+	}
+	// zone_id existence — Geography (Region/Zone) — домен kacho-compute (эпик KAC-15):
+	// FK address_pools.zone_id → zones убрана; существование зоны проверяем вызовом
+	// compute.v1.ZoneService.Get через ZoneRegistry. "" = глобальный пул (zone не нужна).
+	if req.ZoneID != "" && s.zoneReg != nil {
+		if _, err := s.zoneReg.Get(ctx, req.ZoneID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, status.Errorf(codes.FailedPrecondition, "unknown zone id '%s'", req.ZoneID)
+			}
+			return nil, mapRepoErr(err)
 		}
 	}
 	p := &domain.AddressPool{
