@@ -269,7 +269,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	}
 
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
-	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient)
+	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, geoClient)
 	// addressRepo обогащает SubnetService.ListUsedAddresses записями referrer'ов
 	// (UsedAddress.references[] — кто использует адрес; YC-like).

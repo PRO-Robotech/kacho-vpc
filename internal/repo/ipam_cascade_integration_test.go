@@ -107,7 +107,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-step3", map[string]string{"tier": "premium"}, "admin@test"))
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
 
-	apSvc := service.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient)
+	apSvc := service.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient, nil) // zoneReg=nil → zone-existence-check пропускается (тест не про неё)
 	addrSvc := service.NewAddressService(addrRepo, subnetRepo, folderClient, nil, apSvc)
 
 	// --- address fixtures ---
