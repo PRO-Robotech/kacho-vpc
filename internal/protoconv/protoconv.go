@@ -44,6 +44,51 @@ func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
 	return &vpcv1.InternalNetwork{Network: Network(n), VpnId: n.VPNID}
 }
 
+// NetworkInterface конвертирует domain.NetworkInterface → vpcv1.NetworkInterface
+// (публичная проекция — БЕЗ data-plane-полей; те — в InternalNetworkInterface).
+func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
+	return &vpcv1.NetworkInterface{
+		Id:                   n.ID,
+		FolderId:             n.FolderID,
+		CreatedAt:            ts(n.CreatedAt),
+		Name:                 n.Name,
+		Description:          n.Description,
+		Labels:               n.Labels,
+		SubnetId:             n.SubnetID,
+		NetworkId:            n.NetworkID,
+		PrimaryV4Address:     n.PrimaryV4Address,
+		SecondaryV4Addresses: n.SecondaryV4Addresses,
+		V6Addresses:          n.V6Addresses,
+		SecurityGroupIds:     n.SecurityGroupIDs,
+		InstanceId:           n.InstanceID,
+		Index:                n.Index,
+		Status:               vpcv1.NetworkInterface_Status(n.Status),
+	}
+}
+
+// InternalNetworkInterface конвертирует domain.NetworkInterface → vpcv1.InternalNetworkInterface
+// (публичные поля + data-plane-проекция; только для InternalNetworkInterfaceService).
+func InternalNetworkInterface(n *domain.NetworkInterface) *vpcv1.InternalNetworkInterface {
+	out := &vpcv1.InternalNetworkInterface{
+		NetworkInterface:  NetworkInterface(n),
+		HypervisorId:      n.Dataplane.HVID,
+		Sid:               n.Dataplane.SID,
+		SidSeq:            n.Dataplane.SIDSeq,
+		HostIface:         n.Dataplane.HostIface,
+		Netns:             n.Dataplane.Netns,
+		GatewayIp:         n.Dataplane.GatewayIP,
+		ContainerId:       n.Dataplane.ContainerID,
+		StatusError:       n.Dataplane.StatusError,
+		DataplaneRevision: n.Dataplane.Revision,
+	}
+	if n.Dataplane.UpdatedAt != nil {
+		out.DataplaneUpdatedAt = ts(*n.Dataplane.UpdatedAt)
+	}
+	// vpn_id — резолвится consumer'ом отдельно (InternalNetworkService.GetNetwork);
+	// здесь оставляем 0 (NIC-репо его не хранит — это поле resolved сети, не NIC'а).
+	return out
+}
+
 // Subnet конвертирует domain.Subnet → vpcv1.Subnet.
 func Subnet(s *domain.Subnet) *vpcv1.Subnet {
 	p := &vpcv1.Subnet{

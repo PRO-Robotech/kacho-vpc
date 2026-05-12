@@ -68,15 +68,17 @@ func main() {
 // россыпи локальных переменных в runServe). Заполняется buildServices,
 // используется register{Public,Internal}Services.
 type services struct {
-	network         *service.NetworkService
-	subnet          *service.SubnetService
-	address         *service.AddressService
-	routeTable      *service.RouteTableService
-	securityGroup   *service.SecurityGroupService
-	gateway         *service.GatewayService
-	privateEndpoint *service.PrivateEndpointService
-	addressPool     *service.AddressPoolService
-	networkInternal *service.NetworkInternal
+	network          *service.NetworkService
+	subnet           *service.SubnetService
+	address          *service.AddressService
+	routeTable       *service.RouteTableService
+	securityGroup    *service.SecurityGroupService
+	gateway          *service.GatewayService
+	privateEndpoint  *service.PrivateEndpointService
+	addressPool      *service.AddressPoolService
+	networkInternal  *service.NetworkInternal
+	networkInterface *service.NetworkInterfaceService
+	niInternal       *service.NetworkInterfaceInternal
 }
 
 func runServe(cfg config.Config) error {
@@ -260,6 +262,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	addressPoolRepo := repo.NewAddressPoolRepo(pool)
 	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
+	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
 	var defaultSGRepo service.SecurityGroupRepo
 	if cfg.DefaultSGInline {
@@ -275,15 +278,17 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	// (UsedAddress.references[] — кто использует адрес; YC-like).
 	subnetSvc.SetAddressRefRepo(addressRepo)
 	return &services{
-		network:         service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo),
-		subnet:          subnetSvc,
-		address:         service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
-		routeTable:      service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo),
-		securityGroup:   sgSvc,
-		gateway:         service.NewGatewayService(gatewayRepo, folderClient, opsRepo),
-		privateEndpoint: service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo),
-		addressPool:     addressPoolSvc,
-		networkInternal: service.NewNetworkInternal(networkRepo, sgRepo),
+		network:          service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo),
+		subnet:           subnetSvc,
+		address:          service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
+		routeTable:       service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo),
+		securityGroup:    sgSvc,
+		gateway:          service.NewGatewayService(gatewayRepo, folderClient, opsRepo),
+		privateEndpoint:  service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo),
+		addressPool:      addressPoolSvc,
+		networkInternal:  service.NewNetworkInternal(networkRepo, sgRepo),
+		networkInterface: service.NewNetworkInterfaceService(niRepo, subnetRepo, folderClient, opsRepo),
+		niInternal:       service.NewNetworkInterfaceInternal(niRepo),
 	}
 }
 
@@ -296,6 +301,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 	vpcv1.RegisterRouteTableServiceServer(srv, handler.NewRouteTableHandler(svcs.routeTable))
 	vpcv1.RegisterSecurityGroupServiceServer(srv, handler.NewSecurityGroupHandler(svcs.securityGroup))
 	vpcv1.RegisterGatewayServiceServer(srv, handler.NewGatewayHandler(svcs.gateway))
+	vpcv1.RegisterNetworkInterfaceServiceServer(srv, handler.NewNetworkInterfaceHandler(svcs.networkInterface))
 	pepb.RegisterPrivateEndpointServiceServer(srv, handler.NewPrivateEndpointHandler(svcs.privateEndpoint))
 	operationpb.RegisterOperationServiceServer(srv, handler.NewOperationHandler(opsRepo))
 }
@@ -308,6 +314,7 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.address))
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
+	vpcv1.RegisterInternalNetworkInterfaceServiceServer(srv, handler.NewInternalNetworkInterfaceHandler(svcs.niInternal))
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
 }
 
