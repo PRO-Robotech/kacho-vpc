@@ -2,17 +2,20 @@
 // Attach/Detach) и internal-проекция (InternalNetworkInterfaceService).
 //
 // NIC — first-class сетевой интерфейс (AWS-ENI-style; epic KAC-2). Принадлежит
-// подсети (и транзитивно сети/VPN), несёт один primary private IPv4. Публичный
-// NetworkInterface — lean; data-plane-поля (hv_id/sid/...) — только в internal-проекции.
-//
-// MVP-ограничение v1: primary_v4_address ОБЯЗАТЕЛЕН в спеке (авто-аллокация из
-// CIDR подсети через VPC IPAM + появление в ListUsedAddresses — follow-up).
+// подсети (и транзитивно сети/VPN). Несёт набор ссылок на Address-ресурсы
+// (kacho-vpc) по id: v4_address_ids / v6_address_ids (KAC-7). Один Address —
+// максимум на одном NIC: обеспечивается на уровне сервиса через addresses.used +
+// referrer-tracking (Create/Update проверяют used, выставляют used=true + referrer;
+// Delete/detach снимают used + referrer). Публичный NetworkInterface — lean (несёт
+// только id-ссылки); резолвленные IP уходят в data-plane через internal-проекцию
+// (InternalNetworkInterface.v4_addresses/v6_addresses) — workspace CLAUDE.md
+// §«Инфра-чувствительные данные».
 package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -28,6 +31,9 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
+
+// niReferrerType — ReferrerType в address_references для адресов, привязанных к NIC.
+const niReferrerType = "network_interface"
 
 // NetworkInterfaceFilter — фильтр для List.
 type NetworkInterfaceFilter struct {
@@ -57,42 +63,42 @@ func niResourceID(id string) error { return corevalidate.ResourceID(niResource, 
 
 // CreateNICReq — запрос на создание NIC.
 type CreateNICReq struct {
-	FolderID             string
-	Name                 string
-	Description          string
-	Labels               map[string]string
-	SubnetID             string
-	PrimaryV4Address     string // v1: обязателен
-	SecondaryV4Addresses []string
-	V6Addresses          []string
-	SecurityGroupIDs     []string
-	InstanceID           string // опц. — сразу приаттачить
-	Index                string
+	FolderID         string
+	Name             string
+	Description      string
+	Labels           map[string]string
+	SubnetID         string
+	V4AddressIDs     []string
+	V6AddressIDs     []string
+	SecurityGroupIDs []string
+	InstanceID       string // опц. — сразу приаттачить
+	Index            string
 }
 
 // UpdateNICReq — частичное обновление NIC.
 type UpdateNICReq struct {
-	ID                   string
-	Name                 string
-	Description          string
-	Labels               map[string]string
-	SecurityGroupIDs     []string
-	SecondaryV4Addresses []string
-	V6Addresses          []string
-	UpdateMask           []string
+	ID               string
+	Name             string
+	Description      string
+	Labels           map[string]string
+	SecurityGroupIDs []string
+	V4AddressIDs     []string
+	V6AddressIDs     []string
+	UpdateMask       []string
 }
 
 // NetworkInterfaceService — бизнес-логика управления NIC.
 type NetworkInterfaceService struct {
 	repo         NetworkInterfaceRepo
 	subnetRepo   SubnetRepo
+	addressRepo  AddressRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewNetworkInterfaceService создаёт NetworkInterfaceService.
-func NewNetworkInterfaceService(repo NetworkInterfaceRepo, subnetRepo SubnetRepo, folderClient FolderClient, opsRepo operations.Repo) *NetworkInterfaceService {
-	return &NetworkInterfaceService{repo: repo, subnetRepo: subnetRepo, folderClient: folderClient, opsRepo: opsRepo}
+func NewNetworkInterfaceService(repo NetworkInterfaceRepo, subnetRepo SubnetRepo, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *NetworkInterfaceService {
+	return &NetworkInterfaceService{repo: repo, subnetRepo: subnetRepo, addressRepo: addressRepo, folderClient: folderClient, opsRepo: opsRepo}
 }
 
 // Get возвращает NIC по id.
@@ -126,10 +132,6 @@ func (s *NetworkInterfaceService) Create(ctx context.Context, req CreateNICReq) 
 	}
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
-	}
-	if strings.TrimSpace(req.PrimaryV4Address) == "" {
-		// v1: авто-аллокация ещё не реализована — адрес обязателен.
-		return nil, status.Error(codes.InvalidArgument, "primary_v4_address_spec.address is required (auto-allocation not yet implemented)")
 	}
 	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
@@ -170,40 +172,111 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	// Валидируем ссылки на Address-ресурсы (существуют, нужной версии, в той же
+	// подсети, не заняты другим референтом) и помечаем их used=true + referrer.
+	// Best-effort v1: валидация/маркировка адресов и Insert NIC не в одной tx.
+	if err := s.validateAndAttachAddresses(ctx, niID, req.Name, req.SubnetID, req.V4AddressIDs, req.V6AddressIDs); err != nil {
+		return nil, err
+	}
 	st := domain.NIStatusAvailable
 	if req.InstanceID != "" {
 		st = domain.NIStatusActive
 	}
 	n := &domain.NetworkInterface{
-		ID:                   niID,
-		FolderID:             req.FolderID,
-		CreatedAt:            time.Now().UTC(),
-		Name:                 req.Name,
-		Description:          req.Description,
-		Labels:               req.Labels,
-		SubnetID:             req.SubnetID,
-		NetworkID:            sub.NetworkID,
-		PrimaryV4Address:     strings.TrimSpace(req.PrimaryV4Address),
-		SecondaryV4Addresses: req.SecondaryV4Addresses,
-		V6Addresses:          req.V6Addresses,
-		SecurityGroupIDs:     req.SecurityGroupIDs,
-		InstanceID:           req.InstanceID,
-		Index:                req.Index,
-		Status:               st,
+		ID:               niID,
+		FolderID:         req.FolderID,
+		CreatedAt:        time.Now().UTC(),
+		Name:             req.Name,
+		Description:      req.Description,
+		Labels:           req.Labels,
+		SubnetID:         req.SubnetID,
+		NetworkID:        sub.NetworkID,
+		V4AddressIDs:     req.V4AddressIDs,
+		V6AddressIDs:     req.V6AddressIDs,
+		SecurityGroupIDs: req.SecurityGroupIDs,
+		InstanceID:       req.InstanceID,
+		Index:            req.Index,
+		Status:           st,
 	}
 	created, err := s.repo.Insert(ctx, n)
 	if err != nil {
+		// rollback маркировки адресов best-effort.
+		s.detachAddresses(ctx, append(append([]string{}, req.V4AddressIDs...), req.V6AddressIDs...))
 		return nil, mapRepoErr(err)
 	}
 	return anypb.New(protoconv.NetworkInterface(created))
 }
 
-// Update обновляет name/description/labels/security_group_ids.
+// validateAddressRef проверяет, что Address id существует, имеет ожидаемую
+// IP-версию, (для internal-ipv4) лежит в подсети nicSubnet и не занят. Возвращает
+// gRPC-status при нарушении.
+func (s *NetworkInterfaceService) validateAddressRef(ctx context.Context, id, nicSubnet string, want domain.IpVersion) error {
+	a, err := s.addressRepo.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return status.Errorf(codes.InvalidArgument, "address %s not found", id)
+		}
+		return mapRepoErr(err)
+	}
+	switch want {
+	case domain.IpVersionIPv4:
+		if a.Type != domain.AddressTypeInternal || a.InternalIpv4 == nil {
+			return status.Errorf(codes.InvalidArgument, "address %s is not an internal IPv4 address", id)
+		}
+		if a.InternalIpv4.SubnetID != nicSubnet {
+			return status.Errorf(codes.InvalidArgument, "address %s belongs to subnet %s, not %s", id, a.InternalIpv4.SubnetID, nicSubnet)
+		}
+	case domain.IpVersionIPv6:
+		if a.IpVersion != domain.IpVersionIPv6 {
+			return status.Errorf(codes.InvalidArgument, "address %s is not an IPv6 address", id)
+		}
+	}
+	if a.Used {
+		return status.Errorf(codes.FailedPrecondition, "address %s is already in use", id)
+	}
+	return nil
+}
+
+// validateAndAttachAddresses валидирует все v4/v6 address-refs, затем помечает
+// каждый used=true + referrer={network_interface, nicID, nicName}. Best-effort:
+// если что-то падает в середине, ранее размеченные адреса откатываются.
+func (s *NetworkInterfaceService) validateAndAttachAddresses(ctx context.Context, nicID, nicName, nicSubnet string, v4IDs, v6IDs []string) error {
+	for _, id := range v4IDs {
+		if err := s.validateAddressRef(ctx, id, nicSubnet, domain.IpVersionIPv4); err != nil {
+			return err
+		}
+	}
+	for _, id := range v6IDs {
+		if err := s.validateAddressRef(ctx, id, nicSubnet, domain.IpVersionIPv6); err != nil {
+			return err
+		}
+	}
+	var attached []string
+	for _, id := range append(append([]string{}, v4IDs...), v6IDs...) {
+		ref := &domain.AddressReference{AddressID: id, ReferrerType: niReferrerType, ReferrerID: nicID, ReferrerName: nicName}
+		if _, err := s.addressRepo.SetReference(ctx, ref); err != nil {
+			s.detachAddresses(ctx, attached)
+			return mapRepoErr(err)
+		}
+		attached = append(attached, id)
+	}
+	return nil
+}
+
+// detachAddresses снимает used + referrer-row с каждого address id (best-effort,
+// ошибки логируются неявно — пропускаются).
+func (s *NetworkInterfaceService) detachAddresses(ctx context.Context, ids []string) {
+	for _, id := range ids {
+		_ = s.addressRepo.ClearReference(ctx, id)
+	}
+}
+
+// Update обновляет name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
 func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) (*operations.Operation, error) {
 	if err := niResourceID(req.ID); err != nil {
 		return nil, err
 	}
-	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "security_group_ids": {}, "secondary_v4_addresses": {}, "v6_addresses": {}}
+	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "security_group_ids": {}, "v4_address_ids": {}, "v6_address_ids": {}}
 	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
 		return nil, err
 	}
@@ -228,6 +301,38 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
+		// Если изменились address-refs — пересчитываем diff: detach убранные,
+		// attach добавленные (с валидацией). Best-effort v1 (без единой tx).
+		newV4 := nicMaskV4(n, req)
+		newV6 := nicMaskV6(n, req)
+		if !strSetEqual(n.V4AddressIDs, newV4) || !strSetEqual(n.V6AddressIDs, newV6) {
+			oldAll := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
+			newAll := strSet(append(append([]string{}, newV4...), newV6...))
+			// detach убранные
+			var removed []string
+			for _, id := range oldAll {
+				if !newAll[id] {
+					removed = append(removed, id)
+				}
+			}
+			s.detachAddresses(ctx, removed)
+			// validate+attach добавленные
+			oldAllSet := strSet(oldAll)
+			var addedV4, addedV6 []string
+			for _, id := range newV4 {
+				if !oldAllSet[id] {
+					addedV4 = append(addedV4, id)
+				}
+			}
+			for _, id := range newV6 {
+				if !oldAllSet[id] {
+					addedV6 = append(addedV6, id)
+				}
+			}
+			if err := s.validateAndAttachAddresses(ctx, n.ID, derefName(req, n), n.SubnetID, addedV4, addedV6); err != nil {
+				return nil, err
+			}
+		}
 		applyNICMask(n, req)
 		updated, err := s.repo.UpdateMeta(ctx, n)
 		if err != nil {
@@ -238,10 +343,67 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 	return &op, nil
 }
 
+func derefName(req UpdateNICReq, n *domain.NetworkInterface) string {
+	if len(req.UpdateMask) == 0 {
+		return req.Name
+	}
+	for _, f := range req.UpdateMask {
+		if f == "name" {
+			return req.Name
+		}
+	}
+	return n.Name
+}
+
+func nicMaskV4(n *domain.NetworkInterface, req UpdateNICReq) []string {
+	if len(req.UpdateMask) == 0 {
+		return req.V4AddressIDs
+	}
+	for _, f := range req.UpdateMask {
+		if f == "v4_address_ids" {
+			return req.V4AddressIDs
+		}
+	}
+	return n.V4AddressIDs
+}
+
+func nicMaskV6(n *domain.NetworkInterface, req UpdateNICReq) []string {
+	if len(req.UpdateMask) == 0 {
+		return req.V6AddressIDs
+	}
+	for _, f := range req.UpdateMask {
+		if f == "v6_address_ids" {
+			return req.V6AddressIDs
+		}
+	}
+	return n.V6AddressIDs
+}
+
+func strSet(ss []string) map[string]bool {
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
+	}
+	return m
+}
+
+func strSetEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sa, sb := strSet(a), strSet(b)
+	for k := range sa {
+		if !sb[k] {
+			return false
+		}
+	}
+	return true
+}
+
 func applyNICMask(n *domain.NetworkInterface, req UpdateNICReq) {
 	if len(req.UpdateMask) == 0 {
 		n.Name, n.Description, n.Labels, n.SecurityGroupIDs = req.Name, req.Description, req.Labels, req.SecurityGroupIDs
-		n.SecondaryV4Addresses, n.V6Addresses = req.SecondaryV4Addresses, req.V6Addresses
+		n.V4AddressIDs, n.V6AddressIDs = req.V4AddressIDs, req.V6AddressIDs
 		return
 	}
 	for _, f := range req.UpdateMask {
@@ -254,10 +416,10 @@ func applyNICMask(n *domain.NetworkInterface, req UpdateNICReq) {
 			n.Labels = req.Labels
 		case "security_group_ids":
 			n.SecurityGroupIDs = req.SecurityGroupIDs
-		case "secondary_v4_addresses":
-			n.SecondaryV4Addresses = req.SecondaryV4Addresses
-		case "v6_addresses":
-			n.V6Addresses = req.V6Addresses
+		case "v4_address_ids":
+			n.V4AddressIDs = req.V4AddressIDs
+		case "v6_address_ids":
+			n.V6AddressIDs = req.V6AddressIDs
 		}
 	}
 }
@@ -282,6 +444,9 @@ func (s *NetworkInterfaceService) Delete(ctx context.Context, id string) (*opera
 		if cur.InstanceID != "" {
 			return nil, status.Errorf(codes.FailedPrecondition, "network interface %s is still attached to instance %s; detach it first", id, cur.InstanceID)
 		}
+		// Снимаем used + referrer со всех привязанных Address-ресурсов (адреса
+		// не удаляем — они остаются доступными, просто свободными).
+		s.detachAddresses(ctx, append(append([]string{}, cur.V4AddressIDs...), cur.V6AddressIDs...))
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
