@@ -39,6 +39,13 @@ type Config struct {
 	// подделать FolderClient.GetCloudID/Exists).
 	ResourceManagerTLS bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_TLS" default:"false"`
 
+	// ComputeGRPCAddr — публичный gRPC kacho-compute. kacho-compute — owner
+	// Geography (Region/Zone), эпик KAC-15: VPC валидирует zone_id вызовом
+	// compute.v1.ZoneService.Get (см. workspace CLAUDE.md §«Кросс-доменные ссылки»).
+	ComputeGRPCAddr string `envconfig:"KACHO_VPC_COMPUTE_GRPC_ADDR" default:"compute.kacho.svc.cluster.local:9090"`
+	// ComputeTLS — использовать TLS для cross-service gRPC к kacho-compute.
+	ComputeTLS bool `envconfig:"KACHO_VPC_COMPUTE_TLS" default:"false"`
+
 	// DefaultSGInline — создавать ли default SecurityGroup inline при Network.Create.
 	//   true (default) — Network.doCreate синхронно создаёт default SG в той же
 	//                    операции (workaround после упразднения kacho-vpc-controllers).

@@ -77,8 +77,6 @@ type services struct {
 	privateEndpoint *service.PrivateEndpointService
 	addressPool     *service.AddressPoolService
 	networkInternal *service.NetworkInternal
-	region          *service.RegionService
-	zone            *service.ZoneService
 }
 
 func runServe(cfg config.Config) error {
@@ -108,7 +106,17 @@ func runServe(cfg config.Config) error {
 	defer rmConn.Close()
 	folderClient := clients.NewFolderClient(rmConn)
 
-	svcs := buildServices(pool, folderClient, opsRepo, cfg, logger)
+	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
+	// zone_id вызовом compute.v1.ZoneService.Get (см. workspace CLAUDE.md
+	// §«Кросс-доменные ссылки на ресурсы»).
+	computeConn, err := dialCompute(cfg)
+	if err != nil {
+		return err
+	}
+	defer computeConn.Close()
+	geoClient := clients.NewComputeGeographyClient(computeConn)
+
+	svcs := buildServices(pool, folderClient, geoClient, opsRepo, cfg, logger)
 
 	// gRPC servers + tenant-interceptor (scaffold под IAM/AuthZ): сейчас читает
 	// metadata, future — JWT claims; handler'ы делают AssertFolderOwnership.
@@ -225,11 +233,23 @@ func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
 	return grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(creds))
 }
 
+// dialCompute открывает gRPC-клиент к kacho-compute (owner Geography). TLS опционален
+// через KACHO_VPC_COMPUTE_TLS=true; по умолчанию insecure для dev-стенда.
+func dialCompute(cfg config.Config) (*grpc.ClientConn, error) {
+	var creds credentials.TransportCredentials
+	if cfg.ComputeTLS {
+		creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	} else {
+		creds = insecure.NewCredentials()
+	}
+	return grpc.NewClient(cfg.ComputeGRPCAddr, grpc.WithTransportCredentials(creds))
+}
+
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при KACHO_VPC_DEFAULT_SG_INLINE=false → Network.Create не создаёт
 // inline default SG (verbatim YC: SG создаётся внешним reconciler'ом; убирает 2 INSERT +
-// 1 UPDATE из hot-path).
-func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+// 1 UPDATE из hot-path). geoClient — ZoneRegistry-impl над kacho-compute (валидация zone_id).
+func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoClient service.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
@@ -240,8 +260,6 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, opsRep
 	addressPoolRepo := repo.NewAddressPoolRepo(pool)
 	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
-	regionRepo := repo.NewRegionRepo(pool)
-	zoneRepo := repo.NewZoneRepo(pool)
 
 	var defaultSGRepo service.SecurityGroupRepo
 	if cfg.DefaultSGInline {
@@ -252,7 +270,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, opsRep
 
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
 	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient)
-	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, zoneRepo)
+	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, geoClient)
 	// addressRepo обогащает SubnetService.ListUsedAddresses записями referrer'ов
 	// (UsedAddress.references[] — кто использует адрес; YC-like).
 	subnetSvc.SetAddressRefRepo(addressRepo)
@@ -266,8 +284,6 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, opsRep
 		privateEndpoint: service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo),
 		addressPool:     addressPoolSvc,
 		networkInternal: service.NewNetworkInternal(networkRepo, sgRepo),
-		region:          service.NewRegionService(regionRepo),
-		zone:            service.NewZoneService(zoneRepo, regionRepo),
 	}
 }
 
@@ -293,8 +309,6 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
-	vpcv1.RegisterInternalRegionServiceServer(srv, handler.NewInternalRegionHandler(svcs.region))
-	vpcv1.RegisterInternalZoneServiceServer(srv, handler.NewInternalZoneHandler(svcs.zone))
 }
 
 func runMigrate(cfg config.Config, direction string) {
