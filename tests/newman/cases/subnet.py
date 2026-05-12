@@ -1122,6 +1122,38 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-31: NIC больше не блокирует свою подсеть напрямую (FK ON DELETE CASCADE,
+    # миграция 0011). NIC без адресов каскадно удаляется при удалении подсети.
+    id="SUB-DEL-OK-NIC-NO-ADDR-CASCADE",
+    title="Delete Subnet с NIC без address ids → OK; NIC каскадно удалён (GET 404)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        *_make_net("nicnoaddr"),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-nicnoaddr-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.253.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="cr-nic-no-addr", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}", "name": "nic-nicnoaddr-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="del-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-sub-deleted", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('subnet delete op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get-nic-gone", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
     id="SUB-DEL-CRUD-EMPTY-OK",
     title="Delete Subnet без зависимостей → OK",
     classes=["CRUD"], priority="P1",

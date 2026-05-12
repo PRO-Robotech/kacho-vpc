@@ -277,6 +277,9 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	// addressRepo обогащает SubnetService.ListUsedAddresses записями referrer'ов
 	// (UsedAddress.references[] — кто использует адрес; YC-like).
 	subnetSvc.SetAddressRefRepo(addressRepo)
+	// niRepo: precondition-проверка в Subnet.Delete (нельзя удалить подсеть с NIC,
+	// приаттаченным к инстансу — KAC-31).
+	subnetSvc.SetNICRepo(niRepo)
 	return &services{
 		network:          service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo),
 		subnet:           subnetSvc,

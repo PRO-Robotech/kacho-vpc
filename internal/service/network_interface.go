@@ -54,6 +54,9 @@ type NetworkInterfaceRepo interface {
 	Get(ctx context.Context, id string) (*domain.NetworkInterface, error)
 	List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterface, string, error)
 	ListByHypervisor(ctx context.Context, hvID string) ([]*domain.NetworkInterface, error)
+	// ListBySubnet возвращает все NIC, привязанные к указанной подсети (без
+	// пагинации — используется для precondition-проверки при Subnet.Delete).
+	ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterface, error)
 	Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
 	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
 	// SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка)

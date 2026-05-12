@@ -274,3 +274,40 @@ func TestAddressService_Delete_DeletionProtection(t *testing.T) {
 	require.NoError(t, getErr)
 	assert.True(t, got.DeletionProtection)
 }
+
+func TestAddressService_Delete_InUseByNIC(t *testing.T) {
+	ar := newMockAddressRepo()
+	sr := newMockSubnetRepo()
+	or := newMockOpsRepo()
+
+	addrID := ids.NewID(ids.PrefixAddress)
+	a := &domain.Address{
+		ID:           addrID,
+		FolderID:     "f1",
+		Type:         domain.AddressTypeInternal,
+		IpVersion:    domain.IpVersionIPv4,
+		InternalIpv4: &domain.InternalIpv4Spec{Address: "10.0.0.5", SubnetID: "e9bsub"},
+		Reserved:     true,
+	}
+	_, _ = ar.Insert(context.Background(), a)
+	// NIC references this address → SetReference marks used=true + referrer row.
+	_, err := ar.SetReference(context.Background(), &domain.AddressReference{
+		AddressID: addrID, ReferrerType: niReferrerType, ReferrerID: "e9bnic1", ReferrerName: "nic-1",
+	})
+	require.NoError(t, err)
+
+	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
+
+	// Delete blocked synchronously — FAILED_PRECONDITION, no Operation.
+	_, err = svc.Delete(context.Background(), addrID)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	assert.Contains(t, st.Message(), "network interface")
+
+	// After detach (ClearReference) — Delete succeeds.
+	require.NoError(t, ar.ClearReference(context.Background(), addrID))
+	op, err := svc.Delete(context.Background(), addrID)
+	require.NoError(t, err)
+	require.NotNil(t, op)
+}

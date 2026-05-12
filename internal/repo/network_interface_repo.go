@@ -195,6 +195,27 @@ func (r *NetworkInterfaceRepo) ListByHypervisor(ctx context.Context, hvID string
 	return out, nil
 }
 
+// ListBySubnet возвращает все NIC, привязанные к указанной подсети.
+func (r *NetworkInterfaceRepo) ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterface, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE subnet_id = $1 ORDER BY id ASC`, subnetID)
+	if err != nil {
+		return nil, wrapPgErr(err, "Network interface", "")
+	}
+	defer rows.Close()
+	var out []*domain.NetworkInterface
+	for rows.Next() {
+		n, err := scanNI(rows)
+		if err != nil {
+			return nil, wrapPgErr(err, "Network interface", "")
+		}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgErr(err, "Network interface", "")
+	}
+	return out, nil
+}
+
 // Insert вставляет NIC.
 func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
 	labelsJSON, err := marshalJSONB(n.Labels, "NetworkInterface.labels")

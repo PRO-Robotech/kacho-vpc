@@ -359,6 +359,55 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-31: Address, используемый NIC через v4AddressIds, нельзя удалить —
+    # AddressService.Delete синхронно отвергает FAILED_PRECONDITION (409). После
+    # удаления NIC адрес освобождается и удаляется.
+    id="ADDR-DEL-NEG-USED-BY-NIC",
+    title="Delete Address, который в использовании у NIC → 409 FailedPrecondition; после delete NIC → Address удаляется",
+    classes=["NEG", "STATE", "CONF"],
+    priority="P1",
+    steps=[
+        *_net_subnet_steps("delusedbynic"),
+        Step(name="create-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-dubn-addr-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="create-nic-with-addr", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+                   "name": "nic-dubn-{{runId}}", "v4AddressIds": ["{{addrId}}"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="assert-nic-created", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('NIC create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="del-addr-blocked", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             # grpc-gateway маппит FAILED_PRECONDITION (9) → HTTP 400.
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('message mentions network interface', () => pm.expect(pm.response.json().message).to.include('network interface'));"]),
+        # Удаляем NIC → адрес освобождается.
+        Step(name="del-nic", method="DELETE", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        # Теперь Address удаляется.
+        Step(name="del-addr-ok", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-addr-deleted", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('addr delete op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get-addr-gone", method="GET", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+        _cleanup_subnet(),
+        poll_operation_until_done(),
+        _cleanup_net(),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
     # Network-less (unbound, kacho-proto#8) SG, приаттаченная к NIC в той же folder.
     id="NIC-CR-WITH-UNBOUND-SG-OK",
     title="Create network-less SG → create NIC c этим SG в securityGroupIds → get → echoed",
