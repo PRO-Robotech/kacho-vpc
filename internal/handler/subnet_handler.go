@@ -202,7 +202,7 @@ func (h *SubnetHandler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetC
 	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
 		return nil, err
 	}
-	op, err := h.svc.AddCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
+	op, err := h.svc.AddCidrBlocks(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func (h *SubnetHandler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveS
 	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
 		return nil, err
 	}
-	op, err := h.svc.RemoveCidrBlocks(ctx, req.SubnetId, req.V4CidrBlocks)
+	op, err := h.svc.RemoveCidrBlocks(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
 	if err != nil {
 		return nil, err
 	}

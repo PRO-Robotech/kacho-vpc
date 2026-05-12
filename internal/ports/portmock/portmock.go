@@ -162,7 +162,7 @@ func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domai
 	return s, nil
 }
 
-func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4 []string) (*domain.Subnet, error) {
+func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*domain.Subnet, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -170,6 +170,7 @@ func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4 []string) (*
 		return nil, ports.ErrNotFound
 	}
 	s.V4CidrBlocks = v4
+	s.V6CidrBlocks = v6
 	return s, nil
 }
 

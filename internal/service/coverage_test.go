@@ -111,24 +111,37 @@ func TestSubnetService_Move_Validates(t *testing.T) {
 func TestSubnetService_AddCidrBlocks_Validates(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.AddCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
+	_, err := svc.AddCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"}, nil)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil)
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil, nil)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), []string{"10.0.0.5/24"})
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), []string{"10.0.0.5/24"}, nil)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
+	// v6 with non-zero host-bits → InvalidArgument (sync).
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil, []string{"fd00::1/64"})
+	st, _ = status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	// v6 that's actually IPv4 → InvalidArgument (sync).
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil, []string{"10.0.0.0/24"})
+	st, _ = status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	// overlapping v6 blocks in one request → FailedPrecondition (sync, mirrors v4).
+	_, err = svc.AddCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil,
+		[]string{"fd00::/32", "fd00::/64"})
+	st, _ = status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
 }
 
 func TestSubnetService_RemoveCidrBlocks_Validates(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.RemoveCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"})
+	_, err := svc.RemoveCidrBlocks(context.Background(), "", []string{"10.0.0.0/24"}, nil)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.RemoveCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil)
+	_, err = svc.RemoveCidrBlocks(context.Background(), ids.NewID(ids.PrefixSubnet), nil, nil)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
@@ -402,11 +415,11 @@ func TestValidateCIDRPrefix_BadFormat(t *testing.T) {
 }
 
 func TestCheckCIDRDisjoint_NoOverlap(t *testing.T) {
-	require.NoError(t, checkCIDRDisjoint([]string{"10.0.0.0/24", "10.1.0.0/24"}))
+	require.NoError(t, checkCIDRDisjoint("v4_cidr_blocks", []string{"10.0.0.0/24", "10.1.0.0/24"}))
 }
 
 func TestCheckCIDRDisjoint_Overlap(t *testing.T) {
-	err := checkCIDRDisjoint([]string{"10.0.0.0/16", "10.0.0.0/24"})
+	err := checkCIDRDisjoint("v4_cidr_blocks", []string{"10.0.0.0/16", "10.0.0.0/24"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.FailedPrecondition, st.Code())

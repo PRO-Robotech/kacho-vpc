@@ -209,19 +209,21 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*domain.Subn
 	return result, nil
 }
 
-// SetCidrBlocks обновляет v4_cidr_blocks у Subnet атомарно (для AddCidrBlocks/RemoveCidrBlocks).
-// EXCLUDE constraint subnets_no_overlap_v4 проверяет primary CIDR (array[1]) на
-// пересечение с другими подсетями той же сети.
-func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4 []string) (*domain.Subnet, error) {
+// SetCidrBlocks обновляет v4_cidr_blocks и v6_cidr_blocks у Subnet атомарно
+// (для AddCidrBlocks/RemoveCidrBlocks). EXCLUDE constraint'ы
+// subnets_no_overlap_v4 / subnets_no_overlap_v6 проверяют primary CIDR (array[1])
+// каждого семейства на пересечение с другими подсетями той же сети.
+func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.Subnet, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2 WHERE id = $1 RETURNING %s`, subnetCols)
+	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2, v6_cidr_blocks = $3 WHERE id = $1 RETURNING %s`, subnetCols)
 	row := tx.QueryRow(ctx, q, id,
 		pgtype.Array[string]{Elements: v4, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v4)), LowerBound: 1}}},
+		pgtype.Array[string]{Elements: v6, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v6)), LowerBound: 1}}},
 	)
 	s, err := scanSubnet(row)
 	if isExclusionViolation(err) {
