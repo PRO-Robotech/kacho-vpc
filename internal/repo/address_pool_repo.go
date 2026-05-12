@@ -390,9 +390,7 @@ func (r *AddressPoolRepo) ListAddressesByPool(ctx context.Context, poolID, folde
 		idx += 2
 	}
 	q := fmt.Sprintf(`
-SELECT id, folder_id, created_at, name, description, labels,
-       addr_type, ip_version, reserved, used, deletion_protection,
-       external_ipv4, internal_ipv4
+SELECT `+addressCols+`
 FROM addresses
 WHERE %s
 ORDER BY created_at ASC, id ASC
