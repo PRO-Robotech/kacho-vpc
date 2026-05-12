@@ -48,8 +48,10 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	regionRepo := repo.NewRegionRepo(pool)
-	zoneRepo := repo.NewZoneRepo(pool)
+	// Geography (Region/Zone) переехала в kacho-compute (эпик KAC-15): в схеме
+	// kacho_vpc больше нет таблиц regions/zones — zone_id хранится как обычная
+	// строка без FK; существование зоны валидируется на request-path вызовом
+	// compute.v1.ZoneService.Get (см. internal/clients/compute_client.go).
 	poolRepo := repo.NewAddressPoolRepo(pool)
 	bindRepo := repo.NewAddressPoolBindingRepo(pool)
 	cloudSelRepo := repo.NewCloudPoolSelectorRepo(pool)
@@ -58,10 +60,6 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	addrRepo := repo.NewAddressRepo(pool)
 
 	const zone = "ru-central1-a"
-	_, err = regionRepo.Insert(ctx, &domain.Region{ID: "ru-central1", Name: "ru-central1"})
-	require.NoError(t, err)
-	_, err = zoneRepo.Insert(ctx, &domain.Zone{ID: zone, RegionID: "ru-central1", Name: zone})
-	require.NoError(t, err)
 
 	now := time.Now().UTC()
 	mkPool := func(name, zoneID string, isDefault bool, selector map[string]string, cidr string) *domain.AddressPool {
