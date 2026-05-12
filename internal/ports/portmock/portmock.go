@@ -272,6 +272,20 @@ func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.Extern
 	return a, nil
 }
 
+// SetInternalIPv6 — mock-stub (порт обязателен).
+func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	if spec != nil {
+		a.InternalIpv6 = spec
+	}
+	return a, nil
+}
+
 func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

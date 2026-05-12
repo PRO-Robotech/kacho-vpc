@@ -39,7 +39,6 @@ type NetworkInterface struct {
 	Description string
 	Labels      map[string]string
 	SubnetID    string
-	NetworkID   string
 	// V4AddressIDs / V6AddressIDs — NIC ссылается на Address-ресурсы (kacho-vpc)
 	// по id (epic KAC-2 / KAC-7). Один Address — максимум на одном NIC (enforced
 	// сервис-слоем через addresses.used + referrer-tracking, см. service слой).
@@ -53,8 +52,14 @@ type NetworkInterface struct {
 	V4Addresses      []string
 	V6Addresses      []string
 	SecurityGroupIDs []string
-	InstanceID       string
-	Index            string
-	Status           NetworkInterfaceStatus
-	Dataplane        NICDataplane
+	// UsedBy* — денормализованная "кто приаттачил этот NIC" ссылка (зеркало
+	// Address.used_by; e.g. {compute_instance, <instance_id>}). Выставляется
+	// AttachToInstance, очищается DetachFromInstance. Один референт на NIC —
+	// поэтому храним flat-колонками прямо на network_interfaces (а не отдельной
+	// таблицей, как address_references).
+	UsedByType string
+	UsedByID   string
+	UsedByName string
+	Status     NetworkInterfaceStatus
+	Dataplane  NICDataplane
 }

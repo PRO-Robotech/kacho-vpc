@@ -47,7 +47,7 @@ func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
 // NetworkInterface конвертирует domain.NetworkInterface → vpcv1.NetworkInterface
 // (публичная проекция — БЕЗ data-plane-полей; те — в InternalNetworkInterface).
 func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
-	return &vpcv1.NetworkInterface{
+	p := &vpcv1.NetworkInterface{
 		Id:               n.ID,
 		FolderId:         n.FolderID,
 		CreatedAt:        ts(n.CreatedAt),
@@ -55,14 +55,20 @@ func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 		Description:      n.Description,
 		Labels:           n.Labels,
 		SubnetId:         n.SubnetID,
-		NetworkId:        n.NetworkID,
 		V4AddressIds:     n.V4AddressIDs,
 		V6AddressIds:     n.V6AddressIDs,
 		SecurityGroupIds: n.SecurityGroupIDs,
-		InstanceId:       n.InstanceID,
-		Index:            n.Index,
 		Status:           vpcv1.NetworkInterface_Status(n.Status),
 	}
+	// used_by (kacho extension, output-only) — кто приаттачил этот NIC.
+	// Shape — как у Address.used_by: Reference{referrer{type,id}, type=USED_BY}.
+	if n.UsedByID != "" {
+		p.UsedBy = &reference.Reference{
+			Referrer: &reference.Referrer{Type: n.UsedByType, Id: n.UsedByID},
+			Type:     reference.Reference_USED_BY,
+		}
+	}
+	return p
 }
 
 // InternalNetworkInterface конвертирует domain.NetworkInterface → vpcv1.InternalNetworkInterface
@@ -143,6 +149,13 @@ func Address(a *domain.Address) *vpcv1.Address {
 			}
 		}
 		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
+	case a.InternalIpv6 != nil:
+		p.Address = &vpcv1.Address_InternalIpv6Address{
+			InternalIpv6Address: &vpcv1.InternalIpv6Address{
+				Address: a.InternalIpv6.Address,
+				Scope:   &vpcv1.InternalIpv6Address_SubnetId{SubnetId: a.InternalIpv6.SubnetID},
+			},
+		}
 	case a.InternalIpv4 != nil:
 		p.Address = &vpcv1.Address_InternalIpv4Address{
 			InternalIpv4Address: &vpcv1.InternalIpv4Address{

@@ -28,6 +28,7 @@ type CreateSubnetReq struct {
 	NetworkID    string
 	ZoneID       string
 	V4CidrBlocks []string
+	V6CidrBlocks []string
 	RouteTableID string
 	DhcpOptions  *domain.DhcpOptions
 }
@@ -144,6 +145,13 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 			return nil, err
 		}
 	}
+	// v6_cidr_blocks — опциональны; если переданы, валидируем как IPv6 CIDR
+	// в каноничной форме (host-bits=0). Immutable после Create (как v4).
+	for i, c := range req.V6CidrBlocks {
+		if err := validateSubnetV6CIDR(fmt.Sprintf("v6_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
 	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
 	}
@@ -231,6 +239,7 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 		NetworkID:    req.NetworkID,
 		ZoneID:       req.ZoneID,
 		V4CidrBlocks: req.V4CidrBlocks,
+		V6CidrBlocks: req.V6CidrBlocks,
 		RouteTableID: req.RouteTableID,
 		DhcpOptions:  req.DhcpOptions,
 	}

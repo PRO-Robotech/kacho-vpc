@@ -45,6 +45,12 @@ type InternalIpv4Spec struct {
 	SubnetID string `json:"subnet_id"`
 }
 
+// InternalIpv6Spec — параметры внутреннего IPv6-адреса (зеркалит InternalIpv4Spec).
+type InternalIpv6Spec struct {
+	Address  string `json:"address"` // например 2001:db8::5
+	SubnetID string `json:"subnet_id"`
+}
+
 // AddressReference — кто использует Address (YC-like referrer-tracking).
 // Один referrer на адрес. ReferrerType — "compute_instance" (расширяемо).
 type AddressReference struct {
@@ -72,6 +78,8 @@ type Address struct {
 	ExternalIpv4 *ExternalIpv4Spec
 	// Для internal:
 	InternalIpv4 *InternalIpv4Spec
+	// Для internal IPv6 (IpVersion == IpVersionIPv6):
+	InternalIpv6 *InternalIpv6Spec
 	// UsedBy — кто использует адрес (referrer-tracking, output-only). Заполняется
 	// сервис-слоем в Get/List/GetByValue/ListBySubnet из address_references;
 	// для compute NIC/NAT-адресов — один элемент с ReferrerType="compute_instance".

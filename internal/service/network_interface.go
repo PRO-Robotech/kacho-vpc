@@ -35,12 +35,18 @@ import (
 // niReferrerType — ReferrerType в address_references для адресов, привязанных к NIC.
 const niReferrerType = "network_interface"
 
+// niUsedByReferrerType — тип референта в NIC.used_by, когда NIC приаттачен к
+// compute-инстансу (зеркало Address.used_by referrer type для NIC/NAT-адресов).
+const niUsedByReferrerType = "compute_instance"
+
 // NetworkInterfaceFilter — фильтр для List.
 type NetworkInterfaceFilter struct {
 	FolderID   string
 	InstanceID string
 	SubnetID   string
-	NetworkID  string
+	// NetworkID — больше не поддерживается фильтром (NIC не хранит network_id);
+	// поле оставлено для совместимости с handler'ом, репо его игнорирует.
+	NetworkID string
 }
 
 // NetworkInterfaceRepo — port-интерфейс репозитория NIC.
@@ -50,7 +56,9 @@ type NetworkInterfaceRepo interface {
 	ListByHypervisor(ctx context.Context, hvID string) ([]*domain.NetworkInterface, error)
 	Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
 	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
-	SetInstance(ctx context.Context, id, instanceID, niIndex string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error)
+	// SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка)
+	// и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
+	SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error)
 	SetDataplane(ctx context.Context, id string, dp domain.NICDataplane, newStatus domain.NetworkInterfaceStatus, setStatus bool) (*domain.NetworkInterface, bool, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -168,8 +176,7 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
-	sub, err := s.subnetRepo.Get(ctx, req.SubnetID)
-	if err != nil {
+	if _, err := s.subnetRepo.Get(ctx, req.SubnetID); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	// Валидируем ссылки на Address-ресурсы (существуют, нужной версии, в той же
@@ -179,8 +186,10 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 		return nil, err
 	}
 	st := domain.NIStatusAvailable
+	usedByType, usedByID := "", ""
 	if req.InstanceID != "" {
 		st = domain.NIStatusActive
+		usedByType, usedByID = niUsedByReferrerType, req.InstanceID
 	}
 	n := &domain.NetworkInterface{
 		ID:               niID,
@@ -190,12 +199,11 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 		Description:      req.Description,
 		Labels:           req.Labels,
 		SubnetID:         req.SubnetID,
-		NetworkID:        sub.NetworkID,
 		V4AddressIDs:     req.V4AddressIDs,
 		V6AddressIDs:     req.V6AddressIDs,
 		SecurityGroupIDs: req.SecurityGroupIDs,
-		InstanceID:       req.InstanceID,
-		Index:            req.Index,
+		UsedByType:       usedByType,
+		UsedByID:         usedByID,
 		Status:           st,
 	}
 	created, err := s.repo.Insert(ctx, n)
@@ -227,8 +235,11 @@ func (s *NetworkInterfaceService) validateAddressRef(ctx context.Context, id, ni
 			return status.Errorf(codes.InvalidArgument, "address %s belongs to subnet %s, not %s", id, a.InternalIpv4.SubnetID, nicSubnet)
 		}
 	case domain.IpVersionIPv6:
-		if a.IpVersion != domain.IpVersionIPv6 {
-			return status.Errorf(codes.InvalidArgument, "address %s is not an IPv6 address", id)
+		if a.IpVersion != domain.IpVersionIPv6 || a.InternalIpv6 == nil {
+			return status.Errorf(codes.InvalidArgument, "address %s is not an internal IPv6 address", id)
+		}
+		if a.InternalIpv6.SubnetID != nicSubnet {
+			return status.Errorf(codes.InvalidArgument, "address %s belongs to subnet %s, not %s", id, a.InternalIpv6.SubnetID, nicSubnet)
 		}
 	}
 	if a.Used {
@@ -441,8 +452,8 @@ func (s *NetworkInterfaceService) Delete(ctx context.Context, id string) (*opera
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		if cur.InstanceID != "" {
-			return nil, status.Errorf(codes.FailedPrecondition, "network interface %s is still attached to instance %s; detach it first", id, cur.InstanceID)
+		if cur.UsedByID != "" {
+			return nil, status.Errorf(codes.FailedPrecondition, "network interface %s is still attached to %s %s; detach it first", id, cur.UsedByType, cur.UsedByID)
 		}
 		// Снимаем used + referrer со всех привязанных Address-ресурсов (адреса
 		// не удаляем — они остаются доступными, просто свободными).
@@ -476,14 +487,12 @@ func (s *NetworkInterfaceService) AttachToInstance(ctx context.Context, id, inst
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		if cur.InstanceID != "" && cur.InstanceID != instanceID {
-			return nil, status.Errorf(codes.FailedPrecondition, "network interface %s is already attached to instance %s", id, cur.InstanceID)
+		if cur.UsedByID != "" && cur.UsedByID != instanceID {
+			return nil, status.Errorf(codes.FailedPrecondition, "network interface %s is already attached to %s %s", id, cur.UsedByType, cur.UsedByID)
 		}
-		idx := index
-		if idx == "" {
-			idx = "0"
-		}
-		updated, err := s.repo.SetInstance(ctx, id, instanceID, idx, domain.NIStatusActive)
+		// index — информационный (на какой слот инстанса вешать NIC); не персистим.
+		_ = index
+		updated, err := s.repo.SetUsedBy(ctx, id, niUsedByReferrerType, instanceID, "", domain.NIStatusActive)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
@@ -505,7 +514,7 @@ func (s *NetworkInterfaceService) DetachFromInstance(ctx context.Context, id str
 		return nil, err
 	}
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		updated, err := s.repo.SetInstance(ctx, id, "", "", domain.NIStatusAvailable)
+		updated, err := s.repo.SetUsedBy(ctx, id, "", "", "", domain.NIStatusAvailable)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}

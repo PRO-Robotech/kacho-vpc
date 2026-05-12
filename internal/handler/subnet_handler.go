@@ -72,6 +72,7 @@ func (h *SubnetHandler) Create(ctx context.Context, req *vpcv1.CreateSubnetReque
 		NetworkID:    req.NetworkId,
 		ZoneID:       req.ZoneId,
 		V4CidrBlocks: req.V4CidrBlocks,
+		V6CidrBlocks: req.V6CidrBlocks,
 		RouteTableID: req.RouteTableId,
 	}
 	if req.DhcpOptions != nil {

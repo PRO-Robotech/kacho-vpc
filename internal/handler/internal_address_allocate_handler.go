@@ -51,6 +51,20 @@ func (h *InternalAddressAllocateHandler) AllocateInternalIP(ctx context.Context,
 	}, nil
 }
 
+func (h *InternalAddressAllocateHandler) AllocateInternalIPv6(ctx context.Context, req *vpcv1.AllocateInternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
+	if req.GetAddressId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "address_id required")
+	}
+	res, err := h.addressSvc.AllocateInternalIPv6(ctx, req.GetAddressId())
+	if err != nil {
+		return nil, mapAllocErr(err)
+	}
+	return &vpcv1.AllocateIPResponse{
+		Ip:               res.IP,
+		AlreadyAllocated: res.AlreadyAllocated,
+	}, nil
+}
+
 func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context, req *vpcv1.AllocateExternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")

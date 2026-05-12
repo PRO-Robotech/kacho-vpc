@@ -50,6 +50,9 @@ type AddressFilter struct {
 	FolderID string
 	Name     string
 	Filter   string
+	// SubnetID — фильтр по подсети: матчит internal_ipv4.subnet_id ИЛИ
+	// internal_ipv6.subnet_id (для ListAddresses?subnet_id=). "" = без фильтра.
+	SubnetID string
 }
 
 // RouteTableFilter — фильтр для списка таблиц маршрутизации.
@@ -138,6 +141,10 @@ type AddressRepo interface {
 	// + emit outbox-event Address.UPDATED. Используется AddressAllocator.
 	// Передавайте nil для поля, которое не нужно менять; оба nil — no-op.
 	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.Address, error)
+	// SetInternalIPv6 атомарно обновляет internal_ipv6 (JSONB-spec) + emit
+	// outbox-event Address.UPDATED. Используется AllocateInternalIPv6 (random-pick
+	// + retry на UNIQUE-violation). nil → no-op.
+	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error)
 
 	// SetReference upsert'ит referrer-row адреса И выставляет addresses.used=true
 	// в одной tx. ErrNotFound если address не существует.

@@ -51,9 +51,12 @@ func (r *niRepoFake) UpdateMeta(_ context.Context, n *domain.NetworkInterface) (
 	r.data[n.ID] = n
 	return n, nil
 }
-func (r *niRepoFake) SetInstance(_ context.Context, id, instanceID, niIndex string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
+func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
 	n := r.data[id]
-	n.InstanceID, n.Index, n.Status = instanceID, niIndex, st
+	if refID == "" {
+		refType, refName = "", ""
+	}
+	n.UsedByType, n.UsedByID, n.UsedByName, n.Status = refType, refID, refName, st
 	return n, nil
 }
 func (r *niRepoFake) SetDataplane(_ context.Context, id string, dp domain.NICDataplane, newStatus domain.NetworkInterfaceStatus, setStatus bool) (*domain.NetworkInterface, bool, error) {
@@ -80,7 +83,7 @@ func (r *niRepoFake) Delete(_ context.Context, id string) error {
 func TestNetworkInterface_InternalProjectionAndDataplaneWriteback(t *testing.T) {
 	ctx := context.Background()
 	repo := newNIRepoFake()
-	repo.data["nic-1"] = &domain.NetworkInterface{ID: "nic-1", FolderID: "f1", SubnetID: "s1", NetworkID: "n1",
+	repo.data["nic-1"] = &domain.NetworkInterface{ID: "nic-1", FolderID: "f1", SubnetID: "s1",
 		V4AddressIDs: []string{"e9baddr1"}, V4Addresses: []string{"10.0.0.5"},
 		Status: domain.NIStatusAvailable, CreatedAt: time.Now().UTC()}
 
