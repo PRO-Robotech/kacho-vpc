@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "6ca77eee-8925-43c7-9ab6-fae9e4f4a801",
+    "_postman_id": "94aa8127-6942-438f-9dae-92b7865e034b",
     "name": "kacho-vpc / newman / subnet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1033,7 +1033,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}:addCidrBlocks",
+              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subId}}:add-cidr-blocks",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1041,7 +1041,7 @@
                 "vpc",
                 "v1",
                 "subnets",
-                "{{subId}}:addCidrBlocks"
+                "{{subId}}:add-cidr-blocks"
               ]
             },
             "body": {

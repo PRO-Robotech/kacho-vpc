@@ -140,7 +140,7 @@ CASES.append(Case(
         Step(
             name="add-cidr",
             method="POST",
-            path="/vpc/v1/subnets/{{subId}}:addCidrBlocks",
+            path="/vpc/v1/subnets/{{subId}}:add-cidr-blocks",
             body={"v4CidrBlocks": ["10.77.0.0/24"]},
             test_script=[*assert_status(200), *save_from_response("j.id", "opId")],
         ),
