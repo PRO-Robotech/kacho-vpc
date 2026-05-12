@@ -24,7 +24,8 @@ import (
 
 func ts(t time.Time) *timestamppb.Timestamp { return timestamppb.New(t.Truncate(time.Second)) }
 
-// Network конвертирует domain.Network → vpcv1.Network.
+// Network конвертирует domain.Network → vpcv1.Network (публичная проекция —
+// БЕЗ vpn_id; инфра-чувствительный vpn_id — только через InternalNetwork).
 func Network(n *domain.Network) *vpcv1.Network {
 	return &vpcv1.Network{
 		Id:                     n.ID,
@@ -35,6 +36,12 @@ func Network(n *domain.Network) *vpcv1.Network {
 		Labels:                 n.Labels,
 		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
 	}
+}
+
+// InternalNetwork конвертирует domain.Network → vpcv1.InternalNetwork (публичные
+// поля + vpn_id; только для InternalNetworkService.GetNetwork).
+func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
+	return &vpcv1.InternalNetwork{Network: Network(n), VpnId: n.VPNID}
 }
 
 // Subnet конвертирует domain.Subnet → vpcv1.Subnet.

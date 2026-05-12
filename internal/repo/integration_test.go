@@ -104,6 +104,38 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrNotFound)
 }
 
+func TestIntegration_NetworkRepo_VPNIDAllocation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	pool, err := coredb.NewPool(ctx, setupTestDB(t))
+	require.NoError(t, err)
+	defer pool.Close()
+	r := repo.NewNetworkRepo(pool)
+
+	mk := func(name string) *domain.Network {
+		out, e := r.Insert(ctx, &domain.Network{ID: ids.NewUID(), FolderID: "vpn-folder", CreatedAt: time.Now().UTC().Truncate(time.Microsecond), Name: name})
+		require.NoError(t, e)
+		return out
+	}
+
+	a := mk("vpn-a")
+	b := mk("vpn-b")
+	assert.GreaterOrEqual(t, a.VPNID, uint32(1), "vpn_id allocated >= 1")
+	assert.GreaterOrEqual(t, b.VPNID, uint32(1))
+	assert.NotEqual(t, a.VPNID, b.VPNID, "vpn_id уникален между сетями")
+
+	got, err := r.Get(ctx, a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, a.VPNID, got.VPNID, "Get возвращает тот же vpn_id")
+
+	// Delete возвращает vpn_id во free-list; следующая сеть его переиспользует.
+	require.NoError(t, r.Delete(ctx, a.ID))
+	c := mk("vpn-c")
+	assert.Equal(t, a.VPNID, c.VPNID, "освобождённый vpn_id переиспользован")
+}
+
 func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
