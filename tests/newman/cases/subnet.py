@@ -1190,3 +1190,88 @@ for c in security_injection_block("SUB", "/vpc/v1/subnets", "/vpc/v1/subnets",
     {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "zoneId": "{{existingZoneId}}", "v4CidrBlocks": ["10.169.0.0/24"]}):
     CASES.append(_wrap_with_net("SUB", "sec", c))
+
+# ---------------------------------------------------------------------------
+# IPv6 CIDR add/remove on subnet verbs (KAC-29)
+# ---------------------------------------------------------------------------
+
+CASES.append(Case(
+    id="SUB-CIDR-ADD-V6-OK",
+    title="AddCidrBlocks с v6CidrBlocks → IPv6-блок виден в GET",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_make_net("acb6"),
+        Step(name="create-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-acb6-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.220.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="add-cidr-v6", method="POST", path="/vpc/v1/subnets/{{subId}}:add-cidr-blocks",
+             body={"v6CidrBlocks": ["fd12:3456:789a::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="verify", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('v6 cidr present', () => pm.expect(pm.response.json().v6CidrBlocks).to.include('fd12:3456:789a::/64'));"]),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="SUB-CIDR-REMOVE-V6-OK",
+    title="RemoveCidrBlocks с v6CidrBlocks → IPv6-блок убран",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_make_net("rcb6"),
+        Step(name="create-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-rcb6-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.221.0.0/24"], "v6CidrBlocks": ["fd12:3456:789b::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="remove-cidr-v6", method="POST", path="/vpc/v1/subnets/{{subId}}:remove-cidr-blocks",
+             body={"v6CidrBlocks": ["fd12:3456:789b::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="verify", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('v6 cidr removed', () => pm.expect(pm.response.json().v6CidrBlocks || []).to.not.include('fd12:3456:789b::/64'));"]),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="SUB-CIDR-ADD-V6-NEG-HOSTBITS",
+    title="AddCidrBlocks v6 с ненулевыми host-bits → InvalidArgument (sync 400)",
+    classes=["NEG", "VAL"], priority="P1",
+    steps=[
+        *_make_net("acb6hb"),
+        Step(name="create-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-acb6hb-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.222.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="add-cidr-v6-hostbits", method="POST",
+             path="/vpc/v1/subnets/{{subId}}:add-cidr-blocks",
+             body={"v6CidrBlocks": ["fd12:3456:789a::1/64"]},
+             test_script=[
+                 "pm.test('rejected (400 sync)', () => pm.expect(pm.response.code).to.eql(400));",
+                 *assert_grpc_code(3, "INVALID_ARGUMENT"),
+             ]),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))

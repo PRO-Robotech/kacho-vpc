@@ -112,9 +112,11 @@ type SubnetRepo interface {
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error)
-	// SetCidrBlocks атомарно обновляет v4_cidr_blocks (для AddCidrBlocks/RemoveCidrBlocks).
-	// Триггеры EXCLUDE проверяют overlap по primary CIDR.
-	SetCidrBlocks(ctx context.Context, id string, v4 []string) (*domain.Subnet, error)
+	// SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks
+	// (для AddCidrBlocks/RemoveCidrBlocks). Триггеры EXCLUDE
+	// (subnets_no_overlap_v4 / subnets_no_overlap_v6) проверяют overlap по
+	// primary CIDR каждого семейства.
+	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.Subnet, error)
 	// SetZoneID меняет zone_id у подсети (для Relocate).
 	SetZoneID(ctx context.Context, id, zoneID string) (*domain.Subnet, error)
 	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети

@@ -490,20 +490,30 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 // неизменен (т.е. добавляем не в начало), overlap с соседними подсетями по
 // добавляемым CIDR не проверяется на DB-уровне. Покрываем service-level
 // проверкой через networkRepo / List.
-func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if len(v4) == 0 {
-		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
+	if len(v4) == 0 && len(v6) == 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks or v6_cidr_blocks is required")
 	}
 	for i, c := range v4 {
 		if err := validateSubnetV4CIDR(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
 			return nil, err
 		}
+	}
+	for i, c := range v6 {
+		if err := validateSubnetV6CIDR(fmt.Sprintf("v6_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
+	// Disjointness внутри переданного v6-списка (sync; mirror v4 — для v4 это
+	// проверяется ниже на merged-наборе, что покрывает и intra-request).
+	if err := checkCIDRDisjoint("v6_cidr_blocks", v6); err != nil {
+		return nil, err
 	}
 
 	op, err := operations.New(ids.PrefixOperationVPC,
@@ -520,19 +530,42 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		merged := append([]string{}, sub.V4CidrBlocks...)
-		merged = append(merged, v4...)
+		mergedV4 := append([]string{}, sub.V4CidrBlocks...)
+		mergedV4 = append(mergedV4, v4...)
 		// Проверка пересечений внутри объединённого набора (sync, host-bits уже OK).
-		if err := checkCIDRDisjoint(merged); err != nil {
+		// Покрывает overlap нового блока с уже существующим в этой же подсети.
+		if err := checkCIDRDisjoint("v4_cidr_blocks", mergedV4); err != nil {
 			return nil, err
 		}
-		updated, err := s.repo.SetCidrBlocks(ctx, id, merged)
+		// v6: то же самое.
+		mergedV6 := append([]string{}, sub.V6CidrBlocks...)
+		mergedV6 = appendDedup(mergedV6, v6)
+		if err := checkCIDRDisjoint("v6_cidr_blocks", mergedV6); err != nil {
+			return nil, err
+		}
+		updated, err := s.repo.SetCidrBlocks(ctx, id, mergedV4, mergedV6)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
 		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
+}
+
+// appendDedup добавляет элементы src в dst, пропуская уже присутствующие в dst.
+func appendDedup(dst, src []string) []string {
+	seen := make(map[string]struct{}, len(dst))
+	for _, v := range dst {
+		seen[v] = struct{}{}
+	}
+	for _, v := range src {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		dst = append(dst, v)
+	}
+	return dst
 }
 
 // RemoveCidrBlocks удаляет CIDR-блоки из подсети атомарно.
@@ -542,15 +575,15 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4 []strin
 //   - Если будет удалён последний CIDR → FailedPrecondition (subnet не может быть пустой).
 //   - Если внутри CIDR есть Address — на текущей фазе пропускаем (доп. проверка
 //     потребует JSON-запрос по addresses; в будущем добавится).
-func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []string) (*operations.Operation, error) {
+func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if len(v4) == 0 {
-		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks is required")
+	if len(v4) == 0 && len(v6) == 0 {
+		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks or v6_cidr_blocks is required")
 	}
 	op, err := operations.New(ids.PrefixOperationVPC,
 		fmt.Sprintf("Remove CIDR blocks from subnet %s", id),
@@ -566,32 +599,40 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4 []st
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		toRemove := map[string]struct{}{}
-		for _, c := range v4 {
-			toRemove[c] = struct{}{}
-		}
-		var remaining []string
-		var removed int
-		for _, existing := range sub.V4CidrBlocks {
-			if _, ok := toRemove[existing]; ok {
-				removed++
-				continue
-			}
-			remaining = append(remaining, existing)
-		}
-		if removed != len(v4) {
+		remainingV4, removedV4 := subtractCIDRs(sub.V4CidrBlocks, v4)
+		remainingV6, removedV6 := subtractCIDRs(sub.V6CidrBlocks, v6)
+		if removedV4 != len(v4) || removedV6 != len(v6) {
 			return nil, status.Errorf(codes.FailedPrecondition, "one or more CIDR blocks not found in subnet")
 		}
-		if len(remaining) == 0 {
+		if len(remainingV4) == 0 && len(remainingV6) == 0 {
 			return nil, status.Errorf(codes.FailedPrecondition, "cannot remove last CIDR block from subnet")
 		}
-		updated, err := s.repo.SetCidrBlocks(ctx, id, remaining)
+		updated, err := s.repo.SetCidrBlocks(ctx, id, remainingV4, remainingV6)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
 		return anypb.New(protoconv.Subnet(updated))
 	})
 	return &op, nil
+}
+
+// subtractCIDRs возвращает existing без блоков из remove + сколько блоков было
+// фактически удалено (для проверки "блок не найден" — mirror v4-поведения).
+func subtractCIDRs(existing, remove []string) ([]string, int) {
+	toRemove := make(map[string]struct{}, len(remove))
+	for _, c := range remove {
+		toRemove[c] = struct{}{}
+	}
+	var remaining []string
+	var removed int
+	for _, e := range existing {
+		if _, ok := toRemove[e]; ok {
+			removed++
+			continue
+		}
+		remaining = append(remaining, e)
+	}
+	return remaining, removed
 }
 
 // Relocate переносит подсеть в другую zone.
@@ -689,12 +730,13 @@ func (s *SubnetService) checkSubnetCIDROverlap(ctx context.Context, folderID, ne
 }
 
 // checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
-func checkCIDRDisjoint(cidrs []string) error {
+// fieldPrefix — имя поля для error-сообщений (например "v4_cidr_blocks").
+func checkCIDRDisjoint(fieldPrefix string, cidrs []string) error {
 	prefixes := make([]netipPrefix, 0, len(cidrs))
 	for i, c := range cidrs {
 		pr, err := parseNetipPrefix(c)
 		if err != nil {
-			return invalidArg(fmt.Sprintf("v4_cidr_blocks[%d]", i), "must be valid CIDR")
+			return invalidArg(fmt.Sprintf("%s[%d]", fieldPrefix, i), "must be valid CIDR")
 		}
 		prefixes = append(prefixes, pr)
 	}
