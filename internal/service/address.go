@@ -104,10 +104,10 @@ func (s *AddressService) validateInternalIPInSubnet(ctx context.Context, subnetI
 		return mapRepoErr(err)
 	}
 	if len(sub.V4CidrBlocks) == 0 {
-		return invalidArg(
-			"internal_ipv4_address_spec.address",
-			"subnet has no v4 cidr block; cannot validate explicit address",
-		)
+		// CIDR-less subnet (см. kacho-proto#8 — v4_cidr_blocks больше не required
+		// на Subnet.Create): нельзя ни валидировать explicit address, ни выделить
+		// internal IPv4 в такой подсети.
+		return status.Errorf(codes.FailedPrecondition, "subnet %s has no IPv4 CIDR", subnetID)
 	}
 	addr, err := netip.ParseAddr(address)
 	if err != nil {
@@ -739,7 +739,7 @@ func (s *AddressService) AllocateInternalIP(ctx context.Context, addressID strin
 	}
 	if len(sub.V4CidrBlocks) == 0 {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"subnet %s has no v4_cidr_blocks", sub.ID)
+			"subnet %s has no IPv4 CIDR", sub.ID)
 	}
 
 	parsedV4Count := 0

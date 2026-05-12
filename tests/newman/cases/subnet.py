@@ -111,20 +111,148 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    id="SUB-CR-VAL-CIDR-REQUIRED",
-    title="Create без v4_cidr_blocks → InvalidArgument",
-    classes=["VAL"],
-    priority="P0",
+    # kacho-proto#8: v4_cidr_blocks больше не (required) — CIDR-less subnet легален;
+    # реальный диапазон добавляется позже через :addCidrBlocks.
+    id="SUB-CR-NO-CIDR-OK",
+    title="Create subnet без v4CidrBlocks → success; get показывает пустой v4CidrBlocks; addCidrBlocks добавляет один",
+    classes=["CRUD"],
+    priority="P1",
     steps=[
-        *_make_net("nc"),
+        *_make_net("nocidr"),
         Step(
             name="create-no-cidr",
             method="POST",
             path="/vpc/v1/subnets",
             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
-                  "name": "sub-nc-{{runId}}", "zoneId": "{{existingZoneId}}"},
-            test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")],
+                  "name": "sub-nocidr-{{runId}}", "zoneId": "{{existingZoneId}}"},
+            test_script=[*assert_status(200), *assert_operation_envelope(),
+                         *save_from_response("j.id", "opId"),
+                         *save_from_response("j.metadata && j.metadata.subnetId", "subId")],
         ),
+        poll_operation_until_done(),
+        Step(
+            name="get-empty-cidr",
+            method="GET",
+            path="/vpc/v1/subnets/{{subId}}",
+            test_script=[*assert_status(200),
+                         "pm.test('v4CidrBlocks empty', () => pm.expect(pm.response.json().v4CidrBlocks || []).to.have.lengthOf(0));"],
+        ),
+        Step(
+            name="add-cidr",
+            method="POST",
+            path="/vpc/v1/subnets/{{subId}}:addCidrBlocks",
+            body={"v4CidrBlocks": ["10.77.0.0/24"]},
+            test_script=[*assert_status(200), *save_from_response("j.id", "opId")],
+        ),
+        poll_operation_until_done(),
+        Step(
+            name="get-has-cidr",
+            method="GET",
+            path="/vpc/v1/subnets/{{subId}}",
+            test_script=[*assert_status(200),
+                         "pm.test('cidr now present', () => pm.expect(pm.response.json().v4CidrBlocks).to.include('10.77.0.0/24'));"],
+        ),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    id="SUB-CR-V6-OK",
+    title="Create subnet с v6CidrBlocks → echoed back в GET",
+    classes=["CRUD"],
+    priority="P2",
+    steps=[
+        *_make_net("v6"),
+        Step(
+            name="create-v6",
+            method="POST",
+            path="/vpc/v1/subnets",
+            body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                  "name": "sub-v6-{{runId}}", "zoneId": "{{existingZoneId}}",
+                  "v4CidrBlocks": ["10.78.0.0/24"], "v6CidrBlocks": ["fd00:dead:beef::/64"]},
+            test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                         *save_from_response("j.metadata && j.metadata.subnetId", "subId")],
+        ),
+        poll_operation_until_done(),
+        Step(
+            name="get-v6",
+            method="GET",
+            path="/vpc/v1/subnets/{{subId}}",
+            test_script=[*assert_status(200),
+                         "pm.test('v6 cidr echoed', () => pm.expect(pm.response.json().v6CidrBlocks || []).to.include('fd00:dead:beef::/64'));"],
+        ),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    # v6_cidr_blocks soft-immutable: YC принимает в mask (200), у нас no-op (kacho-vpc#10).
+    # Теперь UpdateSubnetRequest имеет поле v6_cidr_blocks (kacho-proto#8) — запрос
+    # должен пройти без ошибки.
+    id="SUB-UPD-V6-NOOP",
+    title="Update с v6CidrBlocks в body+mask → 200, без ошибки (soft-immutable no-op)",
+    classes=["STATE", "CRUD"],
+    priority="P2",
+    steps=[
+        *_make_net("v6upd"),
+        Step(
+            name="create",
+            method="POST",
+            path="/vpc/v1/subnets",
+            body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                  "name": "sub-v6upd-{{runId}}", "zoneId": "{{existingZoneId}}",
+                  "v4CidrBlocks": ["10.79.0.0/24"]},
+            test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                         *save_from_response("j.metadata && j.metadata.subnetId", "subId")],
+        ),
+        poll_operation_until_done(),
+        Step(
+            name="patch-v6",
+            method="PATCH",
+            path="/vpc/v1/subnets/{{subId}}",
+            body={"updateMask": "v6CidrBlocks", "v6CidrBlocks": ["fd00:cafe::/64"]},
+            test_script=[*assert_status(200), *save_from_response("j.id", "opId")],
+        ),
+        poll_operation_until_done(),
+        Step(name="assert-no-error", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('update op done without error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    # Address с explicit internal_ipv4 в CIDR-less подсеть → FailedPrecondition
+    # "subnet <id> has no IPv4 CIDR" (kacho-proto#8 — guard в address.go).
+    id="SUB-CR-NEG-ADDR-INTO-CIDRLESS",
+    title="Address.Create internal_ipv4 в CIDR-less subnet → 400 FailedPrecondition",
+    classes=["NEG", "CONF"],
+    priority="P1",
+    steps=[
+        *_make_net("addrcl"),
+        Step(name="create-cidrless-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-addrcl-{{runId}}", "zoneId": "{{existingZoneId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="addr-into-cidrless", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "addr-cl-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{subId}}", "address": "10.5.5.5"}},
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('mentions no IPv4 CIDR', () => pm.expect(pm.response.json().message).to.include('no IPv4 CIDR'));"]),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
         _cleanup_net(),
     ],
 ))

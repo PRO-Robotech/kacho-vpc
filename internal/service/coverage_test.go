@@ -65,23 +65,22 @@ func TestNetworkService_ListSubnets_NetworkNotFound(t *testing.T) {
 
 // ---- SubnetService — extra coverage ----
 
-func TestSubnetService_Create_RequiredCidr(t *testing.T) {
+func TestSubnetService_Create_NoCidr_OK(t *testing.T) {
+	// kacho-proto#8: v4_cidr_blocks больше не required — CIDR-less subnet легален.
 	or := newMockOpsRepo()
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	svc := NewSubnetService(newMockSubnetRepo(), nr, newMockFolderClient(true), or, nil)
 
-	_, err := svc.Create(context.Background(), CreateSubnetReq{
+	op, err := svc.Create(context.Background(), CreateSubnetReq{
 		FolderID:  "f1",
 		Name:      "sub1",
 		NetworkID: net.ID,
 		ZoneID:    "ru-central1-a",
-		// V4CidrBlocks empty → InvalidArgument (TODO #2)
+		// V4CidrBlocks empty → теперь OK.
 	})
-	require.Error(t, err)
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	assert.Contains(t, st.Message(), "v4_cidr_blocks")
+	require.NoError(t, err)
+	require.NotNil(t, op)
 }
 
 func TestSubnetService_Create_BadCidr(t *testing.T) {
@@ -239,15 +238,17 @@ func TestRouteTableService_ListOperations_NotFound(t *testing.T) {
 
 // ---- SecurityGroupService — full coverage of validation paths ----
 
-func TestSecurityGroupService_Create_RequiresFolderAndNetwork(t *testing.T) {
+func TestSecurityGroupService_Create_RequiresFolder(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
+	// folder_id обязателен.
 	_, err := svc.Create(context.Background(), CreateSecurityGroupReq{Name: "sg"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Create(context.Background(), CreateSecurityGroupReq{FolderID: "f1", Name: "sg"})
-	st, _ = status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
+	// network_id больше НЕ обязателен (kacho-proto#8) — SG без сети создаётся.
+	op, err := svc.Create(context.Background(), CreateSecurityGroupReq{FolderID: "f1", Name: "sg"})
+	require.NoError(t, err)
+	require.NotNil(t, op)
 }
 
 func TestSecurityGroupService_Update_Validates(t *testing.T) {

@@ -86,9 +86,9 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	if req.NetworkID == "" {
-		return nil, invalidArg("network_id", "network_id is required")
-	}
+	// network_id больше НЕ обязателен (kacho-proto#8): пустой network_id →
+	// "глобальная" (folder-level, unbound) security group. Если network_id
+	// задан — существование сети проверяется (sync + async backstop в worker'е).
 	if err := corevalidate.NameVPC("name", req.Name); err != nil {
 		return nil, err
 	}
@@ -105,11 +105,13 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
 		return nil, err
 	}
-	if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+	if req.NetworkID != "" {
+		if _, err := s.networkRepo.Get(ctx, req.NetworkID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Network %s not found", req.NetworkID)
+			}
+			return nil, mapRepoErr(err)
 		}
-		return nil, mapRepoErr(err)
 	}
 	if req.Name != "" {
 		existing, _, lerr := s.repo.List(ctx, SecurityGroupFilter{FolderID: req.FolderID, Name: req.Name}, Pagination{})
@@ -141,9 +143,12 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 		if !exists {
 			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 		}
-		// Проверяем, что network существует
-		if _, gerr := s.networkRepo.Get(ctx, req.NetworkID); gerr != nil {
-			return nil, mapRepoErr(gerr)
+		// Проверяем, что network существует (если задан — пустой network_id
+		// означает folder-level / unbound SG, см. kacho-proto#8).
+		if req.NetworkID != "" {
+			if _, gerr := s.networkRepo.Get(ctx, req.NetworkID); gerr != nil {
+				return nil, mapRepoErr(gerr)
+			}
 		}
 
 		sg := &domain.SecurityGroup{

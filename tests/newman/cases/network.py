@@ -61,6 +61,30 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # vpn_id — 24-bit data-plane идентификатор сети (KAC-2), ИНФРА-ЧУВСТВИТЕЛЬНОЕ:
+    # отдаётся только через InternalNetworkService.GetNetwork (не REST-exposed),
+    # на публичном GET /vpc/v1/networks/{id} его быть НЕ должно (workspace CLAUDE.md
+    # §«Инфра-чувствительные данные»).
+    id="NET-GET-NO-VPNID-OK",
+    title="GET /vpc/v1/networks/{id} НЕ содержит vpnId (internal-only поле)",
+    classes=["CRUD", "CONF"],
+    priority="P1",
+    steps=[
+        Step(name="create", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-novpn-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "createdNetworkId")]),
+        poll_operation_until_done(),
+        Step(name="get-no-vpnid", method="GET", path="/vpc/v1/networks/{{createdNetworkId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('no vpnId on public Network', () => pm.expect(j).to.not.have.property('vpnId'));"]),
+        Step(name="cleanup-delete", method="DELETE", path="/vpc/v1/networks/{{createdNetworkId}}",
+             test_script=[*assert_status(200)]),
+    ],
+))
+
+CASES.append(Case(
     id="NET-CR-VAL-FOLDER-REQUIRED",
     title="Create без folderId → InvalidArgument (folder_id required)",
     classes=["VAL"],
