@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -56,6 +57,12 @@ type SubnetService struct {
 	// используется только для обогащения ListUsedAddresses записями referrer'ов
 	// (кто использует адрес). nil → references[] пуст (graceful degradation).
 	addrRefRepo AddressRepo
+	// nicRepo — опционально (wired через SetNICRepo в cmd/vpc/main.go): используется
+	// в Delete для precondition-проверки «нет ли в подсети NIC, приаттаченного к
+	// инстансу». nil → проверка пропускается (FK cascade всё равно подберёт
+	// address-less NIC; address-bearing NIC блокирует подсеть через цепочку
+	// NIC → Address → Subnet).
+	nicRepo NetworkInterfaceRepo
 }
 
 // NewSubnetService создаёт SubnetService.
@@ -69,6 +76,11 @@ func NewSubnetService(repo SubnetRepo, networkRepo NetworkRepo, folderClient Fol
 // SetAddressRefRepo инъектирует AddressRepo для обогащения ListUsedAddresses
 // записями referrer'ов (кто использует адрес). Вызывается из composition-root.
 func (s *SubnetService) SetAddressRefRepo(r AddressRepo) { s.addrRefRepo = r }
+
+// SetNICRepo инъектирует NetworkInterfaceRepo для precondition-проверки в Delete
+// (подсеть с NIC, приаттаченным к compute-инстансу, удалить нельзя). Вызывается
+// из composition-root.
+func (s *SubnetService) SetNICRepo(r NetworkInterfaceRepo) { s.nicRepo = r }
 
 // validateZoneID — sync-валидация zone_id: required + existence в БД.
 //
@@ -767,6 +779,27 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	}
 	if len(addrs) > 0 {
 		return nil, status.Error(codes.FailedPrecondition, "Subnet has allocated internal addresses")
+	}
+	// KAC-31: a NIC no longer *directly* blocks its subnet (FK is ON DELETE
+	// CASCADE — migration 0011). An address-less NIC is cleaned up by the cascade;
+	// a NIC with addresses already blocked the subnet above (via the address
+	// chain). But a NIC still attached to a compute instance must not be silently
+	// cascade-deleted — reject the subnet delete until it's detached.
+	if s.nicRepo != nil {
+		nics, nerr := s.nicRepo.ListBySubnet(ctx, id)
+		if nerr != nil {
+			return nil, mapRepoErr(nerr)
+		}
+		var attached []string
+		for _, n := range nics {
+			if n.UsedByID != "" {
+				attached = append(attached, n.ID)
+			}
+		}
+		if len(attached) > 0 {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"subnet %s has network interface(s) attached to instances (%s); detach them first", id, strings.Join(attached, ", "))
+		}
 	}
 
 	op, err := operations.New(

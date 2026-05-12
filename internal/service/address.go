@@ -664,6 +664,28 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has deletion_protection enabled; clear it via Update before Delete", id)
 	}
+	// An Address in use by a NetworkInterface (or any other referrer) can not be
+	// deleted — the NIC's v4_address_ids/v6_address_ids would dangle and the
+	// address_references row would cascade-delete silently. Block before the
+	// Operation is created (KAC-31). `used` is kept in sync with the referrer-row
+	// by SetReference/ClearReference, so we read the referrer for a precise message.
+	if existing.Used {
+		ref, refErr := s.repo.GetReference(ctx, id)
+		switch {
+		case refErr == nil && ref != nil && ref.ReferrerType == niReferrerType:
+			referrer := ref.ReferrerName
+			if referrer == "" {
+				referrer = ref.ReferrerID
+			}
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"address %s is in use by network interface %s; detach it before deleting the address", id, referrer)
+		case refErr == nil && ref != nil:
+			return nil, status.Errorf(codes.FailedPrecondition, "address %s is in use", id)
+		default:
+			// No referrer row (or read failed) but used=true — still block generically.
+			return nil, status.Errorf(codes.FailedPrecondition, "address %s is in use", id)
+		}
+	}
 
 	op, err := operations.New(
 		ids.PrefixOperationVPC,

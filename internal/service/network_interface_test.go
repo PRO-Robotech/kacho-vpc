@@ -43,6 +43,16 @@ func (r *niRepoFake) ListByHypervisor(_ context.Context, hvID string) ([]*domain
 	}
 	return out, nil
 }
+func (r *niRepoFake) ListBySubnet(_ context.Context, subnetID string) ([]*domain.NetworkInterface, error) {
+	var out []*domain.NetworkInterface
+	for _, n := range r.data {
+		if n.SubnetID == subnetID {
+			cp := *n
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
 func (r *niRepoFake) Insert(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
 	r.data[n.ID] = n
 	return n, nil
