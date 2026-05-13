@@ -53,6 +53,43 @@ CASES.append(Case(
     ],
 ))
 
+CASES.append(Case(
+    # KAC-33: ListOperations no longer does a repo.Get precondition — operation
+    # history must remain reachable after the resource is deleted (the operations
+    # rows have no FK cascade). verifies subnet :listOperations after delete.
+    id="OP-LIST-AFTER-DELETE-OK",
+    title="ListOperations подсети после её удаления → 200, непустой список (Create + Delete)",
+    classes=["STATE", "CRUD"], priority="P1",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "oplistdel-net-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "oplistdel-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.249.7.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="listops-before", method="GET", path="/vpc/v1/subnets/{{subId}}/operations",
+             test_script=[*assert_status(200), "const j = pm.response.json();",
+                          "pm.test('has Create op', () => pm.expect((j.operations||[]).length).to.be.at.least(1));"]),
+        Step(name="del-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="listops-after-delete", method="GET", path="/vpc/v1/subnets/{{subId}}/operations",
+             test_script=[
+                 *assert_status(200), "const j = pm.response.json();",
+                 "pm.test('history survives delete (Create + Delete)', () => pm.expect((j.operations||[]).length).to.be.at.least(2));",
+             ]),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
 # Расширение: CONF text
 CASES.append(Case(
     id="OP-GET-CONF-NF-TEXT",

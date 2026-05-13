@@ -1053,6 +1053,75 @@ CASES.append(Case(
     ],
 ))
 
+CASES.append(Case(
+    # KAC-33: a Subnet with a NIC blocks Subnet.Delete (FK RESTRICT, migration
+    # 0012) — and hence Network.Delete (FK RESTRICT subnet→network). verifies the
+    # NIC-in-subnet variant of the network-not-empty contract.
+    id="NET-DEL-NEG-HAS-SUBNET-WITH-NIC",
+    title="Delete Network c Subnet, в которой NIC → FailedPrecondition (not empty); cleanup снизу вверх",
+    classes=["NEG", "STATE"], priority="P0",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-subnic-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-subnic-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.248.3.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="cr-nic", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}", "name": "nic-subnic-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('not empty text', () => pm.expect(pm.response.json().message).to.match(/^Network .* is not empty$/));",
+             ]),
+        # cleanup снизу вверх: NIC → Subnet → Network
+        Step(name="cleanup-nic", method="DELETE", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
+    # KAC-33: ListOperations no longer does a repo.Get precondition — history must
+    # survive resource deletion. verifies network /operations after delete.
+    id="NET-LISTOPS-AFTER-DELETE-OK",
+    title="ListOperations сети после её удаления → 200, непустой список (Create + Delete)",
+    classes=["STATE", "CRUD"], priority="P1",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-listops-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="listops-before", method="GET", path="/vpc/v1/networks/{{netId}}/operations",
+             test_script=[*assert_status(200), "const j = pm.response.json();",
+                          "pm.test('has Create op', () => pm.expect((j.operations||[]).length).to.be.at.least(1));"]),
+        Step(name="del-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="listops-after-delete", method="GET", path="/vpc/v1/networks/{{netId}}/operations",
+             test_script=[
+                 *assert_status(200), "const j = pm.response.json();",
+                 "pm.test('history survives delete (Create + Delete)', () => pm.expect((j.operations||[]).length).to.be.at.least(2));",
+             ]),
+    ],
+))
+
 # === Required-field matrix + Immutable matrix для Network ===
 CASES.extend(required_fields_matrix("NET", "/vpc/v1/networks",
     {"folderId": "{{_suiteFolderId}}", "name": "net-req-{{runId}}"},

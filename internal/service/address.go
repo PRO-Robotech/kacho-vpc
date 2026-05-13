@@ -593,9 +593,8 @@ func (s *AddressService) ListOperations(ctx context.Context, addressID string, p
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, addressID); err != nil {
 		return nil, "", err
 	}
-	if _, err := s.repo.Get(ctx, addressID); err != nil {
-		return nil, "", mapRepoErr(err)
-	}
+	// NB: no repo.Get precondition — operation history must remain reachable
+	// after the resource is deleted (operations rows have no FK cascade).
 	return s.opsRepo.List(ctx, operations.ListFilter{
 		ResourceID: addressID,
 		PageSize:   p.PageSize,

@@ -359,6 +359,57 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-33 (issue #2 surface): NIC referencing an internal_ipv6 Address — create
+    # network + subnet (with v6 cidr) + internal_ipv6 Address + NIC with that addr
+    # id in v6AddressIds → GET NIC echoes v6AddressIds.
+    id="NIC-CR-WITH-V6-ADDR-OK",
+    title="Create internal_ipv6 Address в subnet с v6 cidr → NIC с этим id в v6AddressIds → GET → echoed",
+    classes=["CRUD"],
+    priority="P2",
+    steps=[
+        Step(name="pre-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-v6addr-net-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="pre-subnet", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "nic-v6addr-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.61.0.0/24"], "v6CidrBlocks": ["fd00:cafe:f00d::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="create-v6-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-v6addr-addr-{{runId}}",
+                   "internalIpv6AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="create-nic-with-v6-addr", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+                   "name": "nic-v6addr-{{runId}}", "v6AddressIds": ["{{addrId}}"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="assert-create-ok", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('NIC create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get-nic", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('v6AddressIds echoed', () => pm.expect(pm.response.json().v6AddressIds || []).to.include(pm.environment.get('addrId')));"]),
+        *_cleanup_nic(),
+        Step(name="cleanup-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=["pm.test('cleanup addr (200 or 400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_subnet(),
+        poll_operation_until_done(),
+        _cleanup_net(),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
     # KAC-31: Address, используемый NIC через v4AddressIds, нельзя удалить —
     # AddressService.Delete синхронно отвергает FAILED_PRECONDITION (409). После
     # удаления NIC адрес освобождается и удаляется.

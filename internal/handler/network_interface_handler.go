@@ -160,12 +160,15 @@ func (h *NetworkInterfaceHandler) ListOperations(ctx context.Context, req *vpcv1
 	if req.NetworkInterfaceId == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_interface_id required")
 	}
-	cur, err := h.svc.Get(ctx, req.NetworkInterfaceId)
-	if err != nil {
-		return nil, err
-	}
-	if err := AssertFolderOwnership(ctx, cur.FolderID); err != nil {
-		return nil, err
+	// ListOperations должен работать и после удаления ресурса (история операций).
+	// Get — best-effort: ресурс жив → проверяем folder-ownership; удалён (NotFound)
+	// → пропускаем проверку и отдаём накопленные операции.
+	if cur, gerr := h.svc.Get(ctx, req.NetworkInterfaceId); gerr == nil {
+		if err := AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+			return nil, err
+		}
+	} else if status.Code(gerr) != codes.NotFound {
+		return nil, gerr
 	}
 	ops, next, err := h.svc.ListOperations(ctx, req.NetworkInterfaceId, svc.Pagination{PageSize: req.PageSize, PageToken: req.PageToken})
 	if err != nil {
