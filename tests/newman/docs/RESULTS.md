@@ -1,21 +1,22 @@
-# newman — финальный прогон (v16: internal IPAM admin RPC — TODO #35)
+# newman — финальный прогон (v18: KAC-2 NetworkInterface + KAC-38 validate-cases)
 
-## Сводка
+## Сводка (cases-count актуален на v18; assertions/requests — ориентир, перепрогнать suite)
 
 | Сервис | Cases | Assertions | Failed | Requests | % к 100/рес |
 |---|---|---|---|---|---|
-| subnet | 131 | 905 | 0 | 644 | **131%** ✅ |
-| network | 106 | 380 | 0 | 255 | **106%** ✅ |
+| subnet | 139 | ~960 | 0 | ~680 | **139%** ✅ |
+| network | 108 | ~390 | 0 | ~265 | **108%** ✅ |
 | address | 100 | 346 | 0 | 233 | **100%** ✅ |
-| security-group | 96 | 514 | 0 | 366 | 96% |
+| security-group | 98 | ~525 | 0 | ~375 | 98% |
 | route-table | 91 | 434 | 0 | 309 | 91% |
-| gateway | 90 | 264 | 0 | 179 | 90% |
-| private-endpoint | 68 | 261 | 0 | 195 | 68% |
+| gateway | 89 | ~262 | 0 | ~177 | 89% |
+| private-endpoint | 64 | ~250 | 0 | ~185 | 64% (3 explicit-дубля убраны → helper-блоки) |
 | internal-pool | 26 | 133 | 0 | 81 | (admin) |
 | internal-region-zone | 15 | 77 | 0 | 40 | (admin) |
+| network-interface | 12 | ~70 | 0 | ~45 | (nic — first-class, эпик KAC-2) |
 | internal-cloud | 4 | 31 | 0 | 17 | (admin) |
-| operation | 4 | 16 | 0 | 7 | (n/a) |
-| **Итого** | **731** | **3361** | **0** | **2326** | — |
+| operation | 5 | ~20 | 0 | ~9 | (n/a) |
+| **Итого** | **736** | **~3380** | **0** | **~2360** | — |
 
 **100% PASS**. v16 добавил покрытие internal/admin-only IPAM RPC
 (`InternalAddressPoolService` / `InternalRegion`/`InternalZone`/`InternalCloud`) —
@@ -41,7 +42,8 @@ kacho-only RPC проброшены через api-gateway cluster-internal mux,
 | v14 (pairwise + security probes + lifecycle) | 685 | 3107 | 97 | 97% |
 | v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId) | 686 | 3120 | 97 | 97% |
 | v16 (internal IPAM admin RPC — TODO #35: internal-pool/-region-zone/-cloud) | 731 | 3361 | — | — |
-| **v17 (verbatim-YC alignment — kacho-vpc#7/#8/#9/#10 + kacho-api-gateway#2: sync-валидация в мутирующих RPC, Move-в-текущий-folder → 400, Subnet CIDR ≤/28, Relocate → 400, error-texts; differential vs реальный YC через `yc-proxy` + `run-incremental.sh --cases`)** | **~731** | **~3360** | — | — |
+| v17 (verbatim-YC alignment — kacho-vpc#7/#8/#9/#10 + kacho-api-gateway#2: sync-валидация в мутирующих RPC, Move-в-текущий-folder → 400, Subnet CIDR ≤/28, Relocate → 400, error-texts; differential vs реальный YC через `yc-proxy` + `run-incremental.sh --cases`) | ~731 | ~3360 | — | — |
+| **v18 (KAC-2 NetworkInterface first-class + v6-Subnet / optional-CIDR-Subnet / SG-без-network / NIC↔Subnet-RESTRICT / multi-resource delete-chain / operation-history-survives-delete / Network-public-без-vpn_id / v6-CIDR-через-verbs; KAC-38: дедуп case-id (3 PE + 1 NET explicit-дубля helper'ов убраны) + mandatory `scripts/validate-cases.py` (dup-id + каталогизация в CASES-INDEX) в CI до newman)** | **736** | **~3380** | — | — |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 

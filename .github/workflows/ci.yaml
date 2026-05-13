@@ -125,6 +125,12 @@ jobs:
       # Поднимает стек (pg-rm + pg-vpc + resource-manager + vpc + api-gateway на host :28080),
       # сеет фикстуры (Org/Cloud/Folder ids → ci/.seeded-ids.env, region ru-central1 + zones a..d,
       # default EXTERNAL_PUBLIC AddressPool). build context = $(abspath ..) = $GITHUB_WORKSPACE.
+      # MANDATORY: дёшево (pure-Python, без сети) — hard-fail на дубль case-id и на кейс,
+      # не зафиксированный в docs/CASES-INDEX.md (или не помеченный `# index: <ref>`).
+      # Гоняется ДО тяжёлого ci-up/newman, чтобы не уникальный/не каталогизированный кейс
+      # ронял CI рано. См. tests/newman/scripts/validate-cases.py, kacho-vpc/CLAUDE.md §14.3.
+      - name: validate newman cases (uniqueness + CASES-INDEX coverage)
+        run: python3 tests/newman/scripts/validate-cases.py
       - name: ci-up (build images + compose + seed)
         run: make -C ../kacho-deploy ci-up PROJECT_ROOT="$GITHUB_WORKSPACE"
       - run: python3 tests/newman/scripts/gen.py

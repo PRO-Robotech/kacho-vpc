@@ -70,11 +70,14 @@ tests/newman/
 └─ out/                            — newman raw output (gitignored snap-логи)
 ```
 
-Рабочий цикл: правишь `cases/<svc>.py` → `python3 tests/newman/scripts/gen.py [<svc>]`
+Рабочий цикл: правишь `cases/<svc>.py` → `python3 tests/newman/scripts/validate-cases.py`
+(MANDATORY — hard-fail на дубль case-id и на кейс, не зафиксированный в `docs/CASES-INDEX.md` /
+не помеченный `# index: <ref>`; гоняется в CI до newman) → `python3 tests/newman/scripts/gen.py [<svc>]`
 (перегенерить коллекции) → `tests/newman/scripts/run.sh [--service <svc>] [--delay N] [--bail]`
 → результат в `tests/newman/out/summary.txt`. Каждый case — внутри своего `runId`,
 suite — внутри pre-allocated `existingFolderId`/`existingFolderCrossId` (env);
-Org/Cloud/Folder сьюта **не создаёт**. Уникальные паттерны фиксируй в `docs/CASES-INDEX.md`,
+Org/Cloud/Folder сьюта **не создаёт**. Уникальные паттерны фиксируй в `docs/CASES-INDEX.md`
+(инстанс известного паттерна — пометь строку с `id=` тегом `# index: <pattern-ref>`),
 дефекты/наблюдения — в GitHub Issues (`PRO-Robotech/kacho-vpc`, см. `CLAUDE.md` §14.4); by-design расхождения с verbatim-YC — `docs/architecture/07-known-divergences.md`; отдельного BUG-MAP больше нет.
 
 ## 4. Quota-aware pipeline (3 suites)
@@ -329,13 +332,24 @@ e2e-newman:
 6. ☐ Mutation → polling до `done=true` (15s timeout).
 7. ☐ Assertion на verbatim YC error text (если negative case).
 8. ☐ Class из `TAXONOMY.md` проставлен; если новый — обновлён `TAXONOMY.md`.
-9. ☐ Перегенерены коллекции: `python3 scripts/gen.py <service>`.
-10. ☐ Локальный прогон `./scripts/run.sh --service <svc>` зелёный.
-11. ☐ Уникальный паттерн зафиксирован в `CASES-INDEX.md`.
-12. ☐ **Кейс смаплен на регламент**: case-id добавлен в `Validated-by` соответствующего `REQ-*`
+9. ☐ **MANDATORY — валидация уникальности проходит**: `python3 tests/newman/scripts/validate-cases.py`
+    (≡ `python3 tests/newman/scripts/gen.py --validate`; гоняется в CI **до** newman). Hard-fail на:
+    (a) **дубль case-id** среди всех `cases/*.py` / helper-блоков; (b) **кейс не зафиксирован
+    в `docs/CASES-INDEX.md`** — суффикс-паттерн `*-<SUFFIX>` / литеральный case-id отсутствует в
+    каталоге **и** строка с `id=` не помечена тегом `# index: <pattern-ref>`. PR без зелёного
+    `validate-cases.py` не открывать.
+10. ☐ Каталогизация (зависит от п.9):
+    - **Новый уникальный паттерн** → запись в `CASES-INDEX.md` (pattern-id, classes, P, apps,
+      что проверяет, `Verifies REQ-*` если мапится) + при необходимости новый `REQ-*` в
+      `PRODUCT-REQUIREMENTS.md` + апдейт `TEST-PLAN.md`/`RESULTS.md`.
+    - **Инстанс существующего паттерна** → пометить строку с `id=` тегом `# index: <pattern-ref>`
+      (в индекс новую запись НЕ добавлять).
+11. ☐ Перегенерены коллекции: `python3 scripts/gen.py [<service>]` (тоже hard-fail на дубль case-id).
+12. ☐ Локальный прогон `./scripts/run.sh --service <svc>` зелёный.
+13. ☐ **Кейс смаплен на регламент**: case-id добавлен в `Validated-by` соответствующего `REQ-*`
     в `PRODUCT-REQUIREMENTS.md`. Нет подходящего REQ → сначала заведи REQ (вместе с `qa-test-engineer`), потом кейс.
     Кейс без REQ = пробел в регламенте, не оставлять.
-13. ☐ Расхождение с verbatim-YC, если заметил → `docs/architecture/07-known-divergences.md` (намеренное) или GitHub Issue (баг).
+14. ☐ Расхождение с verbatim-YC, если заметил → `docs/architecture/07-known-divergences.md` (намеренное) или GitHub Issue (баг).
 
 ## 13. Распространённые ошибки
 

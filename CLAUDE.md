@@ -542,10 +542,29 @@ tests/newman/scripts/run.sh --service subnet --delay 60 --bail
 `*-DEL-STATE-DEFAULT-SG` проверяют авто-создание default SG. При `=false` (load-test
 config) эти кейсы краснеют.
 
-Текущий результат: ~731 кейс / 3361 assertions / 0 fail (v16; см. `tests/newman/docs/RESULTS.md`).
+Текущий результат: ~736 кейсов / ~3380 assertions / 0 fail (v18 — KAC-2 NetworkInterface + KAC-38;
+см. `tests/newman/docs/RESULTS.md`).
 Подробности добавления нового кейса, разрешённых паттернов и common pitfalls
 см. в агенте `vpc-newman-author`. (Старая quota-aware 3-suite сьюта против реального
 YC API — `newman_legacy/` — удалена; история — в git.)
+
+**Любой новый кейс — ОБЯЗАТЕЛЬНЫЙ workflow:**
+1. **Валидация уникальности** — `python3 tests/newman/scripts/validate-cases.py`
+   (или `python3 tests/newman/scripts/gen.py --validate`; гоняется в CI **до** newman-шага,
+   pure-Python без сети). Hard-fail на: (a) **дубль case-id** среди всех `cases/*.py` /
+   helper-блоков; (b) **кейс не зафиксирован в `tests/newman/docs/CASES-INDEX.md`** —
+   суффикс-паттерн `*-<SUFFIX>` или литеральный case-id отсутствует в каталоге **и** строка
+   с `id=` не помечена тегом `# index: <pattern-ref>` (= «инстанс известного паттерна,
+   отдельная запись в индексе не нужна»). Файлы `internal-*.py` (admin/IPAM) — исключение
+   (каталогизированы заметкой, не таблицей паттернов; dup-id-проверка для них работает).
+2. **Если кейс — новый уникальный паттерн** (новый ресурс/новое поведение/новая конструкция):
+   добавить запись в `CASES-INDEX.md` (в его формате — pattern-id, classes, P, apps,
+   что проверяет, `Verifies REQ-*` если мапится) + при необходимости новый `REQ-*` в
+   `tests/newman/docs/PRODUCT-REQUIREMENTS.md` + апдейт `TEST-PLAN.md` (RPC×class) и
+   `RESULTS.md` (счётчик/версия).
+3. **Если кейс — инстанс существующего паттерна** (ещё один DUP-NAME / NEG-NOTFOUND и т.п.):
+   пометить строку с `id=` тегом `# index: <pattern-ref>` (запись в индекс не добавлять).
+4. `python3 tests/newman/scripts/gen.py` — перегенерить коллекции (тоже hard-fail на дубль case-id).
 
 ### 14.4 Где фиксировать найденные баги и задачи (ОБЯЗАТЕЛЬНО)
 

@@ -98,8 +98,8 @@ CASES.append(conf_not_found_text("PE", "/vpc/v1/endpoints", "PrivateEndpoint"))
 CASES.append(state_update_unknown_mask("PE", "/vpc/v1/endpoints"))
 
 CASES.append(Case(
-    id="PE-LOP-CRUD-OK",
-    title="ListOperations PrivateEndpoint (через garbage id для негативного покрытия)",
+    id="PE-LOP-NEG-PARENT-NF",  # index: *-LOP-NEG-PARENT-NF
+    title="ListOperations PrivateEndpoint несуществующего → 404 или 200 пустой",
     classes=["NEG"], priority="P2",
     steps=[
         Step(name="list-ops-garbage", method="GET",
@@ -417,24 +417,8 @@ CASES.append(Case(
                 test_script=[*save_from_response("j.id", "opId")])],
 ))
 
-CASES.append(Case(
-    id="PE-DEL-CONF-NF-TEXT",
-    title="Delete несуществующего PE → verbatim 'PrivateEndpoint ... not found'",
-    classes=["CONF", "NEG"], priority="P1",
-    steps=[Step(name="del-nx", method="DELETE", path="/vpc/v1/endpoints/{{garbageVpcId}}",
-                test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                             "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint .* not found$/));"])],
-))
-
-CASES.append(Case(
-    id="PE-UPD-CONF-NF-TEXT",
-    title="Update несуществующего PE → verbatim text",
-    classes=["CONF", "NEG"], priority="P1",
-    steps=[Step(name="upd-nx", method="PATCH", path="/vpc/v1/endpoints/{{garbageVpcId}}",
-                body={"updateMask": "description", "description": "x"},
-                test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                             "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^PrivateEndpoint .* not found$/));"])],
-))
+# NB: PE-DEL-CONF-NF-TEXT / PE-UPD-CONF-NF-TEXT уже определены выше (explicit-блок) —
+# не дублируем (validate-cases.py: hard-fail на дубль case-id).
 
 CASES.append(Case(
     id="PE-LST-PAGE-ZERO",
@@ -452,23 +436,8 @@ CASES.append(Case(
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
-CASES.append(Case(
-    id="PE-LST-FILTER-NAME-OK",
-    title="List PE с filter=name='x' → 200",
-    classes=["FILTER", "CRUD"], priority="P2",
-    steps=[Step(name="lst-f", method="GET",
-                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=name%3D%22nonexistent%22",
-                test_script=[*assert_status(200)])],
-))
-
-CASES.append(Case(
-    id="PE-LST-FILTER-GARBAGE",
-    title="List PE с garbage filter → 200 или 400",
-    classes=["FILTER", "VAL"], priority="P2",
-    steps=[Step(name="lst-fbad", method="GET",
-                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=garbage%20!syntax",
-                test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
-))
+# NB: PE-LST-FILTER-NAME-OK / PE-LST-FILTER-GARBAGE генерятся filter_syntax_block("PE", …)
+# выше — explicit-дубли убраны (validate-cases.py: hard-fail на дубль case-id).
 
 CASES.append(Case(
     id="PE-LST-ROUNDTRIP",

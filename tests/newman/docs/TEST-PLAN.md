@@ -1,4 +1,9 @@
-# Test Plan — newman coverage map (актуально на 2026-05-11)
+# Test Plan — newman coverage map (актуально на 2026-05-13)
+
+> Новый кейс ОБЯЗАН пройти `scripts/validate-cases.py` (hard-fail в CI до newman:
+> дубль case-id; кейс не зафиксирован в `CASES-INDEX.md` / не помечен `# index: <ref>`).
+> Новый уникальный паттерн → запись в `CASES-INDEX.md` (+ при необходимости `REQ-*` в
+> `PRODUCT-REQUIREMENTS.md`, апдейт этого файла + `RESULTS.md`). См. `CLAUDE.md` §14.3.
 
 Карта `(сервис, RPC) → классы → факт реализации`. Статусы:
 `□` не начато, `◐` частично (есть happy ИЛИ negative), `■` базовое
@@ -111,6 +116,21 @@
 | ListOperations | (planned) | — | □ |
 
 **Coverage: 5/6 RPC (83%).**
+
+## NetworkInterfaceService (8 RPC) — first-class ресурс, эпик KAC-2
+
+| RPC | Классы | Cases | Статус |
+|---|---|---|---|
+| Get | CRUD (lean-проекция) | NIC-CR-CRUD-OK (get-after-create) | ◐ |
+| List | CRUD (lean, no infra-fields) | NIC-LIST-OK | ◐ |
+| Create | CRUD, NEG (bad subnet, dup name), + with-addr / with-v6-addr / with-unbound-sg | NIC-CR-* (6) | ▣ |
+| Update | CRUD (name/labels/sg via mask) | NIC-UPD-OK | ◐ |
+| Delete | CRUD-OK, NEG (attached → FailedPrecondition) | NIC-DEL-OK, NIC-DEL-NEG-ATTACHED | ■ |
+| AttachToInstance | CRUD/STATE (used_by set) | NIC-ATTACH-DETACH-OK | ◐ |
+| DetachFromInstance | CRUD/STATE (used_by cleared) | NIC-ATTACH-DETACH-OK | ◐ |
+| ListOperations | (planned) | — | □ |
+
+**Coverage: 7/8 RPC (88%).** Связанный кейс в address.py/network.py/subnet.py: `ADDR-DEL-NEG-USED-BY-NIC`, `NET-DEL-NEG-HAS-SUBNET-WITH-NIC`, `SUB-DEL-NEG-HAS-NIC`, `NET-SUBNET-ADDR-NIC-DELETE-CHAIN`.
 
 ## OperationService (1 RPC)
 

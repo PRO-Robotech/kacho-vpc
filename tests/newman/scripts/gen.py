@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = Path(__file__).resolve().parent
 CASES_DIR = ROOT / "cases"
 OUT_DIR = ROOT / "collections"
 
@@ -1516,12 +1517,40 @@ def load_cases_module(path: Path):
     return mod
 
 
+def _check_duplicate_ids() -> int:
+    """HARD-FAIL: case-id обязан быть уникален среди всех кейсов всех сервисов."""
+    seen: Dict[str, str] = {}
+    dups: List[str] = []
+    for f in sorted(CASES_DIR.glob("*.py")):
+        mod = load_cases_module(f)
+        for c in getattr(mod, "CASES", []):
+            if c.id in seen:
+                dups.append(f"  - {c.id!r}: {seen[c.id]} и {f.name}")
+            else:
+                seen[c.id] = f.name
+    if dups:
+        sys.stderr.write("gen: FAIL — дубли case-id (case-id должен быть уникален):\n")
+        sys.stderr.write("\n".join(dups) + "\n")
+        return 1
+    return 0
+
+
 def main(argv: List[str]) -> int:
+    args = argv[1:]
+    if "--validate" in args:
+        # делегируем полную валидацию (dup-id + каталогизация в CASES-INDEX) в validate-cases.py
+        import runpy
+        sys.argv = [str(SCRIPTS_DIR / "validate-cases.py")]
+        runpy.run_path(str(SCRIPTS_DIR / "validate-cases.py"), run_name="__main__")
+        return 0  # validate-cases.py делает sys.exit сам
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    want = set(argv[1:])
+    want = set(args)
     found = sorted(CASES_DIR.glob("*.py"))
     if not found:
         print(f"no case files in {CASES_DIR}")
+        return 1
+    if _check_duplicate_ids() != 0:
         return 1
     for f in found:
         svc = f.stem

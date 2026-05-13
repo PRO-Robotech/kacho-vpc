@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "2b369a93-f933-4a17-bcd7-4abb9e12829d",
+    "_postman_id": "a7e616ca-0142-411a-9e5c-11e26196839e",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1251,60 +1251,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "NET-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=folder_id → InvalidArgument (immutable)",
-      "description": "class:STATE | class:VAL | priority:P1",
-      "item": [
-        {
-          "name": "update-folder-via-mask",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks/{{garbageId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "networks",
-                "{{garbageId}}"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
-                  "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
-                  "});"
                 ]
               }
             }
