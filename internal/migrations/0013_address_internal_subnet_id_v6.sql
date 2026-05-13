@@ -24,6 +24,19 @@ ALTER TABLE addresses ADD COLUMN internal_subnet_id text GENERATED ALWAYS AS (
     ELSE NULL
   END
 ) STORED;
+-- Purge addresses whose internal v4/v6 subnet_id points at a subnet that no
+-- longer exists — pre-existing dangling rows produced by exactly the bug this
+-- migration fixes (a v6 address used to NOT block deleting its subnet, so the
+-- subnet got deleted out from under it). Without this the FK below can't be
+-- (re)added (SQLSTATE 23503). Such an address can't be referenced by a NIC: a
+-- NIC requires the address's subnet == the NIC's own subnet, and (KAC-33) a NIC
+-- keeps its subnet from being deleted — so this only removes genuinely orphaned
+-- addresses. address_references / address_pool overrides cascade-delete.
+DELETE FROM addresses
+ WHERE (internal_ipv4 IS NOT NULL AND internal_ipv4 ? 'subnet_id' AND length(internal_ipv4->>'subnet_id') > 0
+        AND NOT EXISTS (SELECT 1 FROM subnets s WHERE s.id = internal_ipv4->>'subnet_id'))
+    OR (internal_ipv6 IS NOT NULL AND internal_ipv6 ? 'subnet_id' AND length(internal_ipv6->>'subnet_id') > 0
+        AND NOT EXISTS (SELECT 1 FROM subnets s WHERE s.id = internal_ipv6->>'subnet_id'));
 CREATE INDEX addresses_internal_subnet_idx ON addresses (internal_subnet_id);
 ALTER TABLE addresses ADD CONSTRAINT addresses_internal_subnet_fkey FOREIGN KEY (internal_subnet_id) REFERENCES subnets(id) ON DELETE RESTRICT;
 
