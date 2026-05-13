@@ -1,0 +1,74 @@
+2026/05/14 01:23:50 OK   0001_initial.sql (126.25ms)
+2026/05/14 01:23:50 OK   0002_resource_name_unique.sql (5.22ms)
+2026/05/14 01:23:50 OK   0003_address_references.sql (3.97ms)
+2026/05/14 01:23:50 OK   0004_drop_geography.sql (6.59ms)
+2026/05/14 01:23:50 OK   0005_network_vpn_id.sql (3.07ms)
+2026/05/14 01:23:50 OK   0006_network_interfaces.sql (8.1ms)
+2026/05/14 01:23:50 OK   0007_nic_address_refs.sql (2.8ms)
+2026/05/14 01:23:50 OK   0008_nic_restructure.sql (4.76ms)
+2026/05/14 01:23:50 OK   0009_address_internal_ipv6.sql (1.51ms)
+2026/05/14 01:23:50 OK   0010_optional_sg_network.sql (651.15µs)
+2026/05/14 01:23:50 OK   0011_nic_subnet_cascade.sql (3.59ms)
+2026/05/14 01:23:50 OK   0012_nic_subnet_restrict.sql (2.21ms)
+2026/05/14 01:23:50 OK   0013_address_internal_subnet_id_v6.sql (10.22ms)
+2026/05/14 01:23:50 OK   0014_address_pool_freelist.sql (3.88ms)
+2026/05/14 01:23:50 goose: successfully migrated database to version: 14
+goos: linux
+goarch: amd64
+pkg: github.com/PRO-Robotech/kacho-vpc/internal/repo
+cpu: AMD Ryzen 5 5600X 6-Core Processor             
+BenchmarkAllocateExternalIP_Freelist-12    	2026/05/14 01:23:55 OK   0001_initial.sql (124.78ms)
+2026/05/14 01:23:55 OK   0002_resource_name_unique.sql (6.32ms)
+2026/05/14 01:23:55 OK   0003_address_references.sql (4.68ms)
+2026/05/14 01:23:55 OK   0004_drop_geography.sql (7.29ms)
+2026/05/14 01:23:55 OK   0005_network_vpn_id.sql (4.32ms)
+2026/05/14 01:23:55 OK   0006_network_interfaces.sql (8.54ms)
+2026/05/14 01:23:55 OK   0007_nic_address_refs.sql (2.61ms)
+2026/05/14 01:23:55 OK   0008_nic_restructure.sql (4.21ms)
+2026/05/14 01:23:55 OK   0009_address_internal_ipv6.sql (1.32ms)
+2026/05/14 01:23:55 OK   0010_optional_sg_network.sql (799.77µs)
+2026/05/14 01:23:55 OK   0011_nic_subnet_cascade.sql (3.53ms)
+2026/05/14 01:23:55 OK   0012_nic_subnet_restrict.sql (2.28ms)
+2026/05/14 01:23:55 OK   0013_address_internal_subnet_id_v6.sql (13.9ms)
+2026/05/14 01:23:55 OK   0014_address_pool_freelist.sql (3.8ms)
+2026/05/14 01:23:55 goose: successfully migrated database to version: 14
+   10000	    331985 ns/op	     500 B/op	      10 allocs/op
+PASS
+ok  	github.com/PRO-Robotech/kacho-vpc/internal/repo	16.387s
+2026/05/14 01:24:13 OK   0001_initial.sql (132.61ms)
+2026/05/14 01:24:13 OK   0002_resource_name_unique.sql (5.54ms)
+2026/05/14 01:24:13 OK   0003_address_references.sql (3.91ms)
+2026/05/14 01:24:13 OK   0004_drop_geography.sql (7.19ms)
+2026/05/14 01:24:13 OK   0005_network_vpn_id.sql (3.14ms)
+2026/05/14 01:24:13 OK   0006_network_interfaces.sql (9.02ms)
+2026/05/14 01:24:13 OK   0007_nic_address_refs.sql (3.07ms)
+2026/05/14 01:24:13 OK   0008_nic_restructure.sql (4.59ms)
+2026/05/14 01:24:13 OK   0009_address_internal_ipv6.sql (1.31ms)
+2026/05/14 01:24:13 OK   0010_optional_sg_network.sql (655.95µs)
+2026/05/14 01:24:13 OK   0011_nic_subnet_cascade.sql (3.38ms)
+2026/05/14 01:24:13 OK   0012_nic_subnet_restrict.sql (2.33ms)
+2026/05/14 01:24:13 OK   0013_address_internal_subnet_id_v6.sql (24.24ms)
+2026/05/14 01:24:13 OK   0014_address_pool_freelist.sql (4.29ms)
+2026/05/14 01:24:13 goose: successfully migrated database to version: 14
+goos: linux
+goarch: amd64
+pkg: github.com/PRO-Robotech/kacho-vpc/internal/repo
+cpu: AMD Ryzen 5 5600X 6-Core Processor             
+BenchmarkAllocateExternalIP_Freelist_Parallel-12    	2026/05/14 01:24:34 OK   0001_initial.sql (128.84ms)
+2026/05/14 01:24:34 OK   0002_resource_name_unique.sql (4.99ms)
+2026/05/14 01:24:34 OK   0003_address_references.sql (3.4ms)
+2026/05/14 01:24:34 OK   0004_drop_geography.sql (6.66ms)
+2026/05/14 01:24:34 OK   0005_network_vpn_id.sql (3.04ms)
+2026/05/14 01:24:34 OK   0006_network_interfaces.sql (8.31ms)
+2026/05/14 01:24:34 OK   0007_nic_address_refs.sql (3.14ms)
+2026/05/14 01:24:34 OK   0008_nic_restructure.sql (5.36ms)
+2026/05/14 01:24:34 OK   0009_address_internal_ipv6.sql (1.65ms)
+2026/05/14 01:24:34 OK   0010_optional_sg_network.sql (676.95µs)
+2026/05/14 01:24:34 OK   0011_nic_subnet_cascade.sql (4.38ms)
+2026/05/14 01:24:34 OK   0012_nic_subnet_restrict.sql (3.2ms)
+2026/05/14 01:24:34 OK   0013_address_internal_subnet_id_v6.sql (12.5ms)
+2026/05/14 01:24:34 OK   0014_address_pool_freelist.sql (3.94ms)
+2026/05/14 01:24:34 goose: successfully migrated database to version: 14
+   10000	     89828 ns/op	     775 B/op	      15 allocs/op
+PASS
+ok  	github.com/PRO-Robotech/kacho-vpc/internal/repo	41.942s
