@@ -34,3 +34,7 @@ var ErrPoolNotResolved = ports.ErrPoolNotResolved
 // ErrInvalidIPv4 — попытка allocate IP из не-IPv4 CIDR.
 // Маппится в InvalidArgument.
 var ErrInvalidIPv4 = ports.ErrInvalidIPv4
+
+// ErrMacCollision — нарушение UNIQUE-constraint по network_interfaces.mac_address.
+// Сигнал для NetworkInterfaceService.doCreate сгенерировать новый MAC и повторить.
+var ErrMacCollision = ports.ErrMacCollision
