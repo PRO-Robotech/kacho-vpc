@@ -12,6 +12,8 @@ Sequence-диаграммы реальных VPC-сценариев (то что
 6. [Operations LRO worker](#6-operations-lro-worker)
 7. [InternalWatchService outbox stream](#7-internalwatchservice-outbox-stream)
 8. [Admin: set CloudPoolSelector](#8-admin-set-cloudpoolselector)
+9. [NetworkInterface create / attach / detach](#9-networkinterface-create--attach--detach)
+10. [Dependency / delete-blocking chain (NIC → Address → Subnet → Network)](#10-dependency--delete-blocking-chain)
 
 ---
 
@@ -40,8 +42,9 @@ sequenceDiagram
   alt folder not found
     S->>DB: UPDATE operation done=true, error=NotFound
   else folder OK
+    S->>S: allocate vpn_id (head of vpn_id_free, иначе nextval(vpn_id_seq)) — internal-only, 24-bit
     S->>DB: BEGIN
-    S->>DB: INSERT networks (id, folder_id, name, …)
+    S->>DB: INSERT networks (id, folder_id, name, vpn_id, …)
     S->>DB: INSERT vpc_outbox (Network, CREATED) → pg_notify
     S->>DB: COMMIT
 
@@ -59,7 +62,8 @@ sequenceDiagram
 ```
 
 Особенности:
-- Раньше default-SG создавал отдельный `kacho-vpc-controllers` reconciler-loop, наблюдая outbox. **В Phase 2 упразднён** — теперь inline в worker'е, если `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). При `=false` шаги 5-9 на диаграмме (default-SG TX) пропускаются.
+- Раньше default-SG создавал отдельный `kacho-vpc-controllers` reconciler-loop, наблюдая outbox. **В Phase 2 упразднён** — теперь inline в worker'е, если `KACHO_VPC_DEFAULT_SG_INLINE=true` (default). При `=false` шаги default-SG TX на диаграмме пропускаются.
+- `vpn_id` (24-bit data-plane-id, epic KAC-2) аллоцируется в `doCreate`: берётся минимальный из free-list `vpn_id_free`, иначе `nextval(vpn_id_seq)`; `networks.vpn_id` UNIQUE NOT NULL. На Network.Delete-worker'е возвращается во free-list перед удалением строки. **Не на публичном `Network`** — только через `InternalNetworkService.GetNetwork` / `GET /vpc/v1/networks/{network_id}/internal` (internal mux).
 - Mapping: `ALREADY_EXISTS` на `networks_folder_id_name_key` UNIQUE(folder_id, name). Для остальных 6 ресурсов аналогичный UNIQUE добавлен миграцией `0002_resource_name_unique.sql` (partial, `WHERE name <> ''`).
 
 ---
@@ -280,6 +284,13 @@ sequenceDiagram
 Worker — на той же поде, что сервис. Если pod крашится — операция
 остаётся в `done=false` навсегда (TODO: heartbeat / cleanup).
 
+> **`ListOperations` переживает удаление ресурса.** Для Network/Subnet/Address/NetworkInterface
+> `ListOperations` больше не требует существования ресурса (precondition `repo.Get` убран и из
+> сервиса, и из хэндлера): жив → проверка folder-ownership; `NotFound` → пропускаем и отдаём
+> накопленные операции; прочие ошибки пробрасываются. У `operations`-строк нет FK-каскада —
+> история сохраняется. (Для route_table/SG/gateway/private_endpoint `ListOperations` по-прежнему
+> гейтит на `repo.Get` — это существующее поведение, изменены только эти четыре.)
+
 ---
 
 ## 7. InternalWatchService outbox stream
@@ -347,16 +358,81 @@ Effect: следующий `AllocateExternalIP` для **любого** Address 
 
 ---
 
+## 9. NetworkInterface create / attach / detach
+
+NIC — first-class ресурс (эпик KAC-2). Может быть создан без адресов.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as Client
+  participant S as NetworkInterfaceService
+  participant RM as resource-manager
+  participant DB as pg-vpc
+  participant IMPL as kacho-vpc-implement
+
+  U->>S: Create(folder_id, subnet_id, v4_address_ids?, v6_address_ids?, security_group_ids?)
+  S->>S: sync validate; default security_group_ids = Subnet.Network.default_security_group_id если пусто
+  S-->>U: Operation{networkInterfaceId}
+
+  rect rgb(255,247,230)
+  S->>RM: FolderService.Get(folder_id)
+  S->>DB: subnetRepo.Get(subnet_id) → network_id → default_security_group_id
+  S->>S: ids.NewID(PrefixSubnet) → "e9b..."   # NIC переиспользует PrefixSubnet
+  S->>DB: BEGIN
+  S->>DB: INSERT network_interfaces (id, folder_id, subnet_id, sg_ids, status=PROVISIONING)
+  loop по v4_address_ids[] / v6_address_ids[]
+    S->>DB: проверить Address.used == false (referrer-free) → INSERT address_references (referrer_type="network_interface")
+    S->>DB: UPDATE addresses SET used=true
+  end
+  S->>DB: INSERT vpc_outbox (NetworkInterface CREATED)
+  S->>DB: COMMIT
+  S->>DB: UPDATE operation done=true, response=NetworkInterface
+  end
+
+  Note over IMPL: kacho-vpc-implement: InternalNetworkInterfaceService.ListByHypervisor →<br/>программирует data-plane → ReportNiDataplane (hv_id, sid_seq, host_iface, netns, gateway_ip, status, revision)
+```
+
+**AttachToInstance / DetachFromInstance**: `AttachToInstance(network_interface_id, instance ref)` →
+выставляет `used_by` (`{compute_instance, <instance_id>}` — flat-колонки `used_by_type`/`used_by_id`/`used_by_name`);
+`DetachFromInstance` → очищает. Это зеркало `Address.used_by`. (Compute-Instance со своей стороны ссылается на NIC через `nic_id`.)
+
+---
+
+## 10. Dependency / delete-blocking chain
+
+NIC → Address → Subnet → Network — все RESTRICT. Удаление снизу вверх.
+
+```mermaid
+flowchart TD
+  delNIC[Delete NetworkInterface] -->|"detach addresses (clear referrer rows) → DELETE"| okNIC[ok]
+  delAddr[Delete Address] -->|"address.used == true (referrer = NIC)"| failAddr["FailedPrecondition<br/>'address ... is in use by network interface ...; detach it before deleting the address' (KAC-31)"]
+  delAddr -->|"not used"| okAddr[ok]
+  delSub[Delete Subnet] -->|"has internal Address v4/v6 (AddressesBySubnet checks internal_ipv4 AND internal_ipv6)"| failSub1["FailedPrecondition<br/>'Subnet has allocated internal addresses'"]
+  delSub -->|"has NetworkInterface"| failSub2["FailedPrecondition<br/>'subnet ... has N network interface(s) (...); delete them first'"]
+  delSub -->|"empty"| okSub["ok — DB backstops: addresses_internal_subnet_fkey (generated col covers v4+v6, migr. 0013), network_interfaces_subnet_id_fkey ON DELETE RESTRICT"]
+  delNet[Delete Network] -->|"has subnets / route tables / non-default SGs"| failNet["FailedPrecondition<br/>'Network ... is not empty'"]
+  delNet -->|"only default SG"| okNet["ok — Delete-worker auto-deletes the default SG, returns vpn_id to vpn_id_free"]
+```
+
+> Промежуточное изменение делало `network_interfaces.subnet_id` `ON DELETE CASCADE` (миграция 0011) —
+> **откачено** миграцией 0012 обратно к `ON DELETE RESTRICT`; NIC всегда блокирует свою подсеть.
+> Миграция 0013 (PG16-compatible drop/recreate generated-колонки) заодно вычищает pre-existing dangling
+> internal-subnet refs перед re-add'ом FK.
+
+---
+
 ## Где смотреть исходник
 
 | Поток | Код |
 |---|---|
-| Network create + default-SG | `internal/service/network.go::doCreate` |
+| Network create + default-SG + vpn_id | `internal/service/network.go::doCreate` |
 | Subnet create + CIDR | `internal/service/subnet.go::doCreate` |
-| Address create | `internal/service/address.go::doCreate` |
+| Subnet :add/:remove-cidr-blocks (v4 + v6) | `internal/service/subnet.go::AddCidrBlocks` / `RemoveCidrBlocks` |
+| Address create + internal v4/v6 | `internal/service/address.go::doCreate` |
+| NetworkInterface CRUD / attach-detach | `internal/service/network_interface.go` |
 | Cascade resolve | `internal/service/address_pool_service.go::resolveWithRunnerUp` |
-| AllocateExternalIP retry-loop | `internal/service/address.go::AllocateExternalIP` (аллокатор inlined из бывшего `address_allocate.go`) |
-| `isUniqueViolation` / двухфазный sweep | `internal/service/address.go` (бенчмарки — `address_allocate_bench_test.go`) |
+| AllocateExternalIP / AllocateInternalIP / AllocateInternalIPv6 | `internal/service/address.go` (аллокатор inlined из бывшего `address_allocate.go`; бенчмарки — `address_allocate_bench_test.go`) |
 | FolderClient.GetCloudID | `internal/clients/resourcemanager_client.go` |
 | Operations worker | `kacho-corelib/operations/run.go` |
 | Outbox + LISTEN/NOTIFY | `internal/handler/internal_watch_handler.go` |

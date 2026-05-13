@@ -1,42 +1,46 @@
 # 04 — API Surface
 
-Полный список RPC kacho-vpc + соответствующие REST endpoints. На сегодня
-**89 RPC методов** в 13 proto-сервисах (7 public verbatim-YC + 6 internal kacho-only).
+Полный список RPC kacho-vpc + соответствующие REST endpoints. Public: 8 verbatim-исторических
+доменных сервисов (7 + `NetworkInterfaceService`, эпик KAC-2) + internal kacho-only сервисы.
 
 ## Сводка
 
-| Категория | Сервисов | RPC | Listener | REST exposed |
-|---|---:|---:|---|---|
-| Public verbatim-YC | 7 | 59 | `:9090` (public gRPC) | ✅ да, через api-gateway |
-| Internal admin (kacho-only) | 5 | 29 | `:9091` (internal gRPC) | ✅ выборочно (CRUD + admin actions) |
-| Outbox stream | 1 | 1 | `:9091` | ❌ только server-to-server |
-| **Итого** | **13** | **89** | | **80 REST endpoints** |
+| Категория | Listener | REST exposed |
+|---|---|---|
+| Public домены (8: 7 + `NetworkInterfaceService`) | `:9090` (public gRPC) | ✅ да, через api-gateway (оба listener'а) |
+| Internal admin / data-plane (kacho-only) | `:9091` (internal gRPC) | ✅ выборочно — только cluster-internal listener (CRUD + admin actions + NIC/Network internal-проекции + `ReportNiDataplane`/`ListByHypervisor`) |
+| Outbox stream (`InternalWatchService`) | `:9091` | ❌ только server-to-server |
 
-## Public сервисы (`:9090`, verbatim YC)
+## Public сервисы (`:9090`, verbatim-исторические)
 
-| Сервис | RPC count | Что делает |
-|---|---:|---|
-| `NetworkService` | 10 | CRUD + Move + ListSubnets + ListSecurityGroups + ListRouteTables + ListOperations |
-| `SubnetService` | 11 | CRUD + Move + AddCidrBlocks + RemoveCidrBlocks + Relocate + ListUsedAddresses + ListOperations |
-| `AddressService` | 9 | CRUD + Move + GetByValue + ListOperations |
-| `RouteTableService` | 7 | CRUD + Move + ListOperations |
-| `SecurityGroupService` | 9 | CRUD + Move + UpdateRules + UpdateRule + ListOperations |
-| `GatewayService` | 7 | CRUD + Move + ListOperations |
-| `PrivateEndpointService` | 6 | CRUD + Move |
+| Сервис | RPC | Что делает |
+|---|---|---|
+| `NetworkService` | CRUD + Move + ListSubnets + ListSecurityGroups + ListRouteTables + ListOperations | (`vpn_id` не в публичном `Network` — см. `InternalNetworkService` ниже) |
+| `SubnetService` | CRUD + Move + AddCidrBlocks + RemoveCidrBlocks + Relocate + ListUsedAddresses + ListOperations | `v4_cidr_blocks` опционально на Create; `:add/:remove-cidr-blocks` принимают **и `v6_cidr_blocks`** (валидный IPv6-префикс, host-bits=0, intra-request disjoint, overlap → `FailedPrecondition`); `UpdateSubnet` получил `v6_cidr_blocks` (soft-immutable / no-op) |
+| `AddressService` | CRUD + Move + GetByValue + ListOperations | `CreateAddressRequest` получил `internal_ipv6_address_spec`; `ListAddressesRequest.subnet_id` матчит `internal_ipv4`/`internal_ipv6`; `Delete` адреса в использовании у NIC → `FailedPrecondition` |
+| `RouteTableService` | CRUD + Move + ListOperations | |
+| `SecurityGroupService` | CRUD + Move + UpdateRules + UpdateRule + ListOperations | `network_id` опционально на Create (folder-level / network-less SG); `List?filter=network_id="<id>"` |
+| `GatewayService` | CRUD + Move + ListOperations | |
+| `PrivateEndpointService` | CRUD + Move | |
+| `NetworkInterfaceService` (эпик KAC-2) | Get + List + Create + Update + Delete + AttachToInstance + DetachFromInstance + ListOperations | REST `/vpc/v1/networkInterfaces`; NIC принадлежит `Subnet` (`subnet_id`), ссылается на `Address` по id (`v4_address_ids[]`/`v6_address_ids[]`), `security_group_ids[]`, `used_by` (выставляет Attach, чистит Detach); публичная проекция lean (data-plane-инфа — в `InternalNetworkInterfaceService`) |
+
+> `ListOperations` для Network/Subnet/Address/NetworkInterface не требует существования ресурса
+> (precondition `repo.Get` убран — handler best-effort: жив → folder-ownership; NotFound → пропуск).
+> Для route_table/SG/gateway/private_endpoint `ListOperations` по-прежнему гейтит на `repo.Get`.
 
 REST mapping — `google.api.http` аннотации в proto, см. `kacho-proto/proto/kacho/cloud/vpc/v1/<resource>_service.proto`.
 
-## Internal admin сервисы (`:9091`, kacho-only)
+## Internal admin / data-plane сервисы (`:9091`, kacho-only)
 
-| Сервис | RPC count | Что делает |
-|---|---:|---|
-| `InternalRegionService` | 5 | CRUD регионов |
-| `InternalZoneService` | 5 | CRUD зон (с FK на регион) |
-| `InternalAddressPoolService` | 13 | CRUD пулов + bindings (network/address override) + diagnostics (Check, ExplainResolution) + observability (ListAddresses, GetUtilization) |
-| `InternalCloudService` | 3 | SetPoolSelector / Unset / Get на Cloud |
-| `InternalNetworkService` | 1 | SetDefaultSecurityGroupId (computed-field setter) |
-| `InternalAddressService` | 5 | AllocateInternalIP / AllocateExternalIP + SetAddressReference / ClearAddressReference / GetAddressReference (referrer-tracking «кто использует адрес», YC-like — отражается в `Address.used` и `SubnetService.ListUsedAddresses.references[]`; вызывается kacho-compute при аллокации NIC-адресов) |
-| `InternalWatchService` | 1 | Watch outbox stream |
+| Сервис | RPC | Что делает |
+|---|---|---|
+| `InternalAddressPoolService` | CRUD пулов + bindings (network/address override) + diagnostics (Check, ExplainResolution) + observability (ListAddresses, GetUtilization) | |
+| `InternalCloudService` | SetPoolSelector / Unset / Get на Cloud | |
+| `InternalNetworkService` | SetDefaultSecurityGroupId (computed-field setter) + **GetNetwork → `InternalNetwork{network, vpn_id}`** | REST `GET /vpc/v1/networks/{network_id}/internal` (internal mux only) — отдаёт публичный `Network` + internal `vpn_id` (24-bit data-plane-id) |
+| `InternalAddressService` | AllocateInternalIP / **AllocateInternalIPv6** / AllocateExternalIP + SetAddressReference / ClearAddressReference / GetAddressReference (referrer-tracking «кто использует адрес» — отражается в `Address.used` и `SubnetService.ListUsedAddresses.references[]`; referrer'ы: `compute_instance`, `network_interface`) | |
+| `InternalNetworkInterfaceService` (эпик KAC-2) | `GetNetworkInterface` → `InternalNetworkInterface` (lean public NIC + data-plane: resolved `vpn_id`, `hv_id` placement, `sid`/`sid_seq`, `host_iface`, `netns`, `gateway_ip`, `container_id`, `status_error`, `dataplane_revision`, resolved v4/v6 address strings) + `ListByHypervisor` + `ReportNiDataplane` (write-back data-plane-state от `kacho-vpc-implement`) | REST на internal mux: `GET /vpc/v1/networkInterfaces/{network_interface_id}/internal`; `ListByHypervisor` / `ReportNiDataplane` — gRPC-style routes (internal-only) |
+| `InternalWatchService` | Watch outbox stream | server-to-server only |
+| ~~`InternalRegionService` / `InternalZoneService`~~ | — | удалены из kacho-vpc — Geography (Region/Zone) → `kacho-compute` (эпик KAC-15; миграция 0004 `0004_drop_geography.sql` дропнула таблицы) |
 
 ## REST endpoints (через api-gateway)
 
@@ -56,24 +60,31 @@ GET    /vpc/v1/networks/{network_id}/operations
 POST   /vpc/v1/networks/{network_id}:move            → Operation
 
 # Subnet (analogously)
-GET/POST/PATCH/DELETE /vpc/v1/subnets[/{id}]
+GET/POST/PATCH/DELETE /vpc/v1/subnets[/{id}]   # v4_cidr_blocks опционально на POST
 GET    /vpc/v1/subnets/{subnet_id}/addresses         (UsedAddress[])
-GET    /vpc/v1/subnets/{subnet_id}/operations
-POST   /vpc/v1/subnets/{subnet_id}:add-cidr-blocks   # kebab-case с двоеточием!
-POST   /vpc/v1/subnets/{subnet_id}:remove-cidr-blocks
+GET    /vpc/v1/subnets/{subnet_id}/operations        # переживает удаление подсети
+POST   /vpc/v1/subnets/{subnet_id}:add-cidr-blocks   # body: {v4CidrBlocks?, v6CidrBlocks?} — теперь и v6
+POST   /vpc/v1/subnets/{subnet_id}:remove-cidr-blocks # body: {v4CidrBlocks?, v6CidrBlocks?}
 POST   /vpc/v1/subnets/{subnet_id}:relocate
 POST   /vpc/v1/subnets/{subnet_id}:move
 
 # Address
-GET/POST/PATCH/DELETE /vpc/v1/addresses[/{id}]
+GET/POST/PATCH/DELETE /vpc/v1/addresses[/{id}]   # POST принимает internalIpv6AddressSpec
 GET    /vpc/v1/addresses:byValue?value=<ip>
+GET    /vpc/v1/addresses?subnetId=<id>           # фильтр по internal_ipv4 ИЛИ internal_ipv6
 POST   /vpc/v1/addresses/{address_id}:move
+
+# NetworkInterface (эпик KAC-2; top-level camelCase networkInterfaces)
+GET/POST/PATCH/DELETE /vpc/v1/networkInterfaces[/{id}]   # POST: subnet_id; v4_address_ids/v6_address_ids/security_group_ids опциональны
+GET    /vpc/v1/networkInterfaces/{network_interface_id}/operations   # переживает удаление NIC
+POST   /vpc/v1/networkInterfaces/{network_interface_id}:attachToInstance
+POST   /vpc/v1/networkInterfaces/{network_interface_id}:detachFromInstance
 
 # RouteTable (top-level — camelCase routeTables)
 GET/POST/PATCH/DELETE /vpc/v1/routeTables[/{id}]
 
 # SecurityGroup
-GET/POST/PATCH/DELETE /vpc/v1/securityGroups[/{id}]
+GET/POST/PATCH/DELETE /vpc/v1/securityGroups[/{id}]   # POST: network_id опционален; GET?filter=network_id="<id>"
 PATCH  /vpc/v1/securityGroups/{sg_id}/rules           # UpdateRules — PATCH на /rules
 PATCH  /vpc/v1/securityGroups/{sg_id}/rules/{rule_id} # UpdateRule
 
@@ -91,16 +102,18 @@ GET    /vpc/v1/endpoints/{private_endpoint_id}/operations
 > custom-методы — kebab с двоеточием (`:add-cidr-blocks`, `:move`),
 > `OperationService.Get` — `/operations/{id}` (без `/vpc/v1/`), PE — `/endpoints`.
 
-### Admin (kacho-only, **только cluster-internal listener**)
+### Admin / data-plane (kacho-only, **только cluster-internal listener**)
 
 ```
-# Region
-GET/POST/PATCH/DELETE /vpc/v1/regions[/{region_id}]
+# Network internal-проекция (InternalNetworkService.GetNetwork) — содержит vpn_id
+GET    /vpc/v1/networks/{network_id}/internal
 
-# Zone
-GET    /vpc/v1/zones?regionId=
-POST   /vpc/v1/zones
-GET/PATCH/DELETE /vpc/v1/zones/{zone_id}
+# NetworkInterface internal-проекция (InternalNetworkInterfaceService.GetNetworkInterface)
+GET    /vpc/v1/networkInterfaces/{network_interface_id}/internal
+#   + InternalNetworkInterfaceService.ListByHypervisor / ReportNiDataplane — gRPC-style routes
+#     (write-back data-plane-state от kacho-vpc-implement; internal-only)
+
+# (Region/Zone admin — переехали в kacho-compute: /compute/v1/{regions,zones}; в kacho-vpc их нет)
 
 # AddressPool
 GET    /vpc/v1/addressPools?zoneId=&kind=
@@ -131,9 +144,10 @@ DELETE /vpc/v1/clouds/{cloud_id}/poolSelector
 ### Internal-only (НЕ через apiGW REST, gRPC server-to-server)
 
 ```
-InternalAddressService.AllocateInternalIP / AllocateExternalIP / SetAddressReference / ClearAddressReference / GetAddressReference
+InternalAddressService.AllocateInternalIP / AllocateInternalIPv6 / AllocateExternalIP / SetAddressReference / ClearAddressReference / GetAddressReference
 InternalWatchService.Watch
 InternalNetworkService.SetDefaultSecurityGroupId
+InternalNetworkInterfaceService.ListByHypervisor / ReportNiDataplane    # kacho-vpc-implement → kacho-vpc write-back
 ```
 
 Эти RPC дёргают только сервисы (kacho-vpc сам себя через wiring или
@@ -178,13 +192,15 @@ kacho-proto/proto/kacho/cloud/vpc/v1/
 ├── security_group.proto / security_group_service.proto
 ├── gateway.proto / gateway_service.proto
 ├── privatelink/private_endpoint.proto + _service.proto
+├── network_interface.proto / network_interface_service.proto   NetworkInterface (эпик KAC-2)
 │
-├── internal_geography_service.proto    Region+Zone admin
 ├── internal_address_pool_service.proto AddressPool admin + observability
 ├── internal_cloud_service.proto        CloudPoolSelector admin
-├── internal_network_service.proto      SetDefaultSecurityGroupId
-├── internal_address_service.proto      Allocate*IP, SetIP
+├── internal_network_service.proto      SetDefaultSecurityGroupId + GetNetwork (vpn_id)
+├── internal_network_interface_service.proto  GetNetworkInterface + ListByHypervisor + ReportNiDataplane
+├── internal_address_service.proto      Allocate*IP (v4/v6/ext), {Set,Clear,Get}AddressReference
 └── internal_watch_service.proto        Watch outbox
+# (internal_geography_service.proto — Region/Zone — переехал в kacho-compute, эпик KAC-15)
 ```
 
 Generated stubs: `kacho-proto/gen/go/kacho/cloud/vpc/v1/...`. Импорт:

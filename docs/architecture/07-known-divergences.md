@@ -5,6 +5,39 @@
 **deliberately не делаем** того, что напрашивается. Цель файла — чтобы это не «фиксили»
 по второму разу.
 
+> **Verbatim-YC parity — ОТЛОЖЕНА** (workspace `CLAUDE.md` / kacho-vpc `CLAUDE.md` §1). Byte-for-byte
+> копирование YC VPC API больше **не constraint** — API проектируем в чистой удобной форме, расходясь с
+> YC где это лучше; YC-совместимость — отдельная поздняя фаза (compat-слой). Следствие: «расхождение с
+> verbatim YC» больше **не повод заводить баг**; этот файл — про осознанные дизайн-решения, в т.ч. те,
+> что намеренно ушли от YC-формы (см. §0 ниже). YC-точные детали ниже (error texts, regex'ы, probe-результаты)
+> сохраняются как есть, пока не решено иначе.
+
+## 0. Эпик KAC-2 / IPv6 / optional-поля — намеренно НЕ как в verbatim-YC
+
+- **`NetworkInterface` (NIC) — first-class AWS-ENI-стиля ресурс**, которого в verbatim-YC VPC API нет
+  (в YC NIC живёт внутри Instance-spec у compute). Здесь NIC — отдельный ресурс домена `kacho-vpc`
+  (вариант А; `NetworkInterfaceService` Get/List/Create/Update/Delete/AttachToInstance/DetachFromInstance/ListOperations),
+  принадлежит `Subnet`, ссылается на `Address`-ресурсы по id. Compute-Instance ссылается на NIC через `nic_id`.
+  Две проекции: публичная lean + `InternalNetworkInterface` (data-plane-инфа, `kacho-vpc-implement` пишет через `ReportNiDataplane`).
+- **`vpn_id` на `Network` — internal-only 24-bit data-plane-id**, которого в публичном YC `Network` нет
+  (это инфра-чувствительные данные — см. workspace `CLAUDE.md` §«Инфра-чувствительные данные»). Аллоцируется
+  kacho-vpc (`SEQUENCE vpn_id_seq` + free-list, миграция 0005), стабилен, возвращается во free-list на Delete.
+  На публичном `Network` его нет — только `InternalNetworkService.GetNetwork → InternalNetwork{network, vpn_id}`.
+- **`Subnet.v4_cidr_blocks` опционально на Create** (proto `(required)` снят; миграция не нужна). YC требует CIDR;
+  у нас CIDR-less подсеть легальна (CIDR добавляется позже через `:add-cidr-blocks`). Internal-v4-allocate в CIDR-less
+  подсеть → `FailedPrecondition "subnet ... has no IPv4 CIDR"`.
+- **`SecurityGroup.network_id` опционально на Create** (proto `(required)` снят; миграция `0010` — `DROP NOT NULL`).
+  YC привязывает SG к сети; у нас network-unbound (folder-level) SG легальна (NIC принимает такие SG, если тот же folder).
+  Default-SG-на-сети — без изменений (всегда ставит `network_id`).
+- **Subnet IPv6 CIDR через verbs** — `:add-cidr-blocks`/`:remove-cidr-blocks` принимают и `v6_cidr_blocks`;
+  `UpdateSubnet` получил `v6_cidr_blocks` (soft-immutable / no-op, зеркало v4). `Address.internal_ipv6_address`
+  oneof + `InternalAddressService.AllocateInternalIPv6`.
+- **`ListOperations` для Network/Subnet/Address/NetworkInterface переживает удаление ресурса** — precondition
+  `repo.Get` убран (handler best-effort: жив → folder-ownership; NotFound → пропуск). `operations`-строки без FK-каскада.
+  (route_table/SG/gateway/private_endpoint — по-прежнему гейтят на `repo.Get`.)
+- **Geography (Region/Zone) — не в kacho-vpc** (эпик KAC-15; миграция `0004_drop_geography.sql` дропнула таблицы).
+  Канонический владелец — `kacho-compute`; `zone_id`-колонки здесь — `TEXT` без FK, валидируются через `compute.v1.ZoneService.Get`.
+
 **Сюда НЕ пишем** то, что просто корректно реализует verbatim-YC контракт — это не
 «решение», а спека (см. `../../CLAUDE.md` §2, `04-api-surface.md`, `05-database.md`).
 Например: VPC-ресурсы folder-scoped без `cloud_id`/`organization_id`; permissive `NameVPC` —

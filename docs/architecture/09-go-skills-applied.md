@@ -168,3 +168,15 @@ Pure-VPC код прошёл 4 round'а ужесточения и достиг s
 
 Остаются open: mTLS на `:9091`; Prometheus/OpenTelemetry; pprof endpoint;
 integration-test run в CI; полноценный IAM (claims-extraction / folder-membership через RM).
+
+## Update (2026-05-12..13) — KAC-2 / IPv6 / dependency-chain тесты
+
+Newman regression (`tests/newman/`) расширен новыми кейсами под изменения 2026-05-12..13:
+- `NetworkInterface` CRUD / attach-detach / `used_by`; NIC с v4/v6 address-refs.
+- Subnet без v4 CIDR (`SUB-CR-*` + negative-allocate); Subnet IPv6 CIDR add/remove.
+- SecurityGroup без `network_id`.
+- `Network`-public-projection не содержит `vpnId`.
+- `ListOperations`-after-delete (Network/Subnet/Address/NIC).
+- Полная RESTRICT-цепочка `NET-SUBNET-ADDR-NIC-DELETE-CHAIN`; v6-address-blocks-subnet `SUB-DEL-NEG-HAS-V6-ADDRESS`.
+
+Сьюта ускорена: per-request delay в `run.sh` 100 → 15 мс; коллекции прогоняются параллельно (cap 4).

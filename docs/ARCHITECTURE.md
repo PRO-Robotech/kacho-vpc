@@ -15,12 +15,18 @@
 ### 1.1 Назначение сервиса
 
 `kacho-vpc` — control-plane сервис управления виртуальной сетью облачной
-платформы Kachō. Он владеет жизненным циклом семи публичных доменных
-ресурсов (Network, Subnet, Address, RouteTable, SecurityGroup, Gateway,
-PrivateEndpoint) и встроенным IPAM (Region, Zone, AddressPool, CloudPoolSelector
-плюс три binding-таблицы). Сервис **не** управляет реальным data plane —
-он только хранит конфигурацию, валидирует её и эмитит события об изменениях.
-Внешний контракт повторяет API Yandex Cloud VPC по форме и семантике.
+платформы Kachō. Он владеет жизненным циклом восьми публичных доменных
+ресурсов (Network, Subnet, Address, **NetworkInterface** — first-class
+AWS-ENI-подобный ресурс, эпик KAC-2 — RouteTable, SecurityGroup, Gateway,
+PrivateEndpoint), инфра-полем `vpn_id` на `Network` (24-bit data-plane-id,
+internal-only) и встроенным IPAM (AddressPool, CloudPoolSelector плюс
+binding-таблицы; Region/Zone — перенесены в `kacho-compute`, эпик KAC-15).
+Сервис **не** управляет реальным data plane — он только хранит конфигурацию,
+валидирует её и эмитит события об изменениях; data-plane-state по NIC ему
+возвращает `kacho-vpc-implement` через `InternalNetworkInterfaceService.ReportNiDataplane`.
+Verbatim-YC parity — отложена: API проектируется в чистой форме, расходясь с YC
+где это лучше (NIC как отдельный ресурс, `vpn_id` на Network, опциональные `Subnet` CIDR /
+`SecurityGroup` network, и т.п.).
 
 ### 1.2 Место в системе Kachō
 
@@ -53,10 +59,12 @@ IPAM-cascade. Никакой прямой доступ к чужой БД.
 |---|---|---|
 | `kacho-api-gateway` | gRPC `:9090` → REST | Маршрутизирует публичные RPC, преобразует ошибки в HTTP-status |
 | `kacho-resource-manager` | gRPC client | `FolderClient.Exists(folderID)`, `FolderClient.GetCloudID(folderID)` |
-| `kacho-compute`, прочие IP-потребители | gRPC `:9091` | `InternalAddressService.AllocateInternalIP`, `AllocateExternalIP` |
+| `kacho-compute`, прочие IP-потребители | gRPC `:9091` | `InternalAddressService.AllocateInternalIP` / `AllocateInternalIPv6` / `AllocateExternalIP` + referrer-tracking; валидация NIC-spec (Subnet/SG) |
+| `kacho-vpc-implement` (data-plane) | gRPC `:9091` | читает `InternalNetworkInterfaceService.ListByHypervisor`, пишет data-plane-state обратно через `ReportNiDataplane` (эпик KAC-2) |
+| `kacho-compute` (Geography owner) | gRPC client (исходящий) | `compute.v1.ZoneService.Get` — валидация `zone_id` (Region/Zone — домен compute, эпик KAC-15) |
 | Внутренние подписчики на изменения | gRPC server-stream `:9091` | `InternalWatchService.Watch` отдаёт события из outbox |
 | Postgres (своя БД `kacho_vpc`) | pgx + LISTEN/NOTIFY | Источник истины |
-| Admin-инструменты (UI, curl/REST на api-gateway internal mux) | gRPC `:9091` через api-gateway internal listener | Управление Region/Zone/AddressPool |
+| Admin-инструменты (UI, curl/REST на api-gateway internal mux) | gRPC `:9091` через api-gateway internal listener | Управление AddressPool; internal-проекции Network (`vpn_id`) / NIC |
 
 ### 1.4 Внешний контракт
 
@@ -561,38 +569,39 @@ admin-flag. Точная семантика `assertAdminAccess`:
 
 ## Часть V. Доменная модель
 
-### 5.1 Публичные ресурсы (7)
+### 5.1 Публичные ресурсы (8)
 
 Все folder-scoped, имеют общий минимум полей: `id`, `folder_id`, `created_at`,
 `name`, `description`, `labels`.
 
 | Ресурс | ID prefix | Доп. поля | Особенности |
 |---|---|---|---|
-| Network | `enp` | `default_security_group_id`, `route_distinguisher` | default SG создаётся inline в `doCreate` (опционально — `KACHO_VPC_DEFAULT_SG_INLINE`, default `true`) |
-| Subnet | `e9b` | `network_id`, `zone_id`, `v4_cidr_blocks[]`, `v6_cidr_blocks[]`, `route_table_id`, `dhcp_options` | EXCLUDE constraint на `(network_id, v4_cidr_primary)` |
-| Address | `e9b` | `addr_type`, `ip_version`, `reserved`, `used`, `deletion_protection`, `external_ipv4` (jsonb), `internal_ipv4` (jsonb) | Generated column `internal_subnet_id` для FK index |
+| Network | `enp` | `default_security_group_id`, **`vpn_id`** (integer, internal-only — 24-bit data-plane-id), `route_distinguisher` | default SG создаётся inline в `doCreate` (опционально — `KACHO_VPC_DEFAULT_SG_INLINE`, default `true`); `vpn_id` аллоцируется на Create (`vpn_id_seq`+free-list, миграция 0005), возвращается во free-list на Delete; **НЕ в публичном `Network`** — только `InternalNetworkService.GetNetwork → InternalNetwork{network, vpn_id}` |
+| Subnet | `e9b` | `network_id`, `zone_id`, `v4_cidr_blocks[]`, `v6_cidr_blocks`, `route_table_id`, `dhcp_options` | EXCLUDE на `(network_id, v4_cidr_primary)` (и v6); **`v4_cidr_blocks` опционально на Create** (CIDR-less подсеть легальна); `:add/:remove-cidr-blocks` принимают и `v6_cidr_blocks`; `zone_id` — id-строка домена compute (без FK) |
+| Address | `e9b` | `addr_type`, `ip_version`, `reserved`, `used`, `used_by`, `deletion_protection`, `external_ipv4` (jsonb), `internal_ipv4` (jsonb), `internal_ipv6` (jsonb, миграция 0009) | Generated `internal_subnet_id` (из `internal_ipv4` ИЛИ `internal_ipv6` — миграция 0013) → FK `addresses_internal_subnet_fkey ON DELETE RESTRICT`; `internal_ipv6_address_spec` + `InternalAddressService.AllocateInternalIPv6`; `Delete` used-адреса (referrer=NIC) → `FailedPrecondition` |
+| NetworkInterface (эпик KAC-2) | `e9b` (переиспользует `PrefixSubnet`) | `subnet_id` (FK RESTRICT), `v4_address_ids[]`/`v6_address_ids[]` (ссылки на Address по id), `security_group_ids[]`, `used_by` (Reference — Attach/Detach), `status` enum | first-class AWS-ENI-подобный ресурс; может быть создан без адресов; один Address ≤ на одном NIC (referrer-rows `address_references`, `referrer_type="network_interface"`); публичная проекция lean, data-plane-инфа — `InternalNetworkInterface` (`hv_id`, `sid`/`sid_seq`, `host_iface`, `netns`, `gateway_ip`, `container_id`, resolved `vpn_id`/адреса, `status_error`, `dataplane_revision` — пишет `kacho-vpc-implement` через `ReportNiDataplane`) |
 | RouteTable | `enp` | `network_id`, `static_routes` (jsonb-массив) | Static-routes embedded |
-| SecurityGroup | `enp` | `network_id`, `status`, `default_for_network`, `rules` (jsonb) | Rules embedded; обновления через xmin-OCC |
+| SecurityGroup | `enp` | `network_id` (**NULLABLE с 0010**), `status`, `default_for_network`, `rules` (jsonb) | Rules embedded; xmin-OCC; **`network_id` опционально на Create** (folder-level / network-less SG); `List?filter=network_id="<id>"` |
 | Gateway | `enp` | `gateway_type` | Folder-level, не привязан к Network |
 | PrivateEndpoint | `enp` | `network_id`, `subnet_id`, `address_id`, `ip_address`, `service_type`, `dns_options`, `status` | Кросс-refs (без FK на БД-уровне) |
 
-**Замечание про префиксы.** Все VPC-ресурсы (Network, RouteTable, SecurityGroup,
-Gateway, PrivateEndpoint) кроме Subnet/Address получают одинаковый 3-char
-префикс `enp` — это умышленное design-решение для маршрутизации Operation.id
+**Замечание про префиксы.** Network/RouteTable/SecurityGroup/Gateway/PrivateEndpoint получают
+одинаковый 3-char префикс `enp` — это умышленное design-решение для маршрутизации Operation.id
 в api-gateway по первым 3 символам: gateway смотрит на префикс и направляет
 `OperationService.Get(opId)` в нужный backend (VPC vs RM vs ...).
-Subnet и Address используют `e9b`, чтобы отличить «дочерние» ресурсы от
-«сетевых корней» в админ-инструментах. Operation у VPC сервиса получает
-префикс `enp` (через `PrefixOperationVPC`).
+Subnet, Address и **NetworkInterface** используют `e9b` (NIC переиспользует `PrefixSubnet` —
+отдельного `PrefixNetworkInterface` нет). Operation у VPC сервиса получает префикс `enp` (`PrefixOperationVPC`).
 
-### 5.2 IPAM-ресурсы (4 admin-only)
+### 5.2 IPAM-ресурсы (admin-only)
 
 | Ресурс | ID prefix | Глобальный | Заметки |
 |---|---|---|---|
-| Region | id вида `ru-central1` | да | First-class сущность, seed-данные |
-| Zone | id вида `ru-central1-a` | да | FK на Region (RESTRICT) |
-| AddressPool | (без фиксированного префикса) | да | Не имеет `folder_id`; `kind` enum; `selector_labels` jsonb |
+| AddressPool | `apl` (3-char, обязательный формат `corelib/ids`) | да | Не имеет `folder_id`; `kind` enum; `zone_id` — id-строка домена compute без FK; `selector_labels` jsonb |
 | CloudPoolSelector | PK = `cloud_id` | n/a | Не имеет своего id, ключ — Cloud |
+
+> Region/Zone — больше **не в kacho-vpc** (эпик KAC-15; миграция `0004_drop_geography.sql` дропнула таблицы).
+> Канонический владелец — `kacho-compute`; `subnet.zone_id` / `address_pool.zone_id` хранятся как
+> `TEXT`-id без FK, валидируются на request-path через `compute.v1.ZoneService.Get`.
 
 ### 5.3 Binding-таблицы (3)
 
@@ -613,76 +622,87 @@ Subnet и Address используют `e9b`, чтобы отличить «до
 ### 5.5 Связи между ресурсами (FK contract)
 
 ```
-   Network (1) ──+── (N) Subnet ──── (N) Address[internal]
+   Network (1) ──+── (N) Subnet ──+── (N) Address[internal v4/v6]
+                 |                 └── (N) NetworkInterface  (subnet_id, RESTRICT)
                  |
                  +── (N) RouteTable
                  |
                  +── (N) SecurityGroup ── (N) SecurityGroupRule (embedded)
                  |
+                 ├── vpn_id (internal-only, 24-bit data-plane-id; не в публичном Network)
                  └── default_security_group_id ─── soft ref (not FK)
 
    Address[external] ── folder-level, без Subnet
+   NetworkInterface  ── принадлежит Subnet; ссылается на Address по id (v4_address_ids/v6_address_ids),
+                        security_group_ids[]; used_by — Reference (кто приаттачил)
    Gateway           ── folder-level, без Network
    PrivateEndpoint   ── network_id + subnet_id + address_id (soft refs)
 ```
 
-Реальные FK constraint-ы в схеме (10 штук):
+**Dependency / delete-blocking chain:** NIC → Address → Subnet → Network — все RESTRICT, удаление снизу вверх:
+- `Address.Delete` used-адреса (referrer = NIC) → `FailedPrecondition "address ... is in use by network interface ...; detach it before deleting the address"` (KAC-31). Освободить — detach от NIC / удаление NIC.
+- `Subnet.Delete` — sync-precheck: есть внутренний Address (v4 ИЛИ v6 — `AddressesBySubnet` смотрит и `internal_ipv4`, и `internal_ipv6`) → `FailedPrecondition "Subnet has allocated internal addresses"`; есть NIC → `FailedPrecondition "subnet ... has N network interface(s) (...); delete them first"`. DB-backstops: `addresses_internal_subnet_fkey` (на generated-колонке `addresses.internal_subnet_id`, миграция 0013) + `network_interfaces_subnet_id_fkey ON DELETE RESTRICT` (миграция 0012 откатила KAC-31's CASCADE из 0011).
+- `Network.Delete` непустой (subnets / route tables / non-default SG) → `FailedPrecondition "Network ... is not empty"`; default SG авто-удаляется Delete-worker'ом, `vpn_id` возвращается в `vpn_id_free`.
+
+Реальные FK constraint-ы в схеме:
 
 | Источник | Колонка | Цель | ON DELETE |
 |---|---|---|---|
 | `subnets` | `network_id` | `networks(id)` | NO ACTION (default) |
 | `route_tables` | `network_id` | `networks(id)` | NO ACTION (default) |
-| `security_groups` | `network_id` | `networks(id)` | RESTRICT |
-| `addresses` | `internal_subnet_id` (generated) | `subnets(id)` | RESTRICT |
-| `address_pools` | `zone_id` | `zones(id)` | RESTRICT |
-| `zones` | `region_id` | `regions(id)` | RESTRICT |
+| `security_groups` | `network_id` (**NULLABLE с 0010**) | `networks(id)` | RESTRICT |
+| `addresses` | `internal_subnet_id` (generated, из `internal_ipv4` ИЛИ `internal_ipv6` — 0013) | `subnets(id)` | RESTRICT |
+| `network_interfaces` | `subnet_id` | `subnets(id)` | RESTRICT (миграция 0012; ранее 0011 делала CASCADE — откачено) |
+| `address_references` | `address_id` | `addresses(id)` | CASCADE |
 | `address_pool_address_override` | `address_id` | `addresses(id)` | CASCADE |
 | `address_pool_address_override` | `pool_id` | `address_pools(id)` | RESTRICT |
 | `address_pool_network_default` | `network_id` | `networks(id)` | CASCADE |
 | `address_pool_network_default` | `pool_id` | `address_pools(id)` | RESTRICT |
 
+(FK `address_pools.zone_id → zones`, `zones.region_id → regions` — **удалены** миграцией `0004_drop_geography.sql`; geography → kacho-compute.)
+
 Замечания:
 
 - `Network → default_security_group_id` и кросс-ссылки `PrivateEndpoint
-  → network_id/subnet_id/address_id`, `gateways`, `private_endpoints` —
-  enforced на сервис-уровне (existence-check в worker), а **не** FK на
-  БД-уровне. Это сознательное упрощение: removal default-SG ставит
-  пустую строку в поле (а не NULL через SET NULL).
+  → network_id/subnet_id/address_id`, `gateways`, NIC → `security_group_ids[]`/`v4_address_ids[]`/`v6_address_ids[]` —
+  enforced на сервис-уровне (existence-check / referrer-tracking в worker), а **не** FK на
+  БД-уровне. Removal default-SG ставит пустую строку в поле (а не NULL через SET NULL).
 - NO ACTION в Postgres эквивалентен RESTRICT для DELETE по умолчанию —
-  оба отвергают удаление родителя при наличии детей. Разница в
-  deferred-режиме (CHECK момент в TX), что здесь не используется.
-- CASCADE на binding-таблицах: удаление address или network автоматически
-  удаляет их override/default; pool не удалится при наличии bindings
-  (RESTRICT).
+  оба отвергают удаление родителя при наличии детей.
+- CASCADE на binding/referrer-таблицах: удаление address/network автоматически
+  убирает их override/default/referrer-row; pool не удалится при наличии bindings (RESTRICT).
 
 ---
 
 ## Часть VI. БД-схема
 
-### 6.1 Таблицы (16)
+### 6.1 Таблицы
 
-Source of truth — `internal/migrations/0001_initial.sql` (squashed
-исторических 22-х миграций) + `0002_resource_name_unique.sql` (partial
-UNIQUE на `(folder_id, name)` для 6 ресурсов):
+Source of truth — `internal/migrations/*.sql`: `0001_initial.sql` (squashed
+исторических 22-х миграций) + инкрементные `0002`–`0013` (см. [`architecture/05-database.md`](architecture/05-database.md)
+для полного списка). Ключевые таблицы:
 
 | Таблица | Колонки (ключевые) |
 |---|---|
 | `operations` | `id text PK`, `description`, `created_at`, `created_by`, `done`, `metadata_type`, `metadata_data bytea`, `resource_id`, `response_type`, `response_data bytea`, `error_*` |
-| `networks` | `id text PK`, `folder_id`, `created_at`, `name`, `description`, `labels jsonb`, `default_security_group_id`, `route_distinguisher` |
-| `subnets` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `network_id`, `zone_id`, `v4_cidr_blocks text[]`, `v6_cidr_blocks text[]`, `route_table_id`, `dhcp_options jsonb`, `v4_cidr_primary cidr GENERATED`, `v6_cidr_primary cidr GENERATED` |
-| `addresses` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `addr_type smallint`, `ip_version smallint`, `reserved`, `used`, `deletion_protection`, `external_ipv4 jsonb`, `internal_ipv4 jsonb`, `internal_subnet_id text GENERATED` |
+| `networks` | `id text PK`, `folder_id`, `created_at`, `name`, `description`, `labels jsonb`, `default_security_group_id`, `vpn_id integer NOT NULL` (UNIQUE; 24-bit data-plane-id, internal-only — миграция 0005), `route_distinguisher` |
+| `subnets` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `network_id`, `zone_id text` (без FK — geography→compute), `v4_cidr_blocks text[] DEFAULT '{}'` (опционально на Create), `v6_cidr_blocks jsonb`, `route_table_id`, `dhcp_options jsonb`, `v4_cidr_primary cidr GENERATED`, `v6_cidr_primary cidr GENERATED` |
+| `addresses` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `addr_type smallint`, `ip_version smallint`, `reserved`, `used`, `used_by_type/id/name`, `deletion_protection`, `external_ipv4 jsonb`, `internal_ipv4 jsonb`, `internal_ipv6 jsonb` (0009), `internal_subnet_id text GENERATED` (из `internal_ipv4` ИЛИ `internal_ipv6` — 0013) |
+| `network_interfaces` (0006/0007/0008) | `id text PK` (`e9b…`), `folder_id`, `created_at`, `name`, `labels`, `subnet_id text NOT NULL FK→subnets ON DELETE RESTRICT`, `v4_address_ids text[]`, `v6_address_ids text[]`, `security_group_ids text[]`, `used_by_type/id/name text`, `status smallint` |
+| `address_references` (0003) | `address_id text PK FK→addresses ON DELETE CASCADE`, `referrer_type text` (`compute_instance` \| `network_interface`), `referrer_id`, `referrer_name`, `attached_at` |
 | `route_tables` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `network_id`, `static_routes jsonb` |
-| `security_groups` | `id`, `folder_id`, `network_id`, `created_at`, `name`, `description`, `labels`, `status`, `default_for_network`, `rules jsonb` |
+| `security_groups` | `id`, `folder_id`, `network_id text` (**NULLABLE с 0010**), `created_at`, `name`, `description`, `labels`, `status`, `default_for_network`, `rules jsonb` |
 | `gateways` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `gateway_type` |
 | `private_endpoints` | `id`, `folder_id`, `created_at`, `name`, `description`, `labels`, `network_id`, `subnet_id`, `address_id`, `ip_address`, `service_type`, `dns_options jsonb`, `status` |
-| `regions` | `id`, `name`, `created_at` |
-| `zones` | `id`, `region_id`, `name`, `created_at` |
-| `address_pools` | `id`, `name`, `description`, `labels`, `cidr_blocks text[]`, `kind smallint`, `is_default`, `zone_id`, `selector_labels jsonb`, `selector_priority` |
+| `address_pools` | `id`, `name`, `description`, `labels`, `cidr_blocks text[]`, `kind smallint`, `is_default`, `zone_id text` (без FK — geography→compute), `selector_labels jsonb`, `selector_priority` |
 | `address_pool_address_override` | `address_id PK`, `pool_id`, `bound_at` |
 | `address_pool_network_default` | `network_id PK`, `pool_id`, `bound_at` |
 | `cloud_pool_selector` | `cloud_id PK`, `selector jsonb`, `set_at`, `set_by` |
 | `vpc_outbox` | `sequence_no bigserial PK`, `resource_kind`, `resource_id`, `event_type`, `payload jsonb`, `created_at`, `processed_at` |
 | `vpc_watch_cursors` | `subscriber_id PK`, `last_sequence_no`, `updated_at` |
+| `vpn_id_free` (0005) | `id integer PK` — free-list освобождённых `vpn_id` (+ `SEQUENCE vpn_id_seq` 1..16777215) |
+
+(`regions`, `zones` — **удалены** миграцией `0004_drop_geography.sql`; geography → kacho-compute.)
 
 ### 6.2 Ключевые constraints
 
@@ -692,7 +712,11 @@ UNIQUE на `(folder_id, name)` для 6 ресурсов):
 | `subnets_no_overlap_v6` | Аналогично для v6 | То же для IPv6 |
 | `addresses_external_ip_uniq` | UNIQUE на `external_ipv4 ->> 'address'` (partial) | Глобальная уникальность external IP |
 | `addresses_external_pool_ip_uniq` | UNIQUE на `(external_ipv4 ->> 'address_pool_id', external_ipv4 ->> 'address')` (partial) | Race-free allocator поверх (pool, ip) |
-| `addresses_internal_subnet_ip_uniq` | UNIQUE на `(internal_ipv4 ->> 'subnet_id', internal_ipv4 ->> 'address')` (partial) | То же для internal IP в Subnet |
+| `addresses_internal_subnet_ip_uniq` | UNIQUE на `(internal_ipv4 ->> 'subnet_id', internal_ipv4 ->> 'address')` (partial) | То же для internal IPv4 в Subnet |
+| `addresses_internal_subnet_ipv6_uniq` | UNIQUE на `((internal_ipv6 ->> 'subnet_id'), (internal_ipv6 ->> 'address'))` (partial; миграция 0009) | То же для internal IPv6; conflict-target для `AllocateInternalIPv6` |
+| `addresses_internal_subnet_fkey` | FK `(internal_subnet_id) → subnets(id) ON DELETE RESTRICT` (generated col покрывает v4+v6 с 0013) | v4/v6-internal-адрес блокирует удаление своей подсети |
+| `network_interfaces_subnet_id_fkey` | FK `(subnet_id) → subnets(id) ON DELETE RESTRICT` (миграция 0012; 0011 делала CASCADE — откачено) | NIC блокирует удаление своей подсети |
+| `networks_vpn_id_key` | UNIQUE `(vpn_id)` (миграция 0005) | 24-bit data-plane-id уникален; аллоцируется из `vpn_id_seq`/free-list `vpn_id_free` |
 | `networks_folder_id_name_key` | UNIQUE `(folder_id, name)` | Имя сети уникально в folder |
 | `{subnets,route_tables,security_groups,gateways,private_endpoints,addresses}_folder_id_name_key` | UNIQUE `(folder_id, name)` WHERE `name <> ''` (миграция `0002_resource_name_unique.sql`) | Имя уникально в folder для остальных 6 ресурсов (verbatim YC); пустой `name` допускает несколько |
 | `address_pools_zone_kind_default_uniq` | UNIQUE `(COALESCE(zone_id,''), kind)` WHERE `is_default=true` | Не более одного дефолтного пула на `(zone, kind)` |
@@ -736,7 +760,7 @@ UNIQUE на `(folder_id, name)` для 6 ресурсов):
 |---|---|---|
 | `subnets` | `v4_cidr_primary` | Первый элемент `v4_cidr_blocks`, приведённый к `cidr` (STORED) |
 | `subnets` | `v6_cidr_primary` | То же для v6 |
-| `addresses` | `internal_subnet_id` | `internal_ipv4 ->> 'subnet_id'` если непусто (STORED) |
+| `addresses` | `internal_subnet_id` | `internal_ipv4 ->> 'subnet_id'` **ИЛИ** `internal_ipv6 ->> 'subnet_id'` если непусто (STORED; миграция 0013 расширила выражение — PG16 не умеет `ALTER COLUMN SET EXPRESSION`, поэтому drop&recreate колонки + зависимого индекса + FK `addresses_internal_subnet_fkey`; и v4-, и v6-internal-адрес блокирует свою подсеть) |
 
 Generated STORED-колонки нужны индексам и EXCLUDE-constraint'у, которые
 не умеют работать с выражениями `(jsonb_field)::cidr` напрямую.
@@ -841,8 +865,12 @@ selector_priority)` — резолв возвращает первый по phys
 | `NetworkService` | Create, Update, Delete, Move | async | Мутации, возвращают `Operation` |
 | `SubnetService` | Get, List, ListOperations, ListUsedAddresses | sync | Чтения |
 | `SubnetService` | Create, Update, Delete, Move, AddCidrBlocks, RemoveCidrBlocks, Relocate | async | Мутации |
-| `AddressService` | Get, List, GetByValue, ListBySubnet, ListOperations | sync | Чтения |
-| `AddressService` | Create, Update, Delete, Move | async | Мутации |
+| `AddressService` | Get, List (фильтр `subnet_id` матчит `internal_ipv4`/`internal_ipv6`), GetByValue, ListBySubnet, ListOperations (переживает удаление) | sync | Чтения |
+| `AddressService` | Create (+ `internal_ipv6_address_spec`), Update, Delete (used-адрес у NIC → `FailedPrecondition`), Move | async | Мутации |
+| `SubnetService` (доп.) | AddCidrBlocks / RemoveCidrBlocks — теперь принимают и `v6_cidr_blocks`; `v4_cidr_blocks` опционально на Create; `UpdateSubnet` получил `v6_cidr_blocks` (soft-immutable) | async | — |
+| `NetworkInterfaceService` (эпик KAC-2) | Get, List, ListOperations (переживает удаление) | sync | Чтения |
+| `NetworkInterfaceService` | Create, Update, Delete, AttachToInstance, DetachFromInstance | async | Мутации; Create — `subnet_id` обязателен, адреса/SG опциональны; Attach/Detach выставляют/чистят `used_by` |
+| `SecurityGroupService` (доп.) | Create — `network_id` опционален (folder-level SG); `List?filter=network_id="<id>"` | — | — |
 | `RouteTableService` | Get, List, ListOperations | sync | Чтения |
 | `RouteTableService` | Create, Update, Delete, Move | async | Мутации |
 | `SecurityGroupService` | Get, List, ListOperations | sync | Чтения |
@@ -857,13 +885,13 @@ selector_priority)` — резолв возвращает первый по phys
 
 | Service | RPC | Назначение |
 |---|---|---|
-| `InternalWatchService` | Watch (server-stream) | Outbox stream |
-| `InternalAddressService` | AllocateInternalIP, AllocateExternalIP | IPAM из соседних сервисов |
-| `InternalAddressPoolService` | CRUD пулов + Check/Explain | Управление IPAM |
-| `InternalNetworkService` | SetPoolSelector, UnsetPoolSelector, GetPoolSelector | Network → label routing |
+| `InternalWatchService` | Watch (server-stream) | Outbox stream (server-to-server only) |
+| `InternalAddressService` | AllocateInternalIP, **AllocateInternalIPv6**, AllocateExternalIP, {Set,Clear,Get}AddressReference | IPAM + referrer-tracking; вызывается in-process из `AddressService.doCreate` и kacho-compute (referrer'ы: `compute_instance`, `network_interface`) |
+| `InternalAddressPoolService` | CRUD пулов + bindings + Check/ExplainResolution + ListAddresses/GetUtilization | Управление IPAM (cluster-internal listener) |
+| `InternalNetworkService` | SetDefaultSecurityGroupId, **GetNetwork → `InternalNetwork{network, vpn_id}`** | computed-field setter + internal-проекция Network (содержит `vpn_id`); REST `GET /vpc/v1/networks/{id}/internal` |
+| `InternalNetworkInterfaceService` (эпик KAC-2) | GetNetworkInterface → `InternalNetworkInterface` (lean public + data-plane: resolved `vpn_id`, `hv_id` placement, `sid`/`sid_seq`, `host_iface`, `netns`, `gateway_ip`, `container_id`, `status_error`, `dataplane_revision`, resolved v4/v6 address strings), ListByHypervisor, ReportNiDataplane (write-back от `kacho-vpc-implement`) | REST `GET /vpc/v1/networkInterfaces/{id}/internal` (internal mux); `ListByHypervisor`/`ReportNiDataplane` — internal-only gRPC-style routes |
 | `InternalCloudService` | SetCloudPoolSelector, UnsetCloudPoolSelector, GetCloudPoolSelector | Cloud-level labels |
-| `InternalRegionService` | CRUD regions | Seed-данные / admin |
-| `InternalZoneService` | CRUD zones | То же |
+| ~~`InternalRegionService` / `InternalZoneService`~~ | — | удалены — Geography (Region/Zone) → `kacho-compute` (эпик KAC-15; миграция `0004_drop_geography.sql`) |
 
 ### 8.3 REST mapping (через api-gateway)
 

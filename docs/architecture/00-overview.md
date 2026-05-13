@@ -7,13 +7,17 @@ real data-plane живёт отдельным проектом `kacho-vpc-implem
 Самый объёмный сервис в системе.
 
 Owns:
-- 7 публичных VPC-ресурсов (verbatim YC API).
-- 4 IPAM-ресурса (kacho-only, admin).
-- 3 binding-таблицы (admin connectors между ресурсами).
+- 8 публичных VPC-ресурсов: 7 исторических (Network, Subnet, Address, RouteTable,
+  SecurityGroup, Gateway, PrivateEndpoint) + `NetworkInterface` (first-class AWS-ENI-подобный
+  ресурс, эпик KAC-2) — а также инфра-поле `vpn_id` на `Network` (24-bit data-plane-id, internal-only).
+- AddressPool + CloudPoolSelector + binding-таблицы (kacho-only, admin).
+  (Region/Zone — перенесены в `kacho-compute`, эпик KAC-15.)
 - inline IPAM allocation (раньше в отдельном процессе, теперь в
-  request-path).
-- inline default-SG creation.
+  request-path) — internal/external IPv4 + internal IPv6.
+- inline default-SG creation + аллокация `vpn_id` на Network.Create.
 - in-process outbox + LISTEN/NOTIFY для подписки на изменения.
+- `InternalNetworkInterfaceService` — internal-проекция NIC (data-plane-инфа) +
+  write-back `ReportNiDataplane` от `kacho-vpc-implement`.
 
 ## Что делает (логически)
 
@@ -34,9 +38,15 @@ Owns:
                   │                address/override               │
                   │                                               │
      internal ──► │   InternalWatchService (outbox stream)        │
-                  │   InternalAddressService (allocate IP)        │
+                  │   InternalAddressService (allocate v4/v6/ext) │
+                  │   InternalNetworkService (Network + vpn_id)   │
+                  │   InternalNetworkInterfaceService             │
+                  │     (NIC data-plane proj + ReportNiDataplane) │
                   └───────────────────────────────────────────────┘
 ```
+
+> Region/Zone admin (`InternalRegionService`/`InternalZoneService`) — **удалены** из kacho-vpc:
+> Geography переехала в `kacho-compute` (эпик KAC-15; миграция `0004_drop_geography.sql`).
 
 ## Ресурсы — две группы
 
@@ -44,17 +54,19 @@ Owns:
 
 | Ресурс | Назначение | ID prefix |
 |---|---|---|
-| Network | VPC-сеть | `enp` |
-| Subnet | подсеть в Network, привязана к Zone | `e9b` |
-| Address | external (publicIP) или internal (IP в Subnet) | `e9b` |
+| Network | VPC-сеть (+ internal-only `vpn_id` 24-bit) | `enp` |
+| Subnet | подсеть в Network (zone — id-строка домена compute); `v4_cidr_blocks` опционально на Create | `e9b` |
+| Address | external (publicIP) или internal (IPv4/IPv6 в Subnet) | `e9b` |
+| NetworkInterface | first-class NIC (эпик KAC-2): принадлежит Subnet, ссылается на Address по id | `e9b` (переиспользует `PrefixSubnet`) |
 | RouteTable | static routes для Network | `enp` |
-| SecurityGroup | firewall rules, привязан к Network | `enp` |
+| SecurityGroup | firewall rules; `network_id` опционально на Create (folder-level SG) | `enp` |
 | Gateway | shared egress (NAT-style) | `enp` |
 | PrivateEndpoint | privatelink connection | `enp` |
 
 > Префиксы — из `kacho-corelib/ids`. `Network/RouteTable/SecurityGroup/Gateway/
 > PrivateEndpoint` делят `enp` (api-gateway маршрутизирует `OperationService.Get`
-> по первым 3 символам id; для VPC-домена это `enp`). `Subnet/Address` — `e9b`.
+> по первым 3 символам id; для VPC-домена это `enp`). `Subnet/Address/NetworkInterface` — `e9b`
+> (NIC переиспользует `PrefixSubnet`, отдельного `PrefixNetworkInterface` нет).
 > `PrefixOperationVPC == PrefixNetwork == "enp"`.
 
 **Системная (kacho-only, admin, глобальная)** — то что админ управляет
@@ -62,10 +74,12 @@ Owns:
 
 | Ресурс | Назначение | ID format |
 |---|---|---|
-| Region | географический регион | строка `ru-central1` |
-| Zone | зона в регионе | строка `ru-central1-a` |
 | AddressPool | пул external IP с CIDR-блоками | `apl` |
 | CloudPoolSelector | label-привязка Cloud к pool routing | PK = cloud_id |
+
+> Region/Zone (`ru-central1` / `ru-central1-a`) — больше **не в kacho-vpc**, а в `kacho-compute`
+> (эпик KAC-15). `subnet.zone_id` / `address_pool.zone_id` хранятся как `TEXT`-id без FK,
+> валидируются через `compute.v1.ZoneService.Get`.
 
 **Bindings** (внутренние таблицы для cascade resolve):
 
@@ -90,17 +104,18 @@ internal/
   service/                use-cases:
                             NetworkService, SubnetService, AddressService,
                             RouteTableService, SecurityGroupService,
-                            GatewayService, PrivateEndpointService.
+                            GatewayService, PrivateEndpointService,
+                            NetworkInterfaceService (эпик KAC-2 — CRUD + Attach/Detach).
                             AddressPoolService (admin CRUD + cascade resolve).
-                            AddressAllocator (pure IP picker + retry).
-                            RegionService, ZoneService.
-                            NetworkInternal (computed-field setter).
+                            AddressAllocator (pure IP picker + retry; v4/v6/ext).
+                            NetworkInternal (vpn_id + computed-field setter).
+                            NetworkInterfaceInternal (data-plane проекция + ReportNiDataplane).
 
                           Port-интерфейсы:
-                            NetworkRepo, SubnetRepo, AddressRepo, …
+                            NetworkRepo, SubnetRepo, AddressRepo, NetworkInterfaceRepo, …
                             AddressPoolRepo, AddressPoolBindingRepo,
-                            CloudPoolSelectorRepo, RegionRepo, ZoneRepo.
-                            FolderClient (cross-service).
+                            CloudPoolSelectorRepo, VpnIDAllocator.
+                            FolderClient, GeographyRegistry (compute.v1.ZoneService — cross-service).
 
   repo/                   pgx adapter, реализация ports + outbox emit.
                           Один файл на ресурс.
