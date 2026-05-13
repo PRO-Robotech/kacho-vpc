@@ -61,6 +61,35 @@ inline-cleanup `DELETE /vpc/v1/addresses/{id}` через 100ms.
 - **Достижение 10k sustained** — требует больше worker nodes (текущие 2×16-vCPU исчерпываются на 15 pods × 4-cpu limit) или sync-ish allocate-path (без Operation worker overhead).
 - **PG persistence** — в текущем стенде `persistence: enabled: false` для всех PG → restart pod = data loss; для production обязательно включить.
 
+### Попытка с выделенной k6-нодой (negative result)
+
+Добавлена 3-я нода (16 vCPU) с label `node-role.kubernetes.io/k6=` для изоляции
+нагрузочника от backend pods. K6 Job pinned туда через `nodeSelector`.
+Запуск с `ramping-arrival-rate` 1k → 3k → 6k → 10k → hold 2 min:
+
+| Метрика | Значение |
+|---|---|
+| Sustained alloc | ~820/sec |
+| address_alloc_ok | 99.90% |
+| p99 latency | 48.77 sec (!) |
+| http_req_failed | 37.09% |
+| iteration_duration p99 | 1m30s |
+
+Парадоксально хуже, чем без выделенной ноды. Гипотеза:
+- На 12 CPU k6 быстро поднял до 24k VU (vs 16k раньше).
+- Backend (15 vpc pods на 32-vCPU) не выдерживает приходящий burst — connection pool заполнен (~1100 active conn из max 2000), worker queue растёт.
+- Inline cleanup создаёт двойную нагрузку (POST + DELETE per VU); под burst DELETE timeouts (>60s) → connection backed up → каскадная деградация.
+
+**Что сделать (вне этой итерации):**
+1. Throttle k6 явно (`maxVUs: 8000`) и измерить sustained при ограниченном concurrency.
+2. Убрать inline cleanup; использовать pure-allocate с enlarged pool (/12 = 1M IPs).
+3. Backend tuning: больше CPU на vpc pod (cpu limit=8), параллелить outbox INSERT в Operation worker, batch pg_notify (или disable Watch для теста).
+4. Pre-scale backend (vpc=15, ag=15) перед нагрузкой — обходит HPA cold-start delay.
+5. Включить PG persistence + warm DB перед прогоном.
+
+Артефакт: `tests/k6/results/run-20260514-0226-k6node-10k.txt`,
+`tests/k6/results/run-20260514-0231-rampup-10k.txt`.
+
 Артефакты прогона:
 - `tests/k6/results/run-20260514-0142-baseline-1k.txt`
 - `tests/k6/results/run-20260514-0155-hpa-10k.txt` (первый attempt)
