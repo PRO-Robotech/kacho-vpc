@@ -6,6 +6,11 @@
 #   ./scripts/run.sh --service network        # одна коллекция
 #   ./scripts/run.sh --service network --bail # прерывать после первого fail
 #   ./scripts/run.sh --delay 100              # задержка между запросами (ms)
+#   ./scripts/run.sh --jobs 2                 # макс. параллельных коллекций (default 4)
+#
+# Per-service коллекции гоняются параллельно (cap --jobs, default 4): каждая
+# коллекция изолирует свои ресурсы по {{runId}}-суффиксам внутри общего
+# existingFolderId, так что параллельный прогон безопасен.
 #
 # Outputs:
 #   out/<service>.json — newman JSON reporter (для агрегации)
@@ -17,7 +22,8 @@ cd "$(dirname "$0")/.."
 
 SERVICE=""
 BAIL=""
-DELAY="100"
+DELAY="15"
+JOBS="4"
 EXTRA=()
 
 while [[ $# -gt 0 ]]; do
@@ -25,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --service) SERVICE="$2"; shift 2 ;;
     --bail)    BAIL="--bail"; shift ;;
     --delay)   DELAY="$2"; shift 2 ;;
+    --jobs)    JOBS="$2"; shift 2 ;;
     *)         EXTRA+=("$1"); shift ;;
   esac
 done
@@ -54,10 +61,13 @@ mkdir -p out
 if [[ -n "$SERVICE" ]]; then
   run_one "$SERVICE"
 else
-  for svc in network subnet address route-table security-group gateway private-endpoint operation \
-             internal-pool internal-cloud; do
-    run_one "$svc"
+  # Параллельный прогон с cap=$JOBS. Каждая коллекция runId-scoped → safe.
+  for svc in network subnet address route-table security-group gateway private-endpoint \
+             network-interface operation internal-pool internal-cloud; do
+    while [[ "$(jobs -rp | wc -l)" -ge "$JOBS" ]]; do wait -n; done
+    run_one "$svc" &
   done
+  wait
 fi
 
 echo

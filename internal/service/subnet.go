@@ -436,9 +436,8 @@ func (s *SubnetService) ListOperations(ctx context.Context, subnetID string, p P
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
 		return nil, "", err
 	}
-	if _, err := s.repo.Get(ctx, subnetID); err != nil {
-		return nil, "", mapRepoErr(err)
-	}
+	// NB: no repo.Get precondition — operation history must remain reachable
+	// after the resource is deleted (operations rows have no FK cascade).
 	return s.opsRepo.List(ctx, operations.ListFilter{
 		ResourceID: subnetID,
 		PageSize:   p.PageSize,
@@ -780,25 +779,22 @@ func (s *SubnetService) Delete(ctx context.Context, id string) (*operations.Oper
 	if len(addrs) > 0 {
 		return nil, status.Error(codes.FailedPrecondition, "Subnet has allocated internal addresses")
 	}
-	// KAC-31: a NIC no longer *directly* blocks its subnet (FK is ON DELETE
-	// CASCADE — migration 0011). An address-less NIC is cleaned up by the cascade;
-	// a NIC with addresses already blocked the subnet above (via the address
-	// chain). But a NIC still attached to a compute instance must not be silently
-	// cascade-deleted — reject the subnet delete until it's detached.
+	// KAC-33 (reverts KAC-31): the NIC→Subnet FK is ON DELETE RESTRICT again
+	// (migration 0012) — a NIC hard-blocks its subnet. Surface a friendly sync
+	// FAILED_PRECONDITION; the FK RESTRICT in the worker stays as the atomic
+	// backstop. Delete bottom-up: NIC → Address → Subnet → Network.
 	if s.nicRepo != nil {
 		nics, nerr := s.nicRepo.ListBySubnet(ctx, id)
 		if nerr != nil {
 			return nil, mapRepoErr(nerr)
 		}
-		var attached []string
-		for _, n := range nics {
-			if n.UsedByID != "" {
-				attached = append(attached, n.ID)
+		if len(nics) > 0 {
+			nicIDs := make([]string, 0, len(nics))
+			for _, n := range nics {
+				nicIDs = append(nicIDs, n.ID)
 			}
-		}
-		if len(attached) > 0 {
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"subnet %s has network interface(s) attached to instances (%s); detach them first", id, strings.Join(attached, ", "))
+				"subnet %s has %d network interface(s) (%s); delete them first", id, len(nics), strings.Join(nicIDs, ", "))
 		}
 	}
 

@@ -134,7 +134,9 @@ func TestSubnetService_Update_CidrBlocks_Immutable(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-func TestSubnetService_Delete_NICAttachedToInstance(t *testing.T) {
+func TestSubnetService_Delete_BlockedByNIC(t *testing.T) {
+	// KAC-33: NIC→Subnet FK is ON DELETE RESTRICT — any NIC (attached or not)
+	// hard-blocks its subnet. Delete the NIC first.
 	nr := newMockNetworkRepo()
 	net := makeNetwork(nr)
 	sr := newMockSubnetRepo()
@@ -142,26 +144,24 @@ func TestSubnetService_Delete_NICAttachedToInstance(t *testing.T) {
 	sub := makeSubnet(sr, net.ID)
 
 	nicRepo := newNIRepoFake()
-	// NIC в этой подсети, приаттаченный к инстансу.
 	nicRepo.data["e9bnic1"] = &domain.NetworkInterface{
 		ID: "e9bnic1", FolderID: "f1", SubnetID: sub.ID,
-		UsedByType: "compute_instance", UsedByID: "inst-1",
-		Status: domain.NIStatusActive,
+		Status: domain.NIStatusAvailable,
 	}
 
 	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)
 	svc.SetNICRepo(nicRepo)
 
-	// Delete блокируется sync — FailedPrecondition.
+	// Delete блокируется sync — FailedPrecondition (даже если NIC не приаттачен).
 	_, err := svc.Delete(context.Background(), sub.ID)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	assert.Contains(t, st.Message(), "network interface")
 	assert.Contains(t, st.Message(), "e9bnic1")
 
-	// Detach (used_by очищен) → Delete проходит (Operation создаётся).
-	nicRepo.data["e9bnic1"].UsedByType = ""
-	nicRepo.data["e9bnic1"].UsedByID = ""
+	// Удалили NIC → Delete проходит (Operation создаётся).
+	delete(nicRepo.data, "e9bnic1")
 	op, err := svc.Delete(context.Background(), sub.ID)
 	require.NoError(t, err)
 	require.NotNil(t, op)

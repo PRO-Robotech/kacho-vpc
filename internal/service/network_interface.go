@@ -531,9 +531,8 @@ func (s *NetworkInterfaceService) ListOperations(ctx context.Context, id string,
 	if err := niResourceID(id); err != nil {
 		return nil, "", err
 	}
-	if _, err := s.repo.Get(ctx, id); err != nil {
-		return nil, "", mapRepoErr(err)
-	}
+	// NB: no repo.Get precondition — operation history must remain reachable
+	// after the resource is deleted (operations rows have no FK cascade).
 	return s.opsRepo.List(ctx, operations.ListFilter{ResourceID: id, PageSize: p.PageSize, PageToken: p.PageToken})
 }
 

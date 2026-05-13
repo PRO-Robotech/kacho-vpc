@@ -47,12 +47,14 @@ func TestNetworkService_Delete_OK(t *testing.T) {
 	assert.Nil(t, saved.Error)
 }
 
-func TestNetworkService_ListOperations_NotFound(t *testing.T) {
+func TestNetworkService_ListOperations_UnknownID_Empty(t *testing.T) {
+	// History must remain reachable after the resource is deleted, so an
+	// unknown (or deleted) id is not NotFound — it's an empty list.
 	or := newMockOpsRepo()
 	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
+	ops, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
+	assert.NoError(t, err)
+	assert.Empty(t, ops)
 }
 
 func TestNetworkService_ListSubnets_NetworkNotFound(t *testing.T) {
@@ -212,12 +214,12 @@ func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-func TestAddressService_ListOperations_NotFound(t *testing.T) {
+func TestAddressService_ListOperations_UnknownID_Empty(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixAddress), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
+	ops, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixAddress), Pagination{})
+	assert.NoError(t, err)
+	assert.Empty(t, ops)
 }
 
 // ---- RouteTableService — extra coverage ----
@@ -495,12 +497,12 @@ func TestSubnetService_List_Empty(t *testing.T) {
 	assert.Empty(t, subs)
 }
 
-func TestSubnetService_ListOperations_NotFound(t *testing.T) {
+func TestSubnetService_ListOperations_UnknownID_Empty(t *testing.T) {
 	or := newMockOpsRepo()
 	svc := NewSubnetService(newMockSubnetRepo(), newMockNetworkRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
+	ops, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
+	assert.NoError(t, err)
+	assert.Empty(t, ops)
 }
 
 // ---- Address Get ----

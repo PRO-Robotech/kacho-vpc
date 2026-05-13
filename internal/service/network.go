@@ -116,9 +116,8 @@ func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
-	if _, err := s.repo.Get(ctx, networkID); err != nil {
-		return nil, "", mapRepoErr(err)
-	}
+	// NB: no repo.Get precondition — operation history must remain reachable
+	// after the resource is deleted (operations rows have no FK cascade).
 	return s.opsRepo.List(ctx, operations.ListFilter{
 		ResourceID: networkID,
 		PageSize:   p.PageSize,
