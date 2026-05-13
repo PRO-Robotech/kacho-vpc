@@ -131,12 +131,15 @@ func (h *SubnetHandler) ListOperations(ctx context.Context, req *vpcv1.ListSubne
 	if req.SubnetId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	sub, err := h.svc.Get(ctx, req.SubnetId)
-	if err != nil {
-		return nil, err
-	}
-	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
-		return nil, err
+	// ListOperations должен работать и после удаления ресурса (история операций).
+	// Get — best-effort: ресурс жив → проверяем folder-ownership; удалён (NotFound)
+	// → пропускаем проверку и отдаём накопленные операции.
+	if sub, gerr := h.svc.Get(ctx, req.SubnetId); gerr == nil {
+		if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+			return nil, err
+		}
+	} else if status.Code(gerr) != codes.NotFound {
+		return nil, gerr
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.SubnetId, svc.Pagination{
 		PageToken: req.PageToken,

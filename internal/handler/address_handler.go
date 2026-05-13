@@ -186,12 +186,15 @@ func (h *AddressHandler) ListOperations(ctx context.Context, req *vpcv1.ListAddr
 	if req.AddressId == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	a, err := h.svc.Get(ctx, req.AddressId)
-	if err != nil {
-		return nil, err
-	}
-	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
-		return nil, err
+	// ListOperations должен работать и после удаления ресурса (история операций).
+	// Get — best-effort: ресурс жив → проверяем folder-ownership; удалён (NotFound)
+	// → пропускаем проверку и отдаём накопленные операции.
+	if a, gerr := h.svc.Get(ctx, req.AddressId); gerr == nil {
+		if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
+			return nil, err
+		}
+	} else if status.Code(gerr) != codes.NotFound {
+		return nil, gerr
 	}
 	ops, nextToken, err := h.svc.ListOperations(ctx, req.AddressId, svc.Pagination{
 		PageToken: req.PageToken,
