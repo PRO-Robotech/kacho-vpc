@@ -86,6 +86,15 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	networkBindingPool := mkPool("network-bound", zone, false, nil, "198.18.3.0/24")                               // step 2
 	overridePool := mkPool("address-override", zone, false, nil, "198.18.4.0/24")                                  // step 1
 
+	// AllocateExternalIP теперь использует address_pool_free_ips (миграция 0014).
+	// Pool'ы созданы напрямую через poolRepo.Insert (не через
+	// InternalAddressPoolService.Create, который сам зовёт PopulateFreelistForPool),
+	// поэтому материализуем freelist руками — иначе Allocate-ассерты ниже упали бы
+	// в FailedPrecondition "address pool exhausted".
+	for _, p := range []*domain.AddressPool{globalPool, zonePool, selectorPool, networkBindingPool, overridePool} {
+		require.NoError(t, poolRepo.PopulateFreelistForPool(ctx, p.ID))
+	}
+
 	// Network + subnet for the internal-address (step-2) path.
 	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", CreatedAt: now, Name: "net-step2"}
 	_, err = netRepo.Insert(ctx, net)

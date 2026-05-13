@@ -698,9 +698,31 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 		return nil, err
 	}
 
+	// Capture any allocated external IP before delete — мы вернём его в
+	// address_pool_free_ips после успешного DELETE, чтобы освобождённый IP
+	// сразу попал обратно в оборот PG-native allocator'а (миграция 0014).
+	var (
+		allocatedIP, allocatedPoolID string
+	)
+	if existing.ExternalIpv4 != nil {
+		allocatedIP = existing.ExternalIpv4.Address
+		allocatedPoolID = existing.ExternalIpv4.AddressPoolID
+	}
+
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
+		}
+		// Best-effort return-to-freelist. Failure здесь не валит Delete —
+		// адрес уже удалён, IP в худшем случае просто «осядет» (recoverable
+		// через admin-tooling backfill). Иначе сбой return'а сделал бы
+		// Operation failed после фактического удаления — клиент увидел бы
+		// inconsistent state.
+		if allocatedIP != "" && allocatedPoolID != "" {
+			if rerr := s.repo.ReturnIPToFreelist(ctx, allocatedPoolID, allocatedIP); rerr != nil {
+				slog.WarnContext(ctx, "address delete: failed to return IP to freelist",
+					"address_id", id, "pool_id", allocatedPoolID, "ip", allocatedIP, "err", rerr)
+			}
 		}
 		return anypb.New(&emptypb.Empty{})
 	})
@@ -959,7 +981,14 @@ func pickRandomIPv6(prefix netip.Prefix) (string, error) {
 }
 
 // AllocateExternalIP — резолвит pool через cascade и выделяет next-free IPv4
-// из его cidr_blocks. Idempotent.
+// из его freelist (address_pool_free_ips, миграция 0014). Idempotent: если у
+// адреса уже есть external IP — возвращает его с AlreadyAllocated=true.
+//
+// PG-native allocator: один SQL-statement (FOR UPDATE SKIP LOCKED → DELETE
+// FROM freelist → UPDATE addresses) на каждую попытку. Нулевая contention
+// между параллельными аллокаторами — заменил random-pick + UNIQUE-retry loop,
+// который под нагрузкой упирался в ~73 alloc/sec/pod из-за UNIQUE-violation
+// retries. Каждая аллокация теперь O(1) по числу IP в pool'е.
 func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID string) (*AllocateResult, error) {
 	addr, err := s.repo.Get(ctx, addressID)
 	if err != nil {
@@ -990,111 +1019,17 @@ func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID strin
 			"address pool %s has no cidr_blocks", pool.ID)
 	}
 
-	// Двухфазный allocate по каждому CIDR:
-	//  Phase 1 (allocateRandomPhase попыток) — random-pick. Дёшево, сходится
-	//          быстро при low/medium occupancy. Без shared-state между попытками.
-	//  Phase 2 (deterministic sweep) — линейный обход CIDR с локальным
-	//          tried-set для memoization. Гарантирует closure под high-occupancy
-	//          (concurrency P0 #2 closure: устраняет ~9% false-fail на /28
-	//          при 95%+ occupancy).
-	//
-	// Diagnostic: считаем сколько CIDR'ов реально доходит до allocate-loop'а;
-	// если 0 — это invalid pool config (IPv6, parse fail), и FailedPrecondition
-	// даёт оператору точную причину вместо вводящего в заблуждение «exhausted».
-	parsedV4Count := 0
-	totalConflicts := 0
-	skippedNonV4 := 0
-	parseFails := 0
-	for _, cidrStr := range pool.CIDRBlocks {
-		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
-		if err != nil {
-			parseFails++
-			slog.WarnContext(ctx, "allocator: skipping unparseable cidr",
-				"pool_id", pool.ID, "cidr", cidrStr, "err", err)
-			continue
+	ip, err := s.repo.AllocateIPFromFreelist(ctx, pool.ID, addressID)
+	if err != nil {
+		if errors.Is(err, ErrPoolExhausted) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"address pool %s exhausted", pool.ID)
 		}
-		if !cidr.Addr().Is4() {
-			skippedNonV4++
-			slog.WarnContext(ctx, "allocator: skipping non-IPv4 cidr",
-				"pool_id", pool.ID, "cidr", cidrStr)
-			continue
-		}
-		parsedV4Count++
-		tried := make(map[string]struct{}, allocateMaxAttempts)
-		// Phase 1: random pick.
-		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
-			ip, err := pickRandomIPv4(cidr)
-			if err != nil {
-				break // CIDR too small; try next
-			}
-			if _, dup := tried[ip]; dup {
-				continue
-			}
-			tried[ip] = struct{}{}
-			addr.ExternalIpv4.Address = ip
-			addr.ExternalIpv4.AddressPoolID = pool.ID
-			updated, err := s.repo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
-			if err != nil {
-				if isUniqueViolation(err) {
-					totalConflicts++
-					addr.ExternalIpv4.Address = ""
-					addr.ExternalIpv4.AddressPoolID = ""
-					continue
-				}
-				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
-					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
-				return nil, err
-			}
-			return &AllocateResult{
-				IP:     updated.ExternalIpv4.Address,
-				PoolID: pool.ID,
-			}, nil
-		}
-		// Phase 2: deterministic sweep — гарантия что мы перепробуем все
-		// usable IPs в CIDR (с учётом tried-set).
-		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
-			if _, dup := tried[candidate]; dup {
-				continue
-			}
-			tried[candidate] = struct{}{}
-			addr.ExternalIpv4.Address = candidate
-			addr.ExternalIpv4.AddressPoolID = pool.ID
-			updated, err := s.repo.SetIPSpec(ctx, addressID, addr.ExternalIpv4, nil)
-			if err != nil {
-				if isUniqueViolation(err) {
-					totalConflicts++
-					addr.ExternalIpv4.Address = ""
-					addr.ExternalIpv4.AddressPoolID = ""
-					continue
-				}
-				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
-					"pool_id", pool.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
-				return nil, err
-			}
-			return &AllocateResult{
-				IP:     updated.ExternalIpv4.Address,
-				PoolID: pool.ID,
-			}, nil
-		}
+		slog.ErrorContext(ctx, "allocator: AllocateIPFromFreelist failed",
+			"pool_id", pool.ID, "address_id", addressID, "err", err)
+		return nil, status.Errorf(codes.Internal, "allocate from freelist: %v", err)
 	}
-	slog.WarnContext(ctx, "allocator: exhausted",
-		"pool_id", pool.ID,
-		"address_id", addressID,
-		"cidr_blocks", pool.CIDRBlocks,
-		"parsed_ipv4", parsedV4Count,
-		"skipped_non_v4", skippedNonV4,
-		"parse_fails", parseFails,
-		"unique_conflicts", totalConflicts)
-	if parsedV4Count == 0 {
-		// Pool без usable IPv4 CIDR — invalid config, не actually "exhausted".
-		// Validation в Create/Update должна это ловить, но защищаемся для
-		// legacy-pools где validation добавлена позже их создания.
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"address pool %s has no IPv4 cidr_blocks (allocator requires IPv4)", pool.ID)
-	}
-	return nil, status.Errorf(codes.ResourceExhausted,
-		"address pool %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks)",
-		pool.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count)
+	return &AllocateResult{IP: ip, PoolID: pool.ID}, nil
 }
 
 // usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без

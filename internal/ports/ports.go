@@ -148,6 +148,18 @@ type AddressRepo interface {
 	// + retry на UNIQUE-violation). nil → no-op.
 	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error)
 
+	// AllocateIPFromFreelist атомарно достаёт один свободный IP из
+	// address_pool_free_ips для poolID (FOR UPDATE SKIP LOCKED) и проставляет
+	// его в addresses.external_ipv4{address, address_pool_id} для addressID.
+	// Один SQL-statement → нулевая contention между конкурентными аллокаторами;
+	// используется AddressService.AllocateExternalIP (миграция 0014).
+	// Возвращает ErrPoolExhausted если freelist пуст.
+	AllocateIPFromFreelist(ctx context.Context, poolID, addressID string) (string, error)
+	// ReturnIPToFreelist кладёт IP обратно в address_pool_free_ips для poolID.
+	// Идемпотентно (ON CONFLICT DO NOTHING). Вызывается AddressService.Delete-
+	// worker'ом, чтобы освобождённый IP сразу вернулся в оборот аллокатора.
+	ReturnIPToFreelist(ctx context.Context, poolID, ip string) error
+
 	// SetReference upsert'ит referrer-row адреса И выставляет addresses.used=true
 	// в одной tx. ErrNotFound если address не существует.
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
@@ -278,6 +290,14 @@ type AddressPoolRepo interface {
 	// ListAddressesByPool — все Address (cross-folder) использующие pool.
 	// Pagination через page_size+token.
 	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.Address, string, error)
+
+	// PopulateFreelistForPool материализует все usable IPv4 адреса из
+	// pool.cidr_blocks в address_pool_free_ips (миграция 0014). Идемпотентно
+	// (ON CONFLICT DO NOTHING). IPv6 CIDR'ы пропускаются — sparse v6
+	// аллокатор отложен. Вызывается InternalAddressPoolService.Create
+	// сразу после Insert, чтобы новый pool был сразу пригоден для
+	// PG-native freelist allocator'а.
+	PopulateFreelistForPool(ctx context.Context, poolID string) error
 }
 
 // AddressPoolBindingRepo — explicit биндинги pool ↔ network/address (per-resource pinning).

@@ -192,12 +192,24 @@ func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ ports.Pagi
 // ---- AddressRepo ----
 
 type AddressRepo struct {
-	mu   sync.Mutex
-	data map[string]*domain.Address
-	refs map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
+	mu        sync.Mutex
+	data      map[string]*domain.Address
+	refs      map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
+	freelists map[string][]string                 // poolID → ordered free IPs (FIFO)
 }
 
 func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.Address)} }
+
+// SeedFreelist засыпает poolID-freelist ровно перечисленными IP в указанном
+// порядке (для unit-тестов, чтобы не материализовать CIDR целиком).
+func (r *AddressRepo) SeedFreelist(poolID string, ips ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.freelists == nil {
+		r.freelists = make(map[string][]string)
+	}
+	r.freelists[poolID] = append([]string(nil), ips...)
+}
 
 // Seed добавляет address напрямую в стор (для тестовых fixture'ов).
 func (r *AddressRepo) Seed(a *domain.Address) {
@@ -403,6 +415,49 @@ func (r *AddressRepo) ReferencesForAddresses(_ context.Context, addressIDs []str
 		}
 	}
 	return out, nil
+}
+
+// AllocateIPFromFreelist — mock-stub: pops first IP из freelist, проставляет
+// его в addresses.external_ipv4. Возвращает ports.ErrPoolExhausted если
+// freelist для pool пуст или не засеян (см. SeedFreelist).
+func (r *AddressRepo) AllocateIPFromFreelist(_ context.Context, poolID, addressID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.freelists == nil {
+		return "", ports.ErrPoolExhausted
+	}
+	ips := r.freelists[poolID]
+	if len(ips) == 0 {
+		return "", ports.ErrPoolExhausted
+	}
+	ip := ips[0]
+	r.freelists[poolID] = ips[1:]
+	a, ok := r.data[addressID]
+	if !ok {
+		return "", ports.ErrNotFound
+	}
+	if a.ExternalIpv4 == nil {
+		a.ExternalIpv4 = &domain.ExternalIpv4Spec{}
+	}
+	a.ExternalIpv4.Address = ip
+	a.ExternalIpv4.AddressPoolID = poolID
+	return ip, nil
+}
+
+// ReturnIPToFreelist — mock-stub: кладёт IP обратно в freelist; идемпотентно.
+func (r *AddressRepo) ReturnIPToFreelist(_ context.Context, poolID, ip string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.freelists == nil {
+		r.freelists = make(map[string][]string)
+	}
+	for _, existing := range r.freelists[poolID] {
+		if existing == ip {
+			return nil
+		}
+	}
+	r.freelists[poolID] = append(r.freelists[poolID], ip)
+	return nil
 }
 
 // ---- RouteTableRepo ----

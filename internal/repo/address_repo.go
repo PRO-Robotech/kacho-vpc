@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -609,8 +610,10 @@ func marshalInternalIPv6(i *domain.InternalIpv6Spec) ([]byte, error) {
 }
 
 // ErrPoolExhausted — address_pool_free_ips empty for the given pool.
-// Service-layer maps to gRPC FailedPrecondition.
-var ErrPoolExhausted = errors.New("address pool exhausted")
+// Service-layer maps to gRPC FailedPrecondition. Re-exported from
+// `internal/ports` so service-side `errors.Is(err, service.ErrPoolExhausted)`
+// matches the same error-value the repo returns.
+var ErrPoolExhausted = ports.ErrPoolExhausted
 
 // allocateFromFreelistSQL — single-statement atomic IP allocation. SKIP LOCKED
 // lets parallel workers grab different freelist rows without contention.
