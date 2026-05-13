@@ -188,6 +188,25 @@ return ResourceExhausted "address pool X exhausted (no free IP in any cidr_block
 
 Без второй ветки `wrapPgErr` в `SetIPSpec` ломал retry-loop и наружу шёл raw "already exists" вместо `ResourceExhausted`.
 
+## Internal IP allocate (v4 + v6)
+
+`InternalAddressService.AllocateInternalIP` и `AllocateInternalIPv6` — internal-only, вызываются
+in-process из `AddressService.doCreate` при `internal_ipv4_address_spec` / `internal_ipv6_address_spec`
+(а также admin-tooling). Pool'а нет — IP берётся из CIDR-блоков самой подсети:
+
+- **v4** — random-pick + retry в `subnet.v4_cidr_blocks` (двухфазный sweep, см. ниже); conflict-target
+  `addresses_internal_subnet_ip_uniq`. CIDR-less подсеть → `FailedPrecondition "subnet ... has no IPv4 CIDR"`
+  (то же — explicit `internal_ipv4_address_spec.address` в CIDR-less подсеть).
+- **v6** (миграция 0009) — `AllocateInternalIPv6`: random-pick + retry в `subnet.v6_cidr_blocks`;
+  conflict-target `addresses_internal_subnet_ipv6_uniq` (partial UNIQUE на `(subnet_id, address)` из `internal_ipv6`).
+
+`ListAddressesRequest.subnet_id` — фильтр; матчит `internal_ipv4->>'subnet_id'` **ИЛИ**
+`internal_ipv6->>'subnet_id'` (т.е. возвращает оба семейства внутренних адресов подсети).
+
+И v4-, и v6-внутренний адрес блокирует удаление своей подсети — sync-precheck `AddressesBySubnet`
+(смотрит обе jsonb-колонки) + DB-backstop `addresses_internal_subnet_fkey` на generated-колонке
+`addresses.internal_subnet_id` (выводится из `internal_ipv4` ИЛИ `internal_ipv6` — миграция 0013).
+
 ## Utilization (admin observability)
 
 `InternalAddressPoolService.GetUtilization(pool_id)`:
