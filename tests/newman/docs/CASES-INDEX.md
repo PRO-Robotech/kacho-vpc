@@ -1,6 +1,13 @@
 # newman — индекс уникальных кейсов
 
-731 кейсов / 218+ паттернов.
+~745 кейсов / 240+ паттернов.
+
+> v18 (KAC-38): + кейсы NetworkInterface (first-class ресурс, эпик KAC-2) — секция
+> «NetworkInterface (NIC)» ниже; + v6-Subnet / optional-CIDR-Subnet / SG-без-network /
+> NIC↔Subnet-RESTRICT / multi-resource delete-chain / operation-history-survives-delete /
+> Network-public-проекция-без-vpn_id / v6-CIDR-через-verbs. Любой новый кейс ОБЯЗАН
+> пройти `scripts/validate-cases.py` (дубль case-id и не-каталогизированный кейс →
+> hard-fail в CI до newman; см. `CLAUDE.md` §14.3, агент `vpc-newman-author`).
 
 > Из этого каталога выведен **нормативный регламент продуктовых требований** —
 > `PRODUCT-REQUIREMENTS.md` (`REQ-*`: что продукт ДОЛЖЕН / НЕ ДОЛЖЕН; ведут тестировщики).
@@ -17,23 +24,24 @@
 
 | RPC method | Паттернов | Описание |
 |---|---|---|
-| - | 5 | Cross-method |
-| AddCidrBlocks | 8 | Subnet: добавить CIDR |
-| Create | 85 | Создание (async, Operation) |
-| Delete | 12 | Удаление (async) |
-| Get | 13 | Чтение по id |
+| - | 6 | Cross-method |
+| AddCidrBlocks | 10 | Subnet: добавить CIDR (вкл. v6) |
+| AttachToInstance / DetachFromInstance | 1 | NIC: attach/detach (used_by) |
+| Create | 92 | Создание (async, Operation) |
+| Delete | 16 | Удаление (async) |
+| Get | 14 | Чтение по id |
 | GetByValue | 4 | Address: lookup по IP |
 | Lifecycle | 1 | Полный CRUD-цикл |
-| List | 27 | Листинг + pagination |
+| List | 28 | Листинг + pagination |
 | ListBySubnet | 2 | Address: в подсети |
-| ListOperations | 2 | Operations |
+| ListOperations | 4 | Operations (вкл. survive-delete) |
 | ListRouteTables | 2 | Network: RT |
 | ListSecurityGroups | 2 | Network: SG |
 | ListSubnets | 2 | Network: subnets |
 | ListUsedAddresses | 2 | Subnet: использ. IP |
 | Move | 6 | Move в другой folder |
 | Relocate | 3 | Subnet: сменить zone |
-| RemoveCidrBlocks | 6 | Subnet: убрать CIDR |
+| RemoveCidrBlocks | 7 | Subnet: убрать CIDR (вкл. v6) |
 | Update | 26 | PATCH с UpdateMask |
 | UpdateRule | 3 | SG: 1 rule |
 | UpdateRules | 7 | SG: batch rules |
@@ -48,6 +56,7 @@
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `*-AUTHZ-EMPTY-FOLDER-HEADER` | AUTHZ | P1 | 7 (add,gat,net,pri,rou,sec,sub) | List с пустым x-kacho-folder-id header → текущее: 200 (dev mode) |
+| `NET-SUBNET-ADDR-NIC-DELETE-CHAIN` | CONF,STATE | P0 | 1 (sub) | Multi-resource delete-chain: Network→Subnet→Address(internal)→NIC создаются, затем удаляются строго снизу вверх (NIC→Address→Subnet→Network); попытка удалить parent раньше child → `FailedPrecondition`. Verifies REQ-DEL-06/07/08. |
 | `*-HEADERS-MISSING-CT` | NEG,VAL | P3 | 3 (add,gat,net) | POST без Content-Type → 415 или 400 или 200 (lenient) |
 | `*-METHOD-DELETE-LIST` | NEG,VAL | P3 | 7 (add,gat,net,pri,rou,sec,sub) | DELETE на List endpoint (без id) → 405 или 404 |
 | `*-METHOD-NOT-ALLOWED` | NEG,VAL | P3 | 1 (pri) | PUT/HEAD на /endpoints → не разрешено |
@@ -67,6 +76,8 @@
 | `*-ACB-RCB-ROUNDTRIP` | IDM,STATE | P2 | 1 (sub) | AddCidrBlocks + RemoveCidrBlocks roundtrip: добавили → убрали → не изменилось |
 | `*-ACB-STATE-DISJOINT-CIDRS` | CONF,STATE,VAL | P1 | 1 (sub) | AddCidrBlocks с пересекающимися CIDR в одном запросе → InvalidArgument |
 | `*-ACB-VAL-HOST-BITS` | NEG,VAL | P1 | 1 (sub) | AddCidrBlocks с host-bits в CIDR (10.180.30.5/24) → 400 |
+| `SUB-CIDR-ADD-V6-OK` | CRUD | P1 | 1 (sub) | AddCidrBlocks с IPv6-блоком → v6_cidr_blocks обновлён; Subnet становится dual-stack. Verifies REQ-CIDR-10. |
+| `SUB-CIDR-ADD-V6-NEG-HOSTBITS` | NEG,VAL | P1 | 1 (sub) | AddCidrBlocks с IPv6-блоком, в котором set host-bits → `InvalidArgument`. Verifies REQ-CIDR-10. |
 
 ### Create
 
@@ -92,6 +103,15 @@
 | `*-CR-CRUD-INT` | CRUD | P1 | 1 (add) | Create internal Address → IP в subnet |
 | `*-CR-CRUD-OK` | CRUD | P1 | 6 (gat,net,pri,rou,sec,sub) | Create subnet → Operation → Subnet visible in GET |
 | `*-CR-CRUD-WITH-SUBNET` | CRUD | P2 | 1 (pri) | PE Create с валидным addressSpec.internalIpv4AddressSpec.subnetId → address привязан |
+| `SUB-CR-NO-CIDR-OK` | CRUD | P1 | 1 (sub) | Create Subnet без `v4_cidr_blocks` (только v6 или вообще без IPv4) → 200, CIDR-less Subnet. Verifies REQ-CIDR-08. |
+| `SUB-CR-NEG-ADDR-INTO-CIDRLESS` | NEG,CONF | P1 | 1 (sub) | Create internal Address в Subnet без IPv4-CIDR → `FailedPrecondition`/`InvalidArgument` (некуда аллоцировать v4-IP). Verifies REQ-CIDR-08. |
+| `SUB-CR-V6-OK` | CRUD | P1 | 1 (sub) | Create Subnet с `v6_cidr_blocks` (IPv6-only или dual-stack) → 200, v6_cidr_blocks виден в GET. Verifies REQ-CIDR-09. |
+| `SG-CR-NO-NETWORK-OK` | CRUD | P1 | 1 (sec) | Create SecurityGroup без `network_id` → 200 (network опционален; SG folder-scoped). Verifies REQ-RES-07. |
+| `SG-CR-WITH-NETWORK-OK` | CRUD | P1 | 1 (sec) | Create SecurityGroup с валидным `network_id` → 200, network_id виден; SG привязан к сети. Verifies REQ-RES-07. |
+| `NIC-CR-NEG-BAD-SUBNET` | NEG,CONF | P1 | 1 (nic) | Create NIC с garbage `subnet_id` → async `NotFound` 'Subnet ... not found'. Verifies REQ-NIC-01. |
+| `NIC-CR-WITH-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v4_address_ids` (предсозданный internal Address) → 200, address привязан, `Address.used`=true. Verifies REQ-NIC-04. |
+| `NIC-CR-WITH-V6-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v6_address_ids` (предсозданный v6 internal Address) → 200, v6-address привязан. Verifies REQ-NIC-04. |
+| `NIC-CR-WITH-UNBOUND-SG-OK` | CRUD | P2 | 1 (nic) | Create NIC с `security_group_ids` на SG, не привязанный к network NIC'а → 200 (SG folder-scoped, привязка к network у SG опциональна). Verifies REQ-NIC-05. |
 | `*-CR-IDM-RETRY` | CONC,IDM | P1 | 1 (net) | Retry-safe: повторный Create same input → consistent result |
 | `*-CR-NEG-CIDR-OVERLAP` | NEG | P0 | 1 (sub) | Create двух subnet с пересекающимися CIDR → второй FailedPrecondition |
 | `*-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 2 (net,sub) | Create с duplicate name в folder → async ALREADY_EXISTS (FINDING-005 fixed) |
@@ -173,6 +193,12 @@
 | `*-DEL-CRUD-OK` | CRUD | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Subnet Delete happy path |
 | `*-DEL-CRUD-ONLY-DEFAULT-SG` | CRUD,STATE | P1 | 1 (net) | Delete Network у которой есть только default-SG → OK (auto-cleanup default) |
 | `*-DEL-NEG-HAS-ADDRESSES` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с internal Address → FailedPrecondition (FK RESTRICT) |
+| `SUB-DEL-NEG-HAS-V6-ADDRESS` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с internal **v6** Address → `FailedPrecondition` (FK `addresses_internal_subnet_fkey` через generated-колонку, выводимую из v4 ИЛИ v6 — миграция 0013, KAC-34). Verifies REQ-DEL-06. |
+| `SUB-DEL-NEG-HAS-NIC` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с привязанным NetworkInterface → sync `FailedPrecondition` со списком NIC-id (FK `network_interfaces.subnet_id` ON DELETE RESTRICT — миграция 0012, KAC-33). Verifies REQ-DEL-07. |
+| `NET-DEL-NEG-HAS-SUBNET-WITH-NIC` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network, у которой Subnet с NIC → `FailedPrecondition` 'network is not empty' (транзитивно: NIC блокирует Subnet, Subnet блокирует Network). Verifies REQ-DEL-08. |
+| `NIC-DEL-OK` | CRUD | P1 | 1 (nic) | Delete NetworkInterface (не приаттаченный) → Operation → NIC исчезает из GET; привязанные Address освобождаются (`Address.used`=false). Verifies REQ-NIC-02. |
+| `NIC-DEL-NEG-ATTACHED` | CONF,NEG,STATE | P1 | 1 (nic) | Delete NIC, приаттаченного к instance (`used_by` set) → `FailedPrecondition` (сначала DetachFromInstance). Verifies REQ-NIC-03. |
+| `ADDR-DEL-NEG-USED-BY-NIC` | CONF,NEG,STATE | P0 | 1 (add/nic) | Delete Address, который референсится NIC'ом (`v4_address_ids`/`v6_address_ids`) → `FailedPrecondition` (сначала detach с NIC). Verifies REQ-NIC-04 / REQ-DEL-09. |
 | `*-DEL-NEG-HAS-NONDEFAULT-SG` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network с НЕ-default SG → FailedPrecondition (RESTRICT FK) |
 | `*-DEL-NEG-HAS-ROUTE-TABLE` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c RouteTable → FailedPrecondition |
 | `*-DEL-NEG-HAS-SUBNETS` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c Subnet → FailedPrecondition (FK RESTRICT) |
@@ -189,6 +215,7 @@
 | `*-GET-CONF-NF-FULLTEXT` | CONF,NEG | P1 | 1 (pri) | Get garbage PE → 'PrivateEndpoint <id> not found' формат |
 | `*-GET-CONF-NF-TEXT` | CONF,NEG | P1 | 8 (add,gat,net,ope,pri,rou,sec,sub) | Get garbage — verbatim text 'Subnet ... not found' |
 | `*-GET-CRUD-OK` | CRUD | P1 | 1 (ope) | Get свежесозданной operation → done=true с response |
+| `NET-GET-NO-VPNID-OK` | CONF,CRUD | P1 | 1 (net) | Get Network через **публичный** API → ответ НЕ содержит `vpn_id` (инфра-чувствительное поле — только internal-проекция / `InternalNetworkService.GetNetwork`). Verifies REQ-RES-08 / REQ-YC-06. |
 | `*-GET-EXTRA-QS` | VAL | P3 | 1 (pri) | Get PE с unused query params → не влияет |
 | `*-GET-NEG-EMPTY-ID` | NEG | P2 | 1 (net) | Get empty id → 404 (gRPC-gateway routing) |
 | `*-GET-NEG-NF` | NEG | P0 | 5 (add,gat,pri,rou,sec) | Get garbage → 404 |
@@ -230,6 +257,8 @@
 | `*-LST-BVA-PAGESIZE-ZERO` | BVA | P2 | 7 (add,gat,net,pri,rou,sec,sub) | List pageSize=0 → default applied (200) |
 | `*-LST-CONTRACT-NEVER-EXCEEDS-PAGESIZE` | CRUD,PAGE | P2 | 7 (add,gat,net,pri,rou,sec,sub) | List с pageSize=5 → не более 5 элементов в response |
 | `*-LST-CRUD-OK` | CRUD | P1 | 7 (add,gat,net,pri,rou,sec,sub) | List subnets в folder → 200 |
+| `NIC-LIST-OK` | CRUD | P1 | 1 (nic) | List NetworkInterfaces в folder → 200; созданный NIC присутствует; в ответе только lean-проекция (нет инфра-полей `vpn_id`/`hv_id`/`sid`/...). Verifies REQ-NIC-06. |
+| `SG-LIST-FILTER-NETWORK-OK` | CRUD,FILTER | P2 | 1 (sec) | List SecurityGroups с фильтром по `network_id` → возвращает только SG этой сети (и не возвращает SG без network / другой сети). Verifies REQ-RES-07. |
 | `*-LST-DOUBLE-FOLDER-PARAM` | VAL | P3 | 5 (add,gat,net,rou,sec) | List с дубликатом folderId param → 200 (last wins) или 400 |
 | `*-LST-FILTER-CASE-SENSITIVITY` | FILTER | P3 | 1 (gat) | Filter case-sensitivity на name field |
 | `*-LST-FILTER-EMPTY` | CRUD,FILTER | P2 | 1 (gat) | List Gateway с пустым filter expression → 200 (filter optional) |
@@ -268,7 +297,9 @@
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `*-LOP-CRUD-OK` | CRUD,NEG | P1 | 7 (add,gat,net,pri,rou,sec,sub) | ListOperations возвращает create-op |
-| `*-LOP-NEG-PARENT-NF` | NEG | P2 | 6 (add,gat,net,rou,sec,sub) | ListOperations несуществующего subnet → 404 или 200 пустой |
+| `*-LOP-NEG-PARENT-NF` | NEG | P2 | 7 (add,gat,net,pri,rou,sec,sub) | ListOperations несуществующего ресурса → 404 или 200 пустой (PE добавлен — `PE-LOP-NEG-PARENT-NF`) |
+| `NET-LISTOPS-AFTER-DELETE-OK` | CRUD,STATE | P1 | 1 (net) | После Delete ресурса его `<Resource>.ListOperations(<id>)` всё ещё содержит историю операций (create+delete) — операции переживают удаление ресурса. Verifies REQ-OPS-04. |
+| `OP-LIST-AFTER-DELETE-OK` | CRUD,STATE | P1 | 1 (ope) | `OperationService.Get(opId)` по операции удалённого ресурса → 200 (запись операции не удаляется вместе с ресурсом). Verifies REQ-OPS-04. |
 
 ### ListRouteTables
 
@@ -341,6 +372,7 @@
 | `*-RCB-NEG-CANNOT-REMOVE-PRIMARY` | NEG,STATE | P0 | 1 (sub) | RemoveCidrBlocks для primary v4_cidr (первый, primary) → отказ |
 | `*-RCB-NEG-NF` | NEG,STATE,VAL | P1 | 1 (sub) | RemoveCidrBlocks с несуществующим CIDR → InvalidArgument |
 | `*-RCB-NEG-NOT-PRESENT` | NEG,VAL | P1 | 1 (sub) | RemoveCidrBlocks с CIDR не из списка → ожидаемое поведение (FailedPrecondition или silent) |
+| `SUB-CIDR-REMOVE-V6-OK` | CRUD | P1 | 1 (sub) | RemoveCidrBlocks с ранее добавленным IPv6-блоком → `v6_cidr_blocks` сжимается; Subnet снова IPv4-only. Verifies REQ-CIDR-10. |
 
 ### Update
 
@@ -374,6 +406,7 @@
 | `*-UPD-VAL-MASK-MULTIPLE-UNKNOWN` | STATE,VAL | P2 | 7 (add,gat,net,pri,rou,sec,sub) | Update с несколькими unknown полями в mask → 400 |
 | `*-UPD-VAL-MASK-NAME-ONLY` | STATE,VAL | P2 | 6 (add,gat,net,rou,sec,sub) | Update mask=name → только name меняется, description/labels не трогаются |
 | `*-UPD-VAL-UNKNOWN-MASK` | STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update с unknown field в UpdateMask → InvalidArgument |
+| `SUB-UPD-V6-NOOP` | STATE,CRUD | P2 | 1 (sub) | Update с `v6_cidr_blocks` в body+mask → 200, операция done без error (soft-immutable: YC принимает в mask и меняет, у нас no-op — реальное изменение через `:add-cidr-blocks`/`:remove-cidr-blocks`; kacho-vpc#10). Verifies REQ-UPD-05. |
 
 ### UpdateRule
 
@@ -398,3 +431,24 @@
 | `*-URL-VAL-PORT-NEG` | NEG,STATE,VAL | P1 | 1 (sec) | UpdateRules rule field: SG-URL-VAL-PORT-NEG |
 | `*-URL-VAL-PORT-OVER-65535` | NEG,STATE,VAL | P1 | 1 (sec) | UpdateRules rule field: SG-URL-VAL-PORT-OVER-65535 |
 | `*-URL-VAL-PROTOCOL-UNKNOWN` | NEG,STATE,VAL | P1 | 1 (sec) | UpdateRules rule field: SG-URL-VAL-PROTOCOL-UNKNOWN |
+
+---
+
+### NetworkInterface (NIC) — first-class ресурс (эпик KAC-2)
+
+*Публичная проекция NIC — lean: `id`/`folderId`/`subnetId`/`v4AddressIds`/`v6AddressIds`/`securityGroupIds`/`usedBy`/`status`/`name`/`labels`. Инфра-чувствительные data-plane-поля (`vpnId`/`hvId`/`sid`/`hostIface`/`netns`/`gatewayIp`/`containerId`/`networkId`/`instanceId`/`index`) — только на internal-проекции (`InternalNetworkInterfaceService`), НИКОГДА не на публичной. REST: `/vpc/v1/networkInterfaces`. Кейсы — в `cases/network-interface.py` (app-код `nic`). NIC-кейсы, совпадающие с generic-паттернами по суффиксу, — инстансы (`NIC-CR-CRUD-OK` → `*-CR-CRUD-OK`, `NIC-CR-NEG-DUP-NAME` → `*-CR-NEG-DUP-NAME`, `NIC-GET-*`/`NIC-LST-*`/`NIC-MV-*` и т.п.); ниже — NIC-специфичные паттерны.*
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `NIC-CR-CRUD-OK` | CRUD | P1 | 1 (nic) | (инстанс `*-CR-CRUD-OK`) Create NIC в Subnet → Operation → NIC в GET; lean-проекция, нет инфра-полей. Verifies REQ-NIC-01/REQ-NIC-06. |
+| `NIC-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 1 (nic) | (инстанс `*-CR-NEG-DUP-NAME`) Create NIC с duplicate name в folder → async `ALREADY_EXISTS`. Verifies REQ-NAME-04. |
+| `NIC-UPD-OK` | CRUD | P1 | 1 (nic) | Update NIC (name/labels/securityGroupIds через mask) → Operation → новые значения видны; subnetId/инфра-поля не меняются. Verifies REQ-NIC-07. |
+| `NIC-ATTACH-DETACH-OK` | CRUD,STATE | P1 | 1 (nic) | `AttachToInstance` → `used_by`={compute_instance,<id>}; `DetachFromInstance` → `used_by` очищен. Verifies REQ-NIC-03. |
+
+### AttachToInstance / DetachFromInstance
+
+*NIC: привязка/отвязка от instance (выставляет/очищает `used_by`)*
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `NIC-ATTACH-DETACH-OK` | CRUD,STATE | P1 | 1 (nic) | (см. секцию NetworkInterface) roundtrip Attach→Detach; `used_by` зеркалит привязку. Verifies REQ-NIC-03. |

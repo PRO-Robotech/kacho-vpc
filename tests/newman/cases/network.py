@@ -353,24 +353,8 @@ CASES.append(Case(
     ],
 ))
 
-CASES.append(Case(
-    id="NET-UPD-STATE-IMMUTABLE-FOLDER",
-    title="Update с mask=folder_id → InvalidArgument (immutable)",
-    classes=["STATE", "VAL"],
-    priority="P1",
-    steps=[
-        Step(
-            name="update-folder-via-mask",
-            method="PATCH",
-            path="/vpc/v1/networks/{{garbageId}}",
-            body={"updateMask": "folder_id", "folderId": "x"},
-            test_script=[
-                *assert_status(400),
-                *assert_grpc_code(3, "INVALID_ARGUMENT"),
-            ],
-        ),
-    ],
-))
+# NB: NET-UPD-STATE-IMMUTABLE-FOLDER генерится helper'ом state_immutable_folder("NET", …)
+# ниже по файлу — explicit-дубль убран (validate-cases.py: hard-fail на дубль case-id).
 
 CASES.append(Case(
     id="NET-UPD-NEG-NF-INVALID-PREFIX",
