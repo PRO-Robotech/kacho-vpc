@@ -1122,6 +1122,108 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-34: v6-counterpart of SUB-DEL-NEG-HAS-ADDRESSES — an internal *IPv6*
+    # address created "in a subnet" must block deleting that subnet exactly like
+    # a v4 one (fixed: AddressesBySubnet now covers internal_ipv6, and the
+    # addresses.internal_subnet_id generated col derives from v4 OR v6 — mig 0013).
+    id="SUB-DEL-NEG-HAS-V6-ADDRESS",
+    title="Delete Subnet с internal IPv6 Address → FailedPrecondition (KAC-34)",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        *_make_net("hasv6ad"),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-hasv6ad-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.249.0.0/24"], "v6CidrBlocks": ["fd34:5678:9abc::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="cr-internal-v6-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-hasv6ad-{{runId}}",
+                   "internalIpv6AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="del-sub-blocked", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[
+                 # KAC-34: a v6 internal Address must block the subnet just like v4 →
+                 # sync FAILED_PRECONDITION "Subnet has allocated internal addresses".
+                 *assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                 "pm.test('mentions internal address', () => pm.expect(pm.response.json().message).to.include('internal address'));",
+             ]),
+        # cleanup: delete the address → subnet delete now succeeds
+        Step(name="cleanup-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-sub-deleted", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('subnet delete op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        _cleanup_net(),
+    ],
+))
+
+CASES.append(Case(
+    # KAC-34: full RESTRICT-chain — Network → Subnet → Address → NIC; each parent
+    # is hard-blocked while a child exists; delete bottom-up.
+    id="NET-SUBNET-ADDR-NIC-DELETE-CHAIN",
+    title="RESTRICT chain: network/subnet/address все блокируются детьми; удаление снизу вверх (KAC-34)",
+    classes=["NEG", "CONF", "STATE"], priority="P0",
+    steps=[
+        *_make_net("chain"),
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-chain-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.248.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="cr-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-chain-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="cr-nic", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+                   "name": "nic-chain-{{runId}}", "v4AddressIds": ["{{addrId}}"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        # 5. delete network → blocked (not empty)
+        Step(name="del-net-blocked", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('network not empty', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not empty'));"]),
+        # 6. delete subnet → blocked: address check runs first (not the NIC)
+        Step(name="del-sub-blocked", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('mentions internal address', () => pm.expect(pm.response.json().message).to.include('internal address'));"]),
+        # 7. delete address → blocked by the NIC (KAC-31)
+        Step(name="del-addr-blocked", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('mentions network interface', () => pm.expect(pm.response.json().message).to.include('network interface'));"]),
+        # 8. cleanup bottom-up: NIC → address → subnet → network, all succeed
+        Step(name="del-nic", method="DELETE", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-addr", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-net-deleted", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('network delete op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+    ],
+))
+
+CASES.append(Case(
     # KAC-33 (reverts KAC-31): NIC→Subnet FK обратно ON DELETE RESTRICT (миграция 0012).
     # NIC жёстко блокирует свою подсеть — даже без адресов. Удалять снизу вверх:
     # NIC → Address → Subnet → Network. (Заменяет KAC-31's SUB-DEL-OK-NIC-NO-ADDR-CASCADE.)

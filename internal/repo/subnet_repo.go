@@ -265,8 +265,11 @@ func (r *SubnetRepo) SetZoneID(ctx context.Context, id, zoneID string) (*domain.
 }
 
 // AddressesBySubnet возвращает Address-ресурсы, привязанные к данному subnet
-// через internal_ipv4.subnet_id. Используется для ListUsedAddresses /
-// ListBySubnet (см. AddressService).
+// через internal_ipv4.subnet_id ИЛИ internal_ipv6.subnet_id. Используется для
+// ListUsedAddresses / ListBySubnet (см. AddressService) и для sync-precheck в
+// SubnetService.Delete ("Subnet has allocated internal addresses") — поэтому
+// предикат должен покрывать обе семьи (KAC-34: v6-only internal address тоже
+// блокирует удаление своей подсети, как и v4).
 func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p service.Pagination) ([]*domain.Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
@@ -285,8 +288,8 @@ func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p s
 		argIdx += 2
 	}
 	q := fmt.Sprintf(`SELECT %s FROM addresses
-	  WHERE internal_ipv4 IS NOT NULL
-	    AND internal_ipv4->>'subnet_id' = $1
+	  WHERE ((internal_ipv4 IS NOT NULL AND internal_ipv4->>'subnet_id' = $1)
+	      OR (internal_ipv6 IS NOT NULL AND internal_ipv6->>'subnet_id' = $1))
 	    %s
 	  ORDER BY created_at ASC, id ASC
 	  LIMIT $%d`, addressCols, tokenCond, argIdx)
