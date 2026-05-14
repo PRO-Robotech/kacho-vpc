@@ -27,8 +27,9 @@ type AddressPool struct {
 type AddressPoolKind int16
 
 const (
-	AddressPoolKindUnspecified      AddressPoolKind = 0
-	AddressPoolKindExternalPublic   AddressPoolKind = 1
-	AddressPoolKindExternalTest     AddressPoolKind = 2
-	AddressPoolKindReservedInternal AddressPoolKind = 100
+	AddressPoolKindUnspecified    AddressPoolKind = 0
+	AddressPoolKindExternalPublic AddressPoolKind = 1
+	// KAC-70: значения 2 (EXTERNAL_TEST) и 100 (RESERVED_INTERNAL) удалены —
+	// не использовались ни backend'ом, ни UI. В proto оба зарезервированы
+	// (`reserved 2, 100; reserved "EXTERNAL_TEST", "RESERVED_INTERNAL";`).
 )
