@@ -9,6 +9,7 @@
 package portmock
 
 import (
+	"fmt"
 	"context"
 	"sync"
 	"time"
@@ -196,6 +197,7 @@ type AddressRepo struct {
 	data      map[string]*domain.Address
 	refs      map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
 	freelists map[string][]string                 // poolID → ordered free IPs (FIFO)
+	v6        map[string]*v6CursorState           // KAC-60: per-pool v6 sparse counter
 }
 
 func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.Address)} }
@@ -457,6 +459,91 @@ func (r *AddressRepo) ReturnIPToFreelist(_ context.Context, poolID, ip string) e
 		}
 	}
 	r.freelists[poolID] = append(r.freelists[poolID], ip)
+	return nil
+}
+
+// KAC-60: sparse v6 counter — in-memory stub. Реальная логика — в repo
+// (поверх PG-таблиц ipv6_pool_cursors / ipv6_allocated_ips / ipv6_released_offsets).
+// Mock держит per-pool monotonic counter; pop released первое.
+type v6CursorState struct {
+	next     uint64
+	released []uint64
+	// allocated: address_id → (pool, ip, offset) для FreeExternalIPv6.
+	allocated map[string]struct {
+		pool   string
+		ip     string
+		offset uint64
+	}
+}
+
+func (r *AddressRepo) initV6State(poolID string) *v6CursorState {
+	if r.v6 == nil {
+		r.v6 = make(map[string]*v6CursorState)
+	}
+	if _, ok := r.v6[poolID]; !ok {
+		r.v6[poolID] = &v6CursorState{next: 1, allocated: map[string]struct {
+			pool   string
+			ip     string
+			offset uint64
+		}{}}
+	}
+	return r.v6[poolID]
+}
+
+func (r *AddressRepo) InitIPv6PoolCursor(_ context.Context, poolID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.initV6State(poolID)
+	return nil
+}
+
+func (r *AddressRepo) AllocateExternalIPv6(_ context.Context, poolID, addressID, zoneID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.initV6State(poolID)
+	var offset uint64
+	if len(st.released) > 0 {
+		offset = st.released[0]
+		st.released = st.released[1:]
+	} else {
+		offset = st.next
+		st.next++
+	}
+	// Mock IP: 2001:db8::<offset>. Достаточно для unit/portmock тестов; интеграция
+	// — против реальной PG-логики (см. address_repo_ipv6.go).
+	ip := fmt.Sprintf("2001:db8::%x", offset)
+	st.allocated[addressID] = struct {
+		pool   string
+		ip     string
+		offset uint64
+	}{poolID, ip, offset}
+
+	// Зеркалим в a.ExternalIpv6 (как делает реальный repo).
+	if a, ok := r.data[addressID]; ok {
+		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
+			Address: ip, ZoneID: zoneID, AddressPoolID: poolID,
+		}
+	}
+	return ip, nil
+}
+
+func (r *AddressRepo) FreeExternalIPv6(_ context.Context, addressID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.v6 == nil {
+		return nil
+	}
+	for poolID, st := range r.v6 {
+		if alloc, ok := st.allocated[addressID]; ok {
+			st.released = append(st.released, alloc.offset)
+			delete(st.allocated, addressID)
+			_ = poolID
+			break
+		}
+	}
+	if a, ok := r.data[addressID]; ok {
+		a.ExternalIpv6 = nil
+	}
 	return nil
 }
 

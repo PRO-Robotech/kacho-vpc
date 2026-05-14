@@ -26,7 +26,7 @@ func NewAddressRepo(pool *pgxpool.Pool) *AddressRepo {
 	return &AddressRepo{pool: pool}
 }
 
-const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6`
+const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
 
 func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, error) {
 	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, addressCols)
@@ -136,6 +136,10 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	if err != nil {
 		return nil, err
 	}
+	ext6JSON, err := marshalExternalIPv6(a.ExternalIpv6)
+	if err != nil {
+		return nil, err
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -144,14 +148,14 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const q = `
-		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + addressCols
 
 	row := tx.QueryRow(ctx, q,
 		a.ID, a.FolderID, a.CreatedAt, a.Name, a.Description, labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
-		extJSON, intJSON, int6JSON,
+		extJSON, intJSON, int6JSON, ext6JSON,
 	)
 	result, err := scanAddress(row)
 	if err != nil {
@@ -547,13 +551,13 @@ func (r *AddressRepo) ReferencesForAddresses(ctx context.Context, addressIDs []s
 
 func scanAddress(row scannable) (*domain.Address, error) {
 	var a domain.Address
-	var labelsJSON, extJSON, intJSON, int6JSON []byte
+	var labelsJSON, extJSON, intJSON, int6JSON, ext6JSON []byte
 	var addrType, ipVersion int32
 
 	err := row.Scan(
 		&a.ID, &a.FolderID, &a.CreatedAt, &a.Name, &a.Description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
-		&extJSON, &intJSON, &int6JSON,
+		&extJSON, &intJSON, &int6JSON, &ext6JSON,
 	)
 	if err != nil {
 		return nil, err
@@ -585,6 +589,13 @@ func scanAddress(row scannable) (*domain.Address, error) {
 		}
 		a.InternalIpv6 = &int6Spec
 	}
+	if ext6JSON != nil {
+		var ext6 domain.ExternalIpv6Spec
+		if err := unmarshalJSONB(ext6JSON, &ext6, "Address.external_ipv6"); err != nil {
+			return nil, err
+		}
+		a.ExternalIpv6 = &ext6
+	}
 	return &a, nil
 }
 
@@ -607,6 +618,13 @@ func marshalInternalIPv6(i *domain.InternalIpv6Spec) ([]byte, error) {
 		return nil, nil
 	}
 	return marshalJSONB(i, "Address.internal_ipv6")
+}
+
+func marshalExternalIPv6(e *domain.ExternalIpv6Spec) ([]byte, error) {
+	if e == nil {
+		return nil, nil
+	}
+	return marshalJSONB(e, "Address.external_ipv6")
 }
 
 // ErrPoolExhausted — address_pool_free_ips empty for the given pool.

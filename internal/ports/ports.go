@@ -160,6 +160,28 @@ type AddressRepo interface {
 	// worker'ом, чтобы освобождённый IP сразу вернулся в оборот аллокатора.
 	ReturnIPToFreelist(ctx context.Context, poolID, ip string) error
 
+	// InitIPv6PoolCursor инициализирует sparse counter-based allocator для
+	// IPv6-пула (миграция 0021, KAC-60): INSERT INTO ipv6_pool_cursors
+	// (pool_id, next_offset=1) ON CONFLICT DO NOTHING. Идемпотентно.
+	// Вызывается AddressPoolService.Create/Update когда поставлен v6 CIDR.
+	InitIPv6PoolCursor(ctx context.Context, poolID string) error
+	// AllocateExternalIPv6 атомарно выдаёт следующий IPv6 из пула:
+	//   1) try pop offset из ipv6_released_offsets (FOR UPDATE SKIP LOCKED) —
+	//      переиспользование освобождённых;
+	//   2) fallback fresh: UPDATE ipv6_pool_cursors SET next_offset = next_offset+1
+	//      RETURNING old next_offset — counter-based monotonic;
+	//   3) ip = pool_base + offset (по v6 CIDR пула), INSERT INTO
+	//      ipv6_allocated_ips (pool_id, ip, offset, address_id);
+	//   4) UPDATE addresses.external_ipv6 JSONB-spec в той же tx (+ outbox emit).
+	// Возвращает выделенный IP-литерал. ErrPoolExhausted если пул маркирован
+	// исчерпанным (next_offset > 2^N где N — host-bits CIDR'а).
+	AllocateExternalIPv6(ctx context.Context, poolID, addressID, zoneID string) (string, error)
+	// FreeExternalIPv6 освобождает IPv6 у addressID: ищет ipv6_allocated_ips by
+	// address_id, INSERT'ит offset в ipv6_released_offsets (ON CONFLICT DO
+	// NOTHING — идемпотент), DELETE'ит из ipv6_allocated_ips. Вызывается
+	// AddressService.Delete для address с external_ipv6.
+	FreeExternalIPv6(ctx context.Context, addressID string) error
+
 	// SetReference upsert'ит referrer-row адреса И выставляет addresses.used=true
 	// в одной tx. ErrNotFound если address не существует.
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
