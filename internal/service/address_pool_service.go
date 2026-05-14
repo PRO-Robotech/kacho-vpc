@@ -71,21 +71,21 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 	if len(req.CIDRBlocks) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "cidr_blocks must contain at least one prefix")
 	}
+	hasV6 := false
 	for _, c := range req.CIDRBlocks {
 		p, err := netip.ParsePrefix(strings.TrimSpace(c))
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
 		}
-		// Allocator поддерживает пока только IPv4 — IPv6 CIDR проходил Create
-		// и потом давал silent ResourceExhausted на Allocate (CIDR пропускался
-		// в pickRandomIPv4/usableIPv4Sweep). Fail-fast здесь даёт явную причину.
-		if !p.Addr().Is4() {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"cidr %q: only IPv4 prefixes are supported by allocator", c)
+		// IPv4 — materialised freelist allocator (миграция 0014).
+		// IPv6 — sparse counter-based allocator (KAC-58, миграция 0020).
+		// Mixed-family pools допустимы (allocator выбирается по ip_version
+		// в request-spec); cascade resolve фильтрует pools по family.
+		if p.Addr().Is6() {
+			hasV6 = true
 		}
 		// Host-bits должны быть 0 (canonical form: 198.51.100.0/24, не /5).
-		// Иначе pickRandomIPv4 строит base из adresnoy части и может выйти
-		// за пределы CIDR.
+		// Для v6: например 2001:db8::/64 — без host-bits.
 		if p.Masked() != p {
 			return nil, status.Errorf(codes.InvalidArgument,
 				"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
@@ -122,9 +122,17 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 	}
 	// Материализуем per-IP freelist для IPv4 CIDR-блоков pool'а (миграция 0014):
 	// PG-native AllocateIPFromFreelist полагается на эту таблицу. IPv6 CIDR'ы
-	// PopulateFreelistForPool пропускает (sparse v6 allocator — отдельная фаза).
+	// PopulateFreelistForPool пропускает (для них — sparse counter в
+	// ipv6_pool_cursors, инициализируется ниже).
 	if err := s.pools.PopulateFreelistForPool(ctx, created.ID); err != nil {
 		return nil, status.Errorf(codes.Internal, "populate freelist: %v", err)
+	}
+	// KAC-58: pool с IPv6 CIDR использует sparse counter-based allocator
+	// (миграция 0020). Initialise next_offset=1 для каждого такого pool.
+	if hasV6 {
+		if err := s.addrRepo.InitIPv6PoolCursor(ctx, created.ID); err != nil {
+			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
+		}
 	}
 	return created, nil
 }
@@ -169,14 +177,14 @@ func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*do
 		cur.Labels = req.Labels
 	}
 	if req.ReplaceCIDR {
+		hasV6Update := false
 		for _, c := range req.CIDRBlocks {
 			p, err := netip.ParsePrefix(strings.TrimSpace(c))
 			if err != nil {
 				return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
 			}
-			if !p.Addr().Is4() {
-				return nil, status.Errorf(codes.InvalidArgument,
-					"cidr %q: only IPv4 prefixes are supported by allocator", c)
+			if p.Addr().Is6() {
+				hasV6Update = true
 			}
 			if p.Masked() != p {
 				return nil, status.Errorf(codes.InvalidArgument,
@@ -184,6 +192,13 @@ func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*do
 			}
 		}
 		cur.CIDRBlocks = req.CIDRBlocks
+		// KAC-58: если новый CIDR-набор включает v6 — initialise cursor
+		// (idempotent — InitIPv6PoolCursor использует ON CONFLICT DO NOTHING).
+		if hasV6Update {
+			if err := s.addrRepo.InitIPv6PoolCursor(ctx, cur.ID); err != nil {
+				return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
+			}
+		}
 	}
 	if req.UpdateIsDefault {
 		cur.IsDefault = req.IsDefault

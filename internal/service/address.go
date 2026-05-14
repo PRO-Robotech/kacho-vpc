@@ -32,12 +32,14 @@ type CreateAddressReq struct {
 	Description        string
 	Labels             map[string]string
 	DeletionProtection bool
-	// Для external (если ExternalSpec != nil):
+	// Для external IPv4 (если ExternalSpec != nil):
 	ExternalSpec *ExternalAddrSpec
 	// Для internal IPv4 (если InternalSpec != nil):
 	InternalSpec *InternalAddrSpec
 	// Для internal IPv6 (если InternalIpv6Spec != nil):
 	InternalIpv6Spec *InternalAddrSpec
+	// Для external IPv6 (KAC-60, если ExternalIpv6Spec != nil):
+	ExternalIpv6Spec *ExternalAddrSpec
 }
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -247,7 +249,7 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 			return nil, err
 		}
 	}
-	if req.ExternalSpec == nil && req.InternalSpec == nil && req.InternalIpv6Spec == nil {
+	if req.ExternalSpec == nil && req.InternalSpec == nil && req.InternalIpv6Spec == nil && req.ExternalIpv6Spec == nil {
 		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
 	// folder_id / subnet_id больше НЕ валидируются sync — async через
@@ -396,7 +398,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 			Address:  req.InternalSpec.Address,
 			SubnetID: subnetID,
 		}
-	} else {
+	} else if req.InternalIpv6Spec != nil {
 		// internal IPv6 Address.
 		a.Type = domain.AddressTypeInternal
 		a.IpVersion = domain.IpVersionIPv6
@@ -409,6 +411,23 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		a.InternalIpv6 = &domain.InternalIpv6Spec{
 			Address:  req.InternalIpv6Spec.Address,
 			SubnetID: subnetID,
+		}
+	} else {
+		// external IPv6 Address (KAC-60). Адрес выделяется sparse counter-based
+		// allocator'ом из глобального AddressPool с v6 CIDR (cascade resolve как
+		// у v4). Если client передал явный IP — пишем как hint (allocator его
+		// проверит/использует).
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv6
+		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
+			Address: req.ExternalIpv6Spec.Address,
+			ZoneID:  req.ExternalIpv6Spec.ZoneID,
+		}
+		if r := req.ExternalIpv6Spec.Requirements; r != nil {
+			a.ExternalIpv6.Requirements = &domain.AddressRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
 		}
 	}
 
@@ -448,6 +467,17 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 			return nil, aerr
 		}
 		created.InternalIpv6.Address = res.IP
+	}
+	// External IPv6 (KAC-60): sparse counter-based allocator. Полагается на
+	// address-pools (cascade resolve по zone/labels — как у v4).
+	if s.pools != nil && created.ExternalIpv6 != nil && created.ExternalIpv6.Address == "" {
+		res, aerr := s.AllocateExternalIPv6(ctx, created.ID)
+		if aerr != nil {
+			s.compensatingDelete(ctx, created.ID, "external_ipv6", aerr)
+			return nil, aerr
+		}
+		created.ExternalIpv6.Address = res.IP
+		created.ExternalIpv6.AddressPoolID = res.PoolID
 	}
 	return anypb.New(protoconv.Address(created))
 }
@@ -703,13 +733,26 @@ func (s *AddressService) Delete(ctx context.Context, id string) (*operations.Ope
 	// сразу попал обратно в оборот PG-native allocator'а (миграция 0014).
 	var (
 		allocatedIP, allocatedPoolID string
+		hasExternalIPv6              bool
 	)
 	if existing.ExternalIpv4 != nil {
 		allocatedIP = existing.ExternalIpv4.Address
 		allocatedPoolID = existing.ExternalIpv4.AddressPoolID
 	}
+	if existing.ExternalIpv6 != nil && existing.ExternalIpv6.Address != "" {
+		hasExternalIPv6 = true
+	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		// KAC-60: освобождаем external_ipv6 ДО Delete address (FK
+		// ipv6_allocated_ips.address_id ссылается на addresses.id неявно через
+		// service-логику; FreeExternalIPv6 идемпотентен, no-op если уже free).
+		if hasExternalIPv6 {
+			if frr := s.repo.FreeExternalIPv6(ctx, id); frr != nil {
+				slog.WarnContext(ctx, "address delete: failed to free external ipv6 (continuing)",
+					"address_id", id, "err", frr)
+			}
+		}
 		if err := s.repo.Delete(ctx, id); err != nil {
 			return nil, mapRepoErr(err)
 		}
@@ -1028,6 +1071,52 @@ func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID strin
 		slog.ErrorContext(ctx, "allocator: AllocateIPFromFreelist failed",
 			"pool_id", pool.ID, "address_id", addressID, "err", err)
 		return nil, status.Errorf(codes.Internal, "allocate from freelist: %v", err)
+	}
+	return &AllocateResult{IP: ip, PoolID: pool.ID}, nil
+}
+
+// AllocateExternalIPv6 (KAC-60) — выделяет внешний IPv6 для address через
+// sparse counter-based allocator (миграция 0021). Зеркало AllocateExternalIP
+// для v4: cascade resolve pool → repo.AllocateExternalIPv6 → IP.
+//
+// Идемпотентен: если address уже имеет external_ipv6.address — возвращает
+// его с AlreadyAllocated=true.
+func (s *AddressService) AllocateExternalIPv6(ctx context.Context, addressID string) (*AllocateResult, error) {
+	addr, err := s.repo.Get(ctx, addressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr.ExternalIpv6 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no external_ipv6 spec", addressID)
+	}
+	if addr.ExternalIpv6.Address != "" {
+		return &AllocateResult{
+			IP:               addr.ExternalIpv6.Address,
+			PoolID:           addr.ExternalIpv6.AddressPoolID,
+			AlreadyAllocated: true,
+		}, nil
+	}
+
+	resolved, err := s.pools.ResolvePoolForAddressObj(ctx, addr)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
+	}
+	pool := resolved.Pool
+	if len(pool.CIDRBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no cidr_blocks", pool.ID)
+	}
+
+	ip, err := s.repo.AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
+	if err != nil {
+		if errors.Is(err, ErrPoolExhausted) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"address pool %s exhausted (ipv6)", pool.ID)
+		}
+		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
+			"pool_id", pool.ID, "address_id", addressID, "err", err)
+		return nil, status.Errorf(codes.Internal, "allocate external ipv6: %v", err)
 	}
 	return &AllocateResult{IP: ip, PoolID: pool.ID}, nil
 }

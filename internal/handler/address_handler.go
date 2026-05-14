@@ -143,6 +143,18 @@ func (h *AddressHandler) Create(ctx context.Context, req *vpcv1.CreateAddressReq
 			Address:  int6Spec.Address,
 			SubnetID: int6Spec.GetSubnetId(),
 		}
+	} else if ext6 := req.GetExternalIpv6AddressSpec(); ext6 != nil {
+		// KAC-60: external IPv6 address.
+		createReq.ExternalIpv6Spec = &svc.ExternalAddrSpec{
+			Address: ext6.Address,
+			ZoneID:  ext6.ZoneId,
+		}
+		if r := ext6.GetRequirements(); r != nil {
+			createReq.ExternalIpv6Spec.Requirements = &svc.AddrRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
+		}
 	}
 
 	op, err := h.svc.Create(ctx, createReq)

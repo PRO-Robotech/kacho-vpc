@@ -51,6 +51,19 @@ type InternalIpv6Spec struct {
 	SubnetID string `json:"subnet_id"`
 }
 
+// ExternalIpv6Spec — параметры внешнего IPv6-адреса (KAC-58, зеркалит
+// ExternalIpv4Spec). Адрес выделяется sparse counter-based аллокатором
+// (см. kacho-vpc/CLAUDE.md §16) из глобального AddressPool с v6 CIDR.
+type ExternalIpv6Spec struct {
+	Address      string               `json:"address"` // например 2001:db8::5
+	ZoneID       string               `json:"zone_id"`
+	Requirements *AddressRequirements `json:"requirements,omitempty"`
+	// AddressPoolID — internal-only (как у v4 spec); заполняется allocator'ом
+	// при AllocateExternalIPv6, используется для UNIQUE (pool_id, ip) constraint
+	// (миграция 0020) и для observability.
+	AddressPoolID string `json:"address_pool_id,omitempty"`
+}
+
 // AddressReference — кто использует Address (YC-like referrer-tracking).
 // Один referrer на адрес. ReferrerType — "compute_instance" (расширяемо).
 type AddressReference struct {
@@ -80,6 +93,8 @@ type Address struct {
 	InternalIpv4 *InternalIpv4Spec
 	// Для internal IPv6 (IpVersion == IpVersionIPv6):
 	InternalIpv6 *InternalIpv6Spec
+	// Для external IPv6 (KAC-58):
+	ExternalIpv6 *ExternalIpv6Spec
 	// UsedBy — кто использует адрес (referrer-tracking, output-only). Заполняется
 	// сервис-слоем в Get/List/GetByValue/ListBySubnet из address_references;
 	// для compute NIC/NAT-адресов — один элемент с ReferrerType="compute_instance".

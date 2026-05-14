@@ -150,6 +150,19 @@ func Address(a *domain.Address) *vpcv1.Address {
 			}
 		}
 		p.Address = &vpcv1.Address_ExternalIpv4Address{ExternalIpv4Address: ext}
+	case a.ExternalIpv6 != nil:
+		// KAC-58: external IPv6.
+		ext6 := &vpcv1.ExternalIpv6Address{
+			Address: a.ExternalIpv6.Address,
+			ZoneId:  a.ExternalIpv6.ZoneID,
+		}
+		if a.ExternalIpv6.Requirements != nil {
+			ext6.Requirements = &vpcv1.AddressRequirements{
+				DdosProtectionProvider: a.ExternalIpv6.Requirements.DdosProtectionProvider,
+				OutgoingSmtpCapability: a.ExternalIpv6.Requirements.OutgoingSmtpCapability,
+			}
+		}
+		p.Address = &vpcv1.Address_ExternalIpv6Address{ExternalIpv6Address: ext6}
 	case a.InternalIpv6 != nil:
 		p.Address = &vpcv1.Address_InternalIpv6Address{
 			InternalIpv6Address: &vpcv1.InternalIpv6Address{

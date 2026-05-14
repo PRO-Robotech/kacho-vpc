@@ -187,14 +187,20 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-60: sparse counter-based IPv6 allocator (миграция 0021). AddressPool
+    # с IPv6 CIDR теперь допустим — Create проходит (200), InitIPv6PoolCursor
+    # инициализирует sparse counter для пула. Раньше allocator поддерживал
+    # только IPv4 и кейс ждал 400 «only IPv4 prefixes are supported». TDD-pivot.
     id="IPL-CR-VAL-IPV6-CIDR",
-    title="Create с IPv6 cidr → 400 (allocator только IPv4)",
-    classes=["VAL"], priority="P2",
+    title="Create AddressPool с IPv6 cidr → 200 (sparse counter allocator, KAC-60)",
+    classes=["CRUD"], priority="P1",
     steps=[
         Step(name="cr-v6", method="POST", path=POOLS,
              body={"name": "ipl-v6-{{runId}}", "kind": "EXTERNAL_TEST",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["2001:db8::/64"]},
-             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
+             test_script=[*assert_status(200), *save_from_response("j.id", "poolId")]),
+        Step(name="cleanup", method="DELETE", path=POOLS + "/{{poolId}}",
+             test_script=["pm.test('cleanup (200 or 400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"]),
     ],
 ))
 
