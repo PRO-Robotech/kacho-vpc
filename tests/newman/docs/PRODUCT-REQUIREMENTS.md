@@ -488,6 +488,20 @@ explicit `GET /securityGroups/{defSgId}` после Network.Delete обязан 
 - Agent-check: `internal/service/network.go::doCreate` (inline `CreateDefaultForNetwork`);
   `internal/service/network.go::doDelete` (predeletion default-SG cleanup).
 
+### REQ-RT-SUBNET-AUTO-ASSOC — RouteTable.Create auto-associate Subnet'ы сети        [P1]
+При `RouteTable.Create` с `network_id`, все `Subnet`-ы этой сети, у которых ещё **не задан**
+свой `route_table_id`, ДОЛЖНЫ автоматически получить `route_table_id` = id новой RT.
+По аналогии с default-SG при Network.Create — auto-association «новый системный ресурс
+сети применяется к её Subnet'ам по умолчанию». Subnet, у которого `route_table_id` уже
+задан клиентом, изменяться НЕ должен (explicit user choice имеет приоритет).
+- Validated-by: `RT-CR-STATE-SUBNET-AUTO-ASSOC` (**TDD-pending** до реализации auto-assoc).
+- Agent-check: `internal/service/route_table.go::doCreate` — после `repo.Insert(rt)` должен
+  выполняться `subnetRepo.AutoAssociateRouteTable(ctx, rt.NetworkID, rt.ID)` (или эквивалент:
+  `UPDATE subnets SET route_table_id=$rt WHERE network_id=$net AND (route_table_id IS NULL OR route_table_id='')`),
+  с outbox-эмитом `Subnet.UPDATED` для каждого затронутого. Опционально: при `RouteTable.Delete`
+  обратно очищать `Subnet.route_table_id` (если был auto-assoc'нут — отдельным флагом или
+  `WHERE route_table_id=$old`).
+
 ---
 
 ## M. Verbatim-YC conformance (тексты, коды, форматы)

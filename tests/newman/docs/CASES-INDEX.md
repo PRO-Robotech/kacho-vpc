@@ -113,6 +113,7 @@
 | `NIC-CR-WITH-V6-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v6_address_ids` (предсозданный v6 internal Address) → 200, v6-address привязан. Verifies REQ-NIC-04. |
 | `NIC-CR-WITH-BOTH-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v4_address_ids` И `v6_address_ids` одновременно (dual-stack линковка при создании) → 200, оба address привязаны (KAC-53 (3)). Verifies REQ-NIC-04. |
 | `NIC-CR-WITH-UNBOUND-SG-OK` | CRUD | P2 | 1 (nic) | Create NIC с `security_group_ids` на SG, не привязанный к network NIC'а → 200 (SG folder-scoped, привязка к network у SG опциональна). Verifies REQ-NIC-05. |
+| `RT-CR-STATE-SUBNET-AUTO-ASSOC` | CRUD,STATE | P1 | 1 (rou) | Create RouteTable с `network_id` → Subnet'ы этой сети (без своего `route_table_id`) автоматически получают `route_table_id` = id новой RT (auto-association по аналогии с default-SG). **TDD-pending**: assertion помечен `pm.test.skip`, превращается в normal green после реализации auto-assoc в `RouteTableService.doCreate`. Verifies REQ-RT-SUBNET-AUTO-ASSOC. |
 | `*-CR-IDM-RETRY` | CONC,IDM | P1 | 1 (net) | Retry-safe: повторный Create same input → consistent result |
 | `*-CR-NEG-CIDR-OVERLAP` | NEG | P0 | 1 (sub) | Create двух subnet с пересекающимися CIDR → второй FailedPrecondition |
 | `*-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 2 (net,sub) | Create с duplicate name в folder → async ALREADY_EXISTS (FINDING-005 fixed) |
