@@ -9,8 +9,8 @@
 package portmock
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
