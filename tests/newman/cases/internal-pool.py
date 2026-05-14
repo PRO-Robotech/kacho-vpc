@@ -25,13 +25,13 @@ CASES.append(Case(
     classes=["CRUD", "CONF"], priority="P0",
     steps=[
         Step(name="create", method="POST", path=POOLS,
-             body={"name": "ipl-crud-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-crud-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[*assert_status(200),
                           "const j = pm.response.json();",
                           "pm.test('id has apl prefix', () => pm.expect(j.id).to.match(/^apl/));",
                           "pm.test('name matches', () => pm.expect(j.name).to.eql('ipl-crud-' + pm.environment.get('runId')));",
-                          "pm.test('kind echoed', () => pm.expect(j.kind).to.eql('EXTERNAL_TEST'));",
+                          "pm.test('kind echoed', () => pm.expect(j.kind).to.eql('EXTERNAL_PUBLIC'));",
                           "pm.test('isDefault false', () => pm.expect(j.isDefault).to.eql(false));",
                           *save_from_response("j.id", "iplId")]),
         Step(name="get", method="GET", path=POOLS + "/{{iplId}}",
@@ -55,7 +55,7 @@ CASES.append(Case(
     classes=["CRUD", "STATE"], priority="P1",
     steps=[
         Step(name="create", method="POST", path=POOLS,
-             body={"name": "ipl-upd-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-upd-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "iplId")]),
         Step(name="patch", method="PATCH", path=POOLS + "/{{iplId}}",
@@ -121,7 +121,7 @@ CASES.append(Case(
     classes=["NEG", "CONF"], priority="P0",
     steps=[
         Step(name="cr-bad-zone", method="POST", path=POOLS,
-             body={"name": "ipl-badzone-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-badzone-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "nonexistent-zone-{{runId}}", "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[
                  # zone_id FK на zones → 23503 → ErrFailedPrecondition.
@@ -148,7 +148,7 @@ CASES.append(Case(
     classes=["VAL"], priority="P0",
     steps=[
         Step(name="cr-no-cidr", method="POST", path=POOLS,
-             body={"name": "ipl-nocidr-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-nocidr-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c"},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
@@ -162,7 +162,7 @@ CASES.append(Case(
         # FINDING-007: Create НЕ требует name (verbatim-YC аналога нет, kacho-admin RPC).
         # Если поведение изменится на 400 — этот кейс это поймает.
         Step(name="cr-no-name", method="POST", path=POOLS,
-             body={"kind": "EXTERNAL_TEST", "zoneId": "ru-central1-c",
+             body={"kind": "EXTERNAL_PUBLIC", "zoneId": "ru-central1-c",
                    "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[
                  "pm.test('accepted (200) or rejected (400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
@@ -180,7 +180,7 @@ CASES.append(Case(
     classes=["VAL"], priority="P1",
     steps=[
         Step(name="cr-hostbits", method="POST", path=POOLS,
-             body={"name": "ipl-hb-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-hb-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.5/24"]},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
@@ -196,7 +196,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="cr-v6", method="POST", path=POOLS,
-             body={"name": "ipl-v6-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-v6-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["2001:db8::/64"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "poolId")]),
         Step(name="cleanup", method="DELETE", path=POOLS + "/{{poolId}}",
@@ -250,12 +250,12 @@ CASES.append(Case(
     classes=["CONF", "CRUD"], priority="P1",
     steps=[
         Step(name="cr-pool-a", method="POST", path=POOLS,
-             body={"name": "ipl-amb-a-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-amb-a-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.0/24"],
                    "selectorLabels": {"tier": "ambtest"}, "selectorPriority": 50},
              test_script=[*assert_status(200), *save_from_response("j.id", "ambPoolA")]),
         Step(name="cr-pool-b", method="POST", path=POOLS,
-             body={"name": "ipl-amb-b-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-amb-b-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["198.51.100.0/24"],
                    "selectorLabels": {"tier": "ambtest"}, "selectorPriority": 50},
              test_script=[*assert_status(200), *save_from_response("j.id", "ambPoolB")]),
@@ -335,7 +335,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
-             body={"name": "ipl-util-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-util-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "utilPoolId")]),
         Step(name="util", method="GET", path=POOLS + "/{{utilPoolId}}/utilization",
@@ -385,7 +385,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P2",
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
-             body={"name": "ipl-la-{{runId}}", "kind": "EXTERNAL_TEST",
+             body={"name": "ipl-la-{{runId}}", "kind": "EXTERNAL_PUBLIC",
                    "zoneId": "ru-central1-c", "cidrBlocks": ["203.0.113.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "laPoolId")]),
         Step(name="list-addr", method="GET", path=POOLS + "/{{laPoolId}}/addresses",
