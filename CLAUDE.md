@@ -79,6 +79,17 @@ PrivateEndpoint     — привязан к Network + Subnet (privatelink)
 `v6_address_ids[]` (один `Address` — максимум на одном NIC; enforced сервис-слоем через
 `addresses.used` + referrer-tracking, как `address_references`). `Address` в использовании у NIC
 **нельзя удалить** (`AddressService.Delete` → `FailedPrecondition`, KAC-31) — сначала detach.
+
+**Cardinality v4/v6 на NIC ≤ 1 (KAC-55).** На одной NIC — максимум один IPv4 и максимум один
+IPv6 (всего ≤ 2 адреса). Multi-IP на VM реализуется через **несколько NIC**, а не secondary
+addresses в одном NIC. Это упрощённая модель vs AWS ENI и соответствует verbatim YC compute API
+(`primary_v4_address` / `primary_v6_address` — singular). Зафиксировано:
+- Service sync-validate (`validateNICAddressCardinality` в `internal/service/network_interface.go`)
+  → fast-fail `InvalidArgument` до Operation.
+- DB-level CHECK (миграция `0018_nic_address_cardinality.sql`):
+  `CHECK (jsonb_array_length(v4_address_ids) <= 1)` / `_v6_…` — финальный backstop по запрету #10
+  workspace CLAUDE.md, маппится через `wrapPgErr` в `service.ErrInvalidArg` (SQLSTATE 23514).
+
 Несёт `security_group_ids[]`.
 `used_by` — денормализованная Reference «кто приаттачил этот NIC» (зеркало `Address.used_by`,
 напр. `{compute_instance, <instance_id>}`): выставляется `AttachToInstance`, очищается
@@ -102,7 +113,8 @@ PrivateEndpoint     — привязан к Network + Subnet (privatelink)
 `0011_nic_subnet_cascade.sql` (NIC→Subnet FK: RESTRICT → CASCADE — **откачена** ниже),
 `0012_nic_subnet_restrict.sql` (KAC-33: откат 0011 — NIC→Subnet FK обратно ON DELETE RESTRICT),
 `0013_address_internal_subnet_id_v6.sql` (KAC-34: generated-колонка `addresses.internal_subnet_id` — drop&recreate с выводом из `internal_ipv4` ИЛИ `internal_ipv6`, чтобы v6-internal-адрес тоже блокировал свою подсеть через FK `addresses_internal_subnet_fkey`),
-`0014_nic_mac_address.sql` (KAC-48: `network_interfaces.mac_address TEXT NOT NULL` + UNIQUE индекс + backfill для existing rows через `md5(random()||id)`).
+`0014_nic_mac_address.sql` (KAC-48: `network_interfaces.mac_address TEXT NOT NULL` + UNIQUE индекс + backfill для existing rows через `md5(random()||id)`),
+`0018_nic_address_cardinality.sql` (KAC-55: CHECK `jsonb_array_length(v4_address_ids)<=1` + симметрично v6 — DB-level гарантия «на NIC ≤1 v4, ≤1 v6»).
 
 Все ресурсы — folder-level (`folder_id` обязателен в Create). Все таблицы
 **flat** (без K8s envelope `resource_version`/`generation`/`deletion_timestamp`/
