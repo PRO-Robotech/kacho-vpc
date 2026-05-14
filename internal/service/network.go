@@ -35,6 +35,9 @@ type UpdateNetworkReq struct {
 	UpdateMask  []string
 }
 
+//NOTES CreateNetworkReq UpdateNetworkReq по сути повторяют Network доменный ресурс
+// вопрос - ЗАЧЕМ плодить прочти идентичнык сущности?
+
 // NetworkService — бизнес-логика управления сетями.
 type NetworkService struct {
 	repo           NetworkRepo
@@ -135,6 +138,10 @@ func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination
 	return s.repo.List(ctx, f, p)
 }
 
+/*/ Я, не понимаю зачем тут плодить какие-то асинхроннык операции, когда тут вся работа веднтся
+в обслуживании репозитория? Кака я иуи решается задача?
+*/
+
 // Create инициирует создание Network, возвращает Operation.
 func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*operations.Operation, error) {
 	if req.FolderID == "" {
@@ -152,7 +159,8 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
-	}
+	} //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+	//эти validate операции поджны быит присущи доменному ресурсу а не лежать где-то сбоку
 
 	netID := ids.NewID(ids.PrefixNetwork)
 	op, err := operations.New(
@@ -168,6 +176,9 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		//operations.Run реализация такова что ты запускаешь doCreate на ОТОРВАННОМ контексте
+		// это значит что ты обрываешь все что отрываешь все метаданные из вызывающено контекста
+		//!!!! ЭТОГО БЫТЬ НЕ ДОПУСИМО
 		return s.doCreate(ctx, netID, req)
 	})
 
@@ -176,6 +187,7 @@ func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*ope
 
 func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateNetworkReq) (*anypb.Any, error) {
 	exists, err := s.folderClient.Exists(ctx, req.FolderID)
+	//^^^^^^^^^^^^^^^^^^^^^^^^ это бессмысленная затея, поскольку сейчас этот filder есть а через мгновение его нет
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
@@ -204,19 +216,24 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 		shortNet := created.ID
 		if len(shortNet) > 8 {
 			shortNet = shortNet[:8]
+			//                   ^ почему 8?
 		}
 		sg := &domain.SecurityGroup{
-			ID:                ids.NewID(ids.PrefixSecurityGroup),
-			FolderID:          created.FolderID,
-			NetworkID:         created.ID,
-			CreatedAt:         time.Now().UTC(),
-			Name:              "default-sg-" + shortNet,
-			Description:       "Default security group (auto-created by kacho-vpc)",
-			Status:            "ACTIVE",
+			ID:        ids.NewID(ids.PrefixSecurityGroup),
+			FolderID:  created.FolderID,
+			NetworkID: created.ID,
+			CreatedAt: time.Now().UTC(),
+			Name:      "default-sg-" + shortNet,
+			//                 ^^^^^^^^^^^^^^^^^^^^^^^^^ такие вещи должны белаться утилитами на стороне domain пакета
+			Description: "Default security group (auto-created by kacho-vpc)",
+			Status:      "ACTIVE",
+			//                 ^^^^^^^^ все это должно быть в константах
 			DefaultForNetwork: true,
 			Rules: []domain.SecurityGroupRule{
 				{Direction: "INGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
 				{Direction: "EGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+				//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+				//это адское мракобесие вызывает изжогу. чтобы такого не было на тоджен быть builder на стороне domain пакета
 			},
 		}
 		createdSG, sgErr := s.sgRepo.Insert(ctx, sg)
@@ -224,16 +241,17 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 			// SG creation failed — Network уже создан. Log warn, не падаем
 			// (admin может создать default SG руками через public API).
 			// Возвращаем network без default_security_group_id.
+			// ^^^^ интересный факт! выглядит как какаши
 			return anypb.New(protoconv.Network(created))
 		}
 		// Bind SG как default через NetworkRepo.Update.
 		created.DefaultSecurityGroupID = createdSG.ID
 		updated, uerr := s.repo.Update(ctx, created)
 		if uerr == nil {
-			return anypb.New(protoconv.Network(updated))
+			return anypb.New(protoconv.Network(updated)) // <- такое вот правильно? в методе Create?
 		}
 		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
-		return anypb.New(protoconv.Network(created))
+		//return anypb.New(protoconv.Network(created))
 	}
 	return anypb.New(protoconv.Network(created))
 }

@@ -10,6 +10,9 @@
 // Контракт: `created_at` всегда truncate до секунд (verbatim YC — `YC-DIFF-TIMESTAMP-PRECISION`).
 package protoconv
 
+//NOTES это не protoconv а должно быть dto = Data Tranfer Object
+//см в dto dto/to-proto там для примера есть табличный трансыер Network объекта
+
 import (
 	"time"
 

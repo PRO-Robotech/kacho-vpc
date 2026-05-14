@@ -6,9 +6,68 @@ import (
 	corecfg "github.com/PRO-Robotech/kacho-corelib/config"
 )
 
+/*// TODO:
+1) конфиг должен быть наглядным а не просто в виде структуры,
+чтобы ты же потом через какое-то время не изучал мучительно код как у тебя ниже
+вот например
+
+logger:
+  level: oneof<FATAL | ERROR | WARN | INFO | DEBUG> #optional; default=DEBUG
+api-server:
+  endpoint: oneof< <tcp://<IP:PORT>|<FQDN[:PORT]> | <unix:///unix-sock-path> > #server address
+  graceful-shutdown: 10s #optional; default=10s
+  grpc-gw-enable: oneof<true|false>  #enables GRPC-GATEWAY; optional; enables '/docs' handle; shows swagger-paper; default=false; use it in dev mode only
+metrics:
+  enable: true # enables '/metrics' handle; optional; default=true
+healthcheck:
+  enable: true # enables '/healthcheck' handle; optional; default=true
+repository:
+  type: POSTGRES #selects storage type; only the POSTGRES is supported for now
+  postgres: #used when storage/type points to POSTGRES
+    url: postgres://un:psw@host/db #nodefault; is postgres connection string in URL format
+authn:
+  type: oneof<none|tls> # authentication type; `none` by default
+  tls: #uses TLS when authn/type points to 'tls'
+    key-file: "filename1.pem" #used when we should send cert to client when client requires secured TLS
+    cert-file: "filename2.pem" #used when we should send cert to client when client requires secured TLS
+    client:
+      verify: oneof<skip|certs-required|verify> #optional; clent verification level; default='skip'
+      ca-files: ["file1.pem", "file2.pem", "file3.pem", ...] #CA files when client/verify points to 'verify'
+
+extapi: # секция для подключентя к внешнм API (интеграции)
+  def-dial-duration: 10s #optional; default=10s
+                     # длительность ожидания подключения
+  agents: #секция используемая для создания GRPC подключения к API агентов
+    dial-duration: 3s; #optional; default=$(extapi/def-dial-duration)
+                       # длительность ожидания подключения
+    authn: #fсекция аутентификации
+    type: "none|tls" #optional; default="none"
+          # выбор типа аутентификации
+          # если = tls то связь со всеми типами агентов подразумевает испоьзование TLS
+      # если = none аутентификация не используется
+      tls: # <- это клиентский TLS, используется если в аутентификации задействован TLS
+        key-file: "private-key-file.pem" #mandatory if we use mTLS
+        cert-file: "cert-file.pem" #mandatory is we use mTLS
+              # key-file и key-file нужны если на стороне сервера идет проверка
+              # клиента, его подписи и сертификата
+        server:
+          verify: true|false #optional; #default=false(insecured TLS)
+          name: "server-name" #optional; #can used when $(server/verify)==true; this is Subject Alternate Name (SAN)
+          ca-files: ["file1.pem", "file2.pem", ...] #mandatory-when($(server/verify)==true); no-default
+
+2) де факто для конфигов принято использовать
+   https://github.com/spf13/viper
+   + https://github.com/knadh/koanf
+3) основное требование к конфигу - он дожен быть понятным и структурирован так
+   чтобы было понятно какие его части к каким компонентам относятся
+*/
+
 // Config — конфигурация kacho-vpc.
 type Config struct {
-	DBHost     string `envconfig:"KACHO_VPC_DB_HOST" default:"localhost"`
+	DBHost string `envconfig:"KACHO_VPC_DB_HOST" default:"localhost"`
+	//                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+	//1) такая привязка к фиксированному ENV очень неудобна
+	//2) default:"localhost" - все дефолты должны быть в специальном месте, в main пакете
 	DBPort     string `envconfig:"KACHO_VPC_DB_PORT" default:"5432"`
 	DBUser     string `envconfig:"KACHO_VPC_DB_USER" default:"vpc"`
 	DBPassword string `envconfig:"KACHO_VPC_DB_PASSWORD" required:"true"`
@@ -20,6 +79,9 @@ type Config struct {
 	// (max(4, NumCPU)), что слишком мало для service с inline-allocate +
 	// outbox-write + Watch streams. Production: ≥20 на pod.
 	DBMaxConns int `envconfig:"KACHO_VPC_DB_MAX_CONNS" default:"0"`
+
+	//^^DBxxx^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+	//см пример конфига выше - секция repository
 
 	GrpcPort string `envconfig:"KACHO_VPC_GRPC_PORT" default:"9090"`
 

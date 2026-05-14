@@ -13,8 +13,13 @@
 // без изменений.
 package ports
 
+/*//NOTES
+у меня когнитивный диссонанс от названия "ports" хотя здесь только абстракции для "repository"
+*/
+
 import (
 	"context"
+	"time"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
@@ -88,6 +93,55 @@ type NetworkRepo interface {
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса (для :move action). Возвращает обновлённый ресурс.
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error)
+}
+
+/*//  для примера будет взят ресурс Network и его репозиторий
+согласно CQRS нужно сразу разделять Reader и Writer интерфейсы
+см ниже
+
+- зачем это нужно ? - для того чтобы сразу заложить схему оптимизации на читающие
+и пишущие запросы
+- обычно все читающие запросы идут на slave-реплики БД а пишущие на master-ноды
+*/
+
+type Network = struct {
+	domain.Network
+	CreatedAt time.Time
+	//^^^^^^^^^^^^^^^^^ мне кажется что это поле уместно именно тут как и все поля CreatedAt в типАх из доменной модели
+}
+
+// NetworkReaderIface -
+type NetworkReaderIface interface {
+	Get(ctx context.Context, id string) (Network, error)
+	List(ctx context.Context, f NetworkFilter, p Pagination) ([]Network, string, error)
+}
+
+// NetworkWriterIface -
+type NetworkWriterIface interface {
+	NetworkReaderIface
+	Insert(ctx context.Context, n domain.Network) (Network, error)
+	Update(ctx context.Context, n domain.Network) (Network, error)
+	Delete(ctx context.Context, id string) error
+	Move2Folder(ctx context.Context, id, folderID string) (Network, error)
+}
+
+type RepositoryReader interface {
+	Networks() NetworkReaderIface
+	//...
+	Close() error
+}
+
+type RepositoryWriter interface {
+	Networks() NetworkWriterIface
+	//....
+	Commit() error
+	Abort()
+}
+
+type Repository interface {
+	Reader(context.Context) RepositoryReader // открывает транзакцию на чтение
+	Writer(context.Context) RepositoryWriter // открывает транзакцию на запись
+	Close() error
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.

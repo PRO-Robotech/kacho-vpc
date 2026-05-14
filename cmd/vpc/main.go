@@ -55,6 +55,22 @@ func main() {
 			log.Fatal("usage: vpc migrate {up|down|status}")
 		}
 		runMigrate(cfg, os.Args[2])
+		//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+		/*//               TODO:
+		1) вообще так никто не делает. миграция/мигратор это отдельная точка сборки ДРУГОГО бинаря
+		   в данном поекте
+		   то есть структура точек сборки такая
+		     |-cmd
+		        |- vpc (VPC API)
+		        |- migrator (разные миграции)
+		2) для CLI программ де факто стадартами явдяются
+		   https://github.com/spf13/cobra (наиболее предпочтительно)
+		   https://github.com/alecthomas/kong
+		   это значит, что код нужно переписать
+		3) при проектировании CLI мигратора нужно сразу заложить возможность расширения
+		   то есть не только для одно posgtres, нужно думать о том что возможн миграции
+		   будут и на др типы БД
+		*/
 	case "serve":
 		if err := runServe(cfg); err != nil {
 			log.Fatal(err)
@@ -164,13 +180,22 @@ func runServe(cfg config.Config) error {
 		if err := internalSrv.Serve(internalListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			logger.Error("internal grpc server stopped", "err", err)
 		}
-	}()
+	}() //^^^^^^^^^^^^^^^ а вот интересно, если этот кусок кода отвалится, то
+	//grpcSrv.Serve(listener) продолжит работу, но в целом сервер будет в нерабочем состоянии
 
 	serveErr := grpcSrv.Serve(listener)
 	// Если Serve вернул из-за abnormal listener-exit (kernel закрыл socket, OOM,
 	// listener.Close() извне) — SIGTERM не приходил, shutdown-горутина висит на
 	// <-ctx.Done(); cancel() будит её → GracefulStop + operations.Wait → закрывает
 	// shutdownDone. Без этого <-shutdownDone deadlock'нулся бы (R8 m1).
+
+	/*// TODO: по поводу параллельного запуска кода
+	grpcSrv.Serve internalSrv.Serve  GracefulStop итд
+	есть https://github.com/H-BF/corlib/blob/libs/pkg/parallel/exec-in-parallel.go#L19
+	func ExecAbstract ...
+	как пример - можно найти еще в sgrpups
+	*/
+
 	cancel()
 	<-shutdownDone
 	return serveErr
@@ -179,8 +204,11 @@ func runServe(cfg config.Config) error {
 // validateAuthMode разбирает KACHO_VPC_AUTH_MODE (whitelist — typo `prod`/`PRODUCTION`
 // НЕ должен silently пройти как dev, R10 F-1), для production-strict дополнительно
 // валидирует cross-service TLS + DB sslmode (R10 F-3), и логирует insecure dev-defaults.
-func validateAuthMode(cfg config.Config, logger *slog.Logger) (productionMode bool, err error) {
+func validateAuthMode(cfg config.Config, logger *slog.Logger) (productionMode bool, err error) { //<- эта функция должна быть частью конфига
+	//                                                         ^^ productionMode должно быть репрезентативно - то есть ENUM(prod|non-prod)
+	//                                   ^^^^^^^^^^^^^^^^^^^^ в такие функции логер не передают
 	switch cfg.AuthMode {
+	//         ^^^^^^^^ очень неудачное название, не соответствует семантике
 	case "dev":
 		productionMode = false
 	case "production":
@@ -223,7 +251,7 @@ func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
 		creds = insecure.NewCredentials()
 	}
 	return grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(creds))
-}
+} //^^^^^^^^^^^^^^^^^^ см https://github.com/H-BF/corlib/blob/master/client/grpc/client-builder.go
 
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при KACHO_VPC_DEFAULT_SG_INLINE=false → Network.Create не создаёт
@@ -293,6 +321,10 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalZoneServiceServer(srv, handler.NewInternalZoneHandler(svcs.zone))
 }
 
+/*
+TODO:
+как я писал мигратор это отдельная точка сборки
+*/
 func runMigrate(cfg config.Config, direction string) {
 	goose.SetBaseFS(migrations.FS)
 	if err := goose.SetDialect("postgres"); err != nil {

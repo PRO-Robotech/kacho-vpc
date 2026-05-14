@@ -1,6 +1,8 @@
 package domain
 
-import "time"
+import (
+	"time"
+)
 
 // DhcpOptions — опции DHCP для подсети.
 type DhcpOptions struct {

@@ -17,3 +17,4 @@ tests/newman/out/baseline-yc-*.json
 .idea/
 .vscode/
 .DS_Store
+vendor/
