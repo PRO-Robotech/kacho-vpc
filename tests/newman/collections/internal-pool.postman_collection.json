@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "1aa80869-c4b4-4a53-befb-8c026127aad1",
+    "_postman_id": "5a866523-26f4-4a60-b2e9-add7759c2028",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -866,8 +866,8 @@
       ]
     },
     {
-      "name": "IPL-CR-VAL-IPV6-CIDR — Create с IPv6 cidr → 400 (allocator только IPv4)",
-      "description": "class:VAL | priority:P2",
+      "name": "IPL-CR-VAL-IPV6-CIDR — Create AddressPool с IPv6 cidr → 200 (sparse counter allocator, KAC-60)",
+      "description": "class:CRUD | priority:P1",
       "item": [
         {
           "name": "cr-v6",
@@ -906,11 +906,47 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
-                  "pm.test('grpc code 3 (INVALID_ARGUMENT)', () => {",
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
                   "  const j = pm.response.json();",
-                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(3);",
-                  "});"
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('poolId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "cleanup",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools/{{poolId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools",
+                "{{poolId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cleanup (200 or 400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
                 ]
               }
             }
