@@ -2,9 +2,11 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-corelib/validate"
@@ -303,6 +305,28 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 
 // SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка =
 // detach) и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
+//
+// Attach-путь (refID != "") — атомарный CAS: `WHERE used_by_id = '' OR
+// used_by_id = $3`. Это устраняет TOCTOU из service-слоя
+// (NetworkInterfaceService.AttachToInstance), который раньше делал Get → check
+// → unconditional UPDATE и допускал second-writer-wins race (инцидент 2026-05-14,
+// KAC-52: два Compute.Instance.Create с одним existing_network_interface_id
+// обе прошли software-guard, second UPDATE безусловно перезаписал ownership →
+// два pod-а на одной NIC → Kube-OVN IP-allocation conflict).
+//
+// 0 rows из RETURNING → service.ErrFailedPrecondition (NIC занят другим owner).
+// SQLSTATE 23505 от partial UNIQUE `network_interfaces_used_by_uniq`
+// (миграция 0016) — финальный backstop в редком окне между UPDATE и commit
+// при параллельных attach к разным free-NIC, у которых внезапно совпал
+// pointer — тоже маппится в ErrFailedPrecondition.
+//
+// Detach-путь (refID == "") — idempotent unconditional UPDATE: повторный
+// detach уже-свободного NIC — no-op без error. Concurrent detach + attach —
+// admin race, не критичен для correctness.
+//
+// См. workspace CLAUDE.md §«Within-service refs — DB-уровень обязателен»
+// (запрет #10) — шаблон «conditional UPDATE + RETURNING-кардинальность +
+// partial UNIQUE safety-net».
 func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
 	if refID == "" {
 		refType, refName = "", ""
@@ -312,10 +336,32 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 		return nil, service.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	res, err := scanNI(tx.QueryRow(ctx,
-		`UPDATE network_interfaces SET used_by_type=$2, used_by_id=$3, used_by_name=$4, status=$5 WHERE id=$1 RETURNING `+niCols,
-		id, refType, refID, refName, niStatusName(st)))
+
+	var (
+		sql  string
+		args []any
+	)
+	if refID == "" {
+		// Detach: idempotent — clears ownership unconditionally.
+		sql = `UPDATE network_interfaces SET used_by_type=$2, used_by_id=$3, used_by_name=$4, status=$5 WHERE id=$1 RETURNING ` + niCols
+		args = []any{id, refType, refID, refName, niStatusName(st)}
+	} else {
+		// Attach: CAS — only if free OR already owned by the same referrer
+		// (idempotent re-attach). Paired with partial UNIQUE
+		// network_interfaces_used_by_uniq (migration 0016).
+		sql = `UPDATE network_interfaces
+                  SET used_by_type=$2, used_by_id=$3, used_by_name=$4, status=$5
+                WHERE id=$1 AND (used_by_id = '' OR used_by_id = $3)
+                RETURNING ` + niCols
+		args = []any{id, refType, refID, refName, niStatusName(st)}
+	}
+
+	res, err := scanNI(tx.QueryRow(ctx, sql, args...))
 	if err != nil {
+		if refID != "" && (errors.Is(err, pgx.ErrNoRows) || isUniqueViolation(err)) {
+			// CAS failed (someone else owns) OR partial UNIQUE collided.
+			return nil, service.ErrFailedPrecondition
+		}
 		return nil, wrapPgErr(err, "Network interface", id)
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", domainToMap(res)); err != nil {
