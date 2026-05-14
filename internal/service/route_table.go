@@ -229,6 +229,16 @@ func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableRe
 
 // validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
 func validateRouteTableUpdate(req UpdateRouteTableReq) error {
+	// Hard-immutable поля: явное упоминание в update_mask → конкретное
+	// "<field> is immutable after RouteTable.Create" (см. workspace CLAUDE.md
+	// §4.4 «UpdateMask discipline»). Без этой проверки UpdateMask отдал бы
+	// generic "unknown field in update_mask: ..." — менее информативно.
+	for _, field := range req.UpdateMask {
+		switch field {
+		case "network_id", "folder_id":
+			return invalidArg(field, field+" is immutable after RouteTable.Create")
+		}
+	}
 	known := map[string]struct{}{
 		"name": {}, "description": {}, "labels": {}, "static_routes": {},
 	}
