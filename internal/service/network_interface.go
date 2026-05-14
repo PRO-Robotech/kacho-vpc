@@ -506,6 +506,12 @@ func (s *NetworkInterfaceService) AttachToInstance(ctx context.Context, id, inst
 		return nil, err
 	}
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		// Software fast-path: дешёвый Get с понятным error-message для типичного
+		// случая (NIC уже attached к видимому owner-у). Не race-safe сам по себе —
+		// финальная защита от TOCTOU делается на DB-уровне в s.repo.SetUsedBy
+		// (атомарный conditional UPDATE + partial UNIQUE network_interfaces_used_by_uniq,
+		// миграция 0016 / KAC-52; workspace CLAUDE.md §«Within-service refs —
+		// DB-уровень обязателен», запрет #10).
 		cur, err := s.repo.Get(ctx, id)
 		if err != nil {
 			return nil, mapRepoErr(err)
@@ -517,6 +523,16 @@ func (s *NetworkInterfaceService) AttachToInstance(ctx context.Context, id, inst
 		_ = index
 		updated, err := s.repo.SetUsedBy(ctx, id, niUsedByReferrerType, instanceID, "", domain.NIStatusActive)
 		if err != nil {
+			// CAS-конфликт: repo вернул ErrFailedPrecondition. Race-обогащённый
+			// message — догружаем actual owner для пользователя.
+			if errors.Is(err, ErrFailedPrecondition) {
+				if actual, gerr := s.repo.Get(ctx, id); gerr == nil && actual.UsedByID != "" {
+					return nil, status.Errorf(codes.FailedPrecondition,
+						"network interface %s is already attached to %s %s", id, actual.UsedByType, actual.UsedByID)
+				}
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"network interface %s attach raced; already owned by another resource", id)
+			}
 			return nil, mapRepoErr(err)
 		}
 		return anypb.New(protoconv.NetworkInterface(updated))
