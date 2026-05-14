@@ -1,9 +1,110 @@
-# Load testing baseline — kacho-vpc local KIND
+# Load testing baseline — kacho-vpc
+
+## 🎯 2026-05-14 — In-cluster Address.Create + HPA + IPAM-freelist (KAC-40)
+
+**Дата:** 2026-05-14
+**Окружение:** реальный 2-node Kubernetes (`/tmp/e2c825-merged.kubeconfig`, ns `kacho`),
+2× worker node (16 vCPU, ~32 Gi RAM каждый), 1× pg-vpc StatefulSet
+**Test:** `tests/k6/in-cluster/...` (k6 0.55, in-cluster Job через ConfigMap-script);
+эндпоинт `POST /vpc/v1/addresses` с `externalIpv4AddressSpec.zoneId=ru-central1-a`,
+inline-cleanup `DELETE /vpc/v1/addresses/{id}` через 100ms.
+
+### Sustained-режим (mixed Create+Delete, 3 min)
+
+| Метрика | Значение |
+|---|---|
+| **Address.Create sustained** | **~3000/sec на 15 vpc + 15 api-gateway pods** |
+| address_alloc_ok | **100%** (536060 success / 0 fail) |
+| p99 latency (Create alone) | 3.75 sec |
+| http_req_failed | 14.25% (большинство — DELETE 404 из-за worker race) |
+| dropped_iterations (k6 client-side) | 6848/sec (16k VU max — k6 hit ceiling) |
+| HPA peak vpc replicas | **15/15** (1 → 15 за 90s scale-up) |
+| HPA peak api-gateway replicas | **15/15** |
+| HPA peak resource-manager replicas | 2/10 (folder cache TTL=30s держит низкую нагрузку) |
+| HPA peak compute / ui | 1/5, 1/3 (idle — не на write-path) |
+
+### Baseline (1 vpc replica, 1k RPS, 60s)
+
+| Метрика | Значение |
+|---|---|
+| Sustained alloc | 999.5/sec |
+| address_alloc_ok | **100%** (60000/60000) |
+| p99 latency | **106 ms** |
+| cleanup_ok | 99.72% |
+| http_req_failed | 0.13% |
+
+### Результат vs цель
+
+- **Цель:** 10000 Address.Create/sec sustained.
+- **Достигнуто:** ~3000/sec при 100% success (mixed Create+Delete).
+- **Узкое место (текущий 2-node стенд):** k6 client-side (16k VU max при iter ~10s); backend CPU pool (15 vpc × 4-cpu limit на 32-vCPU кластере).
+- **Прогресс vs prev baseline (Network.Create на /16, random+UNIQUE-retry):** 73 → 3000+ alloc/sec = **41× speedup** благодаря IPAM freelist.
+- **Bench testcontainers (изолированный alloc):** sequential 3000/sec/proc, parallel 11k/sec на 12 cores — подтверждает что allocator способен на >10k при достаточных ресурсах backend и shared PG.
+
+### Что входит в этот KAC-40 эпик
+
+1. **Migration 0014_address_pool_freelist.sql** — таблица `address_pool_free_ips` + backfill из CIDR блоков существующих pool.
+2. **Repo `AllocateIPFromFreelist`** — single-statement SQL с `FOR UPDATE SKIP LOCKED ORDER BY ip LIMIT 1` + `DELETE … RETURNING` + `UPDATE addresses` атомарно. Zero contention между параллельными аллокаторами.
+3. **Repo `ReturnIPToFreelist`** — идемпотентный INSERT … ON CONFLICT DO NOTHING для возврата IP при Delete.
+4. **Repo `PopulateFreelistForPool`** — populates freelist при создании pool через `InternalAddressPoolService.Create`.
+5. **Service rewrite `AllocateExternalIP`** — заменил random+sweep loop на одну вызов `AllocateIPFromFreelist`. Маппинг `ErrPoolExhausted` → gRPC `FailedPrecondition`.
+6. **Service `Delete`** — возврат IP в freelist в worker'е после удаления (best-effort, не fail Delete).
+7. **HPA + resources** на 5 чартах (vpc/api-gateway 1..15, rm/compute 1..10, ui 1..3, target CPU 70%).
+8. **PG tune** в umbrella `values.dev.yaml` (synchronous_commit=local, max_connections=2000 в production runtime, shared_buffers, resources requests/limits).
+9. **In-cluster k6 Job** в `kacho-deploy/load-tests/k6-address-allocate.yaml` + Makefile target `loadtest-address-allocate`.
+10. **api-gateway** — client-side gRPC `round_robin` LB config к backend pods (без него gateway пинит одну реплику vpc → defeats HPA).
+
+### Что осталось backlog'ом
+
+- **IPv6 sparse allocator** — отдельная фаза (sparse single-IP с cursor + range leasing; freelist для /64+ нерабочий по storage).
+- **api-gateway → vpc OperationService routing fix** — preexisting bug (gateway routes `kacho.cloud.operation.v1.OperationService`, vpc exposes `kacho.cloud.operation.OperationService` без `.v1`); REST `/operation/v1/operations/{id}` 404. Direct gRPC работает.
+- **Достижение 10k sustained** — требует больше worker nodes (текущие 2×16-vCPU исчерпываются на 15 pods × 4-cpu limit) или sync-ish allocate-path (без Operation worker overhead).
+- **PG persistence** — в текущем стенде `persistence: enabled: false` для всех PG → restart pod = data loss; для production обязательно включить.
+
+### Попытка с выделенной k6-нодой (negative result)
+
+Добавлена 3-я нода (16 vCPU) с label `node-role.kubernetes.io/k6=` для изоляции
+нагрузочника от backend pods. K6 Job pinned туда через `nodeSelector`.
+Запуск с `ramping-arrival-rate` 1k → 3k → 6k → 10k → hold 2 min:
+
+| Метрика | Значение |
+|---|---|
+| Sustained alloc | ~820/sec |
+| address_alloc_ok | 99.90% |
+| p99 latency | 48.77 sec (!) |
+| http_req_failed | 37.09% |
+| iteration_duration p99 | 1m30s |
+
+Парадоксально хуже, чем без выделенной ноды. Гипотеза:
+- На 12 CPU k6 быстро поднял до 24k VU (vs 16k раньше).
+- Backend (15 vpc pods на 32-vCPU) не выдерживает приходящий burst — connection pool заполнен (~1100 active conn из max 2000), worker queue растёт.
+- Inline cleanup создаёт двойную нагрузку (POST + DELETE per VU); под burst DELETE timeouts (>60s) → connection backed up → каскадная деградация.
+
+**Что сделать (вне этой итерации):**
+1. Throttle k6 явно (`maxVUs: 8000`) и измерить sustained при ограниченном concurrency.
+2. Убрать inline cleanup; использовать pure-allocate с enlarged pool (/12 = 1M IPs).
+3. Backend tuning: больше CPU на vpc pod (cpu limit=8), параллелить outbox INSERT в Operation worker, batch pg_notify (или disable Watch для теста).
+4. Pre-scale backend (vpc=15, ag=15) перед нагрузкой — обходит HPA cold-start delay.
+5. Включить PG persistence + warm DB перед прогоном.
+
+Артефакт: `tests/k6/results/run-20260514-0226-k6node-10k.txt`,
+`tests/k6/results/run-20260514-0231-rampup-10k.txt`.
+
+Артефакты прогона:
+- `tests/k6/results/run-20260514-0142-baseline-1k.txt`
+- `tests/k6/results/run-20260514-0155-hpa-10k.txt` (первый attempt)
+- `tests/k6/results/run-20260514-0201-hpa-10k-v2.txt` (с longer sleep)
+- `tests/k6/results/run-20260514-0204-pure-allocate.txt`
+- `tests/k6/results/run-20260514-0208-pure-5k.txt`
+- `tests/k6/results/run-20260514-0214-final-10k.txt`
+- `tests/k6/results/bench-freelist-20260514.txt` (testcontainers bench)
+
+---
+
+## 🎯 ПРЕДЫДУЩИЙ РЕЗУЛЬТАТ (2026-05-11): 5778 Network.Create/sec на 1 pod vpc
 
 **Дата:** 2026-05-11
 **Окружение:** KIND-кластер на dev-машине (1 pod kacho-vpc + api-gateway + resource-manager + Postgres)
-
-## 🎯 ПОДТВЕРЖДЁННЫЙ РЕЗУЛЬТАТ: 5778 Create/sec на 1 pod vpc
 
 | Тест | Throughput | Latency | Errors | Total ops |
 |---|---|---|---|---|

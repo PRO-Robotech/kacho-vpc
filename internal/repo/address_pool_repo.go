@@ -464,3 +464,39 @@ func joinAnd(conds []string) string {
 	}
 	return out
 }
+
+// PopulateFreelistForPool inserts all usable IPv4 addresses from the pool's
+// CIDR blocks into address_pool_free_ips. Idempotent (ON CONFLICT DO NOTHING).
+// IPv6 CIDR blocks are skipped — sparse v6 allocator is deferred to a separate
+// phase. Called at pool creation time and as a one-shot backfill for existing
+// pools that pre-date migration 0014.
+func (r *AddressPoolRepo) PopulateFreelistForPool(ctx context.Context, poolID string) error {
+	var cidrs []string
+	err := r.pool.QueryRow(ctx,
+		`SELECT cidr_blocks FROM address_pools WHERE id = $1`, poolID,
+	).Scan(&cidrs)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("populate freelist: pool %s: %w", poolID, service.ErrNotFound)
+		}
+		return fmt.Errorf("read cidr_blocks for pool %s: %w", poolID, err)
+	}
+	// Postgres' generate_series() doesn't accept inet — walk the CIDR with a
+	// recursive CTE. Skip IPv6 CIDRs (deferred to a separate phase).
+	for _, cidr := range cidrs {
+		if _, err := r.pool.Exec(ctx, `
+			WITH RECURSIVE ips(ip, stop) AS (
+				SELECT (network($2::cidr) + 1)::inet, broadcast($2::cidr)::inet
+				WHERE family($2::cidr) = 4
+				UNION ALL
+				SELECT (ip + 1)::inet, stop FROM ips WHERE ip + 1 < stop
+			)
+			INSERT INTO address_pool_free_ips (pool_id, ip)
+			SELECT $1, ip FROM ips
+			ON CONFLICT (pool_id, ip) DO NOTHING
+		`, poolID, cidr); err != nil {
+			return fmt.Errorf("populate freelist for cidr %s: %w", cidr, err)
+		}
+	}
+	return nil
+}

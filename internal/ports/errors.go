@@ -42,3 +42,9 @@ var ErrInvalidIPv4 = errors.New("not ipv4")
 // duplicate name в фолдере — `ErrAlreadyExists`). При получении этой ошибки
 // service генерирует новый MAC и повторяет Insert (до 3 попыток).
 var ErrMacCollision = errors.New("network interface mac collision")
+
+// ErrPoolExhausted — address_pool_free_ips пуст для запрошенного pool_id
+// (PG-native freelist allocator, миграция 0015). Маппится service-слоем в gRPC
+// FailedPrecondition. Re-exported repo-слоем (`repo.ErrPoolExhausted`) — это
+// тот же error-value, поэтому `errors.Is` прозрачен на обеих сторонах.
+var ErrPoolExhausted = errors.New("address pool exhausted")

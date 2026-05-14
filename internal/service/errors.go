@@ -38,3 +38,9 @@ var ErrInvalidIPv4 = ports.ErrInvalidIPv4
 // ErrMacCollision — нарушение UNIQUE-constraint по network_interfaces.mac_address.
 // Сигнал для NetworkInterfaceService.doCreate сгенерировать новый MAC и повторить.
 var ErrMacCollision = ports.ErrMacCollision
+
+// ErrPoolExhausted — address_pool_free_ips пуст (PG-native freelist allocator,
+// миграция 0015). Маппится в FailedPrecondition. Repo также использует тот же
+// error-value (через `repo.ErrPoolExhausted = ports.ErrPoolExhausted`), поэтому
+// `errors.Is(err, service.ErrPoolExhausted)` сработает на ошибке из repo.
+var ErrPoolExhausted = ports.ErrPoolExhausted

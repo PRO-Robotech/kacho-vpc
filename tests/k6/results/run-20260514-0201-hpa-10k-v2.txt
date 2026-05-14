@@ -1,0 +1,25 @@
+time="2026-05-13T22:58:30Z" level=warning msg="Insufficient VUs, reached 16000 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=allocate
+time="2026-05-13T23:01:17Z" level=error msg="thresholds on metrics 'address_alloc_latency' have been crossed"
+
+   ✗ address_alloc_latency..........: min=3ms      avg=1.98s    med=1.95s   p(90)=3.02s    p(95)=3.27s    p(99)=3.75s    max=5.92s   
+   ✓ address_alloc_ok...............: 100.00% 536060 out of 536060
+     addresses_allocated............: 536060  2904.304665/s
+     cleanup_ok.....................: 71.49%  383270 out of 536060
+     data_received..................: 534 MB  2.9 MB/s
+     data_sent......................: 332 MB  1.8 MB/s
+     dropped_iterations.............: 1263956 6847.952294/s
+     http_req_blocked...............: min=1.14µs   avg=538.9µs  med=5.47µs  p(90)=10.29µs  p(95)=21.2µs   p(99)=552.82µs max=284.35ms
+     http_req_connecting............: min=0s       avg=279.57µs med=0s      p(90)=0s       p(95)=0s       p(99)=293.56µs max=166.54ms
+     http_req_duration..............: min=2.49ms   avg=2.56s    med=2.26s   p(90)=4.58s    p(95)=5.43s    p(99)=6.56s    max=7.47s   
+       { expected_response:true }...: min=2.49ms   avg=2.72s    med=2.39s   p(90)=4.73s    p(95)=5.67s    p(99)=6.64s    max=7.47s   
+   ✓ http_req_failed................: 14.25%  152790 out of 1072120
+     http_req_receiving.............: min=15.84µs  avg=90.42µs  med=48.19µs p(90)=100.29µs p(95)=170.17µs p(99)=599.49µs max=579.66ms
+     http_req_sending...............: min=6.43µs   avg=130.43µs med=18.72µs p(90)=92.73µs  p(95)=179.84µs p(99)=931.08µs max=220.85ms
+     http_req_tls_handshaking.......: min=0s       avg=0s       med=0s      p(90)=0s       p(95)=0s       p(99)=0s       max=0s      
+     http_req_waiting...............: min=2.38ms   avg=2.56s    med=2.26s   p(90)=4.58s    p(95)=5.43s    p(99)=6.56s    max=7.47s   
+     http_reqs......................: 1072120 5808.60933/s
+     iteration_duration.............: min=113.03ms avg=5.23s    med=4.89s   p(90)=8.26s    p(95)=9.4s     p(99)=10.04s   max=10.81s  
+     iterations.....................: 536060  2904.304665/s
+     vus............................: 386     min=386               max=16000
+     vus_max........................: 16000   min=4000              max=16000
+

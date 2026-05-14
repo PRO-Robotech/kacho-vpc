@@ -62,6 +62,10 @@ spec:
               value: "{{ .Values.ports.internalGrpc }}"
             - name: KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR
               value: "{{ .Values.resourceManagerAddr }}"
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: grpc
@@ -72,3 +76,10 @@ spec:
               port: grpc
             initialDelaySeconds: 10
             periodSeconds: 30
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}

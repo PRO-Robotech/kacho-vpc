@@ -116,7 +116,17 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 		CreatedAt:        time.Now().UTC(),
 	}
 	p.ModifiedAt = p.CreatedAt
-	return s.pools.Insert(ctx, p)
+	created, err := s.pools.Insert(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	// Материализуем per-IP freelist для IPv4 CIDR-блоков pool'а (миграция 0014):
+	// PG-native AllocateIPFromFreelist полагается на эту таблицу. IPv6 CIDR'ы
+	// PopulateFreelistForPool пропускает (sparse v6 allocator — отдельная фаза).
+	if err := s.pools.PopulateFreelistForPool(ctx, created.ID); err != nil {
+		return nil, status.Errorf(codes.Internal, "populate freelist: %v", err)
+	}
+	return created, nil
 }
 
 func (s *AddressPoolService) Get(ctx context.Context, id string) (*domain.AddressPool, error) {

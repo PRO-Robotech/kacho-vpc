@@ -20,7 +20,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-func setupTestDB(t *testing.T) string {
+func setupTestDB(t testing.TB) string {
 	t.Helper()
 	ctx := context.Background()
 

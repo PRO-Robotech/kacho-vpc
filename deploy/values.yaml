@@ -13,3 +13,31 @@ db:
   passwordSecretName: kacho-umbrella-pg-vpc
   passwordSecretKey: password
 resourceManagerAddr: "resource-manager.kacho.svc.cluster.local:9090"
+
+# ─── Load-test friendly defaults (KAC-41) ─────────────────────────────
+# Tuned for high-throughput Address.Create:
+#   - DB_MAX_CONNS=200: pgxpool default of 4 caps write throughput.
+#   - DEFAULT_SG_INLINE=false: skip auto-default-SG INSERT/UPDATE in
+#     Network.Create hot-path (≈ +30-40% throughput; verbatim YC parity
+#     is currently deferred — see workspace CLAUDE.md).
+#   - FOLDER_CACHE_TTL=30s: keeps folder existence checks out of
+#     allocate hot-path.
+env:
+  KACHO_VPC_DB_MAX_CONNS: "200"
+  KACHO_VPC_DEFAULT_SG_INLINE: "false"
+  KACHO_VPC_FOLDER_CACHE_TTL: "30s"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+
+# Default replicas=1; HPA autoscales up to 10 on CPU 70%.
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70

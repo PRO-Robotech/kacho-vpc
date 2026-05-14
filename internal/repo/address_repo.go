@@ -2,14 +2,17 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -604,4 +607,66 @@ func marshalInternalIPv6(i *domain.InternalIpv6Spec) ([]byte, error) {
 		return nil, nil
 	}
 	return marshalJSONB(i, "Address.internal_ipv6")
+}
+
+// ErrPoolExhausted — address_pool_free_ips empty for the given pool.
+// Service-layer maps to gRPC FailedPrecondition. Re-exported from
+// `internal/ports` so service-side `errors.Is(err, service.ErrPoolExhausted)`
+// matches the same error-value the repo returns.
+var ErrPoolExhausted = ports.ErrPoolExhausted
+
+// allocateFromFreelistSQL — single-statement atomic IP allocation. SKIP LOCKED
+// lets parallel workers grab different freelist rows without contention.
+const allocateFromFreelistSQL = `
+WITH picked AS (
+    SELECT ip FROM address_pool_free_ips
+    WHERE pool_id = $1
+    ORDER BY ip
+    LIMIT 1 FOR UPDATE SKIP LOCKED
+), removed AS (
+    DELETE FROM address_pool_free_ips f
+    USING picked p
+    WHERE f.pool_id = $1 AND f.ip = p.ip
+    RETURNING f.ip
+)
+UPDATE addresses a
+SET external_ipv4 = jsonb_set(
+    jsonb_set(COALESCE(a.external_ipv4, '{}'::jsonb), '{address}', to_jsonb(host(r.ip))),
+    '{address_pool_id}', to_jsonb($1::text)
+)
+FROM removed r
+WHERE a.id = $2
+RETURNING host(r.ip)::text;
+`
+
+// AllocateIPFromFreelist atomically:
+//  1. pops one free IP from address_pool_free_ips for pool_id (SKIP LOCKED),
+//  2. writes it to addresses.external_ipv4{address, address_pool_id} for address_id.
+//
+// Returns ErrPoolExhausted if the freelist for pool_id is empty.
+func (r *AddressRepo) AllocateIPFromFreelist(ctx context.Context, poolID, addressID string) (string, error) {
+	var ip string
+	err := r.pool.QueryRow(ctx, allocateFromFreelistSQL, poolID, addressID).Scan(&ip)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrPoolExhausted
+	}
+	if err != nil {
+		return "", fmt.Errorf("allocate from freelist: %w", err)
+	}
+	return ip, nil
+}
+
+// ReturnIPToFreelist puts an IP back into the pool's freelist. Idempotent:
+// ON CONFLICT DO NOTHING. Called from AddressService.Delete (or compensation
+// on allocation failure downstream) to release a previously-allocated IP.
+func (r *AddressRepo) ReturnIPToFreelist(ctx context.Context, poolID, ip string) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO address_pool_free_ips (pool_id, ip)
+		VALUES ($1, $2::inet)
+		ON CONFLICT (pool_id, ip) DO NOTHING
+	`, poolID, ip)
+	if err != nil {
+		return fmt.Errorf("return ip to freelist: %w", err)
+	}
+	return nil
 }
