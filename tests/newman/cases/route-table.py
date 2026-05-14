@@ -446,17 +446,14 @@ CASES.append(Case(
                 test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
 ))
 
-# KAC-53 follow-up — TDD-pending: при создании RouteTable с network_id ожидается,
-# что все Subnet этой сети, у которых ещё нет своего route_table_id, автоматически
-# получают route_table_id = новый RT.id (auto-association по аналогии с default-SG
-# у Network). Сейчас RouteTableService.doCreate этого не делает —
-# `Subnet.route_table_id` остаётся пустым, пока клиент явно не передаст его в
-# Subnet.Create/Update. Кейс выполняется observational; assertion помечен через
-# pm.test.skip — превратится в normal green после реализации auto-association
-# (отдельная задача / GitHub Issue).
+# KAC-56: auto-association реализована через PL/pgSQL trigger в миграции 0019
+# (`rt_auto_assoc_subnets_trg` AFTER INSERT ON route_tables). При создании
+# RouteTable с network_id все Subnet'ы этой сети, у которых route_table_id IS
+# NULL, автоматически получают route_table_id = NEW.id. Subnet с уже задан-
+# ным route_table_id (explicit user choice) не перетирается. TDD-skip снят.
 CASES.append(Case(
     id="RT-CR-STATE-SUBNET-AUTO-ASSOC",
-    title="Create RouteTable c networkId → Subnet этой сети получает route_table_id (auto-assoc; TDD-pending)",
+    title="Create RouteTable c networkId → Subnet этой сети получает route_table_id (DB-trigger, KAC-56)",
     classes=["CRUD", "STATE"], priority="P1",
     steps=[
         # 1. Network.
@@ -487,20 +484,13 @@ CASES.append(Case(
         Step(name="assert-rt-created", method="GET", path="/operations/{{opId}}",
              test_script=["const j = pm.response.json();",
                           "pm.test('RT.Create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
-        # 4. Главная проверка: Subnet.route_table_id обновился до новой RT.
+        # 4. Главная проверка: Subnet.route_table_id обновился до новой RT
+        # (KAC-56: миграция 0019 `rt_auto_assoc_subnets_trg`).
         Step(name="get-sub-after-rt", method="GET", path="/vpc/v1/subnets/{{subId}}",
              test_script=[
                  *assert_status(200),
                  "const j = pm.response.json();",
-                 "const rtId = pm.environment.get('rtId');",
-                 "const associated = (j.routeTableId === rtId);",
-                 "console.log('KAC-53 follow-up — subnet auto-assoc =', associated, 'subnet.routeTableId=', j.routeTableId, 'expected=', rtId);",
-                 # TDD-pending: dynamic skip. Превратится в normal green/red после
-                 # реализации auto-association в RouteTableService.doCreate (UPDATE
-                 # subnets SET route_table_id=$rt WHERE network_id=$net AND route_table_id='').
-                 "(associated ? pm.test : pm.test.skip)(",
-                 "  'subnet.route_table_id == newly-created RT.id (auto-assoc; pending)', ",
-                 "  () => pm.expect(j.routeTableId).to.eql(rtId));",
+                 "pm.test('subnet.route_table_id == newly-created RT.id (DB-trigger KAC-56)', () => pm.expect(j.routeTableId).to.eql(pm.environment.get('rtId')));",
              ]),
         # Cleanup снизу вверх: RT → Subnet → Network.
         Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "ba400703-37ba-47ec-80e9-280eb05a0d7b",
+    "_postman_id": "a1aa1664-025c-45a5-afd5-8b7f99b864ba",
     "name": "kacho-vpc / newman / route-table",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -11627,7 +11627,7 @@
       ]
     },
     {
-      "name": "RT-CR-STATE-SUBNET-AUTO-ASSOC — Create RouteTable c networkId → Subnet этой сети получает route_table_id (auto-assoc; TDD-pending)",
+      "name": "RT-CR-STATE-SUBNET-AUTO-ASSOC — Create RouteTable c networkId → Subnet этой сети получает route_table_id (DB-trigger, KAC-56)",
       "description": "class:CRUD | class:STATE | priority:P1",
       "item": [
         {
@@ -12028,12 +12028,7 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "const rtId = pm.environment.get('rtId');",
-                  "const associated = (j.routeTableId === rtId);",
-                  "console.log('KAC-53 follow-up — subnet auto-assoc =', associated, 'subnet.routeTableId=', j.routeTableId, 'expected=', rtId);",
-                  "(associated ? pm.test : pm.test.skip)(",
-                  "  'subnet.route_table_id == newly-created RT.id (auto-assoc; pending)', ",
-                  "  () => pm.expect(j.routeTableId).to.eql(rtId));"
+                  "pm.test('subnet.route_table_id == newly-created RT.id (DB-trigger KAC-56)', () => pm.expect(j.routeTableId).to.eql(pm.environment.get('rtId')));"
                 ]
               }
             }
