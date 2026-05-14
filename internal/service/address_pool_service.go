@@ -283,6 +283,16 @@ type ResolvedPool struct {
 	MatchedSelector map[string]string // populated only for label_selector
 }
 
+// AddressFamily — IP-семейство для cascade-resolve фильтрации (KAC-63).
+// Без явного family pool-cascade выберет default v4-пул и для v6-запроса,
+// что приведёт к Internal "pool has no IPv6 cidr_blocks" в allocator'е.
+type AddressFamily int
+
+const (
+	FamilyV4 AddressFamily = iota
+	FamilyV6
+)
+
 // ResolvePoolForAddress — полный 5-step cascade:
 //
 //  1. address_pool_address_override        (explicit per-address)
@@ -294,7 +304,7 @@ type ResolvedPool struct {
 // Используется AllocateExternalIP. Если ни один шаг не дал результата —
 // возвращает ErrNotFound (caller возвращает FailedPrecondition / ResourceExhausted).
 func (s *AddressPoolService) ResolvePoolForAddress(ctx context.Context, addressID string) (*ResolvedPool, error) {
-	res, _, err := s.resolveWithRunnerUp(ctx, addressID, "", domain.AddressPoolKindExternalPublic)
+	res, _, err := s.resolveWithRunnerUp(ctx, addressID, "", domain.AddressPoolKindExternalPublic, FamilyV4)
 	return res, err
 }
 
@@ -306,11 +316,42 @@ func (s *AddressPoolService) ResolvePoolForAddress(ctx context.Context, addressI
 // hypothetical resolve без addressID был бы silent degradation
 // (теряем cascade Step 1 + folder-id для Step 3).
 func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr *domain.Address) (*ResolvedPool, error) {
+	return s.ResolvePoolForAddressObjFamily(ctx, addr, FamilyV4)
+}
+
+// ResolvePoolForAddressObjFamily — cascade-resolve с явным IP-family фильтром (KAC-63).
+// Каждый step отвергает pool без CIDR нужной family и проваливается на следующий step,
+// чтобы default v4-пул не «утаскивал» v6-аллокацию (и наоборот).
+func (s *AddressPoolService) ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.Address, family AddressFamily) (*ResolvedPool, error) {
 	if addr == nil {
-		return nil, status.Error(codes.InvalidArgument, "ResolvePoolForAddressObj: addr is required (use ResolvePoolForAddress for ID-only path)")
+		return nil, status.Error(codes.InvalidArgument, "ResolvePoolForAddressObjFamily: addr is required (use ResolvePoolForAddress for ID-only path)")
 	}
-	res, _, err := s.doResolve(ctx, addr.ID, addr, "", domain.AddressPoolKindExternalPublic)
+	res, _, err := s.doResolve(ctx, addr.ID, addr, "", domain.AddressPoolKindExternalPublic, family)
 	return res, err
+}
+
+// poolHasFamily — true если хотя бы один CIDR-блок pool принадлежит запрошенной family.
+func poolHasFamily(pool *domain.AddressPool, family AddressFamily) bool {
+	if pool == nil {
+		return false
+	}
+	for _, c := range pool.CIDRBlocks {
+		p, perr := netip.ParsePrefix(c)
+		if perr != nil {
+			continue
+		}
+		switch family {
+		case FamilyV6:
+			if p.Addr().Is6() && !p.Addr().Is4In6() {
+				return true
+			}
+		default:
+			if p.Addr().Is4() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // resolveWithRunnerUp — общая логика резолва, опционально вычисляет runner-up
@@ -321,32 +362,38 @@ func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr 
 // kindHint — какой kind пула caller ожидает. Phase 1 использует
 // EXTERNAL_PUBLIC. Никаких kind-fallback'ов.
 //
-// Zone берётся напрямую из Address.external_ipv4.zone_id (для external) или
-// Subnet.zone_id (для internal). Никаких regionFromZone-преобразований —
+// Zone берётся напрямую из Address.external_ipv4.zone_id / external_ipv6.zone_id (для external)
+// или Subnet.zone_id (для internal). Никаких regionFromZone-преобразований —
 // AddressPool теперь привязан к zone, не к region (см. миграция 0020).
 func (s *AddressPoolService) resolveWithRunnerUp(
 	ctx context.Context,
 	addressID, networkIDOverride string,
 	kindHint domain.AddressPoolKind,
+	family AddressFamily,
 ) (*ResolvedPool, *ResolvedPool, error) {
-	return s.doResolve(ctx, addressID, nil, networkIDOverride, kindHint)
+	return s.doResolve(ctx, addressID, nil, networkIDOverride, kindHint, family)
 }
 
 // doResolve — единая реализация cascade. Если preloadedAddr != nil — переиспользуется
 // без дополнительного s.addrRepo.Get (устраняет double-Get в hot path).
+//
+// family (KAC-63) — pool должен иметь хотя бы один CIDR требуемой family.
+// Pool не подходящий по family — отвергается на каждом step и cascade
+// проваливается на следующий step, а не оборачивается в Internal в allocator'е.
 func (s *AddressPoolService) doResolve(
 	ctx context.Context,
 	addressID string,
 	preloadedAddr *domain.Address,
 	networkIDOverride string,
 	kindHint domain.AddressPoolKind,
+	family AddressFamily,
 ) (*ResolvedPool, *ResolvedPool, error) {
 
 	// Step 1: address_override.
 	if addressID != "" {
 		if poolID, err := s.bindings.GetAddressOverride(ctx, addressID); err == nil && poolID != "" {
 			pool, err := s.pools.Get(ctx, poolID)
-			if err == nil {
+			if err == nil && poolHasFamily(pool, family) {
 				return &ResolvedPool{Pool: pool, MatchedVia: "address_override"},
 					s.tryRestForRunnerUp(ctx, addressID, networkIDOverride, kindHint, "address_override"),
 					nil
@@ -372,6 +419,9 @@ func (s *AddressPoolService) doResolve(
 		if a.ExternalIpv4 != nil && a.ExternalIpv4.ZoneID != "" {
 			zoneID = a.ExternalIpv4.ZoneID
 		}
+		if a.ExternalIpv6 != nil && a.ExternalIpv6.ZoneID != "" {
+			zoneID = a.ExternalIpv6.ZoneID
+		}
 		if a.InternalIpv4 != nil && a.InternalIpv4.SubnetID != "" {
 			sub, err := s.subnetRepo.Get(ctx, a.InternalIpv4.SubnetID)
 			if err == nil {
@@ -387,7 +437,7 @@ func (s *AddressPoolService) doResolve(
 	if networkID != "" {
 		if poolID, err := s.bindings.GetNetworkDefault(ctx, networkID); err == nil && poolID != "" {
 			pool, err := s.pools.Get(ctx, poolID)
-			if err == nil {
+			if err == nil && poolHasFamily(pool, family) {
 				return &ResolvedPool{Pool: pool, MatchedVia: "network_default"},
 					s.tryRestForRunnerUp(ctx, addressID, networkID, kindHint, "network_default"),
 					nil
@@ -401,31 +451,41 @@ func (s *AddressPoolService) doResolve(
 	if folderID != "" && s.folderClient != nil && s.cloudSel != nil {
 		if cloudID, err := s.folderClient.GetCloudID(ctx, folderID); err == nil && cloudID != "" {
 			if sel, err := s.cloudSel.Get(ctx, cloudID); err == nil && !sel.IsEmpty() {
-				matches, err := s.pools.FindBySelectorMatch(ctx, sel.Selector, zoneID, kindHint, 2)
-				if err == nil && len(matches) > 0 {
-					return &ResolvedPool{
-						Pool:            matches[0],
-						MatchedVia:      "label_selector",
-						MatchedSelector: sel.Selector,
-					}, nilOrSecond(matches), nil
+				// Берём по 2 на каждый match чтобы после family-фильтра остался
+				// шанс выбрать non-trivial pool.
+				matches, err := s.pools.FindBySelectorMatch(ctx, sel.Selector, zoneID, kindHint, 4)
+				if err == nil {
+					filtered := matches[:0]
+					for _, p := range matches {
+						if poolHasFamily(p, family) {
+							filtered = append(filtered, p)
+						}
+					}
+					if len(filtered) > 0 {
+						return &ResolvedPool{
+							Pool:            filtered[0],
+							MatchedVia:      "label_selector",
+							MatchedSelector: sel.Selector,
+						}, nilOrSecond(filtered), nil
+					}
 				}
 			}
 		}
 	}
 
-	// Step 4: zone_default — точный match по (zone, kind).
+	// Step 4: zone_default — точный match по (zone, kind, family).
 	if zoneID != "" {
-		if pool, err := s.pools.GetDefaultForZone(ctx, zoneID, kindHint); err == nil {
+		if pool, err := s.pools.GetDefaultForZone(ctx, zoneID, kindHint); err == nil && poolHasFamily(pool, family) {
 			return &ResolvedPool{Pool: pool, MatchedVia: "zone_default"}, nil, nil
 		}
 	}
 
 	// Step 5: global_default (zone_id IS NULL).
-	if pool, err := s.pools.GetDefaultForZone(ctx, "", kindHint); err == nil {
+	if pool, err := s.pools.GetDefaultForZone(ctx, "", kindHint); err == nil && poolHasFamily(pool, family) {
 		return &ResolvedPool{Pool: pool, MatchedVia: "global_default"}, nil, nil
 	}
 
-	return nil, nil, fmt.Errorf("%w for address %s (network %s)", ErrPoolNotResolved, addressID, networkID)
+	return nil, nil, fmt.Errorf("%w for address %s (network %s, family=%d)", ErrPoolNotResolved, addressID, networkID, family)
 }
 
 func nilOrSecond(matches []*domain.AddressPool) *ResolvedPool {
@@ -452,9 +512,16 @@ func (s *AddressPoolService) tryRestForRunnerUp(
 }
 
 // ExplainResolution — публичный метод для InternalAddressPoolService.ExplainResolution RPC.
-// Возвращает primary + runner-up (если есть).
+// Возвращает primary + runner-up (если есть). Family определяется по spec самого address:
+// external_ipv6 → FamilyV6; иначе → FamilyV4 (KAC-63).
 func (s *AddressPoolService) ExplainResolution(ctx context.Context, addressID, networkID string) (*ResolvedPool, *ResolvedPool, error) {
-	return s.resolveWithRunnerUp(ctx, addressID, networkID, domain.AddressPoolKindExternalPublic)
+	family := FamilyV4
+	if addressID != "" {
+		if a, err := s.addrRepo.Get(ctx, addressID); err == nil && a.ExternalIpv6 != nil {
+			family = FamilyV6
+		}
+	}
+	return s.resolveWithRunnerUp(ctx, addressID, networkID, domain.AddressPoolKindExternalPublic, family)
 }
 
 // Check — диагностика IPAM-конфигурации. Возвращает list of warnings.

@@ -600,3 +600,175 @@ CASES.extend(security_injection_block("ADR", "/vpc/v1/addresses", "/vpc/v1/addre
     {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.append(conformance_lifecycle_pack("ADR", "/vpc/v1/addresses",
     {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+
+
+# ─── KAC-58 / KAC-63: External IPv6 regression coverage ─────────────────────
+#
+# Backend (KAC-60, миграция 0021): sparse counter-based IPv6 IPAM —
+# ipv6_pool_cursors / ipv6_allocated_ips / ipv6_released_offsets, allocator
+# = try pop released SKIP LOCKED → fallback bump cursor; ip = pool_base + offset.
+# Эти кейсы — black-box проверка через api-gateway, не знают про SQL.
+#
+# Изоляция: каждый case создаёт свой v6-pool в zone `ru-central1-c` (нет
+# seeded-default v4-pool там — не пересекается с ADR-CR-CRUD-EXT). Cleanup
+# в обратном порядке: address → pool. Pool DELETE для KAC-60 проходит
+# (зависимостей через FK нет; ipv6_allocated_ips → address_pools CASCADE).
+
+POOLS = "/vpc/v1/addressPools"
+ADDRS = "/vpc/v1/addresses"
+
+
+def _make_v6_pool(suffix="v6", zone="ru-central1-d", cidr="2001:db8:cafe::/64",
+                  is_default=True):
+    """Создать v6-pool для конкретного case + забрать id в poolId."""
+    body = {"name": f"adr-{suffix}-pool-{{{{runId}}}}", "kind": "EXTERNAL_PUBLIC",
+            "zoneId": zone, "cidrBlocks": [cidr], "isDefault": is_default}
+    return [
+        Step(name=f"pre-pool-{suffix}", method="POST", path=POOLS, body=body,
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "poolId")]),
+    ]
+
+
+def _cleanup_pool():
+    return [
+        Step(name="cleanup-pool", method="DELETE", path=POOLS + "/{{poolId}}",
+             test_script=["pm.test('cleanup pool (200 or 400/404)', () => "
+                          "pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"]),
+    ]
+
+
+CASES.append(Case(
+    # index: ADR-CR-CRUD-EXT-V6 — happy path для External IPv6 auto-allocation.
+    # Verifies: AddressPool (v6 CIDR) → Address.Create external_ipv6_address_spec
+    # без explicit address → backend allocator (sparse counter) выбирает offset 1
+    # из pool, ip = base + offset. Get показывает externalIpv6Address.address
+    # как валидный v6.
+    id="ADR-CR-CRUD-EXT-V6",
+    title="Create external_ipv6 Address → IP из default v6 pool (KAC-58)",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        *_make_v6_pool("crv6", zone="ru-central1-d", cidr="2001:db8:cafe::/64"),
+        Step(name="create", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-crv6-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="get", method="GET", path=ADDRS + "/{{addrId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('has external ipv6', () => pm.expect(pm.response.json().externalIpv6Address).to.be.an('object'));",
+                          "pm.test('v6 address looks like ipv6 hex', () => pm.expect(pm.response.json().externalIpv6Address.address).to.match(/^[0-9a-fA-F:]+$/));",
+                          "pm.test('v6 ip starts with pool prefix 2001:db8:cafe', () => pm.expect(pm.response.json().externalIpv6Address.address).to.match(/^2001:db8:cafe:/));"]),
+        Step(name="cleanup-addr", method="DELETE", path=ADDRS + "/{{addrId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        *_cleanup_pool(),
+    ],
+))
+
+
+CASES.append(Case(
+    # index: ADR-CR-NEG-EXT-V6-NO-POOL — cascade resolve не находит v6 pool в зоне.
+    # Verifies: Create external_ipv6 в zone, где НЕТ pool с v6 CIDR → backend
+    # возвращает FailedPrecondition (cascade resolve fails или allocator не
+    # находит подходящий pool). Защищает контракт «family-aware resolve».
+    # Используется альтернативная zone `ru-central1-b` — там нет seeded pools,
+    # ни v4 ни v6, ни в этом case-set'е других кейсов, создающих pool в b.
+    id="ADR-CR-NEG-EXT-V6-NO-POOL",
+    title="Create external_ipv6 без v6 pool в зоне → FailedPrecondition (KAC-58)",
+    classes=["NEG"], priority="P0",
+    steps=[
+        Step(name="create", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-nv6-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-b"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        # Operation done=true с error_code=9 (FailedPrecondition) — backend
+        # либо в cascade resolve, либо в AllocateExternalIPv6FromPool увидит
+        # что pool с v6 CIDR не найден.
+        poll_operation_until_done(),
+        Step(name="check-op-failed", method="GET", path="/operations/{{opId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('operation done', () => pm.expect(pm.response.json().done).to.equal(true));",
+                          "pm.test('operation has error', () => pm.expect(pm.response.json().error).to.be.an('object'));",
+                          "pm.test('error code 9 (FailedPrecondition) or 5 (NotFound)', () => pm.expect(pm.response.json().error.code).to.be.oneOf([5, 9]));"]),
+    ],
+))
+
+
+CASES.append(Case(
+    # index: ADR-DEL-EXT-V6-RELEASE-REUSE — sparse allocator returns offset to
+    # released pool on Delete; next Allocate берёт его first (perceived FIFO).
+    # Verifies: First allocate получает IP с offset=1 (вычислимо как base + 1);
+    # Delete — push offset=1 в released; Second allocate должен получить
+    # **тот же** IP (попадает в pop released path до bump cursor).
+    id="ADR-DEL-EXT-V6-RELEASE-REUSE",
+    title="Delete v6 Address → offset возвращается в released, Reuse выдаёт тот же IP (KAC-58)",
+    classes=["STATE", "CONF"], priority="P1",
+    steps=[
+        *_make_v6_pool("rru", zone="ru-central1-d", cidr="2001:db8:bee::/64"),
+        # 1) Create + remember the IP.
+        Step(name="cr-1", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-rru1-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addr1Id")]),
+        poll_operation_until_done(),
+        Step(name="get-1", method="GET", path=ADDRS + "/{{addr1Id}}",
+             test_script=[*assert_status(200),
+                          *save_from_response("j.externalIpv6Address && j.externalIpv6Address.address", "firstIp")]),
+        # 2) Delete first — pushes offset to ipv6_released_offsets.
+        Step(name="del-1", method="DELETE", path=ADDRS + "/{{addr1Id}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        # 3) Allocate again — should pick up the released offset → same IP.
+        Step(name="cr-2", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-rru2-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addr2Id")]),
+        poll_operation_until_done(),
+        Step(name="get-2", method="GET", path=ADDRS + "/{{addr2Id}}",
+             test_script=[*assert_status(200),
+                          "pm.test('reused IP equals first IP (released-first-allocate)', () => "
+                          "pm.expect(pm.response.json().externalIpv6Address.address).to.equal(pm.environment.get('firstIp')));"]),
+        Step(name="cleanup-addr2", method="DELETE", path=ADDRS + "/{{addr2Id}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        *_cleanup_pool(),
+    ],
+))
+
+
+CASES.append(Case(
+    # index: ADR-CR-EXT-V6-FAMILY-FALLTHROUGH — глобальный v4 default pool
+    # (seeded в кластере) НЕ "крадёт" v6 запрос: cascade step 4 (zone_default)
+    # в zone-a для v6 пуст → step 5 global_default находит v4 pool, family-
+    # фильтр (KAC-63) его отвергает (нет v6 cidr) → cascade проваливается с
+    # FailedPrecondition (resolve address pool: pool not resolved). Если
+    # family-filter сломан — попадаем в Internal "pool has no IPv6 cidr_blocks".
+    id="ADR-CR-EXT-V6-FAMILY-FALLTHROUGH",
+    title="External v6 в zone без v6 pool: cascade фильтрует v4 default → FailedPrecondition (KAC-58, KAC-63)",
+    classes=["CONF", "NEG"], priority="P0",
+    steps=[
+        Step(name="create", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-fal-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-a"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
+        poll_operation_until_done(),
+        Step(name="check-op-failed", method="GET", path="/operations/{{opId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('operation done', () => pm.expect(pm.response.json().done).to.equal(true));",
+                          "pm.test('operation has error', () => pm.expect(pm.response.json().error).to.be.an('object'));",
+                          # KAC-63 family-filter в cascade resolve: должен быть код 9
+                          # (FailedPrecondition), а НЕ 13 (Internal). 13 — регрессия.
+                          "pm.test('error code 9 (FailedPrecondition), не 13 (Internal — регрессия KAC-63)', () => pm.expect(pm.response.json().error.code).to.equal(9));"]),
+    ],
+))
