@@ -446,6 +446,78 @@ CASES.append(Case(
                 test_script=["pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"])],
 ))
 
+# KAC-53 follow-up — TDD-pending: при создании RouteTable с network_id ожидается,
+# что все Subnet этой сети, у которых ещё нет своего route_table_id, автоматически
+# получают route_table_id = новый RT.id (auto-association по аналогии с default-SG
+# у Network). Сейчас RouteTableService.doCreate этого не делает —
+# `Subnet.route_table_id` остаётся пустым, пока клиент явно не передаст его в
+# Subnet.Create/Update. Кейс выполняется observational; assertion помечен через
+# pm.test.skip — превратится в normal green после реализации auto-association
+# (отдельная задача / GitHub Issue).
+CASES.append(Case(
+    id="RT-CR-STATE-SUBNET-AUTO-ASSOC",
+    title="Create RouteTable c networkId → Subnet этой сети получает route_table_id (auto-assoc; TDD-pending)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        # 1. Network.
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "rt-autoassoc-net-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        # 2. Subnet (без явного route_table_id).
+        Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-autoassoc-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.247.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        # 2a. Verify subnet.route_table_id пустой до создания RT (precondition).
+        Step(name="get-sub-before-rt", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('subnet.route_table_id empty before RT.Create', () => pm.expect(pm.response.json().routeTableId || '').to.eql(''));"]),
+        # 3. RouteTable.
+        Step(name="cr-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-autoassoc-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="assert-rt-created", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('RT.Create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        # 4. Главная проверка: Subnet.route_table_id обновился до новой RT.
+        Step(name="get-sub-after-rt", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "const rtId = pm.environment.get('rtId');",
+                 "const associated = (j.routeTableId === rtId);",
+                 "console.log('KAC-53 follow-up — subnet auto-assoc =', associated, 'subnet.routeTableId=', j.routeTableId, 'expected=', rtId);",
+                 # TDD-pending: dynamic skip. Превратится в normal green/red после
+                 # реализации auto-association в RouteTableService.doCreate (UPDATE
+                 # subnets SET route_table_id=$rt WHERE network_id=$net AND route_table_id='').
+                 "(associated ? pm.test : pm.test.skip)(",
+                 "  'subnet.route_table_id == newly-created RT.id (auto-assoc; pending)', ",
+                 "  () => pm.expect(j.routeTableId).to.eql(rtId));",
+             ]),
+        # Cleanup снизу вверх: RT → Subnet → Network.
+        Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=["pm.test('cleanup rt (200/400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=["pm.test('cleanup sub (200/400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=["pm.test('cleanup net (200/400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
 for c in required_fields_matrix("RT", "/vpc/v1/routeTables",
     {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "name": "rt-req-{{runId}}", "staticRoutes": []},

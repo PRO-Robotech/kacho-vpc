@@ -445,6 +445,75 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-53 (3): «при линковке адреса к интерфейсу — v4_address_ids или
+    # v6_address_ids ИЛИ ВМЕСТЕ должны быть заполнены». Дуальный кейс к
+    # NIC-CR-WITH-ADDR-OK (v4 only) + NIC-CR-WITH-V6-ADDR-OK (v6 only) —
+    # проверяем, что одновременная линковка v4 + v6 при создании NIC работает.
+    id="NIC-CR-WITH-BOTH-ADDR-OK",
+    title="Create NIC с v4_address_ids И v6_address_ids одновременно → 200, оба address привязаны (KAC-53)",
+    classes=["CRUD"], priority="P1",
+    steps=[
+        # Network + Subnet с v4 и v6 cidr.
+        Step(name="pre-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-both-net-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="pre-subnet", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "nic-both-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.62.0.0/24"], "v6CidrBlocks": ["fd00:cafe:b00b::/64"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        # v4 + v6 addresses
+        Step(name="cr-v4-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-both-v4-{{runId}}",
+                   "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "v4AddrId")]),
+        poll_operation_until_done(),
+        Step(name="cr-v6-addr", method="POST", path="/vpc/v1/addresses",
+             body={"folderId": "{{_suiteFolderId}}", "name": "nic-both-v6-{{runId}}",
+                   "internalIpv6AddressSpec": {"subnetId": "{{subId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "v6AddrId")]),
+        poll_operation_until_done(),
+        # NIC create — оба address-id одновременно.
+        Step(name="cr-nic-both", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+                   "name": "nic-both-{{runId}}",
+                   "v4AddressIds": ["{{v4AddrId}}"],
+                   "v6AddressIds": ["{{v6AddrId}}"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="assert-nic-ok", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('NIC.Create op done, no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get-nic", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('v4AddressIds linked', () => pm.expect(j.v4AddressIds || []).to.include(pm.environment.get('v4AddrId')));",
+                          "pm.test('v6AddressIds linked', () => pm.expect(j.v6AddressIds || []).to.include(pm.environment.get('v6AddrId')));"]),
+        # Cleanup снизу вверх: NIC → addresses → subnet → network.
+        *_cleanup_nic(),
+        Step(name="cleanup-v4-addr", method="DELETE", path="/vpc/v1/addresses/{{v4AddrId}}",
+             test_script=["pm.test('cleanup v4 addr (200 or 400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-v6-addr", method="DELETE", path="/vpc/v1/addresses/{{v6AddrId}}",
+             test_script=["pm.test('cleanup v6 addr (200 or 400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_subnet(),
+        poll_operation_until_done(),
+        _cleanup_net(),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
     # KAC-31: Address, используемый NIC через v4AddressIds, нельзя удалить —
     # AddressService.Delete синхронно отвергает FAILED_PRECONDITION (409). После
     # удаления NIC адрес освобождается и удаляется.
