@@ -114,7 +114,8 @@ addresses в одном NIC. Это упрощённая модель vs AWS ENI
 `0012_nic_subnet_restrict.sql` (KAC-33: откат 0011 — NIC→Subnet FK обратно ON DELETE RESTRICT),
 `0013_address_internal_subnet_id_v6.sql` (KAC-34: generated-колонка `addresses.internal_subnet_id` — drop&recreate с выводом из `internal_ipv4` ИЛИ `internal_ipv6`, чтобы v6-internal-адрес тоже блокировал свою подсеть через FK `addresses_internal_subnet_fkey`),
 `0014_nic_mac_address.sql` (KAC-48: `network_interfaces.mac_address TEXT NOT NULL` + UNIQUE индекс + backfill для existing rows через `md5(random()||id)`),
-`0018_nic_address_cardinality.sql` (KAC-55: CHECK `jsonb_array_length(v4_address_ids)<=1` + симметрично v6 — DB-level гарантия «на NIC ≤1 v4, ≤1 v6»).
+`0018_nic_address_cardinality.sql` (KAC-55: CHECK `jsonb_array_length(v4_address_ids)<=1` + симметрично v6 — DB-level гарантия «на NIC ≤1 v4, ≤1 v6»),
+`0019_vpc_auto_associations.sql` (KAC-56: DB-уровневая auto-association RouteTable ↔ Subnet через PL/pgSQL триггеры — AFTER INSERT ON route_tables auto-assoc'ит Subnet'ы сети с `route_table_id IS NULL`, BEFORE INSERT ON subnets подставляет самую раннюю RT этой сети, FK ON DELETE SET NULL обнуляет `subnet.route_table_id` при RT.Delete, AFTER UPDATE OF route_table_id ON subnets эмитит `Subnet.UPDATED` в `vpc_outbox` с маркером `auto_association: true`. Network → default SG **по-прежнему** inline в `network.go::doCreate` — id-generation crockford-base32 не реализуется в PL/pgSQL без портирования `kacho-corelib/ids`).
 
 Все ресурсы — folder-level (`folder_id` обязателен в Create). Все таблицы
 **flat** (без K8s envelope `resource_version`/`generation`/`deletion_timestamp`/

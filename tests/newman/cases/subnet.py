@@ -69,6 +69,55 @@ CASES.append(Case(
     ],
 ))
 
+# KAC-56 — auto-pick RT при Subnet.Create. Зеркальный к RT-CR-STATE-SUBNET-AUTO-ASSOC:
+# trigger BEFORE INSERT ON subnets (миграция 0019, `subnet_auto_pick_rt_trg`)
+# выбирает самую раннюю по `created_at` RouteTable в этой сети и подставляет
+# в `NEW.route_table_id`, если клиент не задал его явно. Если RT в сети нет —
+# поле остаётся NULL (auto-assoc сработает позже при RT.Create).
+CASES.append(Case(
+    id="SUB-CR-STATE-AUTO-PICK-RT",
+    title="Create Subnet в сети с RT → subnet.route_table_id auto-picked самой ранней RT (DB-trigger, KAC-56)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        *_make_net("autopick"),
+        # 1. Создаём RouteTable в этой сети.
+        Step(name="cr-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-autopick-rt-{{runId}}", "staticRoutes": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        # 2. Subnet без явного route_table_id — auto-pick подставит rtId.
+        Step(name="cr-sub-autopick", method="POST", path="/vpc/v1/subnets",
+             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sub-autopick-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.246.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        Step(name="assert-sub-created", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('Subnet.Create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        # 3. Главная проверка: subnet.route_table_id auto-picked.
+        Step(name="get-sub-autopicked", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "pm.test('subnet.route_table_id auto-picked == rtId (DB-trigger KAC-56)', () => pm.expect(j.routeTableId).to.eql(pm.environment.get('rtId')));",
+             ]),
+        # Cleanup снизу вверх.
+        Step(name="cleanup-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=["pm.test('cleanup sub (200/400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=["pm.test('cleanup rt (200/400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
 CASES.append(Case(
     id="SUB-CR-VAL-ZONE-REQUIRED",
     title="Create без zone_id → InvalidArgument (zone_id required)",

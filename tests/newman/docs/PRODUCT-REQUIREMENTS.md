@@ -490,17 +490,40 @@ explicit `GET /securityGroups/{defSgId}` после Network.Delete обязан 
 
 ### REQ-RT-SUBNET-AUTO-ASSOC — RouteTable.Create auto-associate Subnet'ы сети        [P1]
 При `RouteTable.Create` с `network_id`, все `Subnet`-ы этой сети, у которых ещё **не задан**
-свой `route_table_id`, ДОЛЖНЫ автоматически получить `route_table_id` = id новой RT.
-По аналогии с default-SG при Network.Create — auto-association «новый системный ресурс
-сети применяется к её Subnet'ам по умолчанию». Subnet, у которого `route_table_id` уже
-задан клиентом, изменяться НЕ должен (explicit user choice имеет приоритет).
-- Validated-by: `RT-CR-STATE-SUBNET-AUTO-ASSOC` (**TDD-pending** до реализации auto-assoc).
-- Agent-check: `internal/service/route_table.go::doCreate` — после `repo.Insert(rt)` должен
-  выполняться `subnetRepo.AutoAssociateRouteTable(ctx, rt.NetworkID, rt.ID)` (или эквивалент:
-  `UPDATE subnets SET route_table_id=$rt WHERE network_id=$net AND (route_table_id IS NULL OR route_table_id='')`),
-  с outbox-эмитом `Subnet.UPDATED` для каждого затронутого. Опционально: при `RouteTable.Delete`
-  обратно очищать `Subnet.route_table_id` (если был auto-assoc'нут — отдельным флагом или
-  `WHERE route_table_id=$old`).
+свой `route_table_id` (NULL), ДОЛЖНЫ автоматически получить `route_table_id` = id новой RT.
+Subnet, у которого `route_table_id` уже задан клиентом, изменяться НЕ должен (explicit
+user choice имеет приоритет).
+- Validated-by: `RT-CR-STATE-SUBNET-AUTO-ASSOC` (green, KAC-56), integration
+  `route_table_auto_association_integration_test.go::TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets`.
+- Agent-check: `internal/migrations/0019_vpc_auto_associations.sql` — `rt_auto_assoc_subnets_trg`
+  AFTER INSERT ON route_tables (PL/pgSQL `UPDATE subnets SET route_table_id = NEW.id WHERE network_id = NEW.network_id AND route_table_id IS NULL`).
+
+### REQ-SUB-AUTO-PICK-RT — Subnet.Create auto-pick RT, если она есть                [P1]
+Если в сети уже существует одна или несколько `RouteTable`, и клиент создаёт `Subnet` **без**
+явного `route_table_id`, продукт ДОЛЖЕН подставить id самой ранней по `created_at` RouteTable.
+Если RT нет — `route_table_id` остаётся NULL (auto-assoc сработает позже при RT.Create — см.
+REQ-RT-SUBNET-AUTO-ASSOC). Explicit `route_table_id` от клиента имеет приоритет.
+- Validated-by: `SUB-CR-STATE-AUTO-PICK-RT`, integration
+  `route_table_auto_association_integration_test.go::TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT`.
+- Agent-check: `internal/migrations/0019_vpc_auto_associations.sql` — `subnet_auto_pick_rt_trg`
+  BEFORE INSERT ON subnets (PL/pgSQL `IF NEW.route_table_id IS NULL THEN SELECT id INTO ... FROM route_tables WHERE network_id = NEW.network_id ORDER BY created_at ASC LIMIT 1`).
+
+### REQ-RT-DEL-CLEANUP-FK — RouteTable.Delete очищает subnet.route_table_id          [P1]
+При `RouteTable.Delete` все `Subnet`-ы, ссылающиеся на эту RT через `route_table_id`, ДОЛЖНЫ
+получить `route_table_id = NULL` (не оставлять dangling ref). Реализуется DB-уровневым FK
+`subnets.route_table_id → route_tables(id) ON DELETE SET NULL` — никакой service-логики
+не требуется.
+- Validated-by: integration `route_table_auto_association_integration_test.go::TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull`.
+- Agent-check: `internal/migrations/0019_vpc_auto_associations.sql` — `subnets_route_table_id_fkey`.
+
+### REQ-VPC-OUTBOX-TRIGGER-EMIT — outbox-эмит для triggered UPDATE'ов subnets      [P2]
+Изменения `subnets.route_table_id`, вызванные DB-trigger'ом (RT auto-assoc / FK SET NULL),
+ДОЛЖНЫ эмитить `Subnet.UPDATED` событие в `vpc_outbox` — watch-клиенты должны видеть state
+change даже если service-слой не делал прямую UPDATE-операцию. Payload (упрощённый
+`jsonb_build_object`) содержит маркер `auto_association: true`.
+- Validated-by: integration `route_table_auto_association_integration_test.go::TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate`.
+- Agent-check: `internal/migrations/0019_vpc_auto_associations.sql` — `subnets_outbox_emit_route_table_change_trg`
+  AFTER UPDATE OF route_table_id ON subnets (WHEN OLD.route_table_id IS DISTINCT FROM NEW.route_table_id).
 
 ---
 
