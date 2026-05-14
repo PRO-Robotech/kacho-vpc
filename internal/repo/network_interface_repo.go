@@ -306,27 +306,29 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 // SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка =
 // detach) и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
 //
-// Attach-путь (refID != "") — атомарный CAS: `WHERE used_by_id = ” OR
-// used_by_id = $3`. Это устраняет TOCTOU из service-слоя
+// Attach-путь (refID != "") — атомарный single-statement CAS:
+// `WHERE id=$1 AND (used_by_id = ” OR used_by_id = $3)`. Это устраняет TOCTOU из service-слоя
 // (NetworkInterfaceService.AttachToInstance), который раньше делал Get → check
 // → unconditional UPDATE и допускал second-writer-wins race (инцидент 2026-05-14,
 // KAC-52: два Compute.Instance.Create с одним existing_network_interface_id
 // обе прошли software-guard, second UPDATE безусловно перезаписал ownership →
 // два pod-а на одной NIC → Kube-OVN IP-allocation conflict).
 //
-// 0 rows из RETURNING → service.ErrFailedPrecondition (NIC занят другим owner).
-// SQLSTATE 23505 от partial UNIQUE `network_interfaces_used_by_uniq`
-// (миграция 0016) — финальный backstop в редком окне между UPDATE и commit
-// при параллельных attach к разным free-NIC, у которых внезапно совпал
-// pointer — тоже маппится в ErrFailedPrecondition.
+// 0 rows из RETURNING → service.ErrFailedPrecondition. Single-statement UPDATE
+// на одной row защищён row-level lock-ом Postgres: параллельный writer ждёт
+// commit-а первого, видит обновлённый row, CAS не matches → 0 rows. Никакого
+// дополнительного UNIQUE-индекса не нужно — миграция 0016 пыталась добавить
+// `UNIQUE (used_by_id) WHERE used_by_id <> ”` как backstop, но это семантически
+// запрещало multi-NIC instance (один Compute.Instance имеет N NetworkInterface —
+// корректный AWS-ENI use case), и миграция падала на боевом стенде; откачено
+// в 0017.
 //
 // Detach-путь (refID == "") — idempotent unconditional UPDATE: повторный
 // detach уже-свободного NIC — no-op без error. Concurrent detach + attach —
 // admin race, не критичен для correctness.
 //
 // См. workspace CLAUDE.md §«Within-service refs — DB-уровень обязателен»
-// (запрет #10) — шаблон «conditional UPDATE + RETURNING-кардинальность +
-// partial UNIQUE safety-net».
+// (запрет #10) — шаблон «атомарный single-statement CAS на одной row».
 func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
 	if refID == "" {
 		refType, refName = "", ""
@@ -358,8 +360,8 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 
 	res, err := scanNI(tx.QueryRow(ctx, sql, args...))
 	if err != nil {
-		if refID != "" && (errors.Is(err, pgx.ErrNoRows) || isUniqueViolation(err)) {
-			// CAS failed (someone else owns) OR partial UNIQUE collided.
+		if refID != "" && errors.Is(err, pgx.ErrNoRows) {
+			// CAS failed — someone else owns it (UPDATE matched 0 rows from RETURNING).
 			return nil, service.ErrFailedPrecondition
 		}
 		return nil, wrapPgErr(err, "Network interface", id)

@@ -17,24 +17,25 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
-// KAC-52 — NIC attach race. До миграции 0016 service.AttachToInstance делал
+// KAC-52 — NIC attach race. До этой правки service.AttachToInstance делал
 // software TOCTOU (Get → check used_by_id=="" → unconditional UPDATE) и при
 // concurrent Attach к одному NIC второй writer молча перезаписывал ownership
 // (инцидент 2026-05-14: два Compute.Instance.Create указали один
 // existing_network_interface_id → два pod-а на одной NIC → Kube-OVN отказал
 // в IP-allocation для второго pod-а).
 //
-// Защита (в паре):
-//   - repo.SetUsedBy в attach-режиме делает атомарный conditional UPDATE
-//     (WHERE used_by_id = ” OR used_by_id = $new) и возвращает
-//     service.ErrFailedPrecondition при 0 rows из RETURNING;
-//   - partial UNIQUE network_interfaces_used_by_uniq (миграция 0016) — finальный
-//     backstop на SQLSTATE 23505 для редких окон между UPDATE и commit.
+// Защита: repo.SetUsedBy в attach-режиме делает атомарный single-statement
+// CAS — `UPDATE … WHERE id=$1 AND (used_by_id = ” OR used_by_id = $new)`,
+// 0 rows из RETURNING → service.ErrFailedPrecondition. Single-statement
+// UPDATE на одной row защищён row-level lock-ом Postgres: параллельный
+// writer ждёт commit-а первого, видит обновлённый row, CAS не matches.
+// Никакого UNIQUE-индекса не нужно — миграция 0016 пыталась добавить такой
+// backstop, но семантически запретила multi-NIC instance; откачена в 0017.
 //
 // Этот тест запускает N goroutines, каждая пытается attach один и тот же NIC к
 // своему instance_id. Инвариант: **ровно одна** транзакция успешна, остальные
-// получают ErrFailedPrecondition (либо через 0 RETURNING-rows, либо через
-// UNIQUE-violation 23505). В БД used_by_id равен победителю.
+// получают ErrFailedPrecondition (CAS не matches → 0 RETURNING-rows). В БД
+// used_by_id равен победителю.
 func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
