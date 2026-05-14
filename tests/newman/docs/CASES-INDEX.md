@@ -100,6 +100,10 @@
 | `*-CR-CONF-NET-NF-TEXT` | CONF,NEG | P1 | 4 (pri,rou,sec,sub) | Create subnet в garbage network → verbatim text 'Network ... not found' |
 | `*-CR-CONF-SUB-NF-TEXT` | CONF,NEG | P1 | 1 (add) | Create address с garbage subnet → verbatim 'Subnet ... not found' |
 | `*-CR-CRUD-EXT` | CRUD | P1 | 1 (add) | Create external Address → IP из default pool |
+| `ADR-CR-CRUD-EXT-V6` | CRUD | P1 | 1 (add) | Create external_ipv6 Address → IP из v6 pool (sparse counter allocator, KAC-58/60). |
+| `ADR-CR-NEG-EXT-V6-NO-POOL` | NEG | P0 | 1 (add) | Create external_ipv6 в зоне без v6 pool → Operation `FailedPrecondition` (cascade resolve fails / pool not initialised). KAC-58. |
+| `ADR-DEL-EXT-V6-RELEASE-REUSE` | STATE,CONF | P1 | 1 (add) | Delete v6 Address пушит offset в `ipv6_released_offsets`; следующий Allocate берёт его first → reused IP равен первому. Verifies sparse-allocator release-reuse contract (KAC-60). |
+| `ADR-CR-EXT-V6-FAMILY-FALLTHROUGH` | CONF,NEG | P0 | 1 (add) | Family-filter в cascade resolve: external_v6 в зоне без v6 pool → cascade отвергает global v4 default по family и проваливается с `FailedPrecondition` (код 9). До KAC-63 был bug — `Internal` (код 13). KAC-58, KAC-63. |
 | `*-CR-CRUD-INT` | CRUD | P1 | 1 (add) | Create internal Address → IP в subnet |
 | `*-CR-CRUD-OK` | CRUD | P1 | 6 (gat,net,pri,rou,sec,sub) | Create subnet → Operation → Subnet visible in GET |
 | `*-CR-CRUD-WITH-SUBNET` | CRUD | P2 | 1 (pri) | PE Create с валидным addressSpec.internalIpv4AddressSpec.subnetId → address привязан |

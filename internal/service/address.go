@@ -1049,10 +1049,9 @@ func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID strin
 		}, nil
 	}
 
-	// ResolvePoolForAddressObj переиспользует уже-полученный addr — устраняет
-	// double-Get в request-path (cascade resolve внутри иначе делает повторный
-	// addrRepo.Get для того же id).
-	resolved, err := s.pools.ResolvePoolForAddressObj(ctx, addr)
+	// ResolvePoolForAddressObjFamily (KAC-63) — фильтрует pool по требуемой family,
+	// чтобы default v6-пул не "утаскивал" v4-аллокацию.
+	resolved, err := s.pools.ResolvePoolForAddressObjFamily(ctx, addr, FamilyV4)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -1098,7 +1097,7 @@ func (s *AddressService) AllocateExternalIPv6(ctx context.Context, addressID str
 		}, nil
 	}
 
-	resolved, err := s.pools.ResolvePoolForAddressObj(ctx, addr)
+	resolved, err := s.pools.ResolvePoolForAddressObjFamily(ctx, addr, FamilyV6)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -1113,6 +1112,14 @@ func (s *AddressService) AllocateExternalIPv6(ctx context.Context, addressID str
 		if errors.Is(err, ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted (ipv6)", pool.ID)
+		}
+		// KAC-63: ErrFailedPrecondition wrap'ленные ошибки от repo (например,
+		// "pool X has no IPv6 cidr_blocks" — defensive backstop, не должно
+		// случаться после family-фильтра в cascade resolve) маппим в код 9, а
+		// не Internal.
+		if errors.Is(err, ErrFailedPrecondition) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"%s", strings.TrimPrefix(err.Error(), ErrFailedPrecondition.Error()+": "))
 		}
 		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
 			"pool_id", pool.ID, "address_id", addressID, "err", err)
