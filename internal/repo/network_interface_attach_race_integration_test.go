@@ -26,7 +26,7 @@ import (
 //
 // Защита (в паре):
 //   - repo.SetUsedBy в attach-режиме делает атомарный conditional UPDATE
-//     (WHERE used_by_id = '' OR used_by_id = $new) и возвращает
+//     (WHERE used_by_id = ” OR used_by_id = $new) и возвращает
 //     service.ErrFailedPrecondition при 0 rows из RETURNING;
 //   - partial UNIQUE network_interfaces_used_by_uniq (миграция 0016) — finальный
 //     backstop на SQLSTATE 23505 для редких окон между UPDATE и commit.
@@ -126,7 +126,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 }
 
 // KAC-52 — Re-attach к тому же owner должен быть idempotent (CAS условие
-// `used_by_id = '' OR used_by_id = $new` allows re-attach к самому себе).
+// `used_by_id = ” OR used_by_id = $new` allows re-attach к самому себе).
 func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

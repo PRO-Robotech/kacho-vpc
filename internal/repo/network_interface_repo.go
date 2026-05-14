@@ -306,7 +306,7 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 // SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка =
 // detach) и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
 //
-// Attach-путь (refID != "") — атомарный CAS: `WHERE used_by_id = '' OR
+// Attach-путь (refID != "") — атомарный CAS: `WHERE used_by_id = ” OR
 // used_by_id = $3`. Это устраняет TOCTOU из service-слоя
 // (NetworkInterfaceService.AttachToInstance), который раньше делал Get → check
 // → unconditional UPDATE и допускал second-writer-wins race (инцидент 2026-05-14,
