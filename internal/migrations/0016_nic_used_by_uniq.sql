@@ -1,27 +1,32 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- network_interfaces.used_by_id — DB-уровень защиты «один NIC — максимум один
--- attacher». До этой миграции AttachToInstance делал TOCTOU
--- (Get → check cur.UsedByID=="" → unconditional UPDATE), и параллельный
--- worker мог пройти guard, после чего второй UPDATE безусловно перезаписывал
--- ownership. Инцидент 2026-05-14 (KAC-52, см. workspace CLAUDE.md §«Within-service
--- refs — DB-уровень обязателен» / запрет #10): две Compute.Instance.Create указали
--- один existing_network_interface_id, обе прошли software-guard, второй pod
--- висел в ContainerCreating с «no address allocated» от Kube-OVN/multus.
+-- HISTORICAL NO-OP. Originally created
+--     CREATE UNIQUE INDEX network_interfaces_used_by_uniq
+--         ON network_interfaces (used_by_id)
+--         WHERE used_by_id <> '';
+-- as a backstop for the NIC-attach race (KAC-52). Reverted in 0017_drop_nic_used_by_uniq.sql:
+-- the partial UNIQUE semantically forbade multi-NIC instance (one Compute.Instance
+-- with N NetworkInterface — normal AWS-ENI use case), and the migration failed
+-- with SQLSTATE 23505 on the live stand at rollout time, blocking deploy.
 --
--- Partial UNIQUE — последний рубеж: даже если service-слой пропустит race,
--- DB отдаст SQLSTATE 23505, repo маппит в ErrFailedPrecondition. В паре с этим
--- — conditional UPDATE в SetUsedBy (WHERE used_by_id = '' OR used_by_id = $new):
--- безопасно при concurrent attach, без потенциальной потери ownership.
+-- Race-proof защита уже полностью обеспечивается атомарным single-statement CAS
+-- в NetworkInterfaceRepo.SetUsedBy (см. workspace CLAUDE.md §«Within-service refs —
+-- DB-уровень обязателен», шаблон «Атомарный CAS»). Никакого UNIQUE-индекса не нужно.
+--
+-- Rewriting 0016 to a no-op (instead of leaving the broken CREATE UNIQUE INDEX
+-- + relying on 0017 DROP) — это исключение из workspace CLAUDE.md запрет #5:
+-- миграция 0016 ни в одной БД не была успешно применена (везде падала на
+-- existing multi-NIC state), так что мы редактируем то, что фактически нигде
+-- не accepted. Этот компромисс лучше чем оставлять заведомо-fail-ить migrate
+-- step в каждом vpc rollout, ожидая что 0017 как-то её обгонит (goose не
+-- двигается на следующую миграцию пока текущая не успешна).
 
-CREATE UNIQUE INDEX network_interfaces_used_by_uniq
-    ON network_interfaces (used_by_id)
-    WHERE used_by_id <> '';
+SELECT 1; -- explicit no-op (goose требует хотя бы одно statement)
 
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP INDEX IF EXISTS network_interfaces_used_by_uniq;
+SELECT 1; -- no-op
 -- +goose StatementEnd
