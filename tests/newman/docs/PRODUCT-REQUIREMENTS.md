@@ -464,6 +464,30 @@ RPC, оперирующие конкретным ресурсом, ДОЛЖНЫ 
 - Validated-by: **gap — нет concurrency-кейса в newman**; покрыто integration-тестом `security_group_occ_integration_test.go`
 - Agent-check: `internal/repo/security_group_repo.go` — `SELECT ..., xmin::text` / `UPDATE ... AND xmin::text = $`.
 
+### REQ-SG-DEL-NIC-REFCHECK — SG, прилинкованный к NIC, нельзя удалить (KAC-53 (2)) [P0]
+SecurityGroup, к которой один или более `NetworkInterface` ссылается через `security_group_ids[]`,
+**нельзя** удалить. Попытка `SecurityGroup.Delete` обязана отдать `FAILED_PRECONDITION` (HTTP 400
+sync, либо op.error.code=9 async). Для удаления — сначала detach SG из всех NIC
+(`Update NIC` mask=`securityGroupIds`).
+Способ enforcement — **DB-уровень** (KAC-52: within-service refs выражаются на стороне БД,
+software-side TOCTOU-precheck запрещён §10 workspace `CLAUDE.md`). Текущий gap: для
+JSONB-массива `security_group_ids` ссылочный constraint ещё не оформлен (нет FK / trigger).
+- Validated-by: `SG-DEL-NEG-NIC-ATTACHED` (**TDD-red** до реализации DB-trigger)
+- Blocked by: KAC-52 (within-service refs through DB)
+- Agent-check: `internal/migrations/*.sql` — миграция, выражающая инвариант (BEFORE DELETE
+  trigger на `security_groups`, проверяющий `NOT EXISTS … FROM network_interfaces WHERE
+  security_group_ids ? sg.id`, либо эквивалент); `internal/repo/security_group_repo.go` —
+  маппинг SQLSTATE → `mapRepoErr` (`23P01` / custom RAISE → `FailedPrecondition`).
+
+### REQ-NET-LSG-DEFAULT — default SG живёт ровно жизненный цикл Network             [P1]
+При `Network.Create` (когда `KACHO_VPC_DEFAULT_SG_INLINE=true`, default) автоматически
+создаётся default SecurityGroup (`default_for_network=true`), её id виден в
+`Network.default_security_group_id`. При `Network.Delete` default SG **удаляется** —
+explicit `GET /securityGroups/{defSgId}` после Network.Delete обязан вернуть `NOT_FOUND`.
+- Validated-by: `*-LSG-CRUD-DEFAULT-SG` (create-side), `NET-DEL-CRUD-DEFAULT-SG-REMOVED` (delete-side).
+- Agent-check: `internal/service/network.go::doCreate` (inline `CreateDefaultForNetwork`);
+  `internal/service/network.go::doDelete` (predeletion default-SG cleanup).
+
 ---
 
 ## M. Verbatim-YC conformance (тексты, коды, форматы)

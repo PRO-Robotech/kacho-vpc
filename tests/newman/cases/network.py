@@ -1038,6 +1038,41 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-53 (1): после Network.Delete её default SG обязан исчезнуть — explicit
+    # GET /securityGroups/{defSgId} должен дать 404. Существующий
+    # NET-DEL-CRUD-ONLY-DEFAULT-SG проверяет только что Network.Delete возвращает
+    # 200; здесь — посматриваем именно life-cycle default SG.
+    id="NET-DEL-CRUD-DEFAULT-SG-REMOVED",
+    title="Delete Network → её default SG тоже удалена (explicit GET /securityGroups → 404)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsgrm-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
+        poll_operation_until_done(),
+        Step(name="get-default-sg-id", method="GET", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('defaultSecurityGroupId populated', () => pm.expect(j.defaultSecurityGroupId, JSON.stringify(j)).to.be.a('string').and.not.empty);",
+                          *save_from_response("j.defaultSecurityGroupId", "defSgId")]),
+        Step(name="get-default-sg-alive", method="GET", path="/vpc/v1/securityGroups/{{defSgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('default SG exists before network.delete', () => pm.expect(pm.response.json().defaultForNetwork).to.eql(true));"]),
+        Step(name="del-net", method="DELETE", path="/vpc/v1/networks/{{netId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-net-deleted", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('net delete op done, no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        # Главная проверка KAC-53 (1): default SG должна быть удалена вместе с Network.
+        Step(name="get-default-sg-gone", method="GET", path="/vpc/v1/securityGroups/{{defSgId}}",
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('NOT_FOUND text mentions SG', () => pm.expect(pm.response.json().message || '').to.match(/[Ss]ecurity\\s*[Gg]roup/));"]),
+    ],
+))
+
+CASES.append(Case(
     # KAC-33: a Subnet with a NIC blocks Subnet.Delete (FK RESTRICT, migration
     # 0012) — and hence Network.Delete (FK RESTRICT subnet→network). verifies the
     # NIC-in-subnet variant of the network-not-empty contract.

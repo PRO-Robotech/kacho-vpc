@@ -111,6 +111,7 @@
 | `NIC-CR-NEG-BAD-SUBNET` | NEG,CONF | P1 | 1 (nic) | Create NIC с garbage `subnet_id` → async `NotFound` 'Subnet ... not found'. Verifies REQ-NIC-01. |
 | `NIC-CR-WITH-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v4_address_ids` (предсозданный internal Address) → 200, address привязан, `Address.used`=true. Verifies REQ-NIC-04. |
 | `NIC-CR-WITH-V6-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v6_address_ids` (предсозданный v6 internal Address) → 200, v6-address привязан. Verifies REQ-NIC-04. |
+| `NIC-CR-WITH-BOTH-ADDR-OK` | CRUD | P1 | 1 (nic) | Create NIC с `v4_address_ids` И `v6_address_ids` одновременно (dual-stack линковка при создании) → 200, оба address привязаны (KAC-53 (3)). Verifies REQ-NIC-04. |
 | `NIC-CR-WITH-UNBOUND-SG-OK` | CRUD | P2 | 1 (nic) | Create NIC с `security_group_ids` на SG, не привязанный к network NIC'а → 200 (SG folder-scoped, привязка к network у SG опциональна). Verifies REQ-NIC-05. |
 | `*-CR-IDM-RETRY` | CONC,IDM | P1 | 1 (net) | Retry-safe: повторный Create same input → consistent result |
 | `*-CR-NEG-CIDR-OVERLAP` | NEG | P0 | 1 (sub) | Create двух subnet с пересекающимися CIDR → второй FailedPrecondition |
@@ -192,6 +193,7 @@
 | `*-DEL-CRUD-EMPTY-OK` | CRUD | P1 | 1 (sub) | Delete Subnet без зависимостей → OK |
 | `*-DEL-CRUD-OK` | CRUD | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Subnet Delete happy path |
 | `*-DEL-CRUD-ONLY-DEFAULT-SG` | CRUD,STATE | P1 | 1 (net) | Delete Network у которой есть только default-SG → OK (auto-cleanup default) |
+| `NET-DEL-CRUD-DEFAULT-SG-REMOVED` | CRUD,STATE | P1 | 1 (net) | После Network.Delete её default SG обязан исчезнуть — explicit `GET /securityGroups/{defSgId}` → 404 (life-cycle default SG, KAC-53 (1)). Verifies REQ-NET-LSG-DEFAULT. |
 | `*-DEL-NEG-HAS-ADDRESSES` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с internal Address → FailedPrecondition (FK RESTRICT) |
 | `SUB-DEL-NEG-HAS-V6-ADDRESS` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с internal **v6** Address → `FailedPrecondition` (FK `addresses_internal_subnet_fkey` через generated-колонку, выводимую из v4 ИЛИ v6 — миграция 0013, KAC-34). Verifies REQ-DEL-06. |
 | `SUB-DEL-NEG-HAS-NIC` | CONF,NEG,STATE | P0 | 1 (sub) | Delete Subnet с привязанным NetworkInterface → sync `FailedPrecondition` со списком NIC-id (FK `network_interfaces.subnet_id` ON DELETE RESTRICT — миграция 0012, KAC-33). Verifies REQ-DEL-07. |
@@ -204,6 +206,7 @@
 | `*-DEL-NEG-HAS-SUBNETS` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c Subnet → FailedPrecondition (FK RESTRICT) |
 | `*-DEL-NEG-NF-INVALID-PREFIX` | NEG,STATE | P1 | 1 (net) | Delete с id без VPC-префикса → sync 404 |
 | `*-DEL-STATE-DEFAULT-SG` | NEG,STATE | P1 | 1 (sec) | Delete default-SG напрямую → должен fail (нельзя delete default SG в обход) |
+| `SG-DEL-NEG-NIC-ATTACHED` | NEG,STATE,CONF | P0 | 1 (sec) | Delete SG, прилинкованного к NIC через `security_group_ids[]` → `FailedPrecondition` (KAC-53 (2)). **TDD-red**: пока DB-уровневый ref-trigger по KAC-52 не реализован, кейс падает (SG удаляется, оставляя dangling ref в NIC.security_group_ids). Verifies REQ-SG-DEL-NIC-REFCHECK. Blocked by KAC-52. |
 
 ### Get
 
