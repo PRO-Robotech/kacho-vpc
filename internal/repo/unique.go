@@ -77,6 +77,22 @@ func isExclusionViolation(err error) bool {
 	return strings.Contains(s, "23P01") || strings.Contains(s, "exclusion constraint")
 }
 
+// isCheckViolation — PG SQLSTATE 23514 (check_violation). Возникает при
+// нарушении CHECK constraint (например, `network_interfaces_v4_addr_max1` —
+// массив v4_address_ids длиннее 1 на одном NIC, KAC-55). Маппится на gRPC
+// InvalidArgument через wrapPgErr.
+func isCheckViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23514"
+	}
+	s := err.Error()
+	return strings.Contains(s, "23514") || strings.Contains(s, "check constraint")
+}
+
 // ycKindText маппит camelCase Go-имя ресурса в YC verbatim text для
 // error-message "invalid <kind> id 'X'". YC использует snake_case для
 // многословных kind-ов (route_table), single-word для остального.
@@ -136,6 +152,14 @@ func wrapPgErr(err error, kind, id string) error {
 	}
 	if isFKViolation(err) {
 		return fmt.Errorf("%w: %s has dependent resources", service.ErrFailedPrecondition, kind)
+	}
+	if isCheckViolation(err) {
+		// 23514 CHECK violation → InvalidArgument. Сейчас единственные CHECK-
+		// constraint-ы в схеме — `network_interfaces_v4_addr_max1` /
+		// `_v6_addr_max1` (миграция 0018, KAC-55: ≤1 v4 + ≤1 v6 на NIC).
+		// Service-слой выдаёт более понятный sync InvalidArgument до Operation;
+		// DB-side — финальный backstop для прямого repo.Insert / race.
+		return fmt.Errorf("%w: %s violates check constraint", service.ErrInvalidArg, kind)
 	}
 	if isExclusionViolation(err) {
 		return fmt.Errorf("%w: value conflicts with existing %s", service.ErrInvalidArg, kind)

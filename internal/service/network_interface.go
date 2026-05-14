@@ -153,6 +153,9 @@ func (s *NetworkInterfaceService) Create(ctx context.Context, req CreateNICReq) 
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
 		return nil, err
 	}
+	if err := validateNICAddressCardinality(req.V4AddressIDs, req.V6AddressIDs); err != nil {
+		return nil, err
+	}
 	if err := checkFolderExists(ctx, s.folderClient, req.FolderID); err != nil {
 		return nil, err
 	}
@@ -271,6 +274,22 @@ func (s *NetworkInterfaceService) validateAddressRef(ctx context.Context, id, ni
 	return nil
 }
 
+// validateNICAddressCardinality fast-fail sync-валидация: на одной NetworkInterface
+// разрешён максимум один IPv4 и максимум один IPv6 (KAC-55). Совпадает с DB-уровнем
+// `network_interfaces_v4_addr_max1` / `_v6_addr_max1` (миграция 0018) — DB-side как
+// финальный backstop, эта функция даёт понятный InvalidArgument до создания Operation.
+// Multi-IP per VM реализуется через несколько NIC, не через secondary addresses в
+// одном NIC (упрощённая модель vs AWS ENI; зеркалит verbatim YC compute API).
+func validateNICAddressCardinality(v4IDs, v6IDs []string) error {
+	if len(v4IDs) > 1 {
+		return invalidArg("v4_address_ids", "at most one IPv4 address per network interface (use multiple NICs for multi-IP)")
+	}
+	if len(v6IDs) > 1 {
+		return invalidArg("v6_address_ids", "at most one IPv6 address per network interface (use multiple NICs for multi-IP)")
+	}
+	return nil
+}
+
 // validateAndAttachAddresses валидирует все v4/v6 address-refs, затем помечает
 // каждый used=true + referrer={network_interface, nicID, nicName}. Best-effort:
 // если что-то падает в середине, ранее размеченные адреса откатываются.
@@ -321,6 +340,9 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 		return nil, err
 	}
 	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+		return nil, err
+	}
+	if err := validateNICAddressCardinality(req.V4AddressIDs, req.V6AddressIDs); err != nil {
 		return nil, err
 	}
 	op, err := operations.New(ids.PrefixOperationVPC, fmt.Sprintf("Update network interface %s", req.ID), &vpcv1.UpdateNetworkInterfaceMetadata{NetworkInterfaceId: req.ID})
