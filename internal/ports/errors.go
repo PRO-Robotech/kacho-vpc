@@ -35,3 +35,10 @@ var ErrPoolNotResolved = errors.New("no address pool resolved")
 // ErrInvalidIPv4 — попытка allocate IP из не-IPv4 CIDR.
 // Маппится в InvalidArgument.
 var ErrInvalidIPv4 = errors.New("not ipv4")
+
+// ErrMacCollision — нарушение UNIQUE-constraint конкретно по mac_address при
+// INSERT NIC. Используется service-слоем (`NetworkInterfaceService.doCreate`)
+// чтобы отличить retry-able MAC-collision от других UNIQUE-нарушений (например,
+// duplicate name в фолдере — `ErrAlreadyExists`). При получении этой ошибки
+// service генерирует новый MAC и повторяет Insert (до 3 попыток).
+var ErrMacCollision = errors.New("network interface mac collision")

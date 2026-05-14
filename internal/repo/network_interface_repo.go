@@ -24,7 +24,7 @@ func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
 }
 
 const niCols = `id, folder_id, created_at, name, description, labels, subnet_id,
-	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, status,
+	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status,
 	hv_id, sid, sid_seq, host_iface, netns, gateway_ip, container_id, status_error, dataplane_revision, dataplane_updated_at`
 
 func scanNI(row scannable) (*domain.NetworkInterface, error) {
@@ -34,7 +34,7 @@ func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	var sidSeq int32
 	if err := row.Scan(
 		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID,
-		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.UsedByType, &n.UsedByID, &n.UsedByName, &statusName,
+		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.UsedByType, &n.UsedByID, &n.UsedByName, &n.MAC, &statusName,
 		&n.Dataplane.HVID, &n.Dataplane.SID, &sidSeq, &n.Dataplane.HostIface, &n.Dataplane.Netns, &n.Dataplane.GatewayIP,
 		&n.Dataplane.ContainerID, &n.Dataplane.StatusError, &n.Dataplane.Revision, &n.Dataplane.UpdatedAt,
 	); err != nil {
@@ -240,13 +240,18 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING ` + niCols
 	res, err := scanNI(tx.QueryRow(ctx, q,
 		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID,
-		v4IDsJSON, v6IDsJSON, sgJSON, n.UsedByType, n.UsedByID, n.UsedByName, niStatusName(n.Status)))
+		v4IDsJSON, v6IDsJSON, sgJSON, n.UsedByType, n.UsedByID, n.UsedByName, n.MAC, niStatusName(n.Status)))
 	if err != nil {
+		// MAC-collision — отдельная sentinel, чтобы service-слой мог retry'ить
+		// с новым MAC, не путая её с (folder_id,name) UNIQUE → AlreadyExists.
+		if isNICMacCollision(err) {
+			return nil, service.ErrMacCollision
+		}
 		return nil, wrapPgErr(err, "Network interface", n.Name)
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "CREATED", domainToMap(res)); err != nil {

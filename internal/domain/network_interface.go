@@ -60,6 +60,13 @@ type NetworkInterface struct {
 	UsedByType string
 	UsedByID   string
 	UsedByName string
-	Status     NetworkInterfaceStatus
-	Dataplane  NICDataplane
+	// MAC — стабильный MAC-адрес интерфейса (AWS-ENI semantics): output-only,
+	// аллоцируется при NetworkInterfaceService.Create, неизменен на жизни NIC
+	// (Attach/Detach его не трогают), уникален в пределах всего облака. Формат:
+	// lowercase, colon-separated, всегда 6 октетов; префикс `0e:` (locally
+	// administered, unicast) зарезервирован под Kachō — все наши MAC начинаются
+	// с него; остальные 5 байт — crypto/rand. См. internal/service/mac.go.
+	MAC       string
+	Status    NetworkInterfaceStatus
+	Dataplane NICDataplane
 }

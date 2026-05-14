@@ -25,6 +25,27 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(s, "23505") || strings.Contains(s, "duplicate key value")
 }
 
+// nicMacUniqueConstraint — имя UNIQUE-индекса на network_interfaces.mac_address
+// (миграция 0014). См. isNICMacCollision.
+const nicMacUniqueConstraint = "network_interfaces_mac_address_key"
+
+// isNICMacCollision — true если err — это нарушение UNIQUE на
+// network_interfaces.mac_address (а не на (folder_id, name) или другом
+// constraint таблицы). Используется в NetworkInterfaceRepo.Insert чтобы
+// различить retry-able MAC-collision от настоящего AlreadyExists по имени.
+func isNICMacCollision(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == nicMacUniqueConstraint
+	}
+	// Fallback на substring (pgx unwrap может потерять PgError в отдельных
+	// случаях, как и для isUniqueViolation выше).
+	return strings.Contains(err.Error(), nicMacUniqueConstraint)
+}
+
 // isFKViolation — Postgres foreign_key_violation (SQLSTATE 23503).
 // Возникает на Delete parent с зависимыми child-row (RESTRICT FK).
 // Маппится в gRPC FailedPrecondition (как у YC: "Network is not empty").

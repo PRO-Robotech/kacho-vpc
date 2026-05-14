@@ -436,11 +436,12 @@
 
 ### NetworkInterface (NIC) — first-class ресурс (эпик KAC-2)
 
-*Публичная проекция NIC — lean: `id`/`folderId`/`subnetId`/`v4AddressIds`/`v6AddressIds`/`securityGroupIds`/`usedBy`/`status`/`name`/`labels`. Инфра-чувствительные data-plane-поля (`vpnId`/`hvId`/`sid`/`hostIface`/`netns`/`gatewayIp`/`containerId`/`networkId`/`instanceId`/`index`) — только на internal-проекции (`InternalNetworkInterfaceService`), НИКОГДА не на публичной. REST: `/vpc/v1/networkInterfaces`. Кейсы — в `cases/network-interface.py` (app-код `nic`). NIC-кейсы, совпадающие с generic-паттернами по суффиксу, — инстансы (`NIC-CR-CRUD-OK` → `*-CR-CRUD-OK`, `NIC-CR-NEG-DUP-NAME` → `*-CR-NEG-DUP-NAME`, `NIC-GET-*`/`NIC-LST-*`/`NIC-MV-*` и т.п.); ниже — NIC-специфичные паттерны.*
+*Публичная проекция NIC — lean: `id`/`folderId`/`subnetId`/`v4AddressIds`/`v6AddressIds`/`securityGroupIds`/`usedBy`/`macAddress`/`status`/`name`/`labels`. Инфра-чувствительные data-plane-поля (`vpnId`/`hvId`/`sid`/`hostIface`/`netns`/`gatewayIp`/`containerId`/`networkId`/`instanceId`/`index`) — только на internal-проекции (`InternalNetworkInterfaceService`), НИКОГДА не на публичной. REST: `/vpc/v1/networkInterfaces`. Кейсы — в `cases/network-interface.py` (app-код `nic`). NIC-кейсы, совпадающие с generic-паттернами по суффиксу, — инстансы (`NIC-CR-CRUD-OK` → `*-CR-CRUD-OK`, `NIC-CR-NEG-DUP-NAME` → `*-CR-NEG-DUP-NAME`, `NIC-GET-*`/`NIC-LST-*`/`NIC-MV-*` и т.п.); ниже — NIC-специфичные паттерны.*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `NIC-CR-CRUD-OK` | CRUD | P1 | 1 (nic) | (инстанс `*-CR-CRUD-OK`) Create NIC в Subnet → Operation → NIC в GET; lean-проекция, нет инфра-полей. Verifies REQ-NIC-01/REQ-NIC-06. |
+| `NIC-CR-MAC-OK` | CRUD | P1 | 1 (nic) | Create NIC → `macAddress` в lean-проекции, формат `0e:xx:xx:xx:xx:xx` (lowercase hex, префикс `0e:`); Update name → MAC не меняется (AWS-ENI semantics). Verifies REQ-NIC-08. |
 | `NIC-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 1 (nic) | (инстанс `*-CR-NEG-DUP-NAME`) Create NIC с duplicate name в folder → async `ALREADY_EXISTS`. Verifies REQ-NAME-04. |
 | `NIC-UPD-OK` | CRUD | P1 | 1 (nic) | Update NIC (name/labels/securityGroupIds через mask) → Operation → новые значения видны; subnetId/инфра-поля не меняются. Verifies REQ-NIC-07. |
 | `NIC-ATTACH-DETACH-OK` | CRUD,STATE | P1 | 1 (nic) | `AttachToInstance` → `used_by`={compute_instance,<id>}; `DetachFromInstance` → `used_by` очищен. Verifies REQ-NIC-03. |

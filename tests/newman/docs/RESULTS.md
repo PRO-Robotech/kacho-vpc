@@ -1,6 +1,6 @@
-# newman — финальный прогон (v18: KAC-2 NetworkInterface + KAC-38 validate-cases)
+# newman — финальный прогон (v19: KAC-48 NIC.mac_address)
 
-## Сводка (cases-count актуален на v18; assertions/requests — ориентир, перепрогнать suite)
+## Сводка (cases-count актуален на v19; assertions/requests — ориентир, перепрогнать suite)
 
 | Сервис | Cases | Assertions | Failed | Requests | % к 100/рес |
 |---|---|---|---|---|---|
@@ -13,10 +13,10 @@
 | private-endpoint | 64 | ~250 | 0 | ~185 | 64% (3 explicit-дубля убраны → helper-блоки) |
 | internal-pool | 26 | 133 | 0 | 81 | (admin) |
 | internal-region-zone | 15 | 77 | 0 | 40 | (admin) |
-| network-interface | 12 | ~70 | 0 | ~45 | (nic — first-class, эпик KAC-2) |
+| network-interface | 13 | ~75 | 0 | ~50 | (nic — first-class, эпик KAC-2; KAC-48: NIC-CR-MAC-OK) |
 | internal-cloud | 4 | 31 | 0 | 17 | (admin) |
 | operation | 5 | ~20 | 0 | ~9 | (n/a) |
-| **Итого** | **736** | **~3380** | **0** | **~2360** | — |
+| **Итого** | **737** | **~3385** | **0** | **~2365** | — |
 
 **100% PASS**. v16 добавил покрытие internal/admin-only IPAM RPC
 (`InternalAddressPoolService` / `InternalRegion`/`InternalZone`/`InternalCloud`) —
@@ -43,7 +43,8 @@ kacho-only RPC проброшены через api-gateway cluster-internal mux,
 | v15 (FINDING-005 fix → SUB-CR-NEG-DUP-NAME; PE addressSpec.subnetId) | 686 | 3120 | 97 | 97% |
 | v16 (internal IPAM admin RPC — TODO #35: internal-pool/-region-zone/-cloud) | 731 | 3361 | — | — |
 | v17 (verbatim-YC alignment — kacho-vpc#7/#8/#9/#10 + kacho-api-gateway#2: sync-валидация в мутирующих RPC, Move-в-текущий-folder → 400, Subnet CIDR ≤/28, Relocate → 400, error-texts; differential vs реальный YC через `yc-proxy` + `run-incremental.sh --cases`) | ~731 | ~3360 | — | — |
-| **v18 (KAC-2 NetworkInterface first-class + v6-Subnet / optional-CIDR-Subnet / SG-без-network / NIC↔Subnet-RESTRICT / multi-resource delete-chain / operation-history-survives-delete / Network-public-без-vpn_id / v6-CIDR-через-verbs; KAC-38: дедуп case-id (3 PE + 1 NET explicit-дубля helper'ов убраны) + mandatory `scripts/validate-cases.py` (dup-id + каталогизация в CASES-INDEX) в CI до newman)** | **736** | **~3380** | — | — |
+| v18 (KAC-2 NetworkInterface first-class + v6-Subnet / optional-CIDR-Subnet / SG-без-network / NIC↔Subnet-RESTRICT / multi-resource delete-chain / operation-history-survives-delete / Network-public-без-vpn_id / v6-CIDR-через-verbs; KAC-38: дедуп case-id (3 PE + 1 NET explicit-дубля helper'ов убраны) + mandatory `scripts/validate-cases.py` (dup-id + каталогизация в CASES-INDEX) в CI до newman) | 736 | ~3380 | — | — |
+| **v19 (KAC-48: `NetworkInterface.mac_address` — output-only, cloud-wide UNIQUE, префикс `0e:` + 40 бит `crypto/rand`, retry-on-collision; миграция 0014; новый `NIC-CR-MAC-OK` (формат + стабильность при Update name) + `REQ-NIC-08`)** | **737** | **~3385** | — | — |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 

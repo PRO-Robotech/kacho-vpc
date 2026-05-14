@@ -87,7 +87,11 @@ PrivateEndpoint     — привязан к Network + Subnet (privatelink)
 
 **Две проекции (см. workspace-CLAUDE.md §«Инфра-чувствительные данные»):**
 - **Публичная `NetworkInterface` — lean:** `id`, `name`, `labels`, `subnet_id`, `v4_address_ids`,
-  `v6_address_ids`, `security_group_ids`, `used_by`, `status`.
+  `v6_address_ids`, `security_group_ids`, `used_by`, `mac_address`, `status`. `mac_address`
+  (KAC-48) — output-only, аллоцируется `kacho-vpc` при `Create` (префикс `0e:` + 40 бит
+  `crypto/rand`), стабилен на жизни NIC, **уникален в пределах всего облака** (UNIQUE-constraint
+  `network_interfaces_mac_address_key` + retry on collision в `service.doCreate`); клиент задать
+  не может (AWS-ENI semantics). См. `internal/service/mac.go`, REQ-NIC-08.
 - **`InternalNetworkInterface` (internal-port 9091, `InternalNetworkInterfaceService`):** +
   data-plane-инфа, заполняется `kacho-vpc-implement` через `ReportNiDataplane` — `hv_id`
   (placement!), `sid`, `sid_seq`, `host_iface` (`kh-…`), `netns` (`ns-…`), `gateway_ip`
@@ -97,7 +101,8 @@ PrivateEndpoint     — привязан к Network + Subnet (privatelink)
 Миграции: `0006_network_interfaces.sql`, `0007_nic_address_refs.sql`, `0008_nic_restructure.sql`,
 `0011_nic_subnet_cascade.sql` (NIC→Subnet FK: RESTRICT → CASCADE — **откачена** ниже),
 `0012_nic_subnet_restrict.sql` (KAC-33: откат 0011 — NIC→Subnet FK обратно ON DELETE RESTRICT),
-`0013_address_internal_subnet_id_v6.sql` (KAC-34: generated-колонка `addresses.internal_subnet_id` — drop&recreate с выводом из `internal_ipv4` ИЛИ `internal_ipv6`, чтобы v6-internal-адрес тоже блокировал свою подсеть через FK `addresses_internal_subnet_fkey`).
+`0013_address_internal_subnet_id_v6.sql` (KAC-34: generated-колонка `addresses.internal_subnet_id` — drop&recreate с выводом из `internal_ipv4` ИЛИ `internal_ipv6`, чтобы v6-internal-адрес тоже блокировал свою подсеть через FK `addresses_internal_subnet_fkey`),
+`0014_nic_mac_address.sql` (KAC-48: `network_interfaces.mac_address TEXT NOT NULL` + UNIQUE индекс + backfill для existing rows через `md5(random()||id)`).
 
 Все ресурсы — folder-level (`folder_id` обязателен в Create). Все таблицы
 **flat** (без K8s envelope `resource_version`/`generation`/`deletion_timestamp`/

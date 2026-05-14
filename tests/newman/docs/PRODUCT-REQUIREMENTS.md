@@ -558,7 +558,7 @@ Address освобождаются (`Address.used` → false, referrer снят)
 
 ### REQ-NIC-06 — публичная проекция NIC — lean (без инфра-полей)                  [P0]
 Публичная `NetworkInterface` (`Get`/`List`/`Create`-result) содержит ТОЛЬКО `id`/`folder_id`/`name`/
-`labels`/`subnet_id`/`v4_address_ids`/`v6_address_ids`/`security_group_ids`/`used_by`/`status`.
+`labels`/`subnet_id`/`v4_address_ids`/`v6_address_ids`/`security_group_ids`/`used_by`/`mac_address`/`status`.
 Инфра-чувствительные поля (`vpn_id`, `hv_id`, `sid`/`sid_seq`, `host_iface`, `netns`, `gateway_ip`,
 `container_id`, `network_id`, `instance_id`, `index`) — ТОЛЬКО на `InternalNetworkInterface`
 (`InternalNetworkInterfaceService`, internal-port 9091), НИКОГДА не на публичной поверхности.
@@ -570,6 +570,17 @@ Address освобождаются (`Address.used` → false, referrer снят)
 `subnet_id` — immutable (в mask → `InvalidArgument`); инфра-поля недоступны для записи через публичный API.
 - Validated-by: `NIC-UPD-OK`
 - Agent-check: `internal/service/network_interface.go` Update — `subnet_id` в hard-immutable reject-switch; mask-применение только к mutable.
+
+### REQ-NIC-08 — NIC.mac_address — output-only, стабилен, cloud-wide unique         [P1]
+`mac_address` на публичной `NetworkInterface` (AWS-ENI semantics): аллоцируется системой
+при `NetworkInterfaceService.Create`, **клиент задать не может**, **неизменен** на протяжении
+жизни NIC (Attach/Detach/Update name/labels/SG не меняют MAC), **уникален в пределах всего
+облака** (DB-level UNIQUE-constraint). Формат — lowercase, colon-separated, 6 октетов;
+префикс `0e:` (locally-administered, unicast) зарезервирован под Kachō — все наши MAC начинаются
+с него; остальные 5 байт — `crypto/rand` (40 бит энтропии); коллизии ловятся UNIQUE-constraint'ом
+и retry'ятся в service-слое (до 3 попыток).
+- Validated-by: `NIC-CR-MAC-OK` (формат + стабильность при Update)
+- Agent-check: `kacho-proto/.../network_interface.proto` (field 19, mac_address); `internal/migrations/0014_nic_mac_address.sql` (UNIQUE + backfill); `internal/service/mac.go` (`GenerateMAC` + префикс `0e:`); `internal/service/network_interface.go` (retry-loop в `doCreate`); `internal/repo/network_interface_repo.go` (Insert + isNICMacCollision); KAC-48.
 
 ---
 

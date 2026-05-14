@@ -102,6 +102,41 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    id="NIC-CR-MAC-OK",
+    title="Create NIC → macAddress в lean-проекции, формат 0e:xx:xx:xx:xx:xx, стабилен при Update name",
+    classes=["CRUD"],
+    priority="P1",
+    steps=[
+        *_net_subnet_steps("mac"),
+        Step(name="create-nic", method="POST", path="/vpc/v1/networkInterfaces",
+             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+                   "name": "nic-mac-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
+        poll_operation_until_done(),
+        Step(name="get-nic-mac", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('macAddress на публичной проекции', () => pm.expect(j.macAddress, 'macAddress').to.be.a('string'));",
+                          "pm.test('macAddress в Kachō-формате 0e:xx:xx:xx:xx:xx (lowercase hex)', () => pm.expect(j.macAddress).to.match(/^0e:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}$/));",
+                          "pm.environment.set('savedMac', j.macAddress);"]),
+        Step(name="update-nic-name", method="PATCH", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             body={"updateMask": "name", "name": "nic-mac-renamed-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="get-nic-mac-stable", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('macAddress не меняется при Update (AWS-ENI semantics)', () => pm.expect(j.macAddress).to.eql(pm.environment.get('savedMac')));"]),
+        *_cleanup_nic(),
+        _cleanup_subnet(),
+        poll_operation_until_done(),
+        _cleanup_net(),
+        poll_operation_until_done(),
+    ],
+))
+
+CASES.append(Case(
     id="NIC-CR-NEG-DUP-NAME",
     title="Create двух NIC с одинаковым name в одном folder → второй ALREADY_EXISTS (async op.error)",
     classes=["NEG", "CONF"],

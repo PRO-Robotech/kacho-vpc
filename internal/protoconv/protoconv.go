@@ -58,6 +58,7 @@ func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 		V4AddressIds:     n.V4AddressIDs,
 		V6AddressIds:     n.V6AddressIDs,
 		SecurityGroupIds: n.SecurityGroupIDs,
+		MacAddress:       n.MAC,
 		Status:           vpcv1.NetworkInterface_Status(n.Status),
 	}
 	// used_by (kacho extension, output-only) — кто приаттачил этот NIC.

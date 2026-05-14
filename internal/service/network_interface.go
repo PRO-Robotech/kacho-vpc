@@ -209,13 +209,33 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 		UsedByID:         usedByID,
 		Status:           st,
 	}
-	created, err := s.repo.Insert(ctx, n)
-	if err != nil {
-		// rollback маркировки адресов best-effort.
-		s.detachAddresses(ctx, append(append([]string{}, req.V4AddressIDs...), req.V6AddressIDs...))
-		return nil, mapRepoErr(err)
+	// MAC аллоцируется здесь и больше не меняется на жизни NIC (AWS-ENI semantics).
+	// При cloud-wide UNIQUE-collision (вероятность ~1e-3 на 1M NIC при 40 битах
+	// энтропии — см. service/mac.go) генерируем новый MAC и повторяем Insert.
+	const niMacRetryAttempts = 3
+	var created *domain.NetworkInterface
+	var insertErr error
+	for attempt := 0; attempt < niMacRetryAttempts; attempt++ {
+		mac, err := GenerateMAC()
+		if err != nil {
+			s.detachAddresses(ctx, append(append([]string{}, req.V4AddressIDs...), req.V6AddressIDs...))
+			return nil, status.Errorf(codes.Internal, "generate mac: %v", err)
+		}
+		n.MAC = mac
+		created, insertErr = s.repo.Insert(ctx, n)
+		if insertErr == nil {
+			return anypb.New(protoconv.NetworkInterface(created))
+		}
+		if !errors.Is(insertErr, ErrMacCollision) {
+			break
+		}
 	}
-	return anypb.New(protoconv.NetworkInterface(created))
+	// rollback маркировки адресов best-effort.
+	s.detachAddresses(ctx, append(append([]string{}, req.V4AddressIDs...), req.V6AddressIDs...))
+	if errors.Is(insertErr, ErrMacCollision) {
+		return nil, status.Errorf(codes.Internal, "could not allocate unique MAC after %d attempts", niMacRetryAttempts)
+	}
+	return nil, mapRepoErr(insertErr)
 }
 
 // validateAddressRef проверяет, что Address id существует, имеет ожидаемую
