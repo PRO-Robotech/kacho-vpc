@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	_ "google.golang.org/grpc/resolver/dns" // регистрирует dns:/// resolver
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
@@ -105,7 +107,18 @@ func runServe(cfg config.Config) error {
 		return err
 	}
 	defer rmConn.Close()
-	folderClient := clients.NewFolderClient(rmConn)
+	// TTL+LRU кеш (KAC-39): снимает gRPC-hop в RM из hot-path Network.Create
+	// при burst-нагрузке (10k RPS). См. internal/clients/folder_cache.go.
+	rawFolderClient := clients.NewFolderClient(rmConn)
+	folderClient := clients.NewCachedFolderClient(rawFolderClient, clients.FolderCacheConfig{
+		PositiveTTL: cfg.FolderCacheTTL,
+		NegativeTTL: cfg.FolderCacheNegativeTTL,
+		MaxSize:     cfg.FolderCacheSize,
+	})
+	logger.Info("folder existence cache enabled",
+		"positive_ttl", cfg.FolderCacheTTL,
+		"negative_ttl", cfg.FolderCacheNegativeTTL,
+		"max_size", cfg.FolderCacheSize)
 
 	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
 	// zone_id вызовом compute.v1.ZoneService.Get (см. workspace CLAUDE.md
@@ -224,6 +237,12 @@ func validateAuthMode(cfg config.Config, logger *slog.Logger) (productionMode bo
 // dialResourceManager открывает gRPC-клиент к resource-manager. TLS опционален
 // через KACHO_VPC_RESOURCE_MANAGER_TLS=true (закрывает in-cluster MITM на
 // FolderClient.Exists/GetCloudID — security P0); по умолчанию insecure для dev-стенда.
+//
+// Client-side round_robin LB (KAC-39): при KACHO_VPC_RESOURCE_MANAGER_DNS_LB=true
+// addr префиксуется `dns:///` (если ещё не) и применяется service-config с
+// round_robin балансировщиком — gRPC сам резолвит все A/AAAA записи Headless
+// Service и распределяет RPC между ними round-robin. Зеркало api-gateway →
+// backend. По умолчанию (false) поведение прежнее (passthrough resolver, 1 conn).
 func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
 	var creds credentials.TransportCredentials
 	if cfg.ResourceManagerTLS {
@@ -231,7 +250,15 @@ func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
 	} else {
 		creds = insecure.NewCredentials()
 	}
-	return grpc.NewClient(cfg.ResourceManagerGRPCAddr, grpc.WithTransportCredentials(creds))
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
+	addr := cfg.ResourceManagerGRPCAddr
+	if cfg.ResourceManagerDNSLB {
+		if !strings.HasPrefix(addr, "dns:///") {
+			addr = "dns:///" + addr
+		}
+		opts = append(opts, grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`))
+	}
+	return grpc.NewClient(addr, opts...)
 }
 
 // dialCompute открывает gRPC-клиент к kacho-compute (owner Geography). TLS опционален

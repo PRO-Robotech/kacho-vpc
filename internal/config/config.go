@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	corecfg "github.com/PRO-Robotech/kacho-corelib/config"
 )
@@ -38,6 +39,15 @@ type Config struct {
 	// resource-manager (security P0 closure: иначе in-cluster MITM может
 	// подделать FolderClient.GetCloudID/Exists).
 	ResourceManagerTLS bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_TLS" default:"false"`
+	// ResourceManagerDNSLB — включить client-side round_robin LB и
+	// dns:/// resolver для разрешения multi-IP (Headless Service)
+	// resource-manager Endpoint'а. Зеркало того, что уже сделано в
+	// api-gateway → backend (round_robin). По умолчанию false для
+	// backward-compat с одно-pod RM в dev-стенде; в production /
+	// load-тестах включается для распределения нагрузки между репликами
+	// RM (KAC-39). Префикс `dns:///` добавляется автоматически, если
+	// addr им не начинается.
+	ResourceManagerDNSLB bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_DNS_LB" default:"false"`
 
 	// ComputeGRPCAddr — публичный gRPC kacho-compute. kacho-compute — owner
 	// Geography (Region/Zone), эпик KAC-15: VPC валидирует zone_id вызовом
@@ -54,6 +64,19 @@ type Config struct {
 	//                    hot-path → +30-40% write-throughput. Для load-тестов и
 	//                    deployment'ов с внешним SG-reconciler'ом.
 	DefaultSGInline bool `envconfig:"KACHO_VPC_DEFAULT_SG_INLINE" default:"true"`
+
+	// FolderCacheTTL — TTL положительного результата FolderClient.Exists
+	// в TTL+LRU кеше (см. internal/clients/folder_cache.go). По умолчанию
+	// 30s: folder редко удаляется, но не вечен. Снимает gRPC-hop к
+	// resource-manager из hot-path Network.Create при 10k RPS (KAC-39).
+	FolderCacheTTL time.Duration `envconfig:"KACHO_VPC_FOLDER_CACHE_TTL" default:"30s"`
+	// FolderCacheNegativeTTL — TTL negative-результата (folder не найден).
+	// Короче положительного, чтобы свеже-созданный folder быстро стал
+	// виден после кратковременного «не существует».
+	FolderCacheNegativeTTL time.Duration `envconfig:"KACHO_VPC_FOLDER_CACHE_NEGATIVE_TTL" default:"5s"`
+	// FolderCacheSize — bound LRU; защита от unbounded memory growth.
+	// 10k folder-id-ов ≈ 10k * (id_len + entry_overhead) ≈ < 5 МБ.
+	FolderCacheSize int `envconfig:"KACHO_VPC_FOLDER_CACHE_SIZE" default:"10000"`
 
 	// AuthMode — управление fail-closed гейтом перед IAM merge.
 	//   `dev` (default) — anonymous-mode разрешён, interceptor пропускает
