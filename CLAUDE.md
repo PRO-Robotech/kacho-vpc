@@ -11,14 +11,21 @@ Sub-phase 0.3 продукта Kachō. gRPC-сервис управления с
 **Network, Subnet, Address, RouteTable, SecurityGroup, Gateway, PrivateEndpoint, NetworkInterface**
 (`NetworkInterface` — first-class AWS-ENI-подобный ресурс, добавлен эпиком `KAC-2`).
 
-> **Verbatim-YC parity — ОТЛОЖЕНА** (см. workspace-`CLAUDE.md` «Что это за проект»). Раньше
-> цель была — побайтовое соответствие Yandex Cloud VPC API (proto-форма, error texts, status
-> codes, timestamp precision, regex'ы, behavioural semantics). Сейчас это **не constraint**:
-> API можно проектировать в чистой форме, расходясь с YC где это лучше (например — `vpn_id`
-> на Network, отдельный ресурс NetworkInterface AWS-ENI-стиля, и т.п.). YC-совместимость —
-> отдельная поздняя фаза (compat-слой / рефакторинг). Существующие YC-точные детали ниже в
-> этом файле (error texts, regex'ы, probe-результаты) сохраняются как есть, пока не решено
-> иначе, но **расхождение с YC больше не баг** и не повод заводить issue.
+> **YC-стилистика — да, структура методов 1-в-1 — нет** (см. workspace-`CLAUDE.md` «Что это
+> за проект»). Раньше цель была — побайтовое соответствие Yandex Cloud VPC API. Сейчас:
+>
+> - **Стилистика остаётся**: YC-format error-text (`"<Resource> %s not found"`, `"Illegal
+>   argument …"`, `"network is not empty"`), regex'ы для имени/labels, timestamp truncate
+>   до секунд, `update_mask`-discipline (immutable→InvalidArgument, unknown→InvalidArgument,
+>   no-mask = full-PATCH с silent-ignore immutable), gRPC-codes mapping, JSON camelCase в REST.
+>   Все probe-результаты `2026-05-11` и YC-точные тексты ниже в файле — **остаются** как
+>   нормативные ориентиры стиля.
+> - **Структура методов / ресурсов — расходимся осознанно**: `NetworkInterface` как first-class
+>   AWS-ENI-подобный ресурс (в YC встроен в Instance), `vpn_id` как internal-поле Network,
+>   `InternalNetworkInterface` projection с data-plane полями, `AddressPool` kacho-only,
+>   oneof split-by-family для AddressPool (KAC-71), и т.п. Это не баги и не повод заводить
+>   issue.
+> - **`kacho-yc-shim`** — отдельный поздний слой, если потребуется CLI-compat.
 
 Домены: 7 verbatim-исторических ресурсов + (эпик `KAC-2`, реализовано) `NetworkInterface`
 (first-class ресурс) и инфра-поле `vpn_id` на `Network` (24-bit data-plane-идентификатор,
@@ -591,9 +598,11 @@ YC API — `newman_legacy/` — удалена; история — в git.)
 
 ### 14.4 Где фиксировать найденные баги и задачи (ОБЯЗАТЕЛЬНО)
 
-**Любой баг / расхождение с verbatim YC / observability-gap / доп-задача, найденная в
-newman, k6, integration- или unit-тестах (или при ревью/прогоне) → GitHub Issue в
-`PRO-Robotech/kacho-vpc`** (если не VPC-specific, а общий — в `PRO-Robotech/kacho-workspace`).
+**Любой баг / расхождение со YC-стилем (regex, error-text, timestamp, update_mask) /
+observability-gap / доп-задача, найденная в newman, k6, integration- или unit-тестах (или
+при ревью/прогоне) → GitHub Issue в `PRO-Robotech/kacho-vpc`** (если не VPC-specific, а
+общий — в `PRO-Robotech/kacho-workspace`). Структурные расхождения с YC (отличающийся
+состав RPC / ресурсов / полей) — НЕ повод для issue.
 **`TODO.md` упразднён** — теперь это stub со ссылкой на Issues; источник истины «что надо
 сделать» — открытые issues, не файлы в репо. (Полная конвенция — workspace `CLAUDE.md` →
 «Баги, задачи, tech-debt — GitHub Issues» + «Кросс-репо зависимости и порядок выполнения».)
@@ -605,8 +614,10 @@ newman, k6, integration- или unit-тестах (или при ревью/пр
 - Коммит, закрывающий issue — trailer `Closes #N` (или `Closes PRO-Robotech/<repo>#N` для кросс-репо).
 - В тест-кейсе допустима короткая аннотация `# verifies <короткое описание>` (можно со ссылкой
   на issue) — но **не** дублирование описания бага.
-- **Не баг** (by-design / documented divergence с verbatim YC) → **не issue**, а запись в
-  `docs/architecture/07-known-divergences.md`. Отдельных bug-map'ов / FINDING-NNN-реестров — не вести.
+- **Не баг** (by-design структурное расхождение с YC: другой состав ресурсов / полей / RPC,
+  oneof-вариация, AWS-ENI-стиль NIC, internal-проекции, и т.п.) → **не issue**, а запись в
+  `docs/architecture/07-known-divergences.md`. YC-стилистическое расхождение (text/regex/etc.) —
+  всё-таки issue (см. выше). Отдельных bug-map'ов / FINDING-NNN-реестров — не вести.
 - **Новое продуктовое требование** (что продукт ДОЛЖЕН делать, выявлено из тест-анализа) → новый `REQ-*` в
   `tests/newman/docs/PRODUCT-REQUIREMENTS.md` (нормативный регламент от QA; на соответствие ему проверяет
   агент `vpc-yc-parity-auditor` §3.13 при ревью изменений). Каждый newman-кейс мапится на `REQ-*`.
