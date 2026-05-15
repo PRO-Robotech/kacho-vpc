@@ -144,9 +144,11 @@ func TestSubnetService_Delete_BlockedByNIC(t *testing.T) {
 	sub := makeSubnet(sr, net.ID)
 
 	nicRepo := newNIRepoFake()
-	nicRepo.data["e9bnic1"] = &domain.NetworkInterface{
-		ID: "e9bnic1", FolderID: "f1", SubnetID: sub.ID,
-		Status: domain.NIStatusAvailable,
+	nicRepo.data["e9bnic1"] = &domain.NetworkInterfaceRecord{
+		NetworkInterface: domain.NetworkInterface{
+			ID: "e9bnic1", FolderID: "f1", SubnetID: sub.ID,
+			Status: domain.NIStatusAvailable,
+		},
 	}
 
 	svc := NewSubnetService(sr, nr, newMockFolderClient(true), or, nil)

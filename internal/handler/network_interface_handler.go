@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,9 +10,23 @@ import (
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// networkInterfaceToPb конвертирует repo-entity NIC → proto NIC через DTO-реестр.
+// Wave 2 batch C (KAC-94): protoconv.NetworkInterface удалён (skill evgeniy §3 C.6 / AP-11).
+func networkInterfaceToPb(rec *domain.NetworkInterfaceRecord) (*vpcv1.NetworkInterface, error) {
+	var dst *vpcv1.NetworkInterface
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer NetworkInterface: %w", err)
+	}
+	return dst, nil
+}
 
 // NetworkInterfaceHandler реализует vpcv1.NetworkInterfaceServiceServer.
 type NetworkInterfaceHandler struct {
@@ -35,7 +50,7 @@ func (h *NetworkInterfaceHandler) Get(ctx context.Context, req *vpcv1.GetNetwork
 	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.NetworkInterface(n), nil
+	return networkInterfaceToPb(n)
 }
 
 func (h *NetworkInterfaceHandler) List(ctx context.Context, req *vpcv1.ListNetworkInterfacesRequest) (*vpcv1.ListNetworkInterfacesResponse, error) {
@@ -50,7 +65,11 @@ func (h *NetworkInterfaceHandler) List(ctx context.Context, req *vpcv1.ListNetwo
 	}
 	resp := &vpcv1.ListNetworkInterfacesResponse{NextPageToken: next}
 	for _, n := range out {
-		resp.NetworkInterfaces = append(resp.NetworkInterfaces, protoconv.NetworkInterface(n))
+		pb, err := networkInterfaceToPb(n)
+		if err != nil {
+			return nil, err
+		}
+		resp.NetworkInterfaces = append(resp.NetworkInterfaces, pb)
 	}
 	return resp, nil
 }

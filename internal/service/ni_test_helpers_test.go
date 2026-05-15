@@ -10,13 +10,18 @@ import (
 // Раньше жил в network_interface_test.go (удалён в KAC-79/KAC-36 вместе с
 // internal-проекцией NIC); вынесен сюда, потому что subnet_test.go использует
 // его для Subnet.Delete precondition-проверок (RESTRICT FK NIC→Subnet).
+//
+// Wave 2 batch C (KAC-94): Get/List/Insert/UpdateMeta/SetUsedBy возвращают
+// *domain.NetworkInterfaceRecord (repo-entity с CreatedAt).
 type niRepoFake struct {
-	data map[string]*domain.NetworkInterface
+	data map[string]*domain.NetworkInterfaceRecord
 }
 
-func newNIRepoFake() *niRepoFake { return &niRepoFake{data: map[string]*domain.NetworkInterface{}} }
+func newNIRepoFake() *niRepoFake {
+	return &niRepoFake{data: map[string]*domain.NetworkInterfaceRecord{}}
+}
 
-func (r *niRepoFake) Get(_ context.Context, id string) (*domain.NetworkInterface, error) {
+func (r *niRepoFake) Get(_ context.Context, id string) (*domain.NetworkInterfaceRecord, error) {
 	n, ok := r.data[id]
 	if !ok {
 		return nil, ErrNotFound
@@ -25,12 +30,12 @@ func (r *niRepoFake) Get(_ context.Context, id string) (*domain.NetworkInterface
 	return &cp, nil
 }
 
-func (r *niRepoFake) List(context.Context, NetworkInterfaceFilter, Pagination) ([]*domain.NetworkInterface, string, error) {
+func (r *niRepoFake) List(context.Context, NetworkInterfaceFilter, Pagination) ([]*domain.NetworkInterfaceRecord, string, error) {
 	return nil, "", nil
 }
 
-func (r *niRepoFake) ListBySubnet(_ context.Context, subnetID string) ([]*domain.NetworkInterface, error) {
-	var out []*domain.NetworkInterface
+func (r *niRepoFake) ListBySubnet(_ context.Context, subnetID string) ([]*domain.NetworkInterfaceRecord, error) {
+	var out []*domain.NetworkInterfaceRecord
 	for _, n := range r.data {
 		if n.SubnetID == subnetID {
 			cp := *n
@@ -40,17 +45,19 @@ func (r *niRepoFake) ListBySubnet(_ context.Context, subnetID string) ([]*domain
 	return out, nil
 }
 
-func (r *niRepoFake) Insert(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
-	r.data[n.ID] = n
-	return n, nil
+func (r *niRepoFake) Insert(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error) {
+	rec := &domain.NetworkInterfaceRecord{NetworkInterface: *n}
+	r.data[n.ID] = rec
+	return rec, nil
 }
 
-func (r *niRepoFake) UpdateMeta(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
-	r.data[n.ID] = n
-	return n, nil
+func (r *niRepoFake) UpdateMeta(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error) {
+	rec := &domain.NetworkInterfaceRecord{NetworkInterface: *n}
+	r.data[n.ID] = rec
+	return rec, nil
 }
 
-func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
+func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterfaceRecord, error) {
 	n := r.data[id]
 	if refID == "" {
 		refType, refName = "", ""

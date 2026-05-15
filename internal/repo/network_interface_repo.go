@@ -15,6 +15,11 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
+// NetworkInterface — type-alias на domain.NetworkInterfaceRecord (repo-entity
+// с DB-managed CreatedAt). Wave 2 batch C (KAC-94), parity с repo.SecurityGroup /
+// repo.PrivateEndpoint.
+type NetworkInterface = domain.NetworkInterfaceRecord
+
 // NetworkInterfaceRepo — реализация service.NetworkInterfaceRepo поверх pgxpool.
 type NetworkInterfaceRepo struct {
 	pool *pgxpool.Pool
@@ -32,34 +37,38 @@ func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
 const niCols = `id, folder_id, created_at, name, description, labels, subnet_id,
 	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status`
 
-func scanNI(row scannable) (*domain.NetworkInterface, error) {
-	var n domain.NetworkInterface
+func scanNI(row scannable) (*NetworkInterface, error) {
+	var rec NetworkInterface
 	var labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON []byte
-	var statusName string
+	var statusName, name, description string
 	if err := row.Scan(
-		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID,
-		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.UsedByType, &n.UsedByID, &n.UsedByName, &n.MAC, &statusName,
+		&rec.ID, &rec.FolderID, &rec.CreatedAt, &name, &description, &labelsJSON, &rec.SubnetID,
+		&v4IDsJSON, &v6IDsJSON, &sgJSON, &rec.UsedByType, &rec.UsedByID, &rec.UsedByName, &rec.MAC, &statusName,
 	); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(labelsJSON, &n.Labels, "NetworkInterface.labels"); err != nil {
+	rec.Name = domain.RcNameVPC(name)
+	rec.Description = domain.RcDescription(description)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "NetworkInterface.labels"); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(v4IDsJSON, &n.V4AddressIDs, "NetworkInterface.v4_address_ids"); err != nil {
+	rec.Labels = domain.LabelsFromMap(labels)
+	if err := unmarshalJSONB(v4IDsJSON, &rec.V4AddressIDs, "NetworkInterface.v4_address_ids"); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(v6IDsJSON, &n.V6AddressIDs, "NetworkInterface.v6_address_ids"); err != nil {
+	if err := unmarshalJSONB(v6IDsJSON, &rec.V6AddressIDs, "NetworkInterface.v6_address_ids"); err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(sgJSON, &n.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
+	if err := unmarshalJSONB(sgJSON, &rec.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
 		return nil, err
 	}
-	n.Status = niStatusFromName(statusName)
-	return &n, nil
+	rec.Status = niStatusFromName(statusName)
+	return &rec, nil
 }
 
 // Get возвращает NIC по id.
-func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*domain.NetworkInterface, error) {
+func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*NetworkInterface, error) {
 	n, err := scanNI(r.pool.QueryRow(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE id = $1`, id))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", id)
@@ -68,7 +77,7 @@ func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*domain.Netw
 }
 
 // List возвращает NIC фолдера (опц. фильтр по instance/subnet/network) с cursor-пагинацией.
-func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterfaceFilter, p service.Pagination) ([]*domain.NetworkInterface, string, error) {
+func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterfaceFilter, p service.Pagination) ([]*NetworkInterface, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -107,7 +116,7 @@ func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterf
 		return nil, "", wrapPgErr(err, "Network interface", "")
 	}
 	defer rows.Close()
-	var out []*domain.NetworkInterface
+	var out []*NetworkInterface
 	for rows.Next() {
 		n, err := scanNI(rows)
 		if err != nil {
@@ -128,13 +137,13 @@ func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterf
 }
 
 // ListBySubnet возвращает все NIC, привязанные к указанной подсети.
-func (r *NetworkInterfaceRepo) ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterface, error) {
+func (r *NetworkInterfaceRepo) ListBySubnet(ctx context.Context, subnetID string) ([]*NetworkInterface, error) {
 	rows, err := r.pool.Query(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE subnet_id = $1 ORDER BY id ASC`, subnetID)
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", "")
 	}
 	defer rows.Close()
-	var out []*domain.NetworkInterface
+	var out []*NetworkInterface
 	for rows.Next() {
 		n, err := scanNI(rows)
 		if err != nil {
@@ -148,9 +157,11 @@ func (r *NetworkInterfaceRepo) ListBySubnet(ctx context.Context, subnetID string
 	return out, nil
 }
 
-// Insert вставляет NIC.
-func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
-	labelsJSON, err := marshalJSONB(n.Labels, "NetworkInterface.labels")
+// Insert вставляет NIC. Принимает domain.NetworkInterface (без CreatedAt — repo
+// сам выставит `now()` через DEFAULT в БД; source of truth — DB-колонка).
+// Возвращает *NetworkInterface (= *domain.NetworkInterfaceRecord).
+func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInterface) (*NetworkInterface, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +183,11 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id, v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		INSERT INTO network_interfaces (id, folder_id, name, description, labels, subnet_id, v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING ` + niCols
 	res, err := scanNI(tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.SubnetID,
+		n.ID, n.FolderID, string(n.Name), string(n.Description), labelsJSON, n.SubnetID,
 		v4IDsJSON, v6IDsJSON, sgJSON, n.UsedByType, n.UsedByID, n.UsedByName, n.MAC, niStatusName(n.Status)))
 	if err != nil {
 		// MAC-collision — отдельная sentinel, чтобы service-слой мог retry'ить
@@ -184,20 +195,20 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 		if isNICMacCollision(err) {
 			return nil, service.ErrMacCollision
 		}
-		return nil, wrapPgErr(err, "Network interface", n.Name)
+		return nil, wrapPgErr(err, "Network interface", string(n.Name))
 	}
-	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "CREATED", domainToMap(res)); err != nil {
+	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "CREATED", networkInterfacePayload(res)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "Network interface", n.Name)
+		return nil, wrapPgErr(err, "Network interface", string(n.Name))
 	}
 	return res, nil
 }
 
 // UpdateMeta обновляет name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
-func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error) {
-	labelsJSON, err := marshalJSONB(n.Labels, "NetworkInterface.labels")
+func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*NetworkInterface, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -220,11 +231,11 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	defer func() { _ = tx.Rollback(ctx) }()
 	res, err := scanNI(tx.QueryRow(ctx,
 		`UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5, v4_address_ids=$6, v6_address_ids=$7 WHERE id=$1 RETURNING `+niCols,
-		n.ID, n.Name, n.Description, labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON))
+		n.ID, string(n.Name), string(n.Description), labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.ID)
 	}
-	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", domainToMap(res)); err != nil {
+	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", networkInterfacePayload(res)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -259,7 +270,7 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 //
 // См. workspace CLAUDE.md §«Within-service refs — DB-уровень обязателен»
 // (запрет #10) — шаблон «атомарный single-statement CAS на одной row».
-func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error) {
+func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*NetworkInterface, error) {
 	if refID == "" {
 		refType, refName = "", ""
 	}
@@ -296,7 +307,7 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 		}
 		return nil, wrapPgErr(err, "Network interface", id)
 	}
-	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", domainToMap(res)); err != nil {
+	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", networkInterfacePayload(res)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -332,6 +343,15 @@ func (r *NetworkInterfaceRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// networkInterfacePayload — outbox-payload для NIC (repo-entity, с CreatedAt).
+// Wave 2 batch C (KAC-94) — parity с networkPayload / securityGroupPayload и т.п.
+// RcNameVPC / RcDescription — newtypes на string, json.Marshal сериализует их
+// как обычную строку. RcLabels (dict.HDict[K,V]) сериализуется через свой
+// MarshalJSON — внутри domain/types.go.
+func networkInterfacePayload(rec *NetworkInterface) map[string]any {
+	return domainToMap(rec)
+}
+
 func orEmptyStrSlice(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -342,31 +362,31 @@ func orEmptyStrSlice(s []string) []string {
 func niStatusName(s domain.NetworkInterfaceStatus) string {
 	switch s {
 	case domain.NIStatusProvisioning:
-		return "PROVISIONING"
+		return domain.NIStatusStrProvisioning
 	case domain.NIStatusActive:
-		return "ACTIVE"
+		return domain.NIStatusStrActive
 	case domain.NIStatusAvailable:
-		return "AVAILABLE"
+		return domain.NIStatusStrAvailable
 	case domain.NIStatusFailed:
-		return "FAILED"
+		return domain.NIStatusStrFailed
 	case domain.NIStatusDeleting:
-		return "DELETING"
+		return domain.NIStatusStrDeleting
 	default:
-		return "STATUS_UNSPECIFIED"
+		return domain.NIStatusStrUnspecified
 	}
 }
 
 func niStatusFromName(s string) domain.NetworkInterfaceStatus {
 	switch s {
-	case "PROVISIONING":
+	case domain.NIStatusStrProvisioning:
 		return domain.NIStatusProvisioning
-	case "ACTIVE":
+	case domain.NIStatusStrActive:
 		return domain.NIStatusActive
-	case "AVAILABLE":
+	case domain.NIStatusStrAvailable:
 		return domain.NIStatusAvailable
-	case "FAILED":
+	case domain.NIStatusStrFailed:
 		return domain.NIStatusFailed
-	case "DELETING":
+	case domain.NIStatusStrDeleting:
 		return domain.NIStatusDeleting
 	default:
 		return domain.NIStatusUnspecified

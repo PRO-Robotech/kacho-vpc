@@ -1,12 +1,11 @@
 // Package type2pb — реализации DTO трансферов domain/repo → proto.
 // Skill evgeniy §3 C.4 (init-регистрация трансферов).
 //
-// Wave 2 pilot (KAC-99/KAC-94): на текущий момент зарегистрированы Network
-// (repo-entity → vpcv1.Network) и time.Time → *timestamppb.Timestamp.
-// Остальные ресурсы (Subnet/Address/RouteTable/SecurityGroup/Gateway/
-// PrivateEndpoint/NetworkInterface) пока конвертируются через старый
-// `internal/protoconv/protoconv.go`; они переедут в этот пакет в следующих
-// итерациях (KAC-100..106).
+// Wave 2 (KAC-94): зарегистрированы все 8 VPC-ресурсов
+// (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
+// NetworkInterface) + time.Time → *timestamppb.Timestamp. Старый
+// `internal/protoconv/protoconv.go` сохранён только под Network legacy
+// helper, используемый одним handler_test (будет удалён в следующей фазе).
 package type2pb
 
 import (

@@ -73,6 +73,34 @@ const (
 	PrivateEndpointStatusDeleting  PrivateEndpointStatus = "DELETING"
 )
 
-// NetworkInterfaceStatus / NI* константы определены рядом с domain.NetworkInterface
-// (см. network_interface.go) — pilot KAC-99 для NIC ещё не делается, оставляем
-// их там. На Wave 2 iteration для NIC они переедут сюда.
+// ---- NetworkInterfaceStatus --------------------------------------------------
+
+// NetworkInterfaceStatus — грубый статус NIC (зеркалит vpcv1.NetworkInterface_Status).
+// Wave 2 batch C (KAC-94, skill evgeniy §4 D.8): переехал из network_interface.go
+// сюда вместе с остальными enum-константами. iota → string-typed enum для parity
+// с другими VPC-ресурсами (SecurityGroupStatus / PrivateEndpointStatus).
+type NetworkInterfaceStatus int
+
+// Значения NetworkInterfaceStatus. STATUS_UNSPECIFIED — для legacy rows (DB-layer
+// возвращает его если status-колонка пустая или содержит неизвестное значение).
+const (
+	NIStatusUnspecified NetworkInterfaceStatus = iota
+	NIStatusProvisioning
+	NIStatusActive
+	NIStatusAvailable
+	NIStatusFailed
+	NIStatusDeleting
+)
+
+// String-значения NetworkInterfaceStatus для DB-CHECK constraint и DB-маппинга
+// (network_interfaces.status TEXT). Используется в repo.niStatusName /
+// niStatusFromName, в DTO type2pb/network_interface.go и в миграции CHECK
+// constraint (0032_network_interface_check_constraints.sql).
+const (
+	NIStatusStrProvisioning = "PROVISIONING"
+	NIStatusStrActive       = "ACTIVE"
+	NIStatusStrAvailable    = "AVAILABLE"
+	NIStatusStrFailed       = "FAILED"
+	NIStatusStrDeleting     = "DELETING"
+	NIStatusStrUnspecified  = "STATUS_UNSPECIFIED"
+)

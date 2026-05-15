@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,7 +29,10 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
 
 // niReferrerType — ReferrerType в address_references для адресов, привязанных к NIC.
@@ -51,17 +53,21 @@ type NetworkInterfaceFilter struct {
 }
 
 // NetworkInterfaceRepo — port-интерфейс репозитория NIC.
+//
+// Wave 2 batch C (KAC-94): Get/List/Insert/UpdateMeta/SetUsedBy возвращают
+// *domain.NetworkInterfaceRecord (repo-entity с CreatedAt). Insert/UpdateMeta
+// принимают *domain.NetworkInterface (без CreatedAt — DB managed).
 type NetworkInterfaceRepo interface {
-	Get(ctx context.Context, id string) (*domain.NetworkInterface, error)
-	List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterface, string, error)
+	Get(ctx context.Context, id string) (*domain.NetworkInterfaceRecord, error)
+	List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterfaceRecord, string, error)
 	// ListBySubnet возвращает все NIC, привязанные к указанной подсети (без
 	// пагинации — используется для precondition-проверки при Subnet.Delete).
-	ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterface, error)
-	Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
-	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterface, error)
+	ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterfaceRecord, error)
+	Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error)
+	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error)
 	// SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка)
 	// и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
-	SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error)
+	SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterfaceRecord, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -112,7 +118,7 @@ func NewNetworkInterfaceService(repo NetworkInterfaceRepo, subnetRepo SubnetRepo
 }
 
 // Get возвращает NIC по id.
-func (s *NetworkInterfaceService) Get(ctx context.Context, id string) (*domain.NetworkInterface, error) {
+func (s *NetworkInterfaceService) Get(ctx context.Context, id string) (*domain.NetworkInterfaceRecord, error) {
 	if err := niResourceID(id); err != nil {
 		return nil, err
 	}
@@ -124,7 +130,7 @@ func (s *NetworkInterfaceService) Get(ctx context.Context, id string) (*domain.N
 }
 
 // List возвращает NIC фолдера (опц. фильтр по instance/subnet/network).
-func (s *NetworkInterfaceService) List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterface, string, error) {
+func (s *NetworkInterfaceService) List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterfaceRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -136,6 +142,11 @@ func (s *NetworkInterfaceService) List(ctx context.Context, f NetworkInterfaceFi
 }
 
 // Create инициирует создание NIC, возвращает Operation.
+//
+// Wave 2 batch C (KAC-94): валидация name/description/labels — через
+// domain.NetworkInterface.Validate() (skill evgeniy §4 D.5 / AP-1). Service-слой
+// больше НЕ вызывает corevalidate.NameVPC/Description/Labels. Cardinality v4/v6
+// (≤1) и folder existence остаются service-level (cross-cutting / cross-resource).
 func (s *NetworkInterfaceService) Create(ctx context.Context, req CreateNICReq) (*operations.Operation, error) {
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
@@ -143,13 +154,14 @@ func (s *NetworkInterfaceService) Create(ctx context.Context, req CreateNICReq) 
 	if req.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+	// Domain self-validation: name/description/labels через newtype.Validate()
+	// + MAC-формат (если задан — на Create обычно пуст, аллокацию делает doCreate).
+	nicValidate := domain.NetworkInterface{
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := nicValidate.Validate(); err != nil {
 		return nil, err
 	}
 	if err := validateNICAddressCardinality(req.V4AddressIDs, req.V6AddressIDs); err != nil {
@@ -199,10 +211,9 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 	n := &domain.NetworkInterface{
 		ID:               niID,
 		FolderID:         req.FolderID,
-		CreatedAt:        time.Now().UTC(),
-		Name:             req.Name,
-		Description:      req.Description,
-		Labels:           req.Labels,
+		Name:             domain.RcNameVPC(req.Name),
+		Description:      domain.RcDescription(req.Description),
+		Labels:           domain.LabelsFromMap(req.Labels),
 		SubnetID:         req.SubnetID,
 		V4AddressIDs:     req.V4AddressIDs,
 		V6AddressIDs:     req.V6AddressIDs,
@@ -215,7 +226,7 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 	// При cloud-wide UNIQUE-collision (вероятность ~1e-3 на 1M NIC при 40 битах
 	// энтропии — см. service/mac.go) генерируем новый MAC и повторяем Insert.
 	const niMacRetryAttempts = 3
-	var created *domain.NetworkInterface
+	var created *domain.NetworkInterfaceRecord
 	var insertErr error
 	for attempt := 0; attempt < niMacRetryAttempts; attempt++ {
 		mac, err := GenerateMAC()
@@ -226,7 +237,7 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 		n.MAC = mac
 		created, insertErr = s.repo.Insert(ctx, n)
 		if insertErr == nil {
-			return anypb.New(protoconv.NetworkInterface(created))
+			return marshalNetworkInterfaceRecord(created)
 		}
 		if !errors.Is(insertErr, ErrMacCollision) {
 			break
@@ -240,9 +251,22 @@ func (s *NetworkInterfaceService) doCreate(ctx context.Context, niID string, req
 	return nil, mapRepoErr(insertErr)
 }
 
+// marshalNetworkInterfaceRecord конвертирует repo-entity NIC в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4: protoconv.NetworkInterface → dto.Transfer).
+func marshalNetworkInterfaceRecord(rec *domain.NetworkInterfaceRecord) (*anypb.Any, error) {
+	var dst *vpcv1.NetworkInterface
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer NetworkInterface: %w", err)
+	}
+	return anypb.New(dst)
+}
+
 // validateAddressRef проверяет, что Address id существует, имеет ожидаемую
 // IP-версию, (для internal-ipv4) лежит в подсети nicSubnet и не занят. Возвращает
 // gRPC-status при нарушении.
+//
+// Wave 2 batch C (KAC-94): принимает *domain.AddressRecord (с CreatedAt) —
+// AddressRepo.Get теперь возвращает Record.
 func (s *NetworkInterfaceService) validateAddressRef(ctx context.Context, id, nicSubnet string, want domain.IpVersion) error {
 	a, err := s.addressRepo.Get(ctx, id)
 	if err != nil {
@@ -324,6 +348,10 @@ func (s *NetworkInterfaceService) detachAddresses(ctx context.Context, ids []str
 }
 
 // Update обновляет name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
+//
+// Wave 2 batch C (KAC-94): валидация name/description/labels — через
+// domain.NetworkInterface.Validate() (skill evgeniy §4 D.5 / AP-1). Service-слой
+// больше НЕ вызывает corevalidate.NameVPC/Description/Labels.
 func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) (*operations.Operation, error) {
 	if err := niResourceID(req.ID); err != nil {
 		return nil, err
@@ -332,13 +360,15 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
 		return nil, err
 	}
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+	// Domain self-validation на наполнение req — newtype.Validate() в lazy-init
+	// форме (мы валидируем поля, которые клиент мог обновить; mask-aware применение
+	// делается уже в worker'е через applyNICMask).
+	nicValidate := domain.NetworkInterface{
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := nicValidate.Validate(); err != nil {
 		return nil, err
 	}
 	if err := validateNICAddressCardinality(req.V4AddressIDs, req.V6AddressIDs); err != nil {
@@ -352,16 +382,16 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 		return nil, err
 	}
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		n, err := s.repo.Get(ctx, req.ID)
+		rec, err := s.repo.Get(ctx, req.ID)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
 		// Если изменились address-refs — пересчитываем diff: detach убранные,
 		// attach добавленные (с валидацией). Best-effort v1 (без единой tx).
-		newV4 := nicMaskV4(n, req)
-		newV6 := nicMaskV6(n, req)
-		if !strSetEqual(n.V4AddressIDs, newV4) || !strSetEqual(n.V6AddressIDs, newV6) {
-			oldAll := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
+		newV4 := nicMaskV4(rec, req)
+		newV6 := nicMaskV6(rec, req)
+		if !strSetEqual(rec.V4AddressIDs, newV4) || !strSetEqual(rec.V6AddressIDs, newV6) {
+			oldAll := append(append([]string{}, rec.V4AddressIDs...), rec.V6AddressIDs...)
 			newAll := strSet(append(append([]string{}, newV4...), newV6...))
 			// detach убранные
 			var removed []string
@@ -384,21 +414,22 @@ func (s *NetworkInterfaceService) Update(ctx context.Context, req UpdateNICReq) 
 					addedV6 = append(addedV6, id)
 				}
 			}
-			if err := s.validateAndAttachAddresses(ctx, n.ID, derefName(req, n), n.SubnetID, addedV4, addedV6); err != nil {
+			if err := s.validateAndAttachAddresses(ctx, rec.ID, derefName(req, rec), rec.SubnetID, addedV4, addedV6); err != nil {
 				return nil, err
 			}
 		}
-		applyNICMask(n, req)
-		updated, err := s.repo.UpdateMeta(ctx, n)
+		nic := &rec.NetworkInterface
+		applyNICMask(nic, req)
+		updated, err := s.repo.UpdateMeta(ctx, nic)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.NetworkInterface(updated))
+		return marshalNetworkInterfaceRecord(updated)
 	})
 	return &op, nil
 }
 
-func derefName(req UpdateNICReq, n *domain.NetworkInterface) string {
+func derefName(req UpdateNICReq, rec *domain.NetworkInterfaceRecord) string {
 	if len(req.UpdateMask) == 0 {
 		return req.Name
 	}
@@ -407,10 +438,10 @@ func derefName(req UpdateNICReq, n *domain.NetworkInterface) string {
 			return req.Name
 		}
 	}
-	return n.Name
+	return string(rec.Name)
 }
 
-func nicMaskV4(n *domain.NetworkInterface, req UpdateNICReq) []string {
+func nicMaskV4(rec *domain.NetworkInterfaceRecord, req UpdateNICReq) []string {
 	if len(req.UpdateMask) == 0 {
 		return req.V4AddressIDs
 	}
@@ -419,10 +450,10 @@ func nicMaskV4(n *domain.NetworkInterface, req UpdateNICReq) []string {
 			return req.V4AddressIDs
 		}
 	}
-	return n.V4AddressIDs
+	return rec.V4AddressIDs
 }
 
-func nicMaskV6(n *domain.NetworkInterface, req UpdateNICReq) []string {
+func nicMaskV6(rec *domain.NetworkInterfaceRecord, req UpdateNICReq) []string {
 	if len(req.UpdateMask) == 0 {
 		return req.V6AddressIDs
 	}
@@ -431,7 +462,7 @@ func nicMaskV6(n *domain.NetworkInterface, req UpdateNICReq) []string {
 			return req.V6AddressIDs
 		}
 	}
-	return n.V6AddressIDs
+	return rec.V6AddressIDs
 }
 
 func strSet(ss []string) map[string]bool {
@@ -457,18 +488,21 @@ func strSetEqual(a, b []string) bool {
 
 func applyNICMask(n *domain.NetworkInterface, req UpdateNICReq) {
 	if len(req.UpdateMask) == 0 {
-		n.Name, n.Description, n.Labels, n.SecurityGroupIDs = req.Name, req.Description, req.Labels, req.SecurityGroupIDs
+		n.Name = domain.RcNameVPC(req.Name)
+		n.Description = domain.RcDescription(req.Description)
+		n.Labels = domain.LabelsFromMap(req.Labels)
+		n.SecurityGroupIDs = req.SecurityGroupIDs
 		n.V4AddressIDs, n.V6AddressIDs = req.V4AddressIDs, req.V6AddressIDs
 		return
 	}
 	for _, f := range req.UpdateMask {
 		switch f {
 		case "name":
-			n.Name = req.Name
+			n.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			n.Description = req.Description
+			n.Description = domain.RcDescription(req.Description)
 		case "labels":
-			n.Labels = req.Labels
+			n.Labels = domain.LabelsFromMap(req.Labels)
 		case "security_group_ids":
 			n.SecurityGroupIDs = req.SecurityGroupIDs
 		case "v4_address_ids":
@@ -556,7 +590,7 @@ func (s *NetworkInterfaceService) AttachToInstance(ctx context.Context, id, inst
 			}
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.NetworkInterface(updated))
+		return marshalNetworkInterfaceRecord(updated)
 	})
 	return &op, nil
 }
@@ -578,7 +612,7 @@ func (s *NetworkInterfaceService) DetachFromInstance(ctx context.Context, id str
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.NetworkInterface(updated))
+		return marshalNetworkInterfaceRecord(updated)
 	})
 	return &op, nil
 }

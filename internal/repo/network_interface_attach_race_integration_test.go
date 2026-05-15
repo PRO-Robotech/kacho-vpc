@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -51,8 +50,6 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	nicRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
-
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-attach-race", Name: domain.RcNameVPC("net-attach-race"),
 	}
@@ -67,8 +64,8 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	require.NoError(t, err)
 
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race", CreatedAt: now,
-		Name: "nic-race", SubnetID: sub.ID, MAC: "0e:11:22:33:44:55",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race",
+		Name: domain.RcNameVPC("nic-race"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:55",
 		Status: domain.NIStatusAvailable,
 	}
 	_, err = nicRepo.Insert(ctx, nic)
@@ -141,7 +138,6 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	nicRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-idempotent", Name: domain.RcNameVPC("net-idempotent"),
 	}
@@ -154,8 +150,8 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 	_, err = subnetRepo.Insert(ctx, sub)
 	require.NoError(t, err)
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent", CreatedAt: now,
-		Name: "nic-idempotent", SubnetID: sub.ID, MAC: "0e:11:22:33:44:66",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent",
+		Name: domain.RcNameVPC("nic-idempotent"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:66",
 		Status: domain.NIStatusAvailable,
 	}
 	_, err = nicRepo.Insert(ctx, nic)
@@ -193,7 +189,6 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	nicRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-detach", Name: domain.RcNameVPC("net-detach"),
 	}
@@ -206,8 +201,8 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 	_, err = subnetRepo.Insert(ctx, sub)
 	require.NoError(t, err)
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach", CreatedAt: now,
-		Name: "nic-detach", SubnetID: sub.ID, MAC: "0e:11:22:33:44:77",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach",
+		Name: domain.RcNameVPC("nic-detach"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:77",
 		Status: domain.NIStatusAvailable,
 	}
 	_, err = nicRepo.Insert(ctx, nic)

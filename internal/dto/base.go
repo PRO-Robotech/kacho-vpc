@@ -14,9 +14,11 @@
 //	if err := dto.Transfer(dto.FromTo(rec, &dst)); err != nil { ... }
 //	return anypb.New(dst)
 //
-// Wave 2 pilot (KAC-99/KAC-94): trans-реестр пока содержит только Network +
-// time.Time (см. dto/type2pb/). Остальные ресурсы пользуются старым
-// `protoconv.X(...)` до их Wave 2 итераций (KAC-100..106).
+// Wave 2 (KAC-94): trans-реестр содержит все 8 VPC-ресурсов
+// (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
+// NetworkInterface) + time.Time — см. dto/type2pb/. `protoconv.X(...)`
+// удалены, остался только legacy helper `protoconv.Network` для одного
+// handler_test (будет удалён в следующей фазе).
 package dto
 
 import (
