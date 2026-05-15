@@ -16,13 +16,10 @@ type (
 )
 
 var (
-	newMockNetworkRepo          = portmock.NewNetworkRepo
-	newMockSubnetRepoForSvc     = portmock.NewSubnetRepo
-	newMockRouteTableRepoForSvc = portmock.NewRouteTableRepo
-	newMockSGRepoForSvc         = portmock.NewSecurityGroupRepo
-	newMockGatewayRepoForSvc    = portmock.NewGatewayRepo
-	newMockPERepoForSvc         = portmock.NewPrivateEndpointRepo
-	newMockOpsRepo              = portmock.NewOpsRepo
+	newMockNetworkRepo      = portmock.NewNetworkRepo
+	newMockSubnetRepoForSvc = portmock.NewSubnetRepo
+	newMockSGRepoForSvc     = portmock.NewSecurityGroupRepo
+	newMockOpsRepo          = portmock.NewOpsRepo
 )
 
 // newMockFolderClient — fake FolderClient; exists задаёт результат Exists().

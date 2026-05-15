@@ -11,28 +11,22 @@ import (
 // не переписывать тела тестов.
 
 type (
-	mockNetworkRepo    = portmock.NetworkRepo
-	mockSubnetRepo     = portmock.SubnetRepo
-	mockAddressRepo    = portmock.AddressRepo
-	mockRouteTableRepo = portmock.RouteTableRepo
-	mockSGRepo         = portmock.SecurityGroupRepo
-	mockGatewayRepo    = portmock.GatewayRepo
-	mockPERepo         = portmock.PrivateEndpointRepo
-	mockOpsRepo        = portmock.OpsRepo
-	mockZoneRegistry   = portmock.ZoneRegistry
-	testingT           = portmock.TestingT
+	mockNetworkRepo  = portmock.NetworkRepo
+	mockSubnetRepo   = portmock.SubnetRepo
+	mockAddressRepo  = portmock.AddressRepo
+	mockSGRepo       = portmock.SecurityGroupRepo
+	mockOpsRepo      = portmock.OpsRepo
+	mockZoneRegistry = portmock.ZoneRegistry
+	testingT         = portmock.TestingT
 )
 
 var (
-	newMockNetworkRepo    = portmock.NewNetworkRepo
-	newMockSubnetRepo     = portmock.NewSubnetRepo
-	newMockAddressRepo    = portmock.NewAddressRepo
-	newMockRouteTableRepo = portmock.NewRouteTableRepo
-	newMockSGRepo         = portmock.NewSecurityGroupRepo
-	newMockGatewayRepo    = portmock.NewGatewayRepo
-	newMockPERepo         = portmock.NewPrivateEndpointRepo
-	newMockOpsRepo        = portmock.NewOpsRepo
-	newMockZoneRegistry   = portmock.NewZoneRegistry
+	newMockNetworkRepo  = portmock.NewNetworkRepo
+	newMockSubnetRepo   = portmock.NewSubnetRepo
+	newMockAddressRepo  = portmock.NewAddressRepo
+	newMockSGRepo       = portmock.NewSecurityGroupRepo
+	newMockOpsRepo      = portmock.NewOpsRepo
+	newMockZoneRegistry = portmock.NewZoneRegistry
 )
 
 // newMockFolderClient — fake FolderClient; exists задаёт результат Exists().

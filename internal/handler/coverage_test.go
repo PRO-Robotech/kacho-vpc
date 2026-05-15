@@ -11,7 +11,6 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -66,25 +65,7 @@ func TestAddressHandler_ListOperations_RequiresID(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-// ---- RouteTable handler — additional coverage ----
-
-func TestRouteTableHandler_Update_InvalidArg(t *testing.T) {
-	rtr := newMockRouteTableRepoForSvc()
-	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
-	_, err := h.Update(context.Background(), &vpcv1.UpdateRouteTableRequest{RouteTableId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestRouteTableHandler_ListOperations_RequiresID(t *testing.T) {
-	rtr := newMockRouteTableRepoForSvc()
-	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
-	_, err := h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
+// ---- RouteTable handler — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
 // ---- SecurityGroup handler ----
 
@@ -150,96 +131,4 @@ func TestSecurityGroupHandler_ListOperations_RequiresID(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-// ---- Gateway handler ----
-
-func makeGatewayService(t *testing.T) (*svc.GatewayService, *mockOpsRepo) {
-	t.Helper()
-	or := newMockOpsRepo()
-	return svc.NewGatewayService(newMockGatewayRepoForSvc(), newMockFolderClient(true), or), or
-}
-
-func TestGatewayHandler_Get_InvalidArg(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayHandler_Get_NotFound(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: ids.NewID(ids.PrefixGateway)})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestGatewayHandler_List_Empty(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	resp, err := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
-	require.NoError(t, err)
-	assert.Empty(t, resp.Gateways)
-}
-
-func TestGatewayHandler_Create_OK(t *testing.T) {
-	gwSvc, or := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	op, err := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
-		FolderId: "f1",
-		Name:     "gw1",
-		Gateway:  &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
-	})
-	require.NoError(t, err)
-	assert.NotEmpty(t, op.Id)
-	awaitOpDone(t, or, op.Id)
-}
-
-func TestGatewayHandler_Update_InvalidArg(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.Update(context.Background(), &vpcv1.UpdateGatewayRequest{GatewayId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayHandler_Delete_InvalidArg(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayHandler_Move_Path(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayHandler_ListOperations_RequiresID(t *testing.T) {
-	gwSvc, _ := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-	_, err := h.ListOperations(context.Background(), &vpcv1.ListGatewayOperationsRequest{GatewayId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayToProto_SharedEgress(t *testing.T) {
-	rec := &domain.GatewayRecord{
-		Gateway: domain.Gateway{
-			ID:          "gw-1",
-			FolderID:    "f1",
-			Name:        domain.RcNameVPC("gw1"),
-			Description: domain.RcDescription("desc"),
-			Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
-			GatewayType: domain.GatewayTypeSharedEgress,
-		},
-	}
-	p, err := gatewayToPb(rec)
-	require.NoError(t, err)
-	assert.Equal(t, "gw-1", p.Id)
-	assert.NotNil(t, p.GetSharedEgressGateway())
-}
+// ---- Gateway handler — moved to internal/apps/kacho/api/gateway/usecase_test.go (Wave 3b) ----

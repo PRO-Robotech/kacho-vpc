@@ -83,23 +83,7 @@ func TestAddressToProto_Internal(t *testing.T) {
 	assert.Equal(t, "subnet-1", intAddr.GetSubnetId())
 }
 
-func TestRouteTableToProto_StaticRoutes(t *testing.T) {
-	rec := &domain.RouteTableRecord{
-		RouteTable: domain.RouteTable{
-			ID:        "rt-1",
-			FolderID:  "f1",
-			NetworkID: "net-1",
-			StaticRoutes: []domain.StaticRoute{
-				{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
-			},
-		},
-	}
-	p, err := routeTableToPb(rec)
-	require.NoError(t, err)
-	require.Len(t, p.StaticRoutes, 1)
-	assert.Equal(t, "0.0.0.0/0", p.StaticRoutes[0].GetDestinationPrefix())
-	assert.Equal(t, "192.168.0.1", p.StaticRoutes[0].GetNextHopAddress())
-}
+// TestRouteTableToProto_StaticRoutes — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b).
 
 func TestSubnetToProto_CidrBlocks(t *testing.T) {
 	rec := &domain.SubnetRecord{

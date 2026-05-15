@@ -1,0 +1,151 @@
+package privateendpoint
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+)
+
+// CreateInput — параметры для CreatePrivateEndpointUseCase.Execute.
+type CreateInput struct {
+	PrivateEndpoint domain.PrivateEndpoint // несёт FolderID/NetworkID/SubnetID/Name/...
+}
+
+// CreatePrivateEndpointUseCase инициирует создание PrivateEndpoint.
+type CreatePrivateEndpointUseCase struct {
+	repo         PrivateEndpointRepo
+	networkRead  NetworkReader
+	subnetRead   SubnetReader
+	folderClient FolderClient
+	opsRepo      operations.Repo
+}
+
+// NewCreatePrivateEndpointUseCase создаёт CreatePrivateEndpointUseCase.
+func NewCreatePrivateEndpointUseCase(repo PrivateEndpointRepo, networkRead NetworkReader, subnetRead SubnetReader, folderClient FolderClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
+	return &CreatePrivateEndpointUseCase{
+		repo:         repo,
+		networkRead:  networkRead,
+		subnetRead:   subnetRead,
+		folderClient: folderClient,
+		opsRepo:      opsRepo,
+	}
+}
+
+// Execute — sync-валидация + create Operation + запуск worker'а.
+func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
+	p := in.PrivateEndpoint
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, p.NetworkID); err != nil {
+		return nil, err
+	}
+	// SubnetID — опциональное поле (oneof AddressSpec); валидируем формат только
+	// если задано.
+	if p.SubnetID != "" {
+		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, p.SubnetID); err != nil {
+			return nil, err
+		}
+	}
+	if p.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	}
+	if p.NetworkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+
+	// Domain self-validation для name/description/labels.
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. The async copies in doCreate stay as defensive backstops.
+	if err := checkFolderExists(ctx, u.folderClient, p.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := u.networkRead.Get(ctx, p.NetworkID); err != nil {
+		if errors.Is(err, ports.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", p.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	if p.SubnetID != "" {
+		if _, err := u.subnetRead.Get(ctx, p.SubnetID); err != nil {
+			if errors.Is(err, ports.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", p.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	name := string(p.Name)
+	if name != "" {
+		existing, _, lerr := u.repo.List(ctx, PrivateEndpointFilter{FolderID: p.FolderID, Name: name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "PrivateEndpoint with name %s already exists", name)
+		}
+	}
+
+	peID := ids.NewID(ids.PrefixPrivateEndpoint)
+	op, err := operations.New(
+		ids.PrefixOperationVPC,
+		fmt.Sprintf("Create private endpoint %s", name),
+		&pe.CreatePrivateEndpointMetadata{PrivateEndpointId: peID},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		return u.doCreate(ctx, peID, p)
+	})
+
+	return &op, nil
+}
+
+func (u *CreatePrivateEndpointUseCase) doCreate(ctx context.Context, peID string, p domain.PrivateEndpoint) (*anypb.Any, error) {
+	exists, err := u.folderClient.Exists(ctx, p.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", p.FolderID)
+	}
+
+	if _, err := u.networkRead.Get(ctx, p.NetworkID); err != nil {
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", p.NetworkID)
+	}
+	if p.SubnetID != "" {
+		if _, err := u.subnetRead.Get(ctx, p.SubnetID); err != nil {
+			return nil, status.Errorf(codes.NotFound, "Subnet %s not found", p.SubnetID)
+		}
+	}
+
+	stype := p.ServiceType
+	if stype == "" {
+		stype = domain.PrivateEndpointServiceTypeObjectStorage
+	}
+	p.ID = peID
+	p.ServiceType = stype
+	p.Status = domain.PrivateEndpointStatusAvailable
+
+	created, err := u.repo.Insert(ctx, &p)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalPrivateEndpointRecord(created)
+}

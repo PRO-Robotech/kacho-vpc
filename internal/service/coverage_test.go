@@ -180,34 +180,7 @@ func TestAddressService_ListOperations_UnknownID_Empty(t *testing.T) {
 	assert.Empty(t, ops)
 }
 
-// ---- RouteTableService — extra coverage ----
-
-func TestRouteTableService_Move_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Move(context.Background(), "", "f2")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixRouteTable), "")
-	st, _ = status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestRouteTableService_Delete_RequiresID(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Delete(context.Background(), "")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestRouteTableService_ListOperations_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixRouteTable), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// ---- RouteTableService — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
 // ---- SecurityGroupService — full coverage of validation paths ----
 
@@ -289,69 +262,7 @@ func TestSecurityGroupService_ListOperations_NotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-// ---- GatewayService — validation paths ----
-
-func TestGatewayService_Create_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Create(context.Background(), CreateGatewayReq{Name: "gw"})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayService_Create_BadName(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	// NameGateway strict — uppercase отвергается.
-	_, err := svc.Create(context.Background(), CreateGatewayReq{FolderID: "f1", Name: "BadName"})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayService_Create_OK(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	op, err := svc.Create(context.Background(), CreateGatewayReq{FolderID: "f1", Name: "gw1", GatewayType: "shared_egress"})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, op.ID)
-	assert.True(t, saved.Done)
-	assert.Nil(t, saved.Error)
-}
-
-func TestGatewayService_Update_RequiresID(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Update(context.Background(), UpdateGatewayReq{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayService_Delete_RequiresID(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Delete(context.Background(), "")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayService_Move_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Move(context.Background(), "", "f2")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixGateway), "")
-	st, _ = status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestGatewayService_ListOperations_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixGateway), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// ---- GatewayService — moved to internal/apps/kacho/api/gateway/usecase_test.go (Wave 3b) ----
 
 // ---- validation utilities ----
 
@@ -404,21 +315,8 @@ func TestSecurityGroupService_List_Empty(t *testing.T) {
 	assert.Empty(t, sgs)
 }
 
-func TestGatewayService_Get_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixGateway))
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestGatewayService_List_Empty(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	gws, _, err := svc.List(context.Background(), GatewayFilter{FolderID: "f1"}, Pagination{})
-	require.NoError(t, err)
-	assert.Empty(t, gws)
-}
+// TestGatewayService_Get_NotFound / TestGatewayService_List_Empty — moved to
+// internal/apps/kacho/api/gateway/usecase_test.go (Wave 3b).
 
 // Wave 3a pilot (KAC-94): TestNetworkService_List{SecurityGroups,RouteTables}_NotFound
 // переехали в `internal/apps/kacho/api/network/usecase_test.go`.
@@ -459,112 +357,4 @@ func TestAddressService_Get_NotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-// ---- RouteTable Get ----
-
-func TestRouteTableService_Get_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixRouteTable))
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestRouteTableService_List_Empty(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	rts, _, err := svc.List(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
-	require.NoError(t, err)
-	assert.Empty(t, rts)
-}
-
-// ---- PrivateEndpointService — full coverage ----
-
-func makePEService() (*PrivateEndpointService, *mockOpsRepo) {
-	or := newMockOpsRepo()
-	return NewPrivateEndpointService(newMockPERepo(), newMockFolderClient(true), newMockNetworkRepo(), newMockSubnetRepo(), or), or
-}
-
-func TestPrivateEndpointService_Get_NotFound(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixPrivateEndpoint))
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestPrivateEndpointService_List_Empty(t *testing.T) {
-	svc, _ := makePEService()
-	pes, _, err := svc.List(context.Background(), PrivateEndpointFilter{FolderID: "f1"}, Pagination{})
-	require.NoError(t, err)
-	assert.Empty(t, pes)
-}
-
-func TestPrivateEndpointService_Create_Validates(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Create(context.Background(), CreatePrivateEndpointReq{Name: "pe"})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointService_Create_OK(t *testing.T) {
-	or := newMockOpsRepo()
-	nr := newMockNetworkRepo()
-	net := makeNetwork(nr)
-	sr := newMockSubnetRepo()
-	sub := makeSubnet(sr, net.ID)
-	svc := NewPrivateEndpointService(newMockPERepo(), newMockFolderClient(true), nr, sr, or)
-
-	op, err := svc.Create(context.Background(), CreatePrivateEndpointReq{
-		FolderID:    "f1",
-		Name:        "pe1",
-		NetworkID:   net.ID,
-		SubnetID:    sub.ID,
-		ServiceType: "dns",
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, op.ID)
-	assert.True(t, saved.Done)
-	assert.Nil(t, saved.Error)
-}
-
-func TestPrivateEndpointService_Update_RequiresID(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointService_Update_BadName(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
-		PrivateEndpointID: ids.NewID(ids.PrefixPrivateEndpoint),
-		Name:              "1bad-starts-with-digit",
-		UpdateMask:        []string{"name"},
-	})
-	require.Error(t, err)
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointService_Update_UnknownMask(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
-		PrivateEndpointID: ids.NewID(ids.PrefixPrivateEndpoint),
-		UpdateMask:        []string{"unknown_field"},
-	})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointService_Delete_RequiresID(t *testing.T) {
-	svc, _ := makePEService()
-	_, err := svc.Delete(context.Background(), "")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointService_ListOperations_NotFound(t *testing.T) {
-	svc, _ := makePEService()
-	_, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixPrivateEndpoint), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// ---- RouteTable Get / PrivateEndpoint — moved to internal/apps/kacho/api/{routetable,privateendpoint}/usecase_test.go (Wave 3b) ----

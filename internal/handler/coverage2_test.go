@@ -12,7 +12,6 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
@@ -94,16 +93,7 @@ func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-// ---- RouteTable handler — Move ----
-
-func TestRouteTableHandler_Move_Validates(t *testing.T) {
-	rtr := newMockRouteTableRepoForSvc()
-	or := newMockOpsRepo()
-	h := NewRouteTableHandler(svc.NewRouteTableService(rtr, newMockNetworkRepo(), newMockFolderClient(true), or))
-	_, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
+// ---- RouteTable handler — moved (Wave 3b) ----
 
 // ---- SecurityGroup handler — UpdateRules / UpdateRule / Move ----
 
@@ -207,106 +197,7 @@ func TestRuleSpecFromProto_Predefined(t *testing.T) {
 	assert.Equal(t, "self_security_group", r.PredefinedTarget)
 }
 
-// ---- PrivateEndpoint handler — full coverage ----
-
-func makePEService(t *testing.T) *svc.PrivateEndpointService {
-	t.Helper()
-	or := newMockOpsRepo()
-	return svc.NewPrivateEndpointService(newMockPERepoForSvc(), newMockFolderClient(true), newMockNetworkRepo(), newMockSubnetRepoForSvc(), or)
-}
-
-func TestPrivateEndpointHandler_Get_InvalidArg(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointHandler_Get_NotFound(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Get(context.Background(), &pepb.GetPrivateEndpointRequest{PrivateEndpointId: ids.NewID(ids.PrefixPrivateEndpoint)})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestPrivateEndpointHandler_List_Empty(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	resp, err := h.List(context.Background(), &pepb.ListPrivateEndpointsRequest{
-		Container: &pepb.ListPrivateEndpointsRequest_FolderId{FolderId: "f1"},
-	})
-	require.NoError(t, err)
-	assert.Empty(t, resp.PrivateEndpoints)
-}
-
-func TestPrivateEndpointHandler_Create_Validates(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Create(context.Background(), &pepb.CreatePrivateEndpointRequest{Name: "pe"})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointHandler_Update_RequiresID(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Update(context.Background(), &pepb.UpdatePrivateEndpointRequest{PrivateEndpointId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointHandler_Delete_InvalidArg(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.Delete(context.Background(), &pepb.DeletePrivateEndpointRequest{PrivateEndpointId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointHandler_ListOperations_RequiresID(t *testing.T) {
-	h := NewPrivateEndpointHandler(makePEService(t))
-	_, err := h.ListOperations(context.Background(), &pepb.ListPrivateEndpointOperationsRequest{PrivateEndpointId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestPrivateEndpointToProto_Fields(t *testing.T) {
-	rec := &domain.PrivateEndpointRecord{
-		PrivateEndpoint: domain.PrivateEndpoint{
-			ID:          "pe-1",
-			FolderID:    "f1",
-			Name:        domain.RcNameVPC("pe"),
-			Description: domain.RcDescription("desc"),
-			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
-			NetworkID:   "net-1",
-			SubnetID:    "sub-1",
-			IPAddress:   "10.0.0.5",
-			AddressID:   "adr-1",
-			ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
-			Status:      domain.PrivateEndpointStatusAvailable,
-			DnsOptions:  map[string]any{"private_dns_records_enabled": true},
-		},
-	}
-	out, err := privateEndpointToPb(rec)
-	require.NoError(t, err)
-	assert.Equal(t, "pe-1", out.Id)
-	assert.Equal(t, pepb.PrivateEndpoint_AVAILABLE, out.Status)
-	require.NotNil(t, out.Address)
-	assert.Equal(t, "10.0.0.5", out.Address.Address)
-	require.NotNil(t, out.DnsOptions)
-	assert.True(t, out.DnsOptions.PrivateDnsRecordsEnabled)
-	assert.NotNil(t, out.GetObjectStorage())
-}
-
-func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
-	for status, expected := range map[domain.PrivateEndpointStatus]pepb.PrivateEndpoint_Status{
-		domain.PrivateEndpointStatusPending:   pepb.PrivateEndpoint_PENDING,
-		domain.PrivateEndpointStatusAvailable: pepb.PrivateEndpoint_AVAILABLE,
-		domain.PrivateEndpointStatusDeleting:  pepb.PrivateEndpoint_DELETING,
-		"unknown":                             pepb.PrivateEndpoint_STATUS_UNSPECIFIED,
-	} {
-		rec := &domain.PrivateEndpointRecord{PrivateEndpoint: domain.PrivateEndpoint{Status: status}}
-		out, err := privateEndpointToPb(rec)
-		require.NoError(t, err)
-		assert.Equal(t, expected, out.Status, "status=%s", status)
-	}
-}
+// ---- PrivateEndpoint handler — moved to internal/apps/kacho/api/privateendpoint/usecase_test.go (Wave 3b) ----
 
 // ---- pure converter functions ----
 
@@ -365,50 +256,7 @@ func TestSubnetHandler_FullFlow(t *testing.T) {
 	awaitOpDone(t, or, delOp.Id)
 }
 
-// ---- RouteTable handler — full happy-path ----
-
-func TestRouteTableHandler_FullFlow(t *testing.T) {
-	rtr := newMockRouteTableRepoForSvc()
-	nr := newMockNetworkRepo()
-	or := newMockOpsRepo()
-
-	netID := ids.NewID(ids.PrefixNetwork)
-	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
-
-	rtSvc := svc.NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
-	h := NewRouteTableHandler(rtSvc)
-
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateRouteTableRequest{
-		FolderId: "f1", Name: "rt", NetworkId: netID,
-	})
-	require.NoError(t, err)
-	awaitOpDone(t, or, createOp.Id)
-
-	resp, _ := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{FolderId: "f1"})
-	require.Len(t, resp.RouteTables, 1)
-	rtID := resp.RouteTables[0].Id
-
-	_, err = h.Get(context.Background(), &vpcv1.GetRouteTableRequest{RouteTableId: rtID})
-	require.NoError(t, err)
-
-	updOp, err := h.Update(context.Background(), &vpcv1.UpdateRouteTableRequest{
-		RouteTableId: rtID, Name: "rt-upd",
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
-	})
-	require.NoError(t, err)
-	awaitOpDone(t, or, updOp.Id)
-
-	_, err = h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: rtID})
-	require.NoError(t, err)
-
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
-	require.NoError(t, err)
-	awaitOpDone(t, or, moveOp.Id)
-
-	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteRouteTableRequest{RouteTableId: rtID})
-	require.NoError(t, err)
-	awaitOpDone(t, or, delOp.Id)
-}
+// ---- RouteTable handler — moved (Wave 3b) ----
 
 // ---- SecurityGroup handler — full happy-path ----
 
@@ -476,36 +324,7 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 	awaitOpDone(t, or, delOp.Id)
 }
 
-// ---- Gateway handler — Move/Delete happy ----
-
-func TestGatewayHandler_MoveDelete(t *testing.T) {
-	gwSvc, or := makeGatewayService(t)
-	h := NewGatewayHandler(gwSvc)
-
-	createOp, _ := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
-		FolderId: "f1", Name: "gw1",
-		Gateway: &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
-	})
-	awaitOpDone(t, or, createOp.Id)
-
-	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
-	require.NotEmpty(t, resp.Gateways)
-	gwID := resp.Gateways[0].Id
-
-	updOp, _ := h.Update(context.Background(), &vpcv1.UpdateGatewayRequest{
-		GatewayId: gwID, Name: "gw-upd",
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
-	})
-	awaitOpDone(t, or, updOp.Id)
-
-	_, _ = h.ListOperations(context.Background(), &vpcv1.ListGatewayOperationsRequest{GatewayId: gwID})
-
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
-	awaitOpDone(t, or, moveOp.Id)
-
-	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: gwID})
-	awaitOpDone(t, or, delOp.Id)
-}
+// ---- Gateway handler — moved (Wave 3b) ----
 
 // ---- Address handler — happy-path Update/Move/ListBySubnet ----
 
