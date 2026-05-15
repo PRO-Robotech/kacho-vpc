@@ -25,11 +25,14 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
+	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
 	peapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint"
 	routetableapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable"
+	sgapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup"
+	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -80,10 +83,12 @@ func main() {
 // «толстый» NetworkService. Wave 3b — replicate на оставшиеся 7 ресурсов.
 type services struct {
 	networkHandler          *networkapp.Handler
-	subnet                  *service.SubnetService
-	address                 *service.AddressService
+	subnetHandler           *subnetapp.Handler
+	addressHandler          *addressapp.Handler
+	addressAllocate         *addressapp.AllocateUseCase
+	addressRefService       *service.AddressReferenceService
 	routeTableHandler       *routetableapp.Handler
-	securityGroup           *service.SecurityGroupService
+	securityGroupHandler    *sgapp.Handler
 	gatewayHandler          *gatewayapp.Handler
 	privateEndpointHandler  *peapp.Handler
 	addressPool             *service.AddressPoolService
@@ -243,11 +248,8 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
 	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
-	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, geoClient)
-	subnetSvc.SetAddressRefRepo(addressRepo)
-	subnetSvc.SetNICRepo(niRepo)
+	addressRefSvc := service.NewAddressReferenceService(addressRepo)
 
 	// Wave 3a pilot (skill evgeniy §2): Network — use-case-структура.
 	// Каждый use-case инжектируется в Handler. Все use-case'ы делят repo
@@ -300,6 +302,56 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 3 (skill evgeniy §2): Subnet — use-case-структура с 11 use-case'ами
+	// включая специфические AddCidrBlocks / RemoveCidrBlocks / Relocate /
+	// ListUsedAddresses.
+	subnetHandler := subnetapp.NewHandler(
+		subnetapp.NewCreateSubnetUseCase(subnetRepo, networkRepo, folderClient, geoClient, opsRepo),
+		subnetapp.NewUpdateSubnetUseCase(subnetRepo, opsRepo),
+		subnetapp.NewDeleteSubnetUseCase(subnetRepo, niRepo, opsRepo),
+		subnetapp.NewMoveSubnetUseCase(subnetRepo, folderClient, opsRepo),
+		subnetapp.NewGetSubnetUseCase(subnetRepo),
+		subnetapp.NewListSubnetsUseCase(subnetRepo),
+		subnetapp.NewAddCidrBlocksUseCase(subnetRepo, opsRepo),
+		subnetapp.NewRemoveCidrBlocksUseCase(subnetRepo, opsRepo),
+		subnetapp.NewRelocateUseCase(subnetRepo, geoClient),
+		subnetapp.NewListUsedAddressesUseCase(subnetRepo, addressRepo),
+		subnetapp.NewListOperationsUseCase(opsRepo),
+	)
+
+	// Wave 3 (skill evgeniy §2): Address — use-case-структура. Composition с
+	// AddressPoolService для IPAM cascade resolve. Internal Allocate UC отделён —
+	// принимается InternalAddressAllocateHandler через узкий port.
+	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc)
+	addressUpdateUC := addressapp.NewUpdateAddressUseCase(addressRepo, opsRepo)
+	addressDeleteUC := addressapp.NewDeleteAddressUseCase(addressRepo, opsRepo)
+	addressMoveUC := addressapp.NewMoveAddressUseCase(addressRepo, folderClient, opsRepo)
+	addressGetUC := addressapp.NewGetAddressUseCase(addressRepo)
+	addressGetByValueUC := addressapp.NewGetByValueUseCase(addressRepo)
+	addressListUC := addressapp.NewListAddressesUseCase(addressRepo)
+	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(addressRepo, subnetRepo)
+	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
+	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolSvc)
+	addressHandler := addressapp.NewHandler(
+		addressCreateUC, addressUpdateUC, addressDeleteUC, addressMoveUC,
+		addressGetUC, addressGetByValueUC, addressListUC, addressListBySubnetUC, addressListOpsUC,
+		nil, // SubnetAuthZ опционален — пока nil
+	)
+
+	// Wave 3 (skill evgeniy §2): SecurityGroup — use-case-структура. Split-endpoint
+	// Update / UpdateRules / UpdateRule (OCC через xmin в repo).
+	sgHandler := sgapp.NewHandler(
+		sgapp.NewCreateSecurityGroupUseCase(sgRepo, networkRepo, folderClient, opsRepo),
+		sgapp.NewUpdateSecurityGroupUseCase(sgRepo, opsRepo),
+		sgapp.NewUpdateRulesUseCase(sgRepo, opsRepo),
+		sgapp.NewUpdateRuleUseCase(sgRepo, opsRepo),
+		sgapp.NewDeleteSecurityGroupUseCase(sgRepo, opsRepo),
+		sgapp.NewMoveSecurityGroupUseCase(sgRepo, folderClient, opsRepo),
+		sgapp.NewGetSecurityGroupUseCase(sgRepo),
+		sgapp.NewListSecurityGroupsUseCase(sgRepo),
+		sgapp.NewListOperationsUseCase(sgRepo, opsRepo),
+	)
+
 	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура. Replicate
 	// Wave 3a pilot шаблона. У NIC нет Move RPC (NIC привязан к Subnet), но есть
 	// специфические AttachToInstance / DetachFromInstance с atomic CAS (KAC-52).
@@ -316,10 +368,12 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 
 	return &services{
 		networkHandler:          netHandler,
-		subnet:                  subnetSvc,
-		address:                 service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
+		subnetHandler:           subnetHandler,
+		addressHandler:          addressHandler,
+		addressAllocate:         addressAllocateUC,
+		addressRefService:       addressRefSvc,
 		routeTableHandler:       rtHandler,
-		securityGroup:           sgSvc,
+		securityGroupHandler:    sgHandler,
 		gatewayHandler:          gwHandler,
 		privateEndpointHandler:  peHandler,
 		addressPool:             addressPoolSvc,
@@ -331,10 +385,10 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 // registerPublicServices — публичные RPC + OperationService на внешний listener.
 func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations.Repo) {
 	vpcv1.RegisterNetworkServiceServer(srv, svcs.networkHandler)
-	vpcv1.RegisterSubnetServiceServer(srv, handler.NewSubnetHandler(svcs.subnet))
-	vpcv1.RegisterAddressServiceServer(srv, handler.NewAddressHandler(svcs.address, svcs.subnet))
+	vpcv1.RegisterSubnetServiceServer(srv, svcs.subnetHandler)
+	vpcv1.RegisterAddressServiceServer(srv, svcs.addressHandler)
 	vpcv1.RegisterRouteTableServiceServer(srv, svcs.routeTableHandler)
-	vpcv1.RegisterSecurityGroupServiceServer(srv, handler.NewSecurityGroupHandler(svcs.securityGroup))
+	vpcv1.RegisterSecurityGroupServiceServer(srv, svcs.securityGroupHandler)
 	vpcv1.RegisterGatewayServiceServer(srv, svcs.gatewayHandler)
 	vpcv1.RegisterNetworkInterfaceServiceServer(srv, svcs.networkInterfaceHandler)
 	pepb.RegisterPrivateEndpointServiceServer(srv, svcs.privateEndpointHandler)
@@ -344,7 +398,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 // registerInternalServices — kacho-only/admin RPC на internal listener.
 func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Pool, dsn string, logger *slog.Logger, watchMaxStreams int) {
 	vpcv1.RegisterInternalWatchServiceServer(srv, handler.NewInternalWatchHandler(pool, dsn, logger.With("component", "internal-watch"), watchMaxStreams))
-	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.address))
+	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.addressAllocate, svcs.addressRefService))
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))

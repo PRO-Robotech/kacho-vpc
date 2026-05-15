@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
@@ -45,15 +44,5 @@ func TestNetworkToProto_Fields(t *testing.T) {
 
 // TestRouteTableToProto_StaticRoutes — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b).
 
-func TestSubnetToProto_CidrBlocks(t *testing.T) {
-	rec := &domain.SubnetRecord{
-		Subnet: domain.Subnet{
-			ID:           "sub-1",
-			FolderID:     "f1",
-			V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
-		},
-	}
-	p, err := subnetToPb(rec)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, p.V4CidrBlocks)
-}
+// TestSubnetToProto_CidrBlocks — moved to internal/apps/kacho/api/subnet/usecase_test.go
+// (Wave 3, KAC-94). subnetToPb теперь живёт в новом пакете.
