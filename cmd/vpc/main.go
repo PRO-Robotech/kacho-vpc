@@ -2,23 +2,19 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	_ "google.golang.org/grpc/resolver/dns" // регистрирует dns:/// resolver
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
@@ -112,9 +108,16 @@ func runServe(cfg config.Config) error {
 
 	opsRepo := operations.NewRepo(pool, "public")
 
-	rmConn, err := dialResourceManager(cfg)
+	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
+	// retries=3 / dialTimeout=10s / keepalive=30s / TLS / опц. dns:///+round_robin (KAC-39).
+	// См. internal/clients/builder.go.
+	rmConn, err := clients.Build(ctx, clients.BuildOptions{
+		Endpoint: cfg.ExtAPI.ResourceManager.Endpoint,
+		TLS:      cfg.ExtAPI.ResourceManager.TLS.Enable,
+		DNSLB:    cfg.ExtAPI.ResourceManager.DNSLB,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("dial resource-manager: %w", err)
 	}
 	defer rmConn.Close()
 	// TTL+LRU кеш (KAC-39): снимает gRPC-hop в RM из hot-path Network.Create
@@ -131,10 +134,13 @@ func runServe(cfg config.Config) error {
 		"max_size", cfg.Network.FolderCache.MaxSize)
 
 	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
-	// zone_id вызовом compute.v1.ZoneService.Get.
-	computeConn, err := dialCompute(cfg)
+	// zone_id вызовом compute.v1.ZoneService.Get. KAC-97: через clients.Build.
+	computeConn, err := clients.Build(ctx, clients.BuildOptions{
+		Endpoint: cfg.ExtAPI.Compute.Endpoint,
+		TLS:      cfg.ExtAPI.Compute.TLS.Enable,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("dial compute: %w", err)
 	}
 	defer computeConn.Close()
 	geoClient := clients.NewComputeGeographyClient(computeConn)
@@ -201,46 +207,9 @@ func runServe(cfg config.Config) error {
 	return serveErr
 }
 
-// dialResourceManager открывает gRPC-клиент к resource-manager. TLS опционален
-// через extapi.resource-manager.tls.enable=true (закрывает in-cluster MITM на
-// FolderClient.Exists/GetCloudID — security P0); по умолчанию insecure для dev-стенда.
-//
-// Client-side round_robin LB (KAC-39): при extapi.resource-manager.dns-lb=true
-// addr префиксуется `dns:///` (если ещё не) и применяется service-config с
-// round_robin балансировщиком.
-func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
-	peer := cfg.ExtAPI.ResourceManager
-	creds := peerCreds(peer.TLS)
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
-	addr := peer.Endpoint
-	if peer.DNSLB {
-		if !strings.HasPrefix(addr, "dns:///") {
-			addr = "dns:///" + addr
-		}
-		opts = append(opts, grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`))
-	}
-	return grpc.NewClient(addr, opts...)
-}
-
-// dialCompute открывает gRPC-клиент к kacho-compute (owner Geography). TLS опционален
-// через extapi.compute.tls.enable=true; по умолчанию insecure для dev-стенда.
-func dialCompute(cfg config.Config) (*grpc.ClientConn, error) {
-	peer := cfg.ExtAPI.Compute
-	creds := peerCreds(peer.TLS)
-	return grpc.NewClient(peer.Endpoint, grpc.WithTransportCredentials(creds))
-}
-
-// peerCreds — single switch insecure-vs-tls для peer-gRPC.
-func peerCreds(t config.TLSClient) credentials.TransportCredentials {
-	if !t.Enable {
-		return insecure.NewCredentials()
-	}
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-	if t.ServerName != "" {
-		tlsCfg.ServerName = t.ServerName
-	}
-	return credentials.NewTLS(tlsCfg)
-}
+// KAC-97: dialResourceManager / dialCompute / peerCreds удалены — заменены на
+// единый clients.Build (internal/clients/builder.go). validateAuthMode из KAC-95
+// перенесён в config.Validate() / config.InsecureDevWarnings().
 
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
