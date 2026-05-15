@@ -10,6 +10,7 @@ import (
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
+	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
@@ -119,7 +120,8 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
 
 	apSvc := service.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient, nil) // zoneReg=nil → zone-existence-check пропускается (тест не про неё)
-	addrSvc := service.NewAddressService(addrRepo, subnetRepo, folderClient, nil, apSvc)
+	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
+	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apSvc)
 
 	// --- address fixtures ---
 

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
@@ -39,61 +38,11 @@ func TestNetworkToProto_Fields(t *testing.T) {
 	assert.Equal(t, "test", p.Labels["env"])
 }
 
-// Wave 2 batch A (KAC-94): тесты Address/RouteTable/Subnet → proto перешли
-// на DTO type2pb. Конверсия через handler-local helper'ы (subnetToPb /
-// addressToPb / routeTableToPb), которые внутри зовут dto.Transfer.
-func TestAddressToProto_External(t *testing.T) {
-	rec := &domain.AddressRecord{
-		Address: domain.Address{
-			ID:       "addr-1",
-			FolderID: "f1",
-			Type:     domain.AddressTypeExternal,
-			ExternalIpv4: &domain.ExternalIpv4Spec{
-				Address: "203.0.113.10",
-				ZoneID:  "ru-central1-a",
-			},
-		},
-	}
-	p, err := addressToPb(rec)
-	require.NoError(t, err)
-	assert.Equal(t, "addr-1", p.Id)
-	ext := p.GetExternalIpv4Address()
-	require.NotNil(t, ext)
-	assert.Equal(t, "203.0.113.10", ext.Address)
-	assert.Equal(t, "ru-central1-a", ext.ZoneId)
-}
-
-func TestAddressToProto_Internal(t *testing.T) {
-	rec := &domain.AddressRecord{
-		Address: domain.Address{
-			ID:       "addr-2",
-			FolderID: "f1",
-			Type:     domain.AddressTypeInternal,
-			InternalIpv4: &domain.InternalIpv4Spec{
-				Address:  "10.0.0.5",
-				SubnetID: "subnet-1",
-			},
-		},
-	}
-	p, err := addressToPb(rec)
-	require.NoError(t, err)
-	intAddr := p.GetInternalIpv4Address()
-	require.NotNil(t, intAddr)
-	assert.Equal(t, "10.0.0.5", intAddr.Address)
-	assert.Equal(t, "subnet-1", intAddr.GetSubnetId())
-}
+// Wave 3 (KAC-94): TestAddressToProto_External / TestAddressToProto_Internal
+// переехали в `internal/apps/kacho/api/address/usecase_test.go::TestAddressToPb_External`
+// (addressToPb теперь живёт в новом пакете).
 
 // TestRouteTableToProto_StaticRoutes — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b).
 
-func TestSubnetToProto_CidrBlocks(t *testing.T) {
-	rec := &domain.SubnetRecord{
-		Subnet: domain.Subnet{
-			ID:           "sub-1",
-			FolderID:     "f1",
-			V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
-		},
-	}
-	p, err := subnetToPb(rec)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, p.V4CidrBlocks)
-}
+// TestSubnetToProto_CidrBlocks — moved to internal/apps/kacho/api/subnet/usecase_test.go
+// (Wave 3, KAC-94). subnetToPb теперь живёт в новом пакете.

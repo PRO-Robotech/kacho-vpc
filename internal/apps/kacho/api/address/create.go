@@ -1,0 +1,778 @@
+package address
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/netip"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+)
+
+// ExternalAddrSpec — спецификация внешнего адреса.
+type ExternalAddrSpec struct {
+	Address      string
+	ZoneID       string
+	Requirements *AddrRequirements
+}
+
+// AddrRequirements — параметры внешнего IP (DDoS provider, SMTP capability).
+type AddrRequirements struct {
+	DdosProtectionProvider string
+	OutgoingSmtpCapability string
+}
+
+// InternalAddrSpec — спецификация внутреннего адреса (v4/v6 одинаковый shape).
+type InternalAddrSpec struct {
+	Address  string
+	SubnetID string
+}
+
+// CreateInput — параметры для CreateAddressUseCase.Execute. Передаём proto-
+// derived spec'и явно (нельзя смержить в domain.Address — там oneof выражен
+// через указатели, и валидация семейств через nil-проверки сложнее, чем плоский
+// CreateInput).
+type CreateInput struct {
+	FolderID           string
+	Name               string
+	Description        string
+	Labels             map[string]string
+	DeletionProtection bool
+	// Для external IPv4 (если ExternalSpec != nil):
+	ExternalSpec *ExternalAddrSpec
+	// Для internal IPv4 (если InternalSpec != nil):
+	InternalSpec *InternalAddrSpec
+	// Для internal IPv6 (если InternalIpv6Spec != nil):
+	InternalIpv6Spec *InternalAddrSpec
+	// Для external IPv6 (KAC-60, если ExternalIpv6Spec != nil):
+	ExternalIpv6Spec *ExternalAddrSpec
+}
+
+// CreateAddressUseCase инициирует создание Address (multi-family). Sync-
+// проверки (folder exists, subnet exists, name unique, explicit-IP-in-CIDR)
+// выполняются ДО создания Operation — клиент получает fast-fail gRPC-status,
+// а не «200 + операция, упавшая через секунду» (см. kacho-vpc#8). Async-часть
+// (`doCreate`) — собирает domain.Address по family, Insert, затем inline IPAM
+// allocation (AllocateExternalIP/AllocateInternalIP/AllocateInternalIPv6/
+// AllocateExternalIPv6).
+//
+// pools может быть nil в test-setup'ах — тогда v4/v6-external allocate
+// недоступен, IP в результате остаётся пустым (Allocate*IP возвращает
+// Unavailable). v6-internal allocate не зависит от pools — он работает
+// random-pick'ом внутри subnet.v6_cidr_blocks.
+type CreateAddressUseCase struct {
+	repo         AddressRepo
+	subnetReader SubnetReader
+	folderClient FolderClient
+	opsRepo      operations.Repo
+	pools        PoolService // nil → external IPAM недоступна (test-only)
+}
+
+// NewCreateAddressUseCase создаёт CreateAddressUseCase.
+func NewCreateAddressUseCase(repo AddressRepo, subnetReader SubnetReader, folderClient FolderClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
+	return &CreateAddressUseCase{
+		repo:         repo,
+		subnetReader: subnetReader,
+		folderClient: folderClient,
+		opsRepo:      opsRepo,
+		pools:        pools,
+	}
+}
+
+// Execute — sync-валидация + create Operation + запуск worker'а.
+func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
+	if in.InternalSpec != nil {
+		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, in.InternalSpec.SubnetID); err != nil {
+			return nil, err
+		}
+	}
+	if in.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	}
+	if in.InternalIpv6Spec != nil {
+		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, in.InternalIpv6Spec.SubnetID); err != nil {
+			return nil, err
+		}
+	}
+	if in.ExternalSpec == nil && in.InternalSpec == nil && in.InternalIpv6Spec == nil && in.ExternalIpv6Spec == nil {
+		return nil, status.Error(codes.InvalidArgument, "address_spec required")
+	}
+
+	// Domain self-validation (skill evgeniy §4 D.5 / AP-1): NameVPC /
+	// Description / Labels через newtypes — use-case больше НЕ зовёт
+	// corevalidate.* напрямую (выполняется через Address.Validate()).
+	// VPC Address: empty name allowed (verbatim YC permissive policy).
+	addrForValidate := domain.Address{
+		Name:        domain.RcNameVPC(in.Name),
+		Description: domain.RcDescription(in.Description),
+		Labels:      domain.LabelsFromMap(in.Labels),
+	}
+	if err := addrForValidate.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Verbatim YC: requirements.ddos_protection_provider только из whitelist;
+	// requirements.outgoing_smtp_capability — только пустое (probe 2026-05-04).
+	if in.ExternalSpec != nil && in.ExternalSpec.Requirements != nil {
+		if err := corevalidate.DdosProvider(
+			"external_ipv4_address_spec.requirements.ddos_protection_provider",
+			in.ExternalSpec.Requirements.DdosProtectionProvider,
+		); err != nil {
+			return nil, err
+		}
+		if err := corevalidate.SmtpCapability(
+			"external_ipv4_address_spec.requirements.outgoing_smtp_capability",
+			in.ExternalSpec.Requirements.OutgoingSmtpCapability,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	// Verbatim YC: existence/uniqueness checks run synchronously, BEFORE the
+	// Operation. Folder/subnet checks in doCreate stay as defensive copies.
+	// См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, u.folderClient, in.FolderID); err != nil {
+		return nil, err
+	}
+	if in.InternalSpec != nil && in.InternalSpec.SubnetID != "" {
+		if _, err := u.subnetReader.Get(ctx, in.InternalSpec.SubnetID); err != nil {
+			if errors.Is(err, ports.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalSpec.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	if in.InternalIpv6Spec != nil && in.InternalIpv6Spec.SubnetID != "" {
+		if _, err := u.subnetReader.Get(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
+			if errors.Is(err, ports.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalIpv6Spec.SubnetID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	if in.Name != "" {
+		existing, _, lerr := u.repo.List(ctx, AddressFilter{FolderID: in.FolderID, Name: in.Name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Address with name %s already exists", in.Name)
+		}
+	}
+
+	// Sync-проверка: explicit IP (`internal_ipv4_address_spec.address`) должен
+	// принадлежать CIDR-блоку указанной subnet. Если IP вне CIDR — возвращаем
+	// sync InvalidArgument: иначе адрес попадает в БД минуя любые FK, что
+	// приводит к мусору в IPAM.
+	if in.InternalSpec != nil && in.InternalSpec.SubnetID != "" && in.InternalSpec.Address != "" {
+		if err := u.validateInternalIPInSubnet(ctx, in.InternalSpec.SubnetID, in.InternalSpec.Address); err != nil {
+			return nil, err
+		}
+	}
+
+	addrID := ids.NewID(ids.PrefixAddress)
+	op, err := operations.New(
+		ids.PrefixOperationVPC,
+		fmt.Sprintf("Create address %s", in.Name),
+		&vpcv1.CreateAddressMetadata{AddressId: addrID},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		return u.doCreate(ctx, addrID, in)
+	})
+
+	return &op, nil
+}
+
+// validateInternalIPInSubnet проверяет sync-ом, что explicit IP лежит в CIDR
+// одной из v4_cidr_blocks указанной subnet. Если subnet не найден — пропуск
+// (NotFound будет async через doCreate, как и для всех остальных FK; verbatim
+// YC). Любая другая ошибка чтения subnetReader → Internal: pass-through.
+func (u *CreateAddressUseCase) validateInternalIPInSubnet(ctx context.Context, subnetID, address string) error {
+	sub, err := u.subnetReader.Get(ctx, subnetID)
+	if err != nil {
+		if errors.Is(err, ports.ErrNotFound) {
+			// Subnet 404 — async; не нарушаем YC-DIFF-INVALID-PARENT-CODE.
+			return nil
+		}
+		return mapRepoErr(err)
+	}
+	if len(sub.V4CidrBlocks) == 0 {
+		// CIDR-less subnet (см. kacho-proto#8 — v4_cidr_blocks больше не required
+		// на Subnet.Create): нельзя ни валидировать explicit address, ни выделить
+		// internal IPv4 в такой подсети.
+		return status.Errorf(codes.FailedPrecondition, "subnet %s has no IPv4 CIDR", subnetID)
+	}
+	addr, err := netip.ParseAddr(address)
+	if err != nil {
+		return invalidArg(
+			"internal_ipv4_address_spec.address",
+			"address is not a valid IP",
+		)
+	}
+	for _, raw := range sub.V4CidrBlocks {
+		cidr, err := netip.ParsePrefix(raw)
+		if err != nil {
+			return status.Errorf(codes.Internal, "subnet has invalid cidr block %q", raw)
+		}
+		if cidr.Contains(addr) {
+			return nil
+		}
+	}
+	return invalidArg(
+		"internal_ipv4_address_spec.address",
+		fmt.Sprintf("address %s is not within subnet cidr %s", address, sub.V4CidrBlocks[0]),
+	)
+}
+
+// doCreate — async-часть Create (внутри Operation worker'а). Атомарный
+// backstop: folder-exists + Insert (FK ограничения / UNIQUE-нарушения).
+// Затем — multi-family IPAM allocation (external v4/v6 через pools cascade,
+// internal v4/v6 inline в repo).
+func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in CreateInput) (*anypb.Any, error) {
+	exists, err := u.folderClient.Exists(ctx, in.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		// verbatim YC text: "Folder with id <X> not found".
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", in.FolderID)
+	}
+
+	a := &domain.Address{
+		ID:                 addrID,
+		FolderID:           in.FolderID,
+		Name:               domain.RcNameVPC(in.Name),
+		Description:        domain.RcDescription(in.Description),
+		Labels:             domain.LabelsFromMap(in.Labels),
+		DeletionProtection: in.DeletionProtection,
+		Reserved:           true,
+	}
+
+	if in.ExternalSpec != nil {
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv4
+		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
+			Address: in.ExternalSpec.Address,
+			ZoneID:  in.ExternalSpec.ZoneID,
+		}
+		if r := in.ExternalSpec.Requirements; r != nil {
+			a.ExternalIpv4.Requirements = &domain.AddressRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
+		}
+	} else if in.InternalSpec != nil {
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv4
+		subnetID := in.InternalSpec.SubnetID
+		// FK-валидация (verbatim YC text "Subnet <X> not found"). Она в
+		// use-case остаётся — потому что относится к чтению связанного
+		// ресурса, а не к side-effect.
+		if subnetID != "" {
+			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+			}
+		}
+		a.InternalIpv4 = &domain.InternalIpv4Spec{
+			Address:  in.InternalSpec.Address,
+			SubnetID: subnetID,
+		}
+	} else if in.InternalIpv6Spec != nil {
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv6
+		subnetID := in.InternalIpv6Spec.SubnetID
+		if subnetID != "" {
+			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
+				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+			}
+		}
+		a.InternalIpv6 = &domain.InternalIpv6Spec{
+			Address:  in.InternalIpv6Spec.Address,
+			SubnetID: subnetID,
+		}
+	} else {
+		// external IPv6 (KAC-60). Sparse counter-based allocator из глобального
+		// AddressPool с v6 CIDR (cascade resolve как у v4).
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv6
+		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
+			Address: in.ExternalIpv6Spec.Address,
+			ZoneID:  in.ExternalIpv6Spec.ZoneID,
+		}
+		if r := in.ExternalIpv6Spec.Requirements; r != nil {
+			a.ExternalIpv6.Requirements = &domain.AddressRequirements{
+				DdosProtectionProvider: r.DdosProtectionProvider,
+				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+			}
+		}
+	}
+
+	created, err := u.repo.Insert(ctx, a)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+
+	// Inline IPAM allocation. Idempotent: если IP уже выставлен — Allocate*
+	// возвращает существующий. На allocate-failure делаем compensating delete,
+	// иначе failed Operation оставит dangling Address в БД.
+	if u.pools != nil {
+		if created.ExternalIpv4 != nil && created.ExternalIpv4.Address == "" {
+			res, aerr := u.allocateExternalIPv4(ctx, created)
+			if aerr != nil {
+				u.compensatingDelete(ctx, created.ID, "external", aerr)
+				return nil, aerr
+			}
+			created.ExternalIpv4.Address = res.IP
+			created.ExternalIpv4.AddressPoolID = res.PoolID
+		}
+		if created.InternalIpv4 != nil && created.InternalIpv4.Address == "" && created.InternalIpv4.SubnetID != "" {
+			res, aerr := u.allocateInternalIPv4(ctx, created)
+			if aerr != nil {
+				u.compensatingDelete(ctx, created.ID, "internal", aerr)
+				return nil, aerr
+			}
+			created.InternalIpv4.Address = res.IP
+		}
+	}
+	// IPv6 internal IPAM не зависит от pools (адрес выбирается случайно внутри
+	// subnet.v6_cidr_blocks[0]) — аллоцируем независимо от u.pools.
+	if created.InternalIpv6 != nil && created.InternalIpv6.Address == "" && created.InternalIpv6.SubnetID != "" {
+		res, aerr := u.allocateInternalIPv6(ctx, created)
+		if aerr != nil {
+			u.compensatingDelete(ctx, created.ID, "internal_ipv6", aerr)
+			return nil, aerr
+		}
+		created.InternalIpv6.Address = res.IP
+	}
+	// External IPv6 (KAC-60): sparse counter-based allocator. Полагается на
+	// pools (cascade resolve по zone/labels — как у v4).
+	if u.pools != nil && created.ExternalIpv6 != nil && created.ExternalIpv6.Address == "" {
+		res, aerr := u.allocateExternalIPv6(ctx, created)
+		if aerr != nil {
+			u.compensatingDelete(ctx, created.ID, "external_ipv6", aerr)
+			return nil, aerr
+		}
+		created.ExternalIpv6.Address = res.IP
+		created.ExternalIpv6.AddressPoolID = res.PoolID
+	}
+	return marshalAddressRecord(created)
+}
+
+// compensatingDelete — undo Insert при failed allocate. Использует fresh
+// background ctx чтобы delete отработал даже если caller отменил orig ctx.
+// Failure delete'а — log-only: caller всё равно получает orig allocate-error,
+// orphan address будет подобран garbage-collector'ом / ручным cleanup'ом.
+func (u *CreateAddressUseCase) compensatingDelete(ctx context.Context, addressID, kind string, origErr error) {
+	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if delErr := u.repo.Delete(delCtx, addressID); delErr != nil {
+		slog.WarnContext(ctx, "compensating delete failed after allocate error — orphan address",
+			"address_id", addressID,
+			"kind", kind,
+			"orig_err", origErr,
+			"delete_err", delErr)
+	} else {
+		slog.InfoContext(ctx, "compensating delete after allocate failure",
+			"address_id", addressID, "kind", kind, "orig_err", origErr)
+	}
+}
+
+// --- Allocation helpers ------------------------------------------------------
+//
+// These mirror service.AddressService.AllocateInternalIP / AllocateInternalIPv6 /
+// AllocateExternalIP / AllocateExternalIPv6 — kept inside the create.go use-case
+// for now (Wave 3 scope is moving the user-facing CRUD; internal-only allocate
+// RPC continues to live in `internal/service/address.go::AddressService` until
+// the internal handler migrates to its own UC package).
+//
+// The use-case versions receive already-fetched `*domain.AddressRecord` to
+// avoid the second `repo.Get` round-trip — they operate on the just-Inserted
+// row directly.
+
+// allocateMaxAttempts — максимум попыток random-pick + retry-on-conflict.
+// При near-full CIDR (≥95% занято) random-pick имеет high false-fail rate
+// (см. allocateRandomPhase ниже). После этого порога переключаемся на
+// deterministic sweep.
+const allocateMaxAttempts = 32
+
+// allocateRandomPhase — сколько попыток сделать random-pick'ом до того
+// как переключиться на deterministic sweep по тем же CIDR. Random в первые
+// N попыток дешевле (1 SQL/попытка), при low/medium occupancy сходится
+// быстро. Переход в sweep гарантирует closure под high-occupancy.
+const allocateRandomPhase = 8
+
+// v6AllocateMaxAttempts — число попыток random-pick + retry-on-conflict для
+// internal-IPv6. IPv6-подсети огромные (обычно /64), коллизии редки —
+// небольшого числа попыток достаточно.
+const v6AllocateMaxAttempts = 16
+
+// allocResult — local copy of service.AllocateResult.
+type allocResult struct {
+	IP     string
+	PoolID string // только для external; "" для internal
+}
+
+func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+	if addr.InternalIpv4 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no internal_ipv4 spec", addr.ID)
+	}
+	if addr.InternalIpv4.Address != "" {
+		return &allocResult{IP: addr.InternalIpv4.Address}, nil
+	}
+	if addr.InternalIpv4.SubnetID == "" {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s internal_ipv4.subnet_id is empty", addr.ID)
+	}
+	sub, err := u.subnetReader.Get(ctx, addr.InternalIpv4.SubnetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sub.V4CidrBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"subnet %s has no IPv4 CIDR", sub.ID)
+	}
+
+	parsedV4Count := 0
+	totalConflicts := 0
+	skippedNonV4 := 0
+	parseFails := 0
+	for _, cidrStr := range sub.V4CidrBlocks {
+		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
+		if err != nil {
+			parseFails++
+			slog.WarnContext(ctx, "allocator: skipping unparseable subnet cidr",
+				"subnet_id", sub.ID, "cidr", cidrStr, "err", err)
+			continue
+		}
+		if !cidr.Addr().Is4() {
+			skippedNonV4++
+			continue
+		}
+		parsedV4Count++
+		tried := make(map[string]struct{}, allocateMaxAttempts)
+		// Phase 1: random pick.
+		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
+			ip, err := pickRandomIPv4(cidr)
+			if err != nil {
+				break
+			}
+			if _, dup := tried[ip]; dup {
+				continue
+			}
+			tried[ip] = struct{}{}
+			addr.InternalIpv4.Address = ip
+			updated, err := u.repo.SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
+					"subnet_id", sub.ID, "address_id", addr.ID, "ip_attempt", ip, "err", err)
+				return nil, err
+			}
+			return &allocResult{IP: updated.InternalIpv4.Address}, nil
+		}
+		// Phase 2: deterministic sweep.
+		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+			if _, dup := tried[candidate]; dup {
+				continue
+			}
+			tried[candidate] = struct{}{}
+			addr.InternalIpv4.Address = candidate
+			updated, err := u.repo.SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
+			if err != nil {
+				if isUniqueViolation(err) {
+					totalConflicts++
+					addr.InternalIpv4.Address = ""
+					continue
+				}
+				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
+					"subnet_id", sub.ID, "address_id", addr.ID, "ip_attempt", candidate, "err", err)
+				return nil, err
+			}
+			return &allocResult{IP: updated.InternalIpv4.Address}, nil
+		}
+	}
+	slog.WarnContext(ctx, "allocator: subnet exhausted",
+		"subnet_id", sub.ID,
+		"address_id", addr.ID,
+		"cidr_blocks", sub.V4CidrBlocks,
+		"parsed_ipv4", parsedV4Count,
+		"skipped_non_v4", skippedNonV4,
+		"parse_fails", parseFails,
+		"unique_conflicts", totalConflicts)
+	if parsedV4Count == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"subnet %s has no IPv4 cidr_blocks (allocator requires IPv4)", sub.ID)
+	}
+	return nil, status.Errorf(codes.ResourceExhausted,
+		"subnet %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks; %d unique-conflicts)",
+		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
+}
+
+func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+	if addr.InternalIpv6 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "address %s has no internal_ipv6 spec", addr.ID)
+	}
+	if addr.InternalIpv6.Address != "" {
+		return &allocResult{IP: addr.InternalIpv6.Address}, nil
+	}
+	if addr.InternalIpv6.SubnetID == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "address %s internal_ipv6.subnet_id is empty", addr.ID)
+	}
+	sub, err := u.subnetReader.Get(ctx, addr.InternalIpv6.SubnetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sub.V6CidrBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has no v6_cidr_blocks", sub.ID)
+	}
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(sub.V6CidrBlocks[0]))
+	if err != nil || !prefix.Addr().Is6() || prefix.Addr().Is4In6() {
+		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has invalid v6 cidr block %q", sub.ID, sub.V6CidrBlocks[0])
+	}
+	tried := make(map[string]struct{}, v6AllocateMaxAttempts)
+	conflicts := 0
+	for attempt := 0; attempt < v6AllocateMaxAttempts; attempt++ {
+		ip, perr := pickRandomIPv6(prefix)
+		if perr != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "subnet %s: cannot pick IPv6 in %s: %v", sub.ID, prefix, perr)
+		}
+		if _, dup := tried[ip]; dup {
+			continue
+		}
+		tried[ip] = struct{}{}
+		addr.InternalIpv6.Address = ip
+		updated, uerr := u.repo.SetInternalIPv6(ctx, addr.ID, addr.InternalIpv6)
+		if uerr != nil {
+			if isUniqueViolation(uerr) {
+				conflicts++
+				addr.InternalIpv6.Address = ""
+				continue
+			}
+			slog.ErrorContext(ctx, "v6 allocator: SetInternalIPv6 returned non-conflict error",
+				"subnet_id", sub.ID, "address_id", addr.ID, "ip_attempt", ip, "err", uerr)
+			return nil, uerr
+		}
+		return &allocResult{IP: updated.InternalIpv6.Address}, nil
+	}
+	slog.WarnContext(ctx, "v6 allocator: exhausted attempts",
+		"subnet_id", sub.ID, "address_id", addr.ID, "cidr", prefix.String(), "conflicts", conflicts)
+	return nil, status.Errorf(codes.ResourceExhausted,
+		"subnet %s: could not allocate a free IPv6 in %s after %d attempts (%d unique-conflicts)",
+		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
+}
+
+func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+	if addr.ExternalIpv4 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no external_ipv4 spec", addr.ID)
+	}
+	if addr.ExternalIpv4.Address != "" {
+		return &allocResult{
+			IP:     addr.ExternalIpv4.Address,
+			PoolID: addr.ExternalIpv4.AddressPoolID,
+		}, nil
+	}
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV4)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
+	}
+	pool := resolved.Pool
+	if len(pool.V4CIDRBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no v4_cidr_blocks", pool.ID)
+	}
+
+	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addr.ID)
+	if err != nil {
+		if errors.Is(err, ports.ErrPoolExhausted) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"address pool %s exhausted", pool.ID)
+		}
+		slog.ErrorContext(ctx, "allocator: AllocateIPFromFreelist failed",
+			"pool_id", pool.ID, "address_id", addr.ID, "err", err)
+		return nil, status.Errorf(codes.Internal, "allocate from freelist: %v", err)
+	}
+	return &allocResult{IP: ip, PoolID: pool.ID}, nil
+}
+
+func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+	if addr.ExternalIpv6 == nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address %s has no external_ipv6 spec", addr.ID)
+	}
+	if addr.ExternalIpv6.Address != "" {
+		return &allocResult{
+			IP:     addr.ExternalIpv6.Address,
+			PoolID: addr.ExternalIpv6.AddressPoolID,
+		}, nil
+	}
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV6)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
+	}
+	pool := resolved.Pool
+	if len(pool.V6CIDRBlocks) == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"address pool %s has no v6_cidr_blocks", pool.ID)
+	}
+
+	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addr.ID, addr.ExternalIpv6.ZoneID)
+	if err != nil {
+		if errors.Is(err, ports.ErrPoolExhausted) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"address pool %s exhausted (ipv6)", pool.ID)
+		}
+		if errors.Is(err, ports.ErrFailedPrecondition) {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"%s", strings.TrimPrefix(err.Error(), ports.ErrFailedPrecondition.Error()+": "))
+		}
+		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
+			"pool_id", pool.ID, "address_id", addr.ID, "err", err)
+		return nil, status.Errorf(codes.Internal, "allocate external ipv6: %v", err)
+	}
+	return &allocResult{IP: ip, PoolID: pool.ID}, nil
+}
+
+// usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без
+// network/broadcast). Используется в Phase 2 allocator'а для гарантии closure
+// когда random-pick не сходится. Cap'ируется maxN чтобы не аллокировать
+// миллионы строк для больших CIDR; для /28 (14 IP) maxN=24 достаточно.
+func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
+	if !cidr.Addr().Is4() {
+		return nil
+	}
+	bits := cidr.Bits()
+	hostBits := 32 - bits
+	if hostBits >= 32 {
+		return nil
+	}
+	total := uint32(1) << hostBits
+	first := uint32(1)
+	last := total - 1
+	switch hostBits {
+	case 0:
+		first, last = 0, 1
+	case 1:
+		first, last = 0, 2
+	}
+	if uint32(maxN) < last-first {
+		last = first + uint32(maxN)
+	}
+	base := cidr.Addr().As4()
+	baseInt := binary.BigEndian.Uint32(base[:])
+	out := make([]string, 0, last-first)
+	for i := first; i < last; i++ {
+		var ipBytes [4]byte
+		binary.BigEndian.PutUint32(ipBytes[:], baseInt+i)
+		out = append(out, net.IP(ipBytes[:]).String())
+	}
+	return out
+}
+
+// pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast addresses
+// (для prefix length < 31). Использует crypto/rand для unpredictable allocation.
+//
+// Edge cases (R8 fix /31 off-by-one):
+//   - /32 (hostBits=0): единственный адрес — base.
+//   - /31 (hostBits=1): оба адреса валидны (point-to-point) — base+0 или base+1.
+//   - /≤30 (hostBits≥2): пропускаем .0 (network) и .last (broadcast) →
+//     offset в [1, maxHosts].
+func pickRandomIPv4(cidr netip.Prefix) (string, error) {
+	if !cidr.Addr().Is4() {
+		return "", ports.ErrInvalidIPv4
+	}
+	bits := cidr.Bits()
+	hostBits := 32 - bits
+	base := cidr.Addr().As4()
+	baseInt := binary.BigEndian.Uint32(base[:])
+	var offset uint32
+	switch hostBits {
+	case 0:
+		return cidr.Addr().String(), nil
+	case 1:
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:]) % 2
+	default:
+		maxHosts := uint32(1<<hostBits) - 2
+		var randBytes [4]byte
+		if _, err := rand.Read(randBytes[:]); err != nil {
+			return "", err
+		}
+		offset = binary.BigEndian.Uint32(randBytes[:])%maxHosts + 1
+	}
+	var ipBytes [4]byte
+	binary.BigEndian.PutUint32(ipBytes[:], baseInt+offset)
+	return net.IP(ipBytes[:]).String(), nil
+}
+
+// pickRandomIPv6 выбирает случайный адрес внутри IPv6-префикса, заполняя
+// host-биты криптослучайными значениями. Пропускает all-zeros host (subnet-router
+// anycast `<prefix>::`); для очень узких префиксов (/127, /128) ведёт себя
+// детерминированно (там почти нет выбора).
+func pickRandomIPv6(prefix netip.Prefix) (string, error) {
+	addr := prefix.Masked().Addr()
+	base := addr.As16()
+	bits := prefix.Bits()
+	hostBits := 128 - bits
+	if hostBits <= 0 {
+		return addr.String(), nil
+	}
+	var rnd [16]byte
+	for try := 0; try < 8; try++ {
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return "", err
+		}
+		out := base
+		for i := 0; i < 16; i++ {
+			bitIndex := i * 8
+			if bitIndex+8 <= bits {
+				continue
+			}
+			var mask byte
+			if bitIndex >= bits {
+				mask = 0xff
+			} else {
+				keep := bits - bitIndex
+				mask = byte(0xff >> keep)
+			}
+			out[i] = (base[i] &^ mask) | (rnd[i] & mask)
+		}
+		cand := netip.AddrFrom16(out)
+		if cand == addr {
+			continue
+		}
+		return cand.String(), nil
+	}
+	return addr.String(), nil
+}

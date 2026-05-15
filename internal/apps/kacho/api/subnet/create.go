@@ -1,0 +1,210 @@
+package subnet
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+)
+
+// CreateInput — параметры для CreateSubnetUseCase.Execute. Использует
+// `domain.Subnet` как «несущий» носитель данных (skill evgeniy §2 B.3 — не
+// плодить параллельные XxxReq, дублирующие domain). Поле `s.ID` на входе пустое
+// — назначим внутри use-case'а через `ids.NewID(ids.PrefixSubnet)`.
+type CreateInput struct {
+	Subnet domain.Subnet
+}
+
+// CreateSubnetUseCase инициирует создание Subnet. Sync-проверки (folder exists,
+// parent network exists, name unique, CIDR validity / non-overlap) выполняются
+// ДО создания Operation — клиент получает fast-fail gRPC-status, а не «200 +
+// операция, упавшая через секунду» (см. kacho-vpc#8). Async-часть (`doCreate`)
+// — атомарный backstop через FK + EXCLUDE constraint.
+//
+// Wave 3 (skill evgeniy §2 B.1): бывший `SubnetService.Create` +
+// `SubnetService.doCreate` переехал сюда.
+type CreateSubnetUseCase struct {
+	repo         SubnetRepo
+	networkRead  NetworkReader
+	folderClient FolderClient
+	zoneReg      ZoneRegistry
+	opsRepo      operations.Repo
+}
+
+// NewCreateSubnetUseCase создаёт CreateSubnetUseCase.
+func NewCreateSubnetUseCase(
+	repo SubnetRepo,
+	networkRead NetworkReader,
+	folderClient FolderClient,
+	zoneReg ZoneRegistry,
+	opsRepo operations.Repo,
+) *CreateSubnetUseCase {
+	return &CreateSubnetUseCase{
+		repo:         repo,
+		networkRead:  networkRead,
+		folderClient: folderClient,
+		zoneReg:      zoneReg,
+		opsRepo:      opsRepo,
+	}
+}
+
+// Execute — sync-валидация + create Operation + запуск worker'а.
+func (u *CreateSubnetUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
+	s := in.Subnet
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, s.NetworkID); err != nil {
+		return nil, err
+	}
+	if s.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	}
+	if s.NetworkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	// ZoneId: required + existence в таблице `zones` (без hardcoded whitelist).
+	if err := validateZoneID(ctx, u.zoneReg, "zone_id", s.ZoneID); err != nil {
+		return nil, err
+	}
+	// Proto contract: v4_cidr_blocks больше НЕ required — подсеть может быть
+	// создана без IPv4-диапазона (kacho-proto#8). Пустой список — легален; CIDR'ы,
+	// которые ПЕРЕДАНЫ, всё ещё валидируются (host-bits=0, /16../28).
+	for i, c := range s.V4CidrBlocks {
+		if err := validateSubnetV4CIDR(fmt.Sprintf("v4_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
+	// v6_cidr_blocks — опциональны; если переданы, валидируем как IPv6 CIDR
+	// (host-bits=0). Immutable после Create (как v4).
+	for i, c := range s.V6CidrBlocks {
+		if err := validateSubnetV6CIDR(fmt.Sprintf("v6_cidr_blocks[%d]", i), c); err != nil {
+			return nil, err
+		}
+	}
+	// Domain-self-validation (skill evgeniy §4 D.5 / AP-1): Name/Description/Labels
+	// валидируются через newtypes — use-case-слой больше НЕ зовёт corevalidate.NameVPC/
+	// Description/Labels.
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateDhcpOptions(s.DhcpOptions); err != nil {
+		return nil, err
+	}
+
+	// Verbatim YC: existence / uniqueness / overlap checks run synchronously,
+	// BEFORE the Operation. The async copies in doCreate + the DB EXCLUDE
+	// constraint stay as the atomic backstops. См. kacho-vpc#8.
+	if err := checkFolderExists(ctx, u.folderClient, s.FolderID); err != nil {
+		return nil, err
+	}
+	if _, err := u.networkRead.Get(ctx, s.NetworkID); err != nil {
+		if errors.Is(err, ports.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
+		}
+		return nil, mapRepoErr(err)
+	}
+	name := string(s.Name)
+	if name != "" {
+		existing, _, lerr := u.repo.List(ctx, SubnetFilter{FolderID: s.FolderID, Name: name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "Subnet with name %s already exists", name)
+		}
+	}
+	if err := u.checkSubnetCIDROverlap(ctx, s.FolderID, s.NetworkID, s.V4CidrBlocks); err != nil {
+		return nil, err
+	}
+
+	subID := ids.NewID(ids.PrefixSubnet)
+	op, err := operations.New(
+		ids.PrefixOperationVPC,
+		fmt.Sprintf("Create subnet %s", name),
+		&vpcv1.CreateSubnetMetadata{SubnetId: subID},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		return u.doCreate(ctx, subID, s)
+	})
+
+	return &op, nil
+}
+
+// doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
+// folder-exists + parent network-exists + Insert (FK ограничения / EXCLUDE для
+// overlap).
+func (u *CreateSubnetUseCase) doCreate(ctx context.Context, subID string, s domain.Subnet) (*anypb.Any, error) {
+	exists, err := u.folderClient.Exists(ctx, s.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", s.FolderID)
+	}
+
+	if _, err := u.networkRead.Get(ctx, s.NetworkID); err != nil {
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
+	}
+
+	// SU-CIDR-OVERLAP — пересечения v4 CIDR в рамках одной VPC ловятся атомарно
+	// DB-level EXCLUDE constraint (миграция 0007), repo маппит SQLSTATE 23P01 на
+	// ErrInvalidArg.
+	s.ID = subID
+	created, err := u.repo.Insert(ctx, &s)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalSubnetRecord(created)
+}
+
+// checkSubnetCIDROverlap — sync FAILED_PRECONDITION "Subnet CIDRs can not
+// overlap" if any of the requested v4 CIDRs overlaps a CIDR of an existing
+// subnet in the same network/folder. The DB EXCLUDE constraint (миграция 0007)
+// stays as the atomic backstop in doCreate. См. kacho-vpc#8.
+func (u *CreateSubnetUseCase) checkSubnetCIDROverlap(ctx context.Context, folderID, networkID string, v4 []string) error {
+	if len(v4) == 0 {
+		return nil
+	}
+	newPrefixes := make([]netipPrefix, 0, len(v4))
+	for _, c := range v4 {
+		pr, err := parseNetipPrefix(c)
+		if err != nil {
+			// host-bits / format already validated upstream; be defensive.
+			return invalidArg("v4_cidr_blocks", "must be valid CIDR")
+		}
+		newPrefixes = append(newPrefixes, pr)
+	}
+	existing, _, err := u.repo.List(ctx, SubnetFilter{FolderID: folderID, NetworkID: networkID}, Pagination{})
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	for _, sub := range existing {
+		for _, raw := range sub.V4CidrBlocks {
+			pr, perr := parseNetipPrefix(raw)
+			if perr != nil {
+				continue
+			}
+			for _, np := range newPrefixes {
+				if prefixesOverlap(pr, np) {
+					return status.Errorf(codes.FailedPrecondition, "Subnet CIDRs can not overlap")
+				}
+			}
+		}
+	}
+	return nil
+}

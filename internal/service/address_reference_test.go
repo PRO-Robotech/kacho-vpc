@@ -13,6 +13,12 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
+// Wave 3 (KAC-94): AddressService переехал в `internal/apps/kacho/api/address/`,
+// SetAddressReference/Mark/Clear/Get вынесены в отдельный `AddressReferenceService`
+// (этот файл — `address_reference.go`). Эти тесты обновлены под новый
+// конструктор `NewAddressReferenceService(repo)` — поведение/контракт не
+// изменилось.
+
 func seedAddrForRef(ar *mockAddressRepo) *domain.AddressRecord {
 	rec := &domain.AddressRecord{
 		Address: domain.Address{
@@ -28,9 +34,9 @@ func seedAddrForRef(ar *mockAddressRepo) *domain.AddressRecord {
 	return rec
 }
 
-func TestAddressService_SetAddressReference_OK(t *testing.T) {
+func TestAddressReferenceService_SetAddressReference_OK(t *testing.T) {
 	ar := newMockAddressRepo()
-	svc := NewAddressService(ar, newMockSubnetRepo(), newMockFolderClient(true), newMockOpsRepo(), nil)
+	svc := NewAddressReferenceService(ar)
 	a := seedAddrForRef(ar)
 
 	ref, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
@@ -42,11 +48,10 @@ func TestAddressService_SetAddressReference_OK(t *testing.T) {
 	assert.Equal(t, "epdvm0000000000001", ref.ReferrerID)
 	assert.Equal(t, "vm-1", ref.ReferrerName)
 
-	got, _ := svc.Get(context.Background(), a.ID)
+	got, _ := ar.Get(context.Background(), a.ID)
 	assert.True(t, got.Used)
 
-	// KAC-88: idempotent re-set с ТЕМ ЖЕ referrer — допустимо (CAS matches),
-	// можно обновить referrer_name.
+	// KAC-88: idempotent re-set с ТЕМ ЖЕ referrer — допустимо (CAS matches).
 	ref, err = svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
 		AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000001", ReferrerName: "vm-1-renamed",
 	})
@@ -54,8 +59,7 @@ func TestAddressService_SetAddressReference_OK(t *testing.T) {
 	assert.Equal(t, "epdvm0000000000001", ref.ReferrerID)
 	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
 
-	// KAC-88: re-set с ДРУГИМ referrer → FailedPrecondition (CAS fail) —
-	// parity с инцидентом KAC-52 (NIC-attach race), исправляет gap G1 из KAC-84.
+	// KAC-88: re-set с ДРУГИМ referrer → FailedPrecondition (CAS fail).
 	_, err = svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
 		AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000002",
 	})
@@ -65,9 +69,9 @@ func TestAddressService_SetAddressReference_OK(t *testing.T) {
 		"set-reference к занятому address от чужого referrer → FailedPrecondition")
 }
 
-func TestAddressService_SetAddressReference_Validation(t *testing.T) {
+func TestAddressReferenceService_SetAddressReference_Validation(t *testing.T) {
 	ar := newMockAddressRepo()
-	svc := NewAddressService(ar, newMockSubnetRepo(), newMockFolderClient(true), newMockOpsRepo(), nil)
+	svc := NewAddressReferenceService(ar)
 	a := seedAddrForRef(ar)
 
 	// malformed address id
@@ -91,9 +95,9 @@ func TestAddressService_SetAddressReference_Validation(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-func TestAddressService_GetAddressReference(t *testing.T) {
+func TestAddressReferenceService_GetAddressReference(t *testing.T) {
 	ar := newMockAddressRepo()
-	svc := NewAddressService(ar, newMockSubnetRepo(), newMockFolderClient(true), newMockOpsRepo(), nil)
+	svc := NewAddressReferenceService(ar)
 	a := seedAddrForRef(ar)
 
 	// no referrer yet → NotFound
@@ -109,16 +113,16 @@ func TestAddressService_GetAddressReference(t *testing.T) {
 	assert.Equal(t, "epdvm0000000000001", ref.ReferrerID)
 }
 
-func TestAddressService_ClearAddressReference(t *testing.T) {
+func TestAddressReferenceService_ClearAddressReference(t *testing.T) {
 	ar := newMockAddressRepo()
-	svc := NewAddressService(ar, newMockSubnetRepo(), newMockFolderClient(true), newMockOpsRepo(), nil)
+	svc := NewAddressReferenceService(ar)
 	a := seedAddrForRef(ar)
 
 	_, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000001"})
 	require.NoError(t, err)
 
 	require.NoError(t, svc.ClearAddressReference(context.Background(), a.ID))
-	got, _ := svc.Get(context.Background(), a.ID)
+	got, _ := ar.Get(context.Background(), a.ID)
 	assert.False(t, got.Used)
 	_, err = svc.GetAddressReference(context.Background(), a.ID)
 	st, _ := status.FromError(err)

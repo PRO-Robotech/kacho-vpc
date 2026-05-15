@@ -1,0 +1,158 @@
+package securitygroup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+)
+
+// CreateInput — параметры для CreateSecurityGroupUseCase.Execute.
+//
+// Skill evgeniy §2 B.3: вместо параллельной `CreateSecurityGroupReq` (зеркало
+// domain.SecurityGroup) принимаем domain.SecurityGroup напрямую — нужные поля
+// (FolderID/NetworkID/Name/Description/Labels/Rules) уже там. ID на входе пустой,
+// назначается use-case'ом через `ids.NewID(ids.PrefixSecurityGroup)`.
+type CreateInput struct {
+	SecurityGroup domain.SecurityGroup
+}
+
+// CreateSecurityGroupUseCase инициирует создание SG. Sync-проверки (folder
+// exists, name unique, network exists) выполняются ДО создания Operation —
+// клиент получает fast-fail gRPC-status, а не «200 + операция, упавшая через
+// секунду» (см. kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop
+// через FK/UNIQUE.
+//
+// Default-SG creation для Network — НЕ здесь: она inline в
+// `CreateNetworkUseCase` через `domain.NewDefaultSecurityGroup`. Этот use-case —
+// обычный явный Create от клиента.
+type CreateSecurityGroupUseCase struct {
+	repo          SecurityGroupRepo
+	networkReader NetworkReader
+	folderClient  FolderClient
+	opsRepo       operations.Repo
+}
+
+// NewCreateSecurityGroupUseCase создаёт CreateSecurityGroupUseCase.
+func NewCreateSecurityGroupUseCase(repo SecurityGroupRepo, networkReader NetworkReader, folderClient FolderClient, opsRepo operations.Repo) *CreateSecurityGroupUseCase {
+	return &CreateSecurityGroupUseCase{
+		repo:          repo,
+		networkReader: networkReader,
+		folderClient:  folderClient,
+		opsRepo:       opsRepo,
+	}
+}
+
+// Execute — sync-валидация + create Operation + запуск worker'а.
+func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
+	sg := in.SecurityGroup
+	if sg.FolderID == "" {
+		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	}
+	// network_id опционален (kacho-proto#8): пустой → folder-level unbound SG.
+	// Если задан — обязан быть well-formed (`enp...`) и существовать.
+	if sg.NetworkID != "" {
+		if err := corevalidate.ResourceID("network", ids.PrefixNetwork, sg.NetworkID); err != nil {
+			return nil, err
+		}
+	}
+
+	// Status — выставляем явно, если caller не задал (он не должен — это
+	// internal-only field). Skill evgeniy §4 D.8 / AP-2.
+	if sg.Status == "" {
+		sg.Status = domain.SecurityGroupStatusActive
+	}
+
+	// Domain self-validation: имя/описание/labels через newtype.Validate() +
+	// каждое правило через r.Validate() (description/labels). Cross-cutting
+	// rule-валидация (direction, CIDR, protocol) — отдельно через validateSGRule
+	// ниже (это не newtype-level). Skill evgeniy §4 D.5 / AP-1.
+	if err := sg.Validate(); err != nil {
+		return nil, err
+	}
+	for i, r := range sg.Rules {
+		if err := validateSGRule(fmt.Sprintf("rule_specs[%d]", i), r); err != nil {
+			return nil, err
+		}
+	}
+
+	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
+	// Operation. Async-копии в worker'е остаются как defensive backstops. См.
+	// kacho-vpc#8.
+	if err := checkFolderExists(ctx, u.folderClient, sg.FolderID); err != nil {
+		return nil, err
+	}
+	if sg.NetworkID != "" && u.networkReader != nil {
+		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
+			if errors.Is(err, ports.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
+			}
+			return nil, mapRepoErr(err)
+		}
+	}
+	name := string(sg.Name)
+	if name != "" {
+		existing, _, lerr := u.repo.List(ctx, SecurityGroupFilter{FolderID: sg.FolderID, Name: name}, Pagination{})
+		if lerr != nil {
+			return nil, mapRepoErr(lerr)
+		}
+		if len(existing) > 0 {
+			return nil, status.Errorf(codes.AlreadyExists, "SecurityGroup with name %s already exists", name)
+		}
+	}
+
+	sgID := ids.NewID(ids.PrefixSecurityGroup)
+	op, err := operations.New(
+		ids.PrefixOperationVPC,
+		fmt.Sprintf("Create security group %s", name),
+		&vpcv1.CreateSecurityGroupMetadata{SecurityGroupId: sgID},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.opsRepo.Create(ctx, op); err != nil {
+		return nil, err
+	}
+
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
+		return u.doCreate(ctx, sgID, sg)
+	})
+
+	return &op, nil
+}
+
+// doCreate — async-часть Create (внутри Operation worker'а). Folder-exists +
+// network-exists повторяются как defensive backstop; затем Insert (FK / UNIQUE
+// constraints — атомарный последний рубеж).
+func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, sg domain.SecurityGroup) (*anypb.Any, error) {
+	exists, err := u.folderClient.Exists(ctx, sg.FolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", sg.FolderID)
+	}
+	if sg.NetworkID != "" && u.networkReader != nil {
+		if _, gerr := u.networkReader.Get(ctx, sg.NetworkID); gerr != nil {
+			return nil, mapRepoErr(gerr)
+		}
+	}
+
+	sg.ID = sgID
+	sg.Rules = assignRuleIDs(sg.Rules)
+	created, err := u.repo.Insert(ctx, &sg)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalSecurityGroupRecord(created)
+}
