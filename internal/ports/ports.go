@@ -92,15 +92,19 @@ type AddressPoolFilter struct {
 	ZoneID string                 // "" = any
 }
 
-// NetworkRepo — port-интерфейс репозитория сетей.
+// NetworkRepo — port-интерфейс репозитория сетей. Возвращает
+// `*domain.NetworkRecord` (repo-entity с DB-managed CreatedAt) — skill evgeniy
+// §4 D.1 / §6 G.2 / §7 H.1: CreatedAt живёт в repo-проекции, не в
+// domain.Network. Insert/Update принимают domain.Network (без CreatedAt) —
+// время выставляет репо.
 type NetworkRepo interface {
-	Get(ctx context.Context, id string) (*domain.Network, error)
-	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.Network, string, error)
-	Insert(ctx context.Context, n *domain.Network) (*domain.Network, error)
-	Update(ctx context.Context, n *domain.Network) (*domain.Network, error)
+	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
+	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error)
+	Insert(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
+	Update(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса (для :move action). Возвращает обновлённый ресурс.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.NetworkRecord, error)
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.

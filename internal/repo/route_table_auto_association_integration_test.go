@@ -46,7 +46,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-a", CreatedAt: now, Name: "net-assoc-a",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-a", Name: domain.RcNameVPC("net-assoc-a"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-b", CreatedAt: now, Name: "net-assoc-b",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-b", Name: domain.RcNameVPC("net-assoc-b"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-c", CreatedAt: now, Name: "net-assoc-c",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-c", Name: domain.RcNameVPC("net-assoc-c"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-d", CreatedAt: now, Name: "net-assoc-d",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-d", Name: domain.RcNameVPC("net-assoc-d"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)

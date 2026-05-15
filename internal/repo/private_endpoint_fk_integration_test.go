@@ -49,7 +49,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	// --- setup: Network + Subnet + Address + PE ---
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", CreatedAt: now, Name: "net-pe-fk",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-pe-fk"),
 	}
 	_, err = nr.Insert(ctx, net)
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 7b. Изолированно проверяем private_endpoints_network_id_fkey ---
 	// Network без Subnet'ов с одним PE (без subnet_id/address_id) → DELETE
 	// network упирается строго в PE→network FK.
-	netIso := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", CreatedAt: now, Name: "net-iso-pe"}
+	netIso := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-iso-pe")}
 	_, err = nr.Insert(ctx, netIso)
 	require.NoError(t, err)
 	peIso := &domain.PrivateEndpoint{
@@ -204,14 +204,14 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	// --- 8. Optional refs (subnet_id/address_id) могут быть пустыми → NULL в БД, FK не проверяется ---
-	net2 := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", CreatedAt: now, Name: "net-pe-fk-2"}
+	net2 := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-pe-fk-2")}
 	_, err = nr.Insert(ctx, net2)
 	require.NoError(t, err)
 
 	peNoOpt := &domain.PrivateEndpoint{
 		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:        "pe-fk-no-opt",
-		NetworkID:   net2.ID,
+		Name:      "pe-fk-no-opt",
+		NetworkID: net2.ID,
 		// SubnetID / AddressID — empty → должны пойти в БД как NULL (NULLIF в Insert),
 		// FK с MATCH SIMPLE пропускает NULL.
 		ServiceType: "object_storage",

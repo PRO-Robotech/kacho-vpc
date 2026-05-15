@@ -44,8 +44,10 @@ func domainToMap(v any) map[string]any {
 	return m
 }
 
-// networkPayload — лаконичный JSON-snapshot Network.
-func networkPayload(n *domain.Network) map[string]any {
+// networkPayload — лаконичный JSON-snapshot Network (repo-entity, с CreatedAt).
+// Принимает *Network (внутри repo-пакета), а не domain.Network — Wave 2 pilot
+// (KAC-99/KAC-94) переместил CreatedAt из domain в repo.
+func networkPayload(n *Network) map[string]any {
 	return domainToMap(n)
 }
 

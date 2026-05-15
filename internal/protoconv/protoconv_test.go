@@ -18,8 +18,10 @@ import (
 func TestCreatedAt_TruncatedToSeconds(t *testing.T) {
 	at := time.Date(2026, 5, 11, 12, 34, 56, 789_000_000, time.UTC)
 
-	require.NotNil(t, Network(&domain.Network{ID: "enp1", CreatedAt: at}).CreatedAt)
-	assert.Equal(t, at.Truncate(time.Second), Network(&domain.Network{CreatedAt: at}).CreatedAt.AsTime())
+	// Wave 2 pilot (KAC-99/KAC-94): Network теперь принимает repo-entity
+	// (NetworkRecord) с CreatedAt в repo-проекции, не в domain.Network.
+	require.NotNil(t, Network(&domain.NetworkRecord{Network: domain.Network{ID: "enp1"}, CreatedAt: at}).CreatedAt)
+	assert.Equal(t, at.Truncate(time.Second), Network(&domain.NetworkRecord{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), Subnet(&domain.Subnet{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), Address(&domain.Address{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), RouteTable(&domain.RouteTable{CreatedAt: at}).CreatedAt.AsTime())

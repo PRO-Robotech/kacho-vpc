@@ -17,7 +17,7 @@ func makeNetwork(nr *mockNetworkRepo) *domain.Network {
 	n := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
 		FolderID: "f1",
-		Name:     "test-network",
+		Name:     domain.RcNameVPC("test-network"),
 	}
 	_, _ = nr.Insert(context.Background(), n)
 	return n

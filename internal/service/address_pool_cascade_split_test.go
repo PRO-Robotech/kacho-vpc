@@ -311,8 +311,9 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 	// Network + Subnet — для internal v4 path (cascade Step 2).
 	now := time.Now().UTC()
 	netID := ids.NewID(ids.PrefixNetwork)
+	_ = now // CreatedAt больше не в domain.Network (KAC-99/KAC-94); DB-managed.
 	_, err := f.netRepo.Insert(context.Background(), &domain.Network{
-		ID: netID, FolderID: "f-d7", Name: "net-bind-mismatch", CreatedAt: now,
+		ID: netID, FolderID: "f-d7", Name: domain.RcNameVPC("net-bind-mismatch"),
 	})
 	require.NoError(t, err)
 	subID := ids.NewID(ids.PrefixSubnet)

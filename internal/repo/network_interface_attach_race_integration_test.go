@@ -54,8 +54,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-attach-race",
-		CreatedAt: now, Name: "net-attach-race",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-attach-race", Name: domain.RcNameVPC("net-attach-race"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -145,8 +144,7 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-idempotent",
-		CreatedAt: now, Name: "net-idempotent",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-idempotent", Name: domain.RcNameVPC("net-idempotent"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -199,8 +197,7 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-detach",
-		CreatedAt: now, Name: "net-detach",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-detach", Name: domain.RcNameVPC("net-detach"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
