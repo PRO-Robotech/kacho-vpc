@@ -105,7 +105,18 @@ func runServe(cfg config.Config) error {
 		return err
 	}
 	defer rmConn.Close()
-	folderClient := clients.NewFolderClient(rmConn)
+	// TTL+LRU кеш (KAC-39): снимает gRPC-hop в RM из hot-path Network.Create
+	// при burst-нагрузке (10k RPS). См. internal/clients/folder_cache.go.
+	rawFolderClient := clients.NewFolderClient(rmConn)
+	folderClient := clients.NewCachedFolderClient(rawFolderClient, clients.FolderCacheConfig{
+		PositiveTTL: cfg.FolderCacheTTL,
+		NegativeTTL: cfg.FolderCacheNegativeTTL,
+		MaxSize:     cfg.FolderCacheSize,
+	})
+	logger.Info("folder existence cache enabled",
+		"positive_ttl", cfg.FolderCacheTTL,
+		"negative_ttl", cfg.FolderCacheNegativeTTL,
+		"max_size", cfg.FolderCacheSize)
 
 	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
 	// zone_id вызовом compute.v1.ZoneService.Get (см. workspace CLAUDE.md
