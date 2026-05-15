@@ -67,68 +67,6 @@ func TestAddressHandler_ListOperations_RequiresID(t *testing.T) {
 
 // ---- RouteTable handler — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
-// ---- SecurityGroup handler ----
-
-func makeSGService(t *testing.T) (*svc.SecurityGroupService, *mockOpsRepo) {
-	t.Helper()
-	or := newMockOpsRepo()
-	return svc.NewSecurityGroupService(newMockSGRepoForSvc(), newMockNetworkRepo(), newMockFolderClient(true), or), or
-}
-
-func TestSecurityGroupHandler_Get_InvalidArg(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestSecurityGroupHandler_Get_NotFound(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Get(context.Background(), &vpcv1.GetSecurityGroupRequest{SecurityGroupId: ids.NewID(ids.PrefixSecurityGroup)})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestSecurityGroupHandler_List_Empty(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	resp, err := h.List(context.Background(), &vpcv1.ListSecurityGroupsRequest{FolderId: "f1"})
-	require.NoError(t, err)
-	assert.Empty(t, resp.SecurityGroups)
-}
-
-func TestSecurityGroupHandler_Create_Validates(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Create(context.Background(), &vpcv1.CreateSecurityGroupRequest{Name: "sg"})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestSecurityGroupHandler_Update_InvalidArg(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Update(context.Background(), &vpcv1.UpdateSecurityGroupRequest{SecurityGroupId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestSecurityGroupHandler_Delete_InvalidArg(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.Delete(context.Background(), &vpcv1.DeleteSecurityGroupRequest{SecurityGroupId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestSecurityGroupHandler_ListOperations_RequiresID(t *testing.T) {
-	sgSvc, _ := makeSGService(t)
-	h := NewSecurityGroupHandler(sgSvc)
-	_, err := h.ListOperations(context.Background(), &vpcv1.ListSecurityGroupOperationsRequest{SecurityGroupId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
+// ---- SecurityGroup handler — moved to internal/apps/kacho/api/securitygroup/usecase_test.go (Wave 3) ----
 
 // ---- Gateway handler — moved to internal/apps/kacho/api/gateway/usecase_test.go (Wave 3b) ----
