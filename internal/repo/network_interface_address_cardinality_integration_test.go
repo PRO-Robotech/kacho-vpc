@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -38,7 +37,6 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	nicRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-card", Name: domain.RcNameVPC("net-card"),
 	}
@@ -53,8 +51,8 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 
 	mkNIC := func(suffix string, v4 []string, v6 []string) *domain.NetworkInterface {
 		return &domain.NetworkInterface{
-			ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card", CreatedAt: now,
-			Name: "nic-" + suffix, SubnetID: sub.ID, MAC: "0e:55:55:55:55:" + suffix,
+			ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card",
+			Name: domain.RcNameVPC("nic-" + suffix), SubnetID: sub.ID, MAC: "0e:55:55:55:55:" + suffix,
 			Status:       domain.NIStatusAvailable,
 			V4AddressIDs: v4,
 			V6AddressIDs: v6,

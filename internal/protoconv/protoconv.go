@@ -15,7 +15,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -43,35 +42,6 @@ func Network(rec *domain.NetworkRecord) *vpcv1.Network {
 	}
 }
 
-// NetworkInterface конвертирует domain.NetworkInterface → vpcv1.NetworkInterface.
-// Публичная проекция — без data-plane-полей; раньше data-plane была в отдельной
-// InternalNetworkInterface message, удалена в KAC-79/KAC-36 (post-kube-ovn).
-func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
-	p := &vpcv1.NetworkInterface{
-		Id:               n.ID,
-		FolderId:         n.FolderID,
-		CreatedAt:        ts(n.CreatedAt),
-		Name:             n.Name,
-		Description:      n.Description,
-		Labels:           n.Labels,
-		SubnetId:         n.SubnetID,
-		V4AddressIds:     n.V4AddressIDs,
-		V6AddressIds:     n.V6AddressIDs,
-		SecurityGroupIds: n.SecurityGroupIDs,
-		MacAddress:       n.MAC,
-		Status:           vpcv1.NetworkInterface_Status(n.Status),
-	}
-	// used_by (kacho extension, output-only) — кто приаттачил этот NIC.
-	// Shape — как у Address.used_by: Reference{referrer{type,id}, type=USED_BY}.
-	if n.UsedByID != "" {
-		p.UsedBy = &reference.Reference{
-			Referrer: &reference.Referrer{Type: n.UsedByType, Id: n.UsedByID},
-			Type:     reference.Reference_USED_BY,
-		}
-	}
-	return p
-}
-
 // Subnet/Address/RouteTable конверторы перенесены в `internal/dto/type2pb/`
 // (Wave 2 batch A, KAC-94, skill evgeniy §3 C.6 / AP-11). См. вызов через
 // `dto.Transfer(dto.FromTo(...))` в service/handler.
@@ -80,3 +50,7 @@ func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 // (Wave 2 batch B, KAC-94). Старые функции `protoconv.SecurityGroup` /
 // `protoconv.Gateway` / `protoconv.PrivateEndpoint` удалены — все вызовы идут
 // через `dto.Transfer(dto.FromTo(record, &dst))`.
+//
+// NetworkInterface конвертер перенесён в `internal/dto/type2pb/network_interface.go`
+// (Wave 2 batch C, KAC-94). Старая `protoconv.NetworkInterface` удалена — все
+// вызовы идут через `dto.Transfer(dto.FromTo(record, &dst))`.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -34,8 +33,6 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	nicRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
-
 	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-mac", Name: domain.RcNameVPC("net-mac")}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
@@ -48,8 +45,8 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 
 	mkNIC := func(id, name, mac string) *domain.NetworkInterface {
 		return &domain.NetworkInterface{
-			ID: id, FolderID: "folder-mac", CreatedAt: now,
-			Name: name, SubnetID: sub.ID, MAC: mac,
+			ID: id, FolderID: "folder-mac",
+			Name: domain.RcNameVPC(name), SubnetID: sub.ID, MAC: mac,
 			Status: domain.NIStatusAvailable,
 		}
 	}

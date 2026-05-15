@@ -111,3 +111,56 @@ func TestNetwork_Validate_Composes(t *testing.T) {
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
+
+// Wave 2 batch C (KAC-94): NIC.Validate композирует Name/Description/Labels +
+// MAC-формат (regex). MAC может быть пустым на Create (do-create аллоцирует
+// его позже) — empty MAC pass'ит Validate.
+func TestNetworkInterface_Validate_Composes(t *testing.T) {
+	// happy — full
+	n := domain.NetworkInterface{
+		Name:        domain.RcNameVPC("nic1"),
+		Description: domain.RcDescription("ok"),
+		Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
+		MAC:         "0e:11:22:33:44:55",
+	}
+	assert.NoError(t, n.Validate())
+
+	// happy — empty MAC (allocate в do-create)
+	n2 := domain.NetworkInterface{
+		Name: domain.RcNameVPC("nic2"),
+	}
+	assert.NoError(t, n2.Validate())
+
+	// bad name → InvalidArgument
+	bad := domain.NetworkInterface{Name: domain.RcNameVPC("1bad")}
+	err := bad.Validate()
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+
+	// bad MAC (uppercase) → InvalidArgument
+	badMAC := domain.NetworkInterface{
+		Name: domain.RcNameVPC("nic3"),
+		MAC:  "0E:11:22:33:44:55",
+	}
+	err = badMAC.Validate()
+	require.Error(t, err)
+	st, _ = status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+
+	// bad MAC (wrong separator) → InvalidArgument
+	badMAC2 := domain.NetworkInterface{
+		Name: domain.RcNameVPC("nic4"),
+		MAC:  "0e-11-22-33-44-55",
+	}
+	err = badMAC2.Validate()
+	require.Error(t, err)
+
+	// bad MAC (too short) → InvalidArgument
+	badMAC3 := domain.NetworkInterface{
+		Name: domain.RcNameVPC("nic5"),
+		MAC:  "0e:11:22:33:44",
+	}
+	err = badMAC3.Validate()
+	require.Error(t, err)
+}

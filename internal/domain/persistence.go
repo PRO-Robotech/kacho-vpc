@@ -70,3 +70,10 @@ type PrivateEndpointRecord struct {
 	PrivateEndpoint
 	CreatedAt time.Time
 }
+
+// NetworkInterfaceRecord — repo-entity для NetworkInterface. domain.NetworkInterface
+// + CreatedAt (DB-managed). Wave 2 batch C (KAC-94).
+type NetworkInterfaceRecord struct {
+	NetworkInterface
+	CreatedAt time.Time
+}
