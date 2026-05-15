@@ -27,6 +27,7 @@ import (
 
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
+	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
 	peapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint"
 	routetableapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
@@ -78,16 +79,16 @@ func main() {
 // use-case-структуру — здесь хранится готовый `*networkapp.Handler`, а не
 // «толстый» NetworkService. Wave 3b — replicate на оставшиеся 7 ресурсов.
 type services struct {
-	networkHandler         *networkapp.Handler
-	subnet                 *service.SubnetService
-	address                *service.AddressService
-	routeTableHandler      *routetableapp.Handler
-	securityGroup          *service.SecurityGroupService
-	gatewayHandler         *gatewayapp.Handler
-	privateEndpointHandler *peapp.Handler
-	addressPool            *service.AddressPoolService
-	networkInternal        *service.NetworkInternal
-	networkInterface       *service.NetworkInterfaceService
+	networkHandler          *networkapp.Handler
+	subnet                  *service.SubnetService
+	address                 *service.AddressService
+	routeTableHandler       *routetableapp.Handler
+	securityGroup           *service.SecurityGroupService
+	gatewayHandler          *gatewayapp.Handler
+	privateEndpointHandler  *peapp.Handler
+	addressPool             *service.AddressPoolService
+	networkInternal         *service.NetworkInternal
+	networkInterfaceHandler *niapp.Handler
 }
 
 func runServe(cfg config.Config) error {
@@ -299,17 +300,31 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура. Replicate
+	// Wave 3a pilot шаблона. У NIC нет Move RPC (NIC привязан к Subnet), но есть
+	// специфические AttachToInstance / DetachFromInstance с atomic CAS (KAC-52).
+	niHandler := niapp.NewHandler(
+		niapp.NewCreateNetworkInterfaceUseCase(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		niapp.NewUpdateNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
+		niapp.NewDeleteNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
+		niapp.NewGetNetworkInterfaceUseCase(niRepo),
+		niapp.NewListNetworkInterfacesUseCase(niRepo),
+		niapp.NewAttachToInstanceUseCase(niRepo, opsRepo),
+		niapp.NewDetachFromInstanceUseCase(niRepo, opsRepo),
+		niapp.NewListOperationsUseCase(opsRepo),
+	)
+
 	return &services{
-		networkHandler:         netHandler,
-		subnet:                 subnetSvc,
-		address:                service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
-		routeTableHandler:      rtHandler,
-		securityGroup:          sgSvc,
-		gatewayHandler:         gwHandler,
-		privateEndpointHandler: peHandler,
-		addressPool:            addressPoolSvc,
-		networkInternal:        service.NewNetworkInternal(networkRepo, sgRepo),
-		networkInterface:       service.NewNetworkInterfaceService(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		networkHandler:          netHandler,
+		subnet:                  subnetSvc,
+		address:                 service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
+		routeTableHandler:       rtHandler,
+		securityGroup:           sgSvc,
+		gatewayHandler:          gwHandler,
+		privateEndpointHandler:  peHandler,
+		addressPool:             addressPoolSvc,
+		networkInternal:         service.NewNetworkInternal(networkRepo, sgRepo),
+		networkInterfaceHandler: niHandler,
 	}
 }
 
@@ -321,7 +336,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 	vpcv1.RegisterRouteTableServiceServer(srv, svcs.routeTableHandler)
 	vpcv1.RegisterSecurityGroupServiceServer(srv, handler.NewSecurityGroupHandler(svcs.securityGroup))
 	vpcv1.RegisterGatewayServiceServer(srv, svcs.gatewayHandler)
-	vpcv1.RegisterNetworkInterfaceServiceServer(srv, handler.NewNetworkInterfaceHandler(svcs.networkInterface))
+	vpcv1.RegisterNetworkInterfaceServiceServer(srv, svcs.networkInterfaceHandler)
 	pepb.RegisterPrivateEndpointServiceServer(srv, svcs.privateEndpointHandler)
 	operationpb.RegisterOperationServiceServer(srv, handler.NewOperationHandler(opsRepo))
 }
