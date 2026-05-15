@@ -25,7 +25,10 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
+	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
+	peapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint"
+	routetableapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -75,16 +78,16 @@ func main() {
 // use-case-структуру — здесь хранится готовый `*networkapp.Handler`, а не
 // «толстый» NetworkService. Wave 3b — replicate на оставшиеся 7 ресурсов.
 type services struct {
-	networkHandler   *networkapp.Handler
-	subnet           *service.SubnetService
-	address          *service.AddressService
-	routeTable       *service.RouteTableService
-	securityGroup    *service.SecurityGroupService
-	gateway          *service.GatewayService
-	privateEndpoint  *service.PrivateEndpointService
-	addressPool      *service.AddressPoolService
-	networkInternal  *service.NetworkInternal
-	networkInterface *service.NetworkInterfaceService
+	networkHandler         *networkapp.Handler
+	subnet                 *service.SubnetService
+	address                *service.AddressService
+	routeTableHandler      *routetableapp.Handler
+	securityGroup          *service.SecurityGroupService
+	gatewayHandler         *gatewayapp.Handler
+	privateEndpointHandler *peapp.Handler
+	addressPool            *service.AddressPoolService
+	networkInternal        *service.NetworkInternal
+	networkInterface       *service.NetworkInterfaceService
 }
 
 func runServe(cfg config.Config) error {
@@ -265,17 +268,48 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		netGetUC, netListUC, netListSubUC, netListSGUC, netListRTUC, netListOpsUC,
 	)
 
+	// Wave 3b (skill evgeniy §2): Gateway / PrivateEndpoint / RouteTable —
+	// use-case-структура. Replicate Wave 3a pilot шаблона.
+	gwHandler := gatewayapp.NewHandler(
+		gatewayapp.NewCreateGatewayUseCase(gatewayRepo, folderClient, opsRepo),
+		gatewayapp.NewUpdateGatewayUseCase(gatewayRepo, opsRepo),
+		gatewayapp.NewDeleteGatewayUseCase(gatewayRepo, opsRepo),
+		gatewayapp.NewMoveGatewayUseCase(gatewayRepo, folderClient, opsRepo),
+		gatewayapp.NewGetGatewayUseCase(gatewayRepo),
+		gatewayapp.NewListGatewaysUseCase(gatewayRepo),
+		gatewayapp.NewListOperationsUseCase(opsRepo),
+	)
+
+	peHandler := peapp.NewHandler(
+		peapp.NewCreatePrivateEndpointUseCase(peRepo, networkRepo, subnetRepo, folderClient, opsRepo),
+		peapp.NewUpdatePrivateEndpointUseCase(peRepo, opsRepo),
+		peapp.NewDeletePrivateEndpointUseCase(peRepo, opsRepo),
+		peapp.NewGetPrivateEndpointUseCase(peRepo),
+		peapp.NewListPrivateEndpointsUseCase(peRepo),
+		peapp.NewListOperationsUseCase(opsRepo),
+	)
+
+	rtHandler := routetableapp.NewHandler(
+		routetableapp.NewCreateRouteTableUseCase(routeTableRepo, networkRepo, folderClient, opsRepo),
+		routetableapp.NewUpdateRouteTableUseCase(routeTableRepo, opsRepo),
+		routetableapp.NewDeleteRouteTableUseCase(routeTableRepo, opsRepo),
+		routetableapp.NewMoveRouteTableUseCase(routeTableRepo, folderClient, opsRepo),
+		routetableapp.NewGetRouteTableUseCase(routeTableRepo),
+		routetableapp.NewListRouteTablesUseCase(routeTableRepo),
+		routetableapp.NewListOperationsUseCase(opsRepo),
+	)
+
 	return &services{
-		networkHandler:   netHandler,
-		subnet:           subnetSvc,
-		address:          service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
-		routeTable:       service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo),
-		securityGroup:    sgSvc,
-		gateway:          service.NewGatewayService(gatewayRepo, folderClient, opsRepo),
-		privateEndpoint:  service.NewPrivateEndpointService(peRepo, folderClient, networkRepo, subnetRepo, opsRepo),
-		addressPool:      addressPoolSvc,
-		networkInternal:  service.NewNetworkInternal(networkRepo, sgRepo),
-		networkInterface: service.NewNetworkInterfaceService(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		networkHandler:         netHandler,
+		subnet:                 subnetSvc,
+		address:                service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
+		routeTableHandler:      rtHandler,
+		securityGroup:          sgSvc,
+		gatewayHandler:         gwHandler,
+		privateEndpointHandler: peHandler,
+		addressPool:            addressPoolSvc,
+		networkInternal:        service.NewNetworkInternal(networkRepo, sgRepo),
+		networkInterface:       service.NewNetworkInterfaceService(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
 	}
 }
 
@@ -284,11 +318,11 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 	vpcv1.RegisterNetworkServiceServer(srv, svcs.networkHandler)
 	vpcv1.RegisterSubnetServiceServer(srv, handler.NewSubnetHandler(svcs.subnet))
 	vpcv1.RegisterAddressServiceServer(srv, handler.NewAddressHandler(svcs.address, svcs.subnet))
-	vpcv1.RegisterRouteTableServiceServer(srv, handler.NewRouteTableHandler(svcs.routeTable))
+	vpcv1.RegisterRouteTableServiceServer(srv, svcs.routeTableHandler)
 	vpcv1.RegisterSecurityGroupServiceServer(srv, handler.NewSecurityGroupHandler(svcs.securityGroup))
-	vpcv1.RegisterGatewayServiceServer(srv, handler.NewGatewayHandler(svcs.gateway))
+	vpcv1.RegisterGatewayServiceServer(srv, svcs.gatewayHandler)
 	vpcv1.RegisterNetworkInterfaceServiceServer(srv, handler.NewNetworkInterfaceHandler(svcs.networkInterface))
-	pepb.RegisterPrivateEndpointServiceServer(srv, handler.NewPrivateEndpointHandler(svcs.privateEndpoint))
+	pepb.RegisterPrivateEndpointServiceServer(srv, svcs.privateEndpointHandler)
 	operationpb.RegisterOperationServiceServer(srv, handler.NewOperationHandler(opsRepo))
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
@@ -113,42 +112,7 @@ func TestSubnetService_Update_UnknownMask(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ---- RouteTable.Update happy-path ----
-
-func TestRouteTableService_Update_FullPATCH(t *testing.T) {
-	or := newMockOpsRepo()
-	nr := newMockNetworkRepo()
-	net := makeNetwork(nr)
-	rtr := newMockRouteTableRepo()
-	svc := NewRouteTableService(rtr, nr, newMockFolderClient(true), or)
-
-	createOp, _ := svc.Create(context.Background(), CreateRouteTableReq{
-		FolderID: "f1", Name: "rt1", NetworkID: net.ID,
-	})
-	awaitOpDone(t, or, createOp.ID)
-
-	rts, _, _ := svc.List(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
-	updOp, err := svc.Update(context.Background(), UpdateRouteTableReq{
-		RouteTableID: rts[0].ID,
-		Name:         "rt-upd",
-		Description:  "new",
-		Labels:       map[string]string{"env": "prod"},
-		StaticRoutes: []domain.StaticRoute{{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"}},
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, updOp.ID)
-	require.Nil(t, saved.Error)
-}
-
-func TestRouteTableService_Update_UnknownMask(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewRouteTableService(newMockRouteTableRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	_, err := svc.Update(context.Background(), UpdateRouteTableReq{
-		RouteTableID: "rt-X",
-		UpdateMask:   []string{"unknown_field"},
-	})
-	require.Error(t, err)
-}
+// ---- RouteTable.Update — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
 // ---- Address.Update happy-path ----
 
@@ -237,103 +201,7 @@ func TestSecurityGroupService_Update_BadName(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ---- Gateway.Update happy-path ----
-
-func TestGatewayService_Update_FullPATCH(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-
-	createOp, _ := svc.Create(context.Background(), CreateGatewayReq{
-		FolderID: "f1", Name: "gw1", GatewayType: "shared_egress",
-	})
-	awaitOpDone(t, or, createOp.ID)
-
-	gws, _, _ := svc.List(context.Background(), GatewayFilter{FolderID: "f1"}, Pagination{})
-	require.Len(t, gws, 1)
-	updOp, err := svc.Update(context.Background(), UpdateGatewayReq{
-		GatewayID:   gws[0].ID,
-		Name:        "gw-upd",
-		Description: "updated",
-		Labels:      map[string]string{"k": "v"},
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, updOp.ID)
-	require.Nil(t, saved.Error)
-}
-
-func TestGatewayService_Update_NameOnly(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-
-	createOp, _ := svc.Create(context.Background(), CreateGatewayReq{
-		FolderID: "f1", Name: "gw1", GatewayType: "shared_egress",
-	})
-	awaitOpDone(t, or, createOp.ID)
-
-	gws, _, _ := svc.List(context.Background(), GatewayFilter{FolderID: "f1"}, Pagination{})
-	updOp, err := svc.Update(context.Background(), UpdateGatewayReq{
-		GatewayID:  gws[0].ID,
-		Name:       "gw-upd",
-		UpdateMask: []string{"name"},
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, updOp.ID)
-	require.Nil(t, saved.Error)
-}
-
-func TestGatewayService_Update_BadName(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Update(context.Background(), UpdateGatewayReq{
-		GatewayID:  "gw-X",
-		Name:       "BadCaps", // strict NameGateway rejects uppercase
-		UpdateMask: []string{"name"},
-	})
-	require.Error(t, err)
-}
-
-func TestGatewayService_Update_UnknownMask(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewGatewayService(newMockGatewayRepo(), newMockFolderClient(true), or)
-	_, err := svc.Update(context.Background(), UpdateGatewayReq{
-		GatewayID:  "gw-X",
-		UpdateMask: []string{"unknown"},
-	})
-	require.Error(t, err)
-}
-
-// ---- PrivateEndpoint.Update happy-path ----
-
-func TestPrivateEndpointService_Update_FullPATCH(t *testing.T) {
-	or := newMockOpsRepo()
-	nr := newMockNetworkRepo()
-	net := makeNetwork(nr)
-	sr := newMockSubnetRepo()
-	sub := makeSubnet(sr, net.ID)
-	svc := NewPrivateEndpointService(newMockPERepo(), newMockFolderClient(true), nr, sr, or)
-
-	createOp, _ := svc.Create(context.Background(), CreatePrivateEndpointReq{
-		FolderID:    "f1",
-		Name:        "pe1",
-		NetworkID:   net.ID,
-		SubnetID:    sub.ID,
-		ServiceType: "object_storage",
-	})
-	awaitOpDone(t, or, createOp.ID)
-
-	pes, _, _ := svc.List(context.Background(), PrivateEndpointFilter{FolderID: "f1"}, Pagination{})
-	if len(pes) == 0 {
-		t.Skip("PE not retrievable from List in mock — happy-path Update covered separately")
-	}
-	updOp, err := svc.Update(context.Background(), UpdatePrivateEndpointReq{
-		PrivateEndpointID: pes[0].ID,
-		Name:              "pe-upd",
-		Description:       "updated",
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, updOp.ID)
-	require.Nil(t, saved.Error)
-}
+// ---- Gateway.Update / PrivateEndpoint.Update — moved to internal/apps/kacho/api/{gateway,privateendpoint}/usecase_test.go (Wave 3b) ----
 
 // ---- SG validateSGRule edge cases ----
 
@@ -385,26 +253,7 @@ func TestDomainSGToProto_Conversion(t *testing.T) {
 	require.Len(t, p.Rules, 1)
 }
 
-func TestDomainPrivateEndpointToProto_Conversion(t *testing.T) {
-	rec := &domain.PrivateEndpointRecord{
-		PrivateEndpoint: domain.PrivateEndpoint{
-			ID:          "pe-1",
-			FolderID:    "f",
-			Name:        domain.RcNameVPC("pe"),
-			NetworkID:   "n",
-			SubnetID:    "s",
-			IPAddress:   "10.0.0.5",
-			ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
-			Status:      domain.PrivateEndpointStatusAvailable,
-			DnsOptions:  map[string]any{"private_dns_records_enabled": true},
-		},
-	}
-	any, err := marshalPrivateEndpointRecord(rec)
-	require.NoError(t, err)
-	var out pepb.PrivateEndpoint
-	require.NoError(t, any.UnmarshalTo(&out))
-	assert.Equal(t, "pe-1", out.Id)
-}
+// TestDomainPrivateEndpointToProto_Conversion — moved to internal/apps/kacho/api/privateendpoint/usecase_test.go (Wave 3b).
 
 func TestAssignRuleIDs_GeneratesIDs(t *testing.T) {
 	rules := assignRuleIDs([]domain.SecurityGroupRule{
