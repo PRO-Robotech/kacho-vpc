@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"errors"
 	"log"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,7 +32,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
-	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
@@ -44,10 +41,10 @@ import (
 const configPathEnv = "KACHO_VPC_CONFIG_PATH"
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("usage: vpc {serve|migrate up|migrate down|migrate status}")
-	}
-	cmd := os.Args[1]
+	// kacho-vpc — single-purpose binary (skill evgeniy §9 K.1, AP-9). До KAC-96
+	// subcommand-mux `serve | migrate ...` — миграции вынесены в отдельный
+	// `cmd/migrator` (cobra-based, см. internal/apps/migrator). Subcommand
+	// проверка ниже в switch case.
 
 	cfg, err := config.Load(os.Getenv(configPathEnv))
 	if err != nil {
@@ -57,18 +54,19 @@ func main() {
 		log.Fatalf("config validate: %v", err)
 	}
 
-	switch cmd {
-	case "migrate":
-		if len(os.Args) < 3 {
-			log.Fatal("usage: vpc migrate {up|down|status}")
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "serve":
+			// no-op: продолжаем в runServe
+		case "migrate":
+			log.Fatal("`kacho-vpc migrate ...` removed in KAC-96 — use the separate binary `kacho-migrator {up|down|status|create}`")
+		default:
+			log.Fatalf("unknown command %q (this binary only serves the API; migrations live in `kacho-migrator`)", os.Args[1])
 		}
-		runMigrate(cfg, os.Args[2])
-	case "serve":
-		if err := runServe(cfg); err != nil {
-			log.Fatal(err)
-		}
-	default:
-		log.Fatalf("unknown command: %s", cmd)
+	}
+
+	if err := runServe(cfg); err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -306,32 +304,4 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
-}
-
-func runMigrate(cfg config.Config, direction string) {
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("goose dialect: %v", err)
-	}
-
-	db, err := sql.Open("pgx", cfg.MigrateDSN())
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	var gooseErr error
-	switch direction {
-	case "up":
-		gooseErr = goose.Up(db, ".")
-	case "down":
-		gooseErr = goose.Down(db, ".")
-	case "status":
-		gooseErr = goose.Status(db, ".")
-	default:
-		log.Fatalf("unknown migrate direction: %s", direction)
-	}
-	if gooseErr != nil {
-		log.Fatalf("migrate %s: %v", direction, gooseErr)
-	}
 }

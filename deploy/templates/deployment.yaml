@@ -21,10 +21,15 @@ spec:
           configMap:
             name: {{ .Values.name }}-config
       initContainers:
+        # KAC-96 (skill evgeniy §9 K.1, AP-9): миграции БД исполняет отдельный
+        # binary `kacho-migrator` (cobra-based CLI), не subcommand основного.
+        # Тот же image — оба binary build'ятся в Dockerfile multi-stage. DSN
+        # собирается мигратором из KACHO_VPC_DB_* env (через config-fallback
+        # в cmd/migrator/main.go) — одно helm-values покрывает оба binary.
         - name: migrate
           image: "{{ .Values.image }}"
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["/usr/local/bin/kacho-vpc", "migrate", "up"]
+          command: ["/usr/local/bin/kacho-migrator", "up"]
           volumeMounts:
             - name: config
               mountPath: /etc/kacho-vpc
