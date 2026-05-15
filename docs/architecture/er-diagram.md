@@ -172,8 +172,8 @@ erDiagram
   }
 
   ADDRESS_POOL_FREE_IPS {
-    text pool_id PK_compound "FK → address_pools.id ON DELETE CASCADE"
-    inet ip PK_compound "PRIMARY KEY (pool_id, ip)"
+    text pool_id PK "composite PK (pool_id, ip); FK → address_pools.id ON DELETE CASCADE"
+    inet ip PK "composite PK (pool_id, ip)"
   }
 
   CLOUD_POOL_SELECTOR {
@@ -189,16 +189,16 @@ erDiagram
   }
 
   IPV6_ALLOCATED_IPS {
-    text pool_id PK_compound "FK → address_pools.id ON DELETE CASCADE; PK (pool_id, ip); UNIQUE (pool_id, offset)"
-    inet ip PK_compound
+    text pool_id PK "composite PK (pool_id, ip); FK → address_pools.id ON DELETE CASCADE; UNIQUE (pool_id, offset)"
+    inet ip PK "composite PK (pool_id, ip)"
     numeric offset
     text address_id "no FK"
     timestamptz created_at
   }
 
   IPV6_RELEASED_OFFSETS {
-    text pool_id PK_compound "FK → address_pools.id ON DELETE CASCADE; PK (pool_id, offset)"
-    numeric offset PK_compound
+    text pool_id PK "composite PK (pool_id, offset); FK → address_pools.id ON DELETE CASCADE"
+    numeric offset PK "composite PK (pool_id, offset)"
   }
 
   OPERATIONS {
