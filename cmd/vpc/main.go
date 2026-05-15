@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -32,13 +31,17 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
-	"github.com/PRO-Robotech/kacho-vpc/internal/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// configPathEnv — путь к YAML-конфигу. Пустое значение допустимо (defaults +
+// ENV-override). Helm chart выставляет KACHO_VPC_CONFIG_PATH=/etc/kacho-vpc/config.yaml.
+const configPathEnv = "KACHO_VPC_CONFIG_PATH"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -46,9 +49,12 @@ func main() {
 	}
 	cmd := os.Args[1]
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(os.Getenv(configPathEnv))
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		log.Fatalf("config load: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("config validate: %v", err)
 	}
 
 	switch cmd {
@@ -89,9 +95,15 @@ func runServe(cfg config.Config) error {
 	logger := observability.NewSlogger(os.Stdout)
 	slog.SetDefault(logger)
 
-	productionMode, err := validateAuthMode(cfg, logger)
-	if err != nil {
-		return err
+	// Логируем insecure dev-defaults (раньше — в validateAuthMode).
+	for _, w := range cfg.InsecureDevWarnings() {
+		logger.Warn(w)
+	}
+	if cfg.AuthN.Mode == config.ModeProduction {
+		logger.Warn("authn.mode=production: anonymous callers will be rejected (M5 fail-closed)")
+	}
+	if cfg.AuthN.Mode == config.ModeProductionStrict {
+		logger.Warn("authn.mode=production-strict: anonymous rejected + TLS+SSL strictly validated")
 	}
 
 	pool, err := coredb.NewPool(ctx, cfg.DSN())
@@ -111,18 +123,17 @@ func runServe(cfg config.Config) error {
 	// при burst-нагрузке (10k RPS). См. internal/clients/folder_cache.go.
 	rawFolderClient := clients.NewFolderClient(rmConn)
 	folderClient := clients.NewCachedFolderClient(rawFolderClient, clients.FolderCacheConfig{
-		PositiveTTL: cfg.FolderCacheTTL,
-		NegativeTTL: cfg.FolderCacheNegativeTTL,
-		MaxSize:     cfg.FolderCacheSize,
+		PositiveTTL: cfg.Network.FolderCache.PositiveTTL,
+		NegativeTTL: cfg.Network.FolderCache.NegativeTTL,
+		MaxSize:     cfg.Network.FolderCache.MaxSize,
 	})
 	logger.Info("folder existence cache enabled",
-		"positive_ttl", cfg.FolderCacheTTL,
-		"negative_ttl", cfg.FolderCacheNegativeTTL,
-		"max_size", cfg.FolderCacheSize)
+		"positive_ttl", cfg.Network.FolderCache.PositiveTTL,
+		"negative_ttl", cfg.Network.FolderCache.NegativeTTL,
+		"max_size", cfg.Network.FolderCache.MaxSize)
 
 	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
-	// zone_id вызовом compute.v1.ZoneService.Get (см. workspace CLAUDE.md
-	// §«Кросс-доменные ссылки на ресурсы»).
+	// zone_id вызовом compute.v1.ZoneService.Get.
 	computeConn, err := dialCompute(cfg)
 	if err != nil {
 		return err
@@ -134,8 +145,7 @@ func runServe(cfg config.Config) error {
 
 	// gRPC servers + tenant-interceptor (scaffold под IAM/AuthZ): сейчас читает
 	// metadata, future — JWT claims; handler'ы делают AssertFolderOwnership.
-	// Публичный listener — requireAdmin=false; internal :9091 — requireAdmin=true
-	// (defense-in-depth поверх NetworkPolicy в helm).
+	productionMode := cfg.AuthN.Mode.IsProduction()
 	grpcSrv := grpcsrv.NewServer(
 		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(false, productionMode)),
 		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(false, productionMode)),
@@ -145,35 +155,36 @@ func runServe(cfg config.Config) error {
 		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(true, productionMode)),
 	)
 	registerPublicServices(grpcSrv, svcs, opsRepo)
-	registerInternalServices(internalSrv, svcs, pool, cfg.MigrateDSN(), logger, cfg.WatchMaxStreams)
+	registerInternalServices(internalSrv, svcs, pool, cfg.MigrateDSN(), logger, cfg.Watch.MaxStreams)
 
-	listener, err := net.Listen("tcp", ":"+cfg.GrpcPort)
+	publicAddr := cfg.APIServer.ListenAddress()
+	internalAddr := cfg.APIServer.InternalListenAddress()
+	listener, err := net.Listen("tcp", publicAddr)
 	if err != nil {
 		return err
 	}
-	internalListener, err := net.Listen("tcp", ":"+cfg.InternalGrpcPort)
+	internalListener, err := net.Listen("tcp", internalAddr)
 	if err != nil {
 		_ = listener.Close()
 		return err
 	}
 	logger.Info("kacho-vpc listening",
-		"public_port", cfg.GrpcPort,
-		"internal_port", cfg.InternalGrpcPort)
+		"public_endpoint", publicAddr,
+		"internal_endpoint", internalAddr)
 
 	// shutdownDone закрывается после полного дрейна (GracefulStop + LRO worker'ов).
-	// runServe блокируется на нём перед возвратом — иначе main → os.Exit обрывает
-	// in-flight LRO worker'ов до того как operations.Wait успел дождаться (P0 R7→R8).
 	shutdownDone := make(chan struct{})
+	gracefulTimeout := cfg.APIServer.GracefulShutdown
+	if gracefulTimeout <= 0 {
+		gracefulTimeout = 10 * time.Second
+	}
 	go func() {
 		defer close(shutdownDone)
 		<-ctx.Done()
 		internalSrv.GracefulStop()
 		grpcSrv.GracefulStop()
-		// Дождаться async LRO worker'ов (operations.Run): иначе in-flight
-		// Create/Update/Delete теряются на SIGTERM (handler вернул Operation,
-		// worker крутит INSERT/Allocate, процесс exit'ит → Operation.done=false навсегда).
-		drainCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		drainCtx, cancelDrain := context.WithTimeout(context.Background(), 3*gracefulTimeout)
+		defer cancelDrain()
 		if err := operations.Wait(drainCtx); err != nil {
 			logger.Warn("operations workers did not finish in time",
 				"err", err, "active", operations.Active())
@@ -181,78 +192,30 @@ func runServe(cfg config.Config) error {
 	}()
 
 	go func() {
-		// grpc.ErrServerStopped — штатный exit на graceful shutdown, не Error
-		// (без фильтра каждый clean shutdown шумит в alerting — R9).
 		if err := internalSrv.Serve(internalListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			logger.Error("internal grpc server stopped", "err", err)
 		}
 	}()
 
 	serveErr := grpcSrv.Serve(listener)
-	// Если Serve вернул из-за abnormal listener-exit (kernel закрыл socket, OOM,
-	// listener.Close() извне) — SIGTERM не приходил, shutdown-горутина висит на
-	// <-ctx.Done(); cancel() будит её → GracefulStop + operations.Wait → закрывает
-	// shutdownDone. Без этого <-shutdownDone deadlock'нулся бы (R8 m1).
 	cancel()
 	<-shutdownDone
 	return serveErr
 }
 
-// validateAuthMode разбирает KACHO_VPC_AUTH_MODE (whitelist — typo `prod`/`PRODUCTION`
-// НЕ должен silently пройти как dev, R10 F-1), для production-strict дополнительно
-// валидирует cross-service TLS + DB sslmode (R10 F-3), и логирует insecure dev-defaults.
-func validateAuthMode(cfg config.Config, logger *slog.Logger) (productionMode bool, err error) {
-	switch cfg.AuthMode {
-	case "dev":
-		productionMode = false
-	case "production":
-		productionMode = true
-		logger.Warn("AuthMode=production: anonymous callers will be rejected (M5 fail-closed)")
-	case "production-strict":
-		productionMode = true
-		if !cfg.ResourceManagerTLS {
-			return false, fmt.Errorf("production-strict mode: KACHO_VPC_RESOURCE_MANAGER_TLS=true required")
-		}
-		switch cfg.DBSSLMode { // `prefer`/`allow` допускают TLS-fallback к plaintext под MITM
-		case "require", "verify-ca", "verify-full":
-			// OK
-		default:
-			return false, fmt.Errorf("production-strict mode: KACHO_VPC_DB_SSLMODE must be one of require|verify-ca|verify-full (got %q)", cfg.DBSSLMode)
-		}
-		logger.Warn("AuthMode=production-strict: anonymous rejected + TLS+SSL strictly validated")
-	default:
-		return false, fmt.Errorf("unknown KACHO_VPC_AUTH_MODE=%q (allowed: dev, production, production-strict)", cfg.AuthMode)
-	}
-	if !productionMode {
-		if !cfg.ResourceManagerTLS {
-			logger.Warn("KACHO_VPC_RESOURCE_MANAGER_TLS=false — cross-service gRPC plaintext (dev only)")
-		}
-		if cfg.DBSSLMode == "" || cfg.DBSSLMode == "disable" {
-			logger.Warn("KACHO_VPC_DB_SSLMODE=disable — DB plaintext (dev only)")
-		}
-	}
-	return productionMode, nil
-}
-
 // dialResourceManager открывает gRPC-клиент к resource-manager. TLS опционален
-// через KACHO_VPC_RESOURCE_MANAGER_TLS=true (закрывает in-cluster MITM на
+// через extapi.resource-manager.tls.enable=true (закрывает in-cluster MITM на
 // FolderClient.Exists/GetCloudID — security P0); по умолчанию insecure для dev-стенда.
 //
-// Client-side round_robin LB (KAC-39): при KACHO_VPC_RESOURCE_MANAGER_DNS_LB=true
+// Client-side round_robin LB (KAC-39): при extapi.resource-manager.dns-lb=true
 // addr префиксуется `dns:///` (если ещё не) и применяется service-config с
-// round_robin балансировщиком — gRPC сам резолвит все A/AAAA записи Headless
-// Service и распределяет RPC между ними round-robin. Зеркало api-gateway →
-// backend. По умолчанию (false) поведение прежнее (passthrough resolver, 1 conn).
+// round_robin балансировщиком.
 func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
-	var creds credentials.TransportCredentials
-	if cfg.ResourceManagerTLS {
-		creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
-	} else {
-		creds = insecure.NewCredentials()
-	}
+	peer := cfg.ExtAPI.ResourceManager
+	creds := peerCreds(peer.TLS)
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
-	addr := cfg.ResourceManagerGRPCAddr
-	if cfg.ResourceManagerDNSLB {
+	addr := peer.Endpoint
+	if peer.DNSLB {
 		if !strings.HasPrefix(addr, "dns:///") {
 			addr = "dns:///" + addr
 		}
@@ -262,21 +225,28 @@ func dialResourceManager(cfg config.Config) (*grpc.ClientConn, error) {
 }
 
 // dialCompute открывает gRPC-клиент к kacho-compute (owner Geography). TLS опционален
-// через KACHO_VPC_COMPUTE_TLS=true; по умолчанию insecure для dev-стенда.
+// через extapi.compute.tls.enable=true; по умолчанию insecure для dev-стенда.
 func dialCompute(cfg config.Config) (*grpc.ClientConn, error) {
-	var creds credentials.TransportCredentials
-	if cfg.ComputeTLS {
-		creds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
-	} else {
-		creds = insecure.NewCredentials()
+	peer := cfg.ExtAPI.Compute
+	creds := peerCreds(peer.TLS)
+	return grpc.NewClient(peer.Endpoint, grpc.WithTransportCredentials(creds))
+}
+
+// peerCreds — single switch insecure-vs-tls для peer-gRPC.
+func peerCreds(t config.TLSClient) credentials.TransportCredentials {
+	if !t.Enable {
+		return insecure.NewCredentials()
 	}
-	return grpc.NewClient(cfg.ComputeGRPCAddr, grpc.WithTransportCredentials(creds))
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if t.ServerName != "" {
+		tlsCfg.ServerName = t.ServerName
+	}
+	return credentials.NewTLS(tlsCfg)
 }
 
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
-// defaultSGRepo: nil при KACHO_VPC_DEFAULT_SG_INLINE=false → Network.Create не создаёт
-// inline default SG (verbatim YC: SG создаётся внешним reconciler'ом; убирает 2 INSERT +
-// 1 UPDATE из hot-path). geoClient — ZoneRegistry-impl над kacho-compute (валидация zone_id).
+// defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
+// inline default SG.
 func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoClient service.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
@@ -291,20 +261,16 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
 	var defaultSGRepo service.SecurityGroupRepo
-	if cfg.DefaultSGInline {
+	if cfg.Network.DefaultSGInline {
 		defaultSGRepo = sgRepo
 	} else {
-		logger.Warn("KACHO_VPC_DEFAULT_SG_INLINE=false — Network.Create НЕ создаёт default SG")
+		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
 	sgSvc := service.NewSecurityGroupService(sgRepo, networkRepo, folderClient, opsRepo)
 	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, geoClient)
-	// addressRepo обогащает SubnetService.ListUsedAddresses записями referrer'ов
-	// (UsedAddress.references[] — кто использует адрес; YC-like).
 	subnetSvc.SetAddressRefRepo(addressRepo)
-	// niRepo: precondition-проверка в Subnet.Delete (нельзя удалить подсеть с NIC,
-	// приаттаченным к инстансу — KAC-31).
 	subnetSvc.SetNICRepo(niRepo)
 	return &services{
 		network:          service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo),
@@ -320,8 +286,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	}
 }
 
-// registerPublicServices — публичные (verbatim-YC) RPC + OperationService на
-// внешний listener (:9090, проксируется api-gateway). reflection включён в grpcsrv.NewServer.
+// registerPublicServices — публичные RPC + OperationService на внешний listener.
 func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations.Repo) {
 	vpcv1.RegisterNetworkServiceServer(srv, handler.NewNetworkHandler(svcs.network))
 	vpcv1.RegisterSubnetServiceServer(srv, handler.NewSubnetHandler(svcs.subnet))
@@ -334,15 +299,12 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 	operationpb.RegisterOperationServiceServer(srv, handler.NewOperationHandler(opsRepo))
 }
 
-// registerInternalServices — kacho-only/admin RPC на internal listener (:9091, не
-// маршрутизируется наружу; NetworkPolicy в helm + requireAdmin-interceptor).
-// InternalWatch держит dedicated pgx.Conn вне пула — отсюда отдельный dsn.
+// registerInternalServices — kacho-only/admin RPC на internal listener.
 func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Pool, dsn string, logger *slog.Logger, watchMaxStreams int) {
 	vpcv1.RegisterInternalWatchServiceServer(srv, handler.NewInternalWatchHandler(pool, dsn, logger.With("component", "internal-watch"), watchMaxStreams))
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.address))
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
-	// InternalNetworkInterfaceService удалён в KAC-79/KAC-36 (post-kube-ovn).
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
 }
 
