@@ -5,6 +5,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -30,7 +31,8 @@ func (h *InternalAddressPoolHandler) Create(ctx context.Context, req *vpcv1.Crea
 		Name:             req.GetName(),
 		Description:      req.GetDescription(),
 		Labels:           req.GetLabels(),
-		CIDRBlocks:       req.GetCidrBlocks(),
+		V4CIDRBlocks:     req.GetV4CidrBlocks(),
+		V6CIDRBlocks:     req.GetV6CidrBlocks(),
 		Kind:             domain.AddressPoolKind(req.GetKind()),
 		ZoneID:           req.GetZoneId(),
 		IsDefault:        req.GetIsDefault(),
@@ -83,9 +85,19 @@ func (h *InternalAddressPoolHandler) Update(ctx context.Context, req *vpcv1.Upda
 		in.ReplaceLabels = true
 		in.Labels = req.GetLabels()
 	}
-	if len(req.GetCidrBlocks()) > 0 {
-		in.ReplaceCIDR = true
-		in.CIDRBlocks = req.GetCidrBlocks()
+	// KAC-71: replace выполняется ТОЛЬКО при выставленном явном bool-флаге.
+	// Тело массива (включая пустой) значимо лишь при флаге true; иначе
+	// игнорируется. Это даёт двум сценариям детерминированную семантику:
+	// (1) очистить один family (replace_v6=true, v6=[]) превращает dual-stack
+	// в v4-only; (2) обновить description без замены CIDR — оба массива в
+	// запросе игнорируются. См. REQ-IPL-UPD-01..06 / B7..B12.
+	if req.GetReplaceV4CidrBlocks() {
+		in.ReplaceV4CIDR = true
+		in.V4CIDRBlocks = req.GetV4CidrBlocks()
+	}
+	if req.GetReplaceV6CidrBlocks() {
+		in.ReplaceV6CIDR = true
+		in.V6CIDRBlocks = req.GetV6CidrBlocks()
 	}
 	if req.GetUpdateIsDefault() {
 		in.UpdateIsDefault = true
@@ -153,9 +165,20 @@ func (h *InternalAddressPoolHandler) Check(ctx context.Context, req *vpcv1.Check
 	return &vpcv1.CheckResponse{Warnings: warnings}, nil
 }
 
+// ExplainResolution — admin diagnostic. REQ-RESOLVE-04 / D4: при fall-through
+// (никаких pool требуемой family) возвращаем HTTP 200 с `matched_via="none"`
+// и пустым `selected_pool`, а НЕ FailedPrecondition (как делают
+// AllocateExternalIPv4 / AllocateExternalIPv6 при той же ошибке). ExplainResolution —
+// диагностический endpoint для admin-UI; «нет подходящего pool» — нормальный
+// ответ, который должен рендериться без error-handling.
+//
+// Прочие ошибки (NotFound и т.п.) идут через стандартный mapPoolErr.
 func (h *InternalAddressPoolHandler) ExplainResolution(ctx context.Context, req *vpcv1.ExplainResolutionRequest) (*vpcv1.ExplainResolutionResponse, error) {
 	primary, runner, err := h.svc.ExplainResolution(ctx, req.GetAddressId(), req.GetNetworkId())
 	if err != nil {
+		if errors.Is(err, service.ErrPoolNotResolved) {
+			return &vpcv1.ExplainResolutionResponse{MatchedVia: "none"}, nil
+		}
 		return nil, mapPoolErr(err)
 	}
 	out := &vpcv1.ExplainResolutionResponse{}
@@ -234,7 +257,8 @@ func poolToProto(p *domain.AddressPool) *vpcv1.AddressPool {
 		Name:             p.Name,
 		Description:      p.Description,
 		Labels:           p.Labels,
-		CidrBlocks:       p.CIDRBlocks,
+		V4CidrBlocks:     p.V4CIDRBlocks,
+		V6CidrBlocks:     p.V6CIDRBlocks,
 		Kind:             vpcv1.AddressPoolKind(p.Kind),
 		ZoneId:           p.ZoneID,
 		IsDefault:        p.IsDefault,

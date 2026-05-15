@@ -44,9 +44,11 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	// freelist-population). Pool изолирован за t.Cleanup → cascade удалит
 	// ipv6_pool_cursors / allocated / released (FK ON DELETE CASCADE из 0021).
 	poolID := "aplv6test12345678901"
+	// KAC-71: after migration 0022, column `cidr_blocks` split into
+	// v4_cidr_blocks / v6_cidr_blocks — v6 prefix goes into the v6 slot.
 	_, err = p.Exec(ctx, `
-		INSERT INTO address_pools (id, name, description, labels, cidr_blocks, kind, is_default, created_at, modified_at, selector_labels, selector_priority)
-		VALUES ($1, 'test-v6-pool', '', '{}'::jsonb, ARRAY['2001:db8::/64']::text[], 1, false, now(), now(), '{}'::jsonb, 0)`,
+		INSERT INTO address_pools (id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, is_default, created_at, modified_at, selector_labels, selector_priority)
+		VALUES ($1, 'test-v6-pool', '', '{}'::jsonb, ARRAY[]::text[], ARRAY['2001:db8::/64']::text[], 1, false, now(), now(), '{}'::jsonb, 0)`,
 		poolID)
 	require.NoError(t, err, "insert v6 pool")
 	t.Cleanup(func() { _, _ = p.Exec(context.Background(), `DELETE FROM address_pools WHERE id = $1`, poolID) })

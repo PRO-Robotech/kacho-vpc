@@ -1056,9 +1056,13 @@ func (s *AddressService) AllocateExternalIP(ctx context.Context, addressID strin
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
 	pool := resolved.Pool
-	if len(pool.CIDRBlocks) == 0 {
+	// KAC-71: AllocateExternalIP — v4 path; family-фильтр в cascade уже
+	// гарантирует что pool имеет хотя бы один v4-CIDR (см. poolHasFamily).
+	// Этот guard — defensive backstop на случай если cascade пропустил family-
+	// фильтр (нормально не должно происходить).
+	if len(pool.V4CIDRBlocks) == 0 {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"address pool %s has no cidr_blocks", pool.ID)
+			"address pool %s has no v4_cidr_blocks", pool.ID)
 	}
 
 	ip, err := s.repo.AllocateIPFromFreelist(ctx, pool.ID, addressID)
@@ -1102,9 +1106,12 @@ func (s *AddressService) AllocateExternalIPv6(ctx context.Context, addressID str
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
 	pool := resolved.Pool
-	if len(pool.CIDRBlocks) == 0 {
+	// KAC-71: AllocateExternalIPv6 — v6 path; family-фильтр в cascade уже
+	// гарантирует что pool имеет хотя бы один v6-CIDR (см. poolHasFamily).
+	// Этот guard — defensive backstop симметричный v4-варианту.
+	if len(pool.V6CIDRBlocks) == 0 {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"address pool %s has no cidr_blocks", pool.ID)
+			"address pool %s has no v6_cidr_blocks", pool.ID)
 	}
 
 	ip, err := s.repo.AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)

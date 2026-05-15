@@ -52,11 +52,17 @@ func NewAddressPoolService(
 }
 
 // CreatePoolReq — параметры создания пула.
+//
+// KAC-71: cidr_blocks split на v4_cidr_blocks + v6_cidr_blocks. Хотя бы одно
+// поле должно быть непустым (валидация B5; миграция 0022 имеет defensive guard
+// на pre-existing rows). Family каждого блока обязательна (REQ-IPL-CR-05 / B6):
+// IPv6-префикс в V4CIDRBlocks → InvalidArgument, и симметрично.
 type CreatePoolReq struct {
 	Name             string
 	Description      string
 	Labels           map[string]string
-	CIDRBlocks       []string
+	V4CIDRBlocks     []string
+	V6CIDRBlocks     []string
 	Kind             domain.AddressPoolKind
 	ZoneID           string // ru-central1-a; "" = глобальный пул (default fallback)
 	IsDefault        bool
@@ -68,28 +74,20 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 	if req.Kind == domain.AddressPoolKindUnspecified {
 		return nil, status.Error(codes.InvalidArgument, "kind must be specified")
 	}
-	if len(req.CIDRBlocks) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "cidr_blocks must contain at least one prefix")
+	// REQ-IPL-CR-04 / B5: хотя бы одно из v4_cidr_blocks / v6_cidr_blocks
+	// непусто. Pool без CIDR — бессмысленен (нельзя ни v4-, ни v6-аллокацию).
+	if len(req.V4CIDRBlocks) == 0 && len(req.V6CIDRBlocks) == 0 {
+		return nil, status.Error(codes.InvalidArgument,
+			"v4_cidr_blocks and v6_cidr_blocks must not be both empty")
 	}
-	hasV6 := false
-	for _, c := range req.CIDRBlocks {
-		p, err := netip.ParsePrefix(strings.TrimSpace(c))
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
-		}
-		// IPv4 — materialised freelist allocator (миграция 0014).
-		// IPv6 — sparse counter-based allocator (KAC-58, миграция 0020).
-		// Mixed-family pools допустимы (allocator выбирается по ip_version
-		// в request-spec); cascade resolve фильтрует pools по family.
-		if p.Addr().Is6() {
-			hasV6 = true
-		}
-		// Host-bits должны быть 0 (canonical form: 198.51.100.0/24, не /5).
-		// Для v6: например 2001:db8::/64 — без host-bits.
-		if p.Masked() != p {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
-		}
+	// REQ-IPL-CR-05 / B6: family-strict валидация каждого слота. IPv6-prefix в
+	// V4CIDRBlocks или IPv4 в V6CIDRBlocks → InvalidArgument с verbatim текстом
+	// (см. acceptance §0 «CIDR family detection в API-слое»).
+	if err := validateAddressPoolCIDRs("v4_cidr_blocks", req.V4CIDRBlocks, familyV4Strict); err != nil {
+		return nil, err
+	}
+	if err := validateAddressPoolCIDRs("v6_cidr_blocks", req.V6CIDRBlocks, familyV6Strict); err != nil {
+		return nil, err
 	}
 	// zone_id existence — Geography (Region/Zone) — домен kacho-compute (эпик KAC-15):
 	// FK address_pools.zone_id → zones убрана; существование зоны проверяем вызовом
@@ -107,7 +105,8 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 		Name:             req.Name,
 		Description:      req.Description,
 		Labels:           req.Labels,
-		CIDRBlocks:       req.CIDRBlocks,
+		V4CIDRBlocks:     req.V4CIDRBlocks,
+		V6CIDRBlocks:     req.V6CIDRBlocks,
 		Kind:             req.Kind,
 		ZoneID:           req.ZoneID,
 		IsDefault:        req.IsDefault,
@@ -120,21 +119,71 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 	if err != nil {
 		return nil, err
 	}
-	// Материализуем per-IP freelist для IPv4 CIDR-блоков pool'а (миграция 0014):
-	// PG-native AllocateIPFromFreelist полагается на эту таблицу. IPv6 CIDR'ы
-	// PopulateFreelistForPool пропускает (для них — sparse counter в
-	// ipv6_pool_cursors, инициализируется ниже).
+	// Материализуем per-IP freelist только для V4CIDRBlocks (миграция 0015):
+	// PG-native AllocateIPFromFreelist полагается на эту таблицу. v6-блоки
+	// идут через sparse counter в ipv6_pool_cursors (см. ниже).
+	// PopulateFreelistForPool сам читает только v4_cidr_blocks (KAC-71) —
+	// для v4-only / dual-stack pool заполнит ровно v4-CIDR'ы; для v6-only
+	// pool это no-op.
 	if err := s.pools.PopulateFreelistForPool(ctx, created.ID); err != nil {
 		return nil, status.Errorf(codes.Internal, "populate freelist: %v", err)
 	}
 	// KAC-58: pool с IPv6 CIDR использует sparse counter-based allocator
-	// (миграция 0020). Initialise next_offset=1 для каждого такого pool.
-	if hasV6 {
+	// (миграция 0020). Initialise next_offset=1 если pool имеет v6-блоки.
+	if len(created.V6CIDRBlocks) > 0 {
 		if err := s.addrRepo.InitIPv6PoolCursor(ctx, created.ID); err != nil {
 			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
 		}
 	}
 	return created, nil
+}
+
+// familyStrict — режим проверки family у CIDR-блока в split-shape.
+type familyStrict int
+
+const (
+	familyV4Strict familyStrict = iota
+	familyV6Strict
+)
+
+// validateAddressPoolCIDRs — REQ-IPL-CR-05 / REQ-IPL-CR-06: каждый блок в
+// соответствующем слоте обязан быть нужной family + host-bits=0. Сообщения —
+// verbatim из acceptance §0:
+//   - `v4_cidr_blocks[N]: "..." is not an IPv4 prefix`
+//   - `v6_cidr_blocks[N]: "..." is not an IPv6 prefix`
+//   - `<field>[N]: "..." host bits must be zero (use ...)` — общая форма для
+//     обеих family.
+func validateAddressPoolCIDRs(field string, blocks []string, want familyStrict) error {
+	for i, c := range blocks {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument,
+				"%s[%d]: %q is not a valid CIDR prefix: %v", field, i, c, err)
+		}
+		// Family-фильтр первым — иначе host-bits сообщение будет вводить в
+		// заблуждение для cross-family-prefix'а.
+		isV6 := p.Addr().Is6() && !p.Addr().Is4In6()
+		switch want {
+		case familyV4Strict:
+			if isV6 {
+				return status.Errorf(codes.InvalidArgument,
+					"%s[%d]: %q is not an IPv4 prefix", field, i, c)
+			}
+		case familyV6Strict:
+			if !isV6 {
+				return status.Errorf(codes.InvalidArgument,
+					"%s[%d]: %q is not an IPv6 prefix", field, i, c)
+			}
+		}
+		// Host-bits должны быть 0 (canonical form: 198.51.100.0/24, не /5;
+		// для v6 — 2001:db8::/64, не 2001:db8::5/64).
+		if p.Masked() != p {
+			return status.Errorf(codes.InvalidArgument,
+				"%s[%d]: %q host bits must be zero (use %s)",
+				field, i, c, p.Masked().String())
+		}
+	}
+	return nil
 }
 
 func (s *AddressPoolService) Get(ctx context.Context, id string) (*domain.AddressPool, error) {
@@ -146,14 +195,25 @@ func (s *AddressPoolService) List(ctx context.Context, f AddressPoolFilter, p Pa
 }
 
 // UpdatePoolReq — частичное обновление; nil-пойнтеры/false-flags = no-op.
+//
+// KAC-71: CIDR-поля — детерминированный replace через explicit bool-флаги
+// `ReplaceV4CIDR` / `ReplaceV6CIDR`. Body-array значимо ТОЛЬКО при выставленном
+// флаге (даже пустой массив — это явный «очистить» при флаге true). Без флага
+// V4CIDRBlocks / V6CIDRBlocks в запросе игнорируется (REQ-IPL-UPD-06 / B12).
+// Это позволяет изменять один family, не трогая второй; и явно очищать family
+// (превращая dual-stack pool в v4-only или v6-only). Очистить оба family
+// одновременно (или единственный непустой family) запрещено invariant'ом
+// "v4 ∪ v6 ≠ ∅ after update" (REQ-IPL-UPD-03 / B10).
 type UpdatePoolReq struct {
 	ID                     string
 	Name                   *string
 	Description            *string
 	ReplaceLabels          bool
 	Labels                 map[string]string
-	ReplaceCIDR            bool
-	CIDRBlocks             []string
+	ReplaceV4CIDR          bool
+	V4CIDRBlocks           []string
+	ReplaceV6CIDR          bool
+	V6CIDRBlocks           []string
 	UpdateIsDefault        bool
 	IsDefault              bool
 	ReplaceSelectorLabels  bool
@@ -176,28 +236,44 @@ func (s *AddressPoolService) Update(ctx context.Context, req UpdatePoolReq) (*do
 	if req.ReplaceLabels {
 		cur.Labels = req.Labels
 	}
-	if req.ReplaceCIDR {
-		hasV6Update := false
-		for _, c := range req.CIDRBlocks {
-			p, err := netip.ParsePrefix(strings.TrimSpace(c))
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "invalid cidr %q: %v", c, err)
-			}
-			if p.Addr().Is6() {
-				hasV6Update = true
-			}
-			if p.Masked() != p {
-				return nil, status.Errorf(codes.InvalidArgument,
-					"cidr %q: host bits must be zero (use %s)", c, p.Masked().String())
-			}
+	// REQ-IPL-UPD-01 / B7 + REQ-IPL-UPD-02 / B8: replace выполняется ТОЛЬКО при
+	// явном bool-флаге; пустой массив в запросе без флага игнорируется
+	// (REQ-IPL-UPD-06 / B12). При флаге true — body-array становится новым
+	// содержимым, включая пустой массив (REQ-IPL-UPD-05 / B11 — очистить один
+	// family на dual-stack pool).
+	newV4 := cur.V4CIDRBlocks
+	newV6 := cur.V6CIDRBlocks
+	if req.ReplaceV4CIDR {
+		if err := validateAddressPoolCIDRs("v4_cidr_blocks", req.V4CIDRBlocks, familyV4Strict); err != nil {
+			return nil, err
 		}
-		cur.CIDRBlocks = req.CIDRBlocks
-		// KAC-58: если новый CIDR-набор включает v6 — initialise cursor
-		// (idempotent — InitIPv6PoolCursor использует ON CONFLICT DO NOTHING).
-		if hasV6Update {
-			if err := s.addrRepo.InitIPv6PoolCursor(ctx, cur.ID); err != nil {
-				return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
-			}
+		newV4 = req.V4CIDRBlocks
+	}
+	if req.ReplaceV6CIDR {
+		if err := validateAddressPoolCIDRs("v6_cidr_blocks", req.V6CIDRBlocks, familyV6Strict); err != nil {
+			return nil, err
+		}
+		newV6 = req.V6CIDRBlocks
+	}
+	// REQ-IPL-UPD-03 / B10: post-update invariant — хотя бы один family непуст.
+	// Проверяем только если хотя бы один replace-флаг выставлен (без них state
+	// не меняется и проверка не нужна).
+	if req.ReplaceV4CIDR || req.ReplaceV6CIDR {
+		if len(newV4) == 0 && len(newV6) == 0 {
+			return nil, status.Error(codes.InvalidArgument,
+				"v4_cidr_blocks and v6_cidr_blocks must not be both empty after update")
+		}
+	}
+	v6Added := req.ReplaceV6CIDR && len(newV6) > 0 && len(cur.V6CIDRBlocks) == 0
+	cur.V4CIDRBlocks = newV4
+	cur.V6CIDRBlocks = newV6
+	// KAC-58: если v6-family появилась на этом pool впервые (был v4-only,
+	// стал dual-stack) — инициализируем cursor. InitIPv6PoolCursor идемпотентен,
+	// поэтому повторная инициализация безопасна; но защищаем себя от
+	// no-op-вызовов когда v6 не менялся.
+	if v6Added {
+		if err := s.addrRepo.InitIPv6PoolCursor(ctx, cur.ID); err != nil {
+			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
 		}
 	}
 	if req.UpdateIsDefault {
@@ -330,28 +406,25 @@ func (s *AddressPoolService) ResolvePoolForAddressObjFamily(ctx context.Context,
 	return res, err
 }
 
-// poolHasFamily — true если хотя бы один CIDR-блок pool принадлежит запрошенной family.
+// poolHasFamily — true если pool имеет хотя бы один CIDR-блок запрошенной family.
+//
+// KAC-71: после split CIDR-блоков family-фильтр становится тривиальным
+// `len(V4CIDRBlocks)>0` / `len(V6CIDRBlocks)>0` — без runtime-парсинга. Service-
+// слой обеспечивает family-correctness на Create/Update (REQ-IPL-CR-05 / B6 +
+// REQ-IPL-UPD-01/02), поэтому колонка является source-of-truth по family.
+// Cascade `doResolve` использует это на всех 5 шагах единообразно — pool без
+// требуемой family пропускается, cascade проваливается дальше (REQ-RESOLVE-06,
+// REQ-RESOLVE-07).
 func poolHasFamily(pool *domain.AddressPool, family AddressFamily) bool {
 	if pool == nil {
 		return false
 	}
-	for _, c := range pool.CIDRBlocks {
-		p, perr := netip.ParsePrefix(c)
-		if perr != nil {
-			continue
-		}
-		switch family {
-		case FamilyV6:
-			if p.Addr().Is6() && !p.Addr().Is4In6() {
-				return true
-			}
-		default:
-			if p.Addr().Is4() {
-				return true
-			}
-		}
+	switch family {
+	case FamilyV6:
+		return len(pool.V6CIDRBlocks) > 0
+	default:
+		return len(pool.V4CIDRBlocks) > 0
 	}
-	return false
 }
 
 // resolveWithRunnerUp — общая логика резолва, опционально вычисляет runner-up
@@ -578,12 +651,19 @@ func (s *AddressPoolService) GetPoolUtilization(ctx context.Context, poolID stri
 		return nil, err
 	}
 	out := &PoolUtilization{PoolID: poolID}
-	for _, c := range pool.CIDRBlocks {
+	// KAC-71: utilization считается ТОЛЬКО для V4CIDRBlocks (sparse v6-allocator
+	// ведёт свою бухгалтерию через ipv6_pool_cursors / ipv6_allocated_ips —
+	// отдельный observability path). Чтобы admin-UI видел v6-CIDR'ы в списке,
+	// добавляем их с Total=Used=0 (placeholder, реальная v6-стата — TBD).
+	for _, c := range pool.V4CIDRBlocks {
 		total := usableIPv4Count(c)
 		used := perCIDR[c]
 		out.CIDRs = append(out.CIDRs, CIDRUsage{CIDR: c, Total: total, Used: used})
 		out.TotalIPs += total
 		out.UsedIPs += used
+	}
+	for _, c := range pool.V6CIDRBlocks {
+		out.CIDRs = append(out.CIDRs, CIDRUsage{CIDR: c, Total: 0, Used: 0})
 	}
 	out.FreeIPs = out.TotalIPs - out.UsedIPs
 	if out.FreeIPs < 0 {
