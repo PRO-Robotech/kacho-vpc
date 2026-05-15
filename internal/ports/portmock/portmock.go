@@ -23,15 +23,21 @@ import (
 )
 
 // ---- NetworkRepo ----
+//
+// Wave 2 pilot (KAC-99/KAC-94): port-интерфейс возвращает *domain.NetworkRecord
+// (repo-entity с DB-managed CreatedAt) вместо *domain.Network. Mock хранит
+// записи в map[id]*NetworkRecord и проставляет CreatedAt при Insert (`now`).
 
 type NetworkRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.Network
+	data map[string]*domain.NetworkRecord
 }
 
-func NewNetworkRepo() *NetworkRepo { return &NetworkRepo{data: make(map[string]*domain.Network)} }
+func NewNetworkRepo() *NetworkRepo {
+	return &NetworkRepo{data: make(map[string]*domain.NetworkRecord)}
+}
 
-func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.Network, error) {
+func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
@@ -41,34 +47,37 @@ func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.Network, error)
 	return n, nil
 }
 
-func (r *NetworkRepo) List(_ context.Context, f ports.NetworkFilter, _ ports.Pagination) ([]*domain.Network, string, error) {
+func (r *NetworkRepo) List(_ context.Context, f ports.NetworkFilter, _ ports.Pagination) ([]*domain.NetworkRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.Network
+	var result []*domain.NetworkRecord
 	for _, n := range r.data {
 		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
-			(f.Name == "" || n.Name == f.Name) {
+			(f.Name == "" || string(n.Name) == f.Name) {
 			result = append(result, n)
 		}
 	}
 	return result, "", nil
 }
 
-func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*domain.Network, error) {
+func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[n.ID] = n
-	return n, nil
+	rec := &domain.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
+	r.data[n.ID] = rec
+	return rec, nil
 }
 
-func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.Network, error) {
+func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[n.ID]; !ok {
+	existing, ok := r.data[n.ID]
+	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	r.data[n.ID] = n
-	return n, nil
+	// keep existing CreatedAt; overwrite mutable domain-fields.
+	existing.Network = *n
+	return existing, nil
 }
 
 func (r *NetworkRepo) Delete(_ context.Context, id string) error {
@@ -81,7 +90,7 @@ func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Network, error) {
+func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.data[id]

@@ -138,9 +138,10 @@ func TestNetworkService_Update_MaskApplication(t *testing.T) {
 	savedUpdOp := awaitOpDone(t, or, updOp.ID)
 	assert.True(t, savedUpdOp.Done)
 
-	// Проверяем что только name обновилось (description не изменилась из-за маски)
+	// Проверяем что только name обновилось (description не изменилась из-за маски).
+	// Wave 2 pilot: Name/Description — newtypes (RcNameVPC/RcDescription).
 	n, err := svc.Get(context.Background(), netID)
 	require.NoError(t, err)
-	assert.Equal(t, "net1-updated", n.Name)
-	assert.Equal(t, "", n.Description) // маска не включала description
+	assert.Equal(t, "net1-updated", string(n.Name))
+	assert.Equal(t, "", string(n.Description)) // маска не включала description
 }

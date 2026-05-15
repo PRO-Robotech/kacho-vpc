@@ -667,7 +667,7 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 	// возвращает его наружу. Re-write — пересоберём service с явным netRepo.
 	nr := newMockNetworkRepo()
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, err = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net-v6-bind", CreatedAt: time.Now().UTC()})
+	_, err = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind")})
 	require.NoError(t, err)
 
 	sr := newMockSubnetRepo()

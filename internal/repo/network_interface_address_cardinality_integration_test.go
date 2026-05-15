@@ -40,7 +40,7 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-card", CreatedAt: now, Name: "net-card",
+		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-card", Name: domain.RcNameVPC("net-card"),
 	}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)

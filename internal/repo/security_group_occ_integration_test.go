@@ -40,10 +40,9 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 	sgr := repo.NewSecurityGroupRepo(pool)
 
 	net := &domain.Network{
-		ID:        ids.NewID(ids.PrefixNetwork),
-		FolderID:  "folder-occ",
-		CreatedAt: time.Now().UTC(),
-		Name:      "net-for-occ-sg",
+		ID:       ids.NewID(ids.PrefixNetwork),
+		FolderID: "folder-occ",
+		Name:     domain.RcNameVPC("net-for-occ-sg"),
 	}
 	_, err = nr.Insert(ctx, net)
 	require.NoError(t, err)

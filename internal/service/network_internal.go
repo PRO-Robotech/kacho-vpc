@@ -53,7 +53,8 @@ func (s *NetworkInternal) SetDefaultSecurityGroupId(ctx context.Context, network
 			sgID, sg.NetworkID, networkID)
 	}
 	n.DefaultSecurityGroupID = sgID
-	_, err = s.repo.Update(ctx, n)
+	// Update принимает domain.Network (без CreatedAt) — берём embedded.
+	_, err = s.repo.Update(ctx, &n.Network)
 	return err
 }
 

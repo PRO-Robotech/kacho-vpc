@@ -98,7 +98,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	}
 
 	// Network + subnet for the internal-address (step-2) path.
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", CreatedAt: now, Name: "net-step2"}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", Name: domain.RcNameVPC("net-step2")}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 	sub := &domain.Subnet{

@@ -87,14 +87,18 @@ func TestNetworkHandler_Delete_InvalidArg(t *testing.T) {
 }
 
 func TestNetworkToProto_Fields(t *testing.T) {
-	n := &domain.Network{
-		ID:          "net-123",
-		FolderID:    "folder-1",
-		Name:        "my-net",
-		Description: "desc",
-		Labels:      map[string]string{"env": "test"},
+	// Wave 2 pilot (KAC-99/KAC-94): Network теперь — repo-entity (NetworkRecord)
+	// + domain newtypes для Name/Description/Labels.
+	rec := &domain.NetworkRecord{
+		Network: domain.Network{
+			ID:          "net-123",
+			FolderID:    "folder-1",
+			Name:        domain.RcNameVPC("my-net"),
+			Description: domain.RcDescription("desc"),
+			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
+		},
 	}
-	p := protoconv.Network(n)
+	p := protoconv.Network(rec)
 	assert.Equal(t, "net-123", p.Id)
 	assert.Equal(t, "folder-1", p.FolderId)
 	assert.Equal(t, "my-net", p.Name)

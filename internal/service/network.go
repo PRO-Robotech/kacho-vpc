@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,10 +14,18 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы Network/time через init() —
+	// dto.Transfer находит их в реестре. Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
 
-// CreateNetworkReq — запрос на создание сети.
+// CreateNetworkReq — запрос на создание сети. Wave 2 pilot (KAC-99/KAC-94):
+// мы оставили этот transport-level DTO (вместо передачи domain.Network
+// напрямую) на эту итерацию — handler-слой ещё конвертирует proto-request →
+// CreateNetworkReq; принимать сюда `domain.Network` потребовало бы пробросить
+// LabelsFromMap до handler-а, что мы и делаем — но shape ради читаемости
+// оставлен. Это будет схлопнуто в Wave 3 (UseCases).
 type CreateNetworkReq struct {
 	FolderID    string
 	Name        string
@@ -125,8 +132,9 @@ func (s *NetworkService) ListOperations(ctx context.Context, networkID string, p
 	})
 }
 
-// Get возвращает Network по ID.
-func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, error) {
+// Get возвращает Network по ID. Возвращает repo-entity (с CreatedAt) —
+// handler формирует из него protoconv/DTO.
+func (s *NetworkService) Get(ctx context.Context, id string) (*domain.NetworkRecord, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
 		return nil, err
 	}
@@ -142,7 +150,7 @@ func (s *NetworkService) Get(ctx context.Context, id string) (*domain.Network, e
 // folder_id обязателен (verbatim YC: oneof container с exactly_one). Без
 // service-level enforcement repo тихо пропускал бы WHERE folder_id и
 // возвращал кросс-folder enumeration — closed R10 critical (#C1).
-func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.Network, string, error) {
+func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -150,21 +158,25 @@ func (s *NetworkService) List(ctx context.Context, f NetworkFilter, p Pagination
 }
 
 // Create инициирует создание Network, возвращает Operation.
+//
+// Wave 2 pilot (KAC-99/KAC-94): валидация теперь происходит в domain.Network.Validate()
+// (skill evgeniy §4 D.5 / AP-1). Service-слой больше НЕ вызывает
+// `corevalidate.NameVPC/Description/Labels` — domain — источник истины.
 func (s *NetworkService) Create(ctx context.Context, req CreateNetworkReq) (*operations.Operation, error) {
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	// VPC Network принимает empty name (verbatim YC: regex с empty-allowed).
-	// См. YC-DIFF-NAME-VALIDATION.md — YC permissive policy для VPC.
-	// Note: garbage-UUID folder_id больше НЕ валидируется sync — async через
-	// folderClient.Exists → NotFound (verbatim YC). См. YC-DIFF-INVALID-PARENT-CODE.md.
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+
+	// Сборка domain.Network ради self-validation. ID/DefaultSGID ещё не известны
+	// (выставляются в worker'е), но они в Validate() не участвуют — это id-поля
+	// (validate их игнорирует), здесь не критично.
+	n := domain.Network{
+		FolderID:    req.FolderID,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := n.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -218,62 +230,56 @@ func (s *NetworkService) doCreate(ctx context.Context, netID string, req CreateN
 	n := &domain.Network{
 		ID:          netID,
 		FolderID:    req.FolderID,
-		CreatedAt:   time.Now().UTC(),
-		Name:        req.Name,
-		Description: req.Description,
-		Labels:      req.Labels,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
 	created, err := s.repo.Insert(ctx, n)
 	if err != nil {
-		// Маппим service.ErrAlreadyExists (UNIQUE folder_id+name, миграция 0018)
-		// и прочие в gRPC status — иначе worker положит raw error с code=Unknown.
+		// Маппим service.ErrAlreadyExists (UNIQUE folder_id+name) и прочие в
+		// gRPC status — иначе worker положит raw error с code=Unknown.
 		return nil, mapRepoErr(err)
 	}
 
-	// Inline default SG. Verbatim YC defaults: 2 правила INGRESS+EGRESS, protocol ANY, cidr 0.0.0.0/0.
+	// Inline default SG. Skill evgeniy §4 D.7 / AP-2: используем builder
+	// `domain.NewDefaultSecurityGroup(net)` вместо inline-литерала с magic
+	// `"default-sg-"+net.ID[:8]` / `Status: "ACTIVE"`.
 	if s.sgRepo != nil {
-		shortNet := created.ID
-		if len(shortNet) > 8 {
-			shortNet = shortNet[:8]
-		}
-		sg := &domain.SecurityGroup{
-			ID:                ids.NewID(ids.PrefixSecurityGroup),
-			FolderID:          created.FolderID,
-			NetworkID:         created.ID,
-			CreatedAt:         time.Now().UTC(),
-			Name:              "default-sg-" + shortNet,
-			Description:       "Default security group (auto-created by kacho-vpc)",
-			Status:            "ACTIVE",
-			DefaultForNetwork: true,
-			Rules: []domain.SecurityGroupRule{
-				{Direction: "INGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
-				{Direction: "EGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
-			},
-		}
-		createdSG, sgErr := s.sgRepo.Insert(ctx, sg)
+		sg := domain.NewDefaultSecurityGroup(created.Network)
+		createdSG, sgErr := s.sgRepo.Insert(ctx, &sg)
 		if sgErr != nil {
 			// SG creation failed — Network уже создан. Log warn, не падаем
 			// (admin может создать default SG руками через public API).
-			// Возвращаем network без default_security_group_id.
-			return anypb.New(protoconv.Network(created))
+			return marshalNetworkRecord(created)
 		}
 		// Bind SG как default через NetworkRepo.Update.
 		created.DefaultSecurityGroupID = createdSG.ID
-		updated, uerr := s.repo.Update(ctx, created)
+		updated, uerr := s.repo.Update(ctx, &created.Network)
 		if uerr == nil {
-			return anypb.New(protoconv.Network(updated))
+			return marshalNetworkRecord(updated)
 		}
 		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
-		return anypb.New(protoconv.Network(created))
+		return marshalNetworkRecord(created)
 	}
-	return anypb.New(protoconv.Network(created))
+	return marshalNetworkRecord(created)
+}
+
+// marshalNetworkRecord конвертирует repo-entity Network в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4: protoconv.Network → dto.Transfer).
+func marshalNetworkRecord(rec *domain.NetworkRecord) (*anypb.Any, error) {
+	var dst *vpcv1.Network
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Network: %w", err)
+	}
+	return anypb.New(dst)
 }
 
 // Update обновляет Network.
 //
-// Sync-валидация update_mask и значений выполняется ДО Operation: каждое поле,
-// упомянутое в mask, проверяется по тем же правилам, что и Create. Без mask —
-// валидируются все три поля (name/description/labels). См. validateNetworkUpdate.
+// Sync-валидация update_mask и значений выполняется ДО Operation. Каждое поле,
+// упомянутое в mask, преобразуется в newtype и валидируется через
+// domain.Network.Validate() (для целостности — собираем фиктивный snapshot
+// только из заявленных полей). См. validateNetworkUpdate.
 func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
 		return nil, err
@@ -305,28 +311,31 @@ func (s *NetworkService) Update(ctx context.Context, req UpdateNetworkReq) (*ope
 }
 
 func (s *NetworkService) doUpdate(ctx context.Context, req UpdateNetworkReq) (*anypb.Any, error) {
-	n, err := s.repo.Get(ctx, req.NetworkID)
+	rec, err := s.repo.Get(ctx, req.NetworkID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 
-	applyNetworkMask(n, req)
+	applyNetworkMask(&rec.Network, req)
 
-	updated, err := s.repo.Update(ctx, n)
+	updated, err := s.repo.Update(ctx, &rec.Network)
 	if err != nil {
 		// mapRepoErr: sentinel→gRPC. Без обёртки worker отдавал бы
 		// raw "already exists" в Operation.error (verbatim YC parity break).
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Network(updated))
+	return marshalNetworkRecord(updated)
 }
 
 // validateNetworkUpdate — sync-проверка update_mask и значений.
 //
+// Wave 2 pilot (KAC-99/KAC-94): преобразуем поля в domain-newtypes и зовём их
+// Validate() напрямую — теперь domain — источник истины, не corevalidate.
+//
 // Decision table (для каждого поля в mask):
-//   - name      → должно быть non-empty + соответствовать verbatim YC name regex.
-//   - description → длина <=256 chars (utf-8 runes).
-//   - labels    → <=64 пар, ключ/значение — verbatim YC.
+//   - name      → RcNameVPC.Validate() — verbatim YC permissive name regex.
+//   - description → RcDescription.Validate() — длина ≤ 256.
+//   - labels    → domain.ValidateLabels() — ≤ 64 пар, ключ regex, значение длина.
 //
 // Поле, не упомянутое в mask, не валидируется (= unchanged).
 func validateNetworkUpdate(req UpdateNetworkReq) error {
@@ -341,16 +350,15 @@ func validateNetworkUpdate(req UpdateNetworkReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			// VPC Network: empty name allowed (YC permissive policy).
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		}
@@ -361,19 +369,19 @@ func validateNetworkUpdate(req UpdateNetworkReq) error {
 func applyNetworkMask(n *domain.Network, req UpdateNetworkReq) {
 	if len(req.UpdateMask) == 0 {
 		// полное обновление
-		n.Name = req.Name
-		n.Description = req.Description
-		n.Labels = req.Labels
+		n.Name = domain.RcNameVPC(req.Name)
+		n.Description = domain.RcDescription(req.Description)
+		n.Labels = domain.LabelsFromMap(req.Labels)
 		return
 	}
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			n.Name = req.Name
+			n.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			n.Description = req.Description
+			n.Description = domain.RcDescription(req.Description)
 		case "labels":
-			n.Labels = req.Labels
+			n.Labels = domain.LabelsFromMap(req.Labels)
 		}
 	}
 }
@@ -427,7 +435,7 @@ func (s *NetworkService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Network(updated))
+		return marshalNetworkRecord(updated)
 	})
 
 	return &op, nil

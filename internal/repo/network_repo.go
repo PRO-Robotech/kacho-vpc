@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -12,6 +13,14 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// Network — type-alias на domain.NetworkRecord (repo-entity с DB-managed
+// CreatedAt). Имя `repo.Network` сохранено для читаемости call-site'ов
+// (`*repo.Network` встречается в service/handler-коде), а сама структура
+// объявлена в `domain` чтобы её мог типизировать ещё и `internal/ports`
+// без import-cycle. Skill evgeniy §4 D.1 / §7 H.1: CreatedAt живёт в
+// repo-entity, не в domain.Network.
+type Network = domain.NetworkRecord
 
 // NetworkRepo — реализация service.NetworkRepo поверх pgxpool.
 type NetworkRepo struct {
@@ -25,7 +34,7 @@ func NewNetworkRepo(pool *pgxpool.Pool) *NetworkRepo {
 
 const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id`
 
-func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, error) {
+func (r *NetworkRepo) Get(ctx context.Context, id string) (*Network, error) {
 	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, networkCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	n, err := scanNetwork(row)
@@ -35,7 +44,7 @@ func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, erro
 	return n, nil
 }
 
-func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p service.Pagination) ([]*domain.Network, string, error) {
+func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p service.Pagination) ([]*Network, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -90,7 +99,7 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 	}
 	defer rows.Close()
 
-	var result []*domain.Network
+	var result []*Network
 	for rows.Next() {
 		n, err := scanNetwork(rows)
 		if err != nil {
@@ -111,8 +120,13 @@ func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p servi
 	return result, nextToken, nil
 }
 
-func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON, err := marshalJSONB(n.Labels, "Network.labels")
+// Insert вставляет Network. Принимает domain.Network (без CreatedAt — repo сам
+// выставит `now()` в БД через DEFAULT; здесь явно прокидываем UTC-now для
+// детерминированности тестов, но source of truth — БД-колонка).
+//
+// Возвращает *repo.Network с заполненным CreatedAt.
+func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*Network, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -123,31 +137,31 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// vpn_id allocation удалён в KAC-79/KAC-36 (post-kube-ovn: data-plane id
-	// сети теперь не нужен — kube-ovn управляет underlay сам).
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + networkCols
 
 	row := tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, n.CreatedAt, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
+		n.ID, n.FolderID, now, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := scanNetwork(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "Network", n.Name)
+		return nil, wrapPgErr(err, "Network", string(n.Name))
 	}
 	if err := emitVPC(ctx, tx, "Network", result.ID, "CREATED", networkPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "Network", n.Name)
+		return nil, wrapPgErr(err, "Network", string(n.Name))
 	}
 	return result, nil
 }
 
-func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Network, error) {
-	labelsJSON, err := marshalJSONB(n.Labels, "Network.labels")
+// Update обновляет mutable-поля Network. Принимает domain.Network (без CreatedAt).
+func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*Network, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +178,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 		RETURNING ` + networkCols
 
 	row := tx.QueryRow(ctx, q,
-		n.ID, n.Name, n.Description, labelsJSON, n.DefaultSecurityGroupID,
+		n.ID, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := scanNetwork(row)
 	if err != nil {
@@ -180,7 +194,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*domain.Ne
 }
 
 // SetFolderID меняет folder_id у Network (для :move).
-func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Network, error) {
+func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*Network, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -212,7 +226,6 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// vpn_id allocation удалён в KAC-79/KAC-36 — простой DELETE без free-list.
 	tag, err := tx.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
@@ -241,19 +254,25 @@ type scannable interface {
 	Scan(dest ...any) error
 }
 
-func scanNetwork(row scannable) (*domain.Network, error) {
-	var n domain.Network
+func scanNetwork(row scannable) (*Network, error) {
+	var n Network
 	var labelsJSON []byte
+	var name string
+	var description string
 
 	err := row.Scan(
-		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON,
+		&n.ID, &n.FolderID, &n.CreatedAt, &name, &description, &labelsJSON,
 		&n.DefaultSecurityGroupID,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(labelsJSON, &n.Labels, "Network.labels"); err != nil {
+	n.Name = domain.RcNameVPC(name)
+	n.Description = domain.RcDescription(description)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "Network.labels"); err != nil {
 		return nil, err
 	}
+	n.Labels = domain.LabelsFromMap(labels)
 	return &n, nil
 }

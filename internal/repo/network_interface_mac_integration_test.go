@@ -36,7 +36,7 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-mac", CreatedAt: now, Name: "net-mac"}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-mac", Name: domain.RcNameVPC("net-mac")}
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 

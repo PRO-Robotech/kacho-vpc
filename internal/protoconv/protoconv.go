@@ -24,18 +24,23 @@ import (
 
 func ts(t time.Time) *timestamppb.Timestamp { return timestamppb.New(t.Truncate(time.Second)) }
 
-// Network конвертирует domain.Network → vpcv1.Network. InternalNetwork message
-// (с инфра-чувствительным vpn_id) удалён в KAC-79/KAC-36 (post-kube-ovn:
-// kube-ovn управляет underlay сам, vpn_id в kacho-vpc больше не аллоцируется).
-func Network(n *domain.Network) *vpcv1.Network {
+// Network конвертирует repo-entity Network → vpcv1.Network.
+//
+// Wave 2 pilot (KAC-99/KAC-94): принимает *domain.NetworkRecord (repo-entity
+// с CreatedAt), а не *domain.Network — CreatedAt уехал в repo-projection
+// (skill evgeniy §4 D.1 / §7 H.1). Это legacy-функция, оставлена ради тестов
+// (handler_test и т.п.). Новый production-call идёт через DTO-реестр
+// (`dto.Transfer(dto.FromTo(...))`) в `service/network.go::marshalNetworkRecord`
+// и `handler/network_handler.go::networkToPb`. См. skill §3 C.3 / AP-11.
+func Network(rec *domain.NetworkRecord) *vpcv1.Network {
 	return &vpcv1.Network{
-		Id:                     n.ID,
-		FolderId:               n.FolderID,
-		CreatedAt:              ts(n.CreatedAt),
-		Name:                   n.Name,
-		Description:            n.Description,
-		Labels:                 n.Labels,
-		DefaultSecurityGroupId: n.DefaultSecurityGroupID,
+		Id:                     rec.ID,
+		FolderId:               rec.FolderID,
+		CreatedAt:              ts(rec.CreatedAt),
+		Name:                   string(rec.Name),
+		Description:            string(rec.Description),
+		Labels:                 domain.LabelsToMap(rec.Labels),
+		DefaultSecurityGroupId: rec.DefaultSecurityGroupID,
 	}
 }
 

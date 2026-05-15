@@ -8,9 +8,26 @@ import (
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует Network/time DTO трансферы; см. service/network.go.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// networkToPb формирует *vpcv1.Network из repo-entity через DTO-реестр.
+// Wave 2 pilot (KAC-99/KAC-94): handler больше не зовёт protoconv.Network(...)
+// для Network — это место единственного fan-out через DTO. Остальные ресурсы
+// в этом handler-е (Subnet/SecurityGroup/RouteTable) по-прежнему через
+// protoconv.X до их Wave 2 итераций.
+func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
+	var dst *vpcv1.Network
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, status.Error(codes.Internal, "dto.Transfer Network failed")
+	}
+	return dst, nil
+}
 
 // NetworkHandler реализует vpcv1.NetworkServiceServer.
 type NetworkHandler struct {
@@ -38,7 +55,7 @@ func (h *NetworkHandler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) 
 	if err := AssertFolderOwnership(ctx, n.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.Network(n), nil
+	return networkToPb(n)
 }
 
 func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
@@ -59,7 +76,11 @@ func (h *NetworkHandler) List(ctx context.Context, req *vpcv1.ListNetworksReques
 	}
 	resp := &vpcv1.ListNetworksResponse{NextPageToken: nextToken}
 	for _, n := range nets {
-		resp.Networks = append(resp.Networks, protoconv.Network(n))
+		pb, err := networkToPb(n)
+		if err != nil {
+			return nil, err
+		}
+		resp.Networks = append(resp.Networks, pb)
 	}
 	return resp, nil
 }

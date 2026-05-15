@@ -62,20 +62,21 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 
 	r := repo.NewNetworkRepo(pool)
 
-	// Insert
+	// Insert. Wave 2 pilot (KAC-99/KAC-94): domain.Network больше не несёт
+	// CreatedAt (DB-managed) и принимает newtypes для Name/Description/Labels.
 	n := &domain.Network{
 		ID:          ids.NewUID(),
 		FolderID:    "folder-1",
-		CreatedAt:   time.Now().UTC().Truncate(time.Microsecond),
-		Name:        "test-network",
-		Description: "test",
-		Labels:      map[string]string{"env": "test"},
+		Name:        domain.RcNameVPC("test-network"),
+		Description: domain.RcDescription("test"),
+		Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
 	}
 	created, err := r.Insert(ctx, n)
 	require.NoError(t, err)
 	assert.Equal(t, n.ID, created.ID)
-	assert.Equal(t, "test-network", created.Name)
-	assert.Equal(t, "test", created.Labels["env"])
+	assert.Equal(t, domain.RcNameVPC("test-network"), created.Name)
+	val, _ := created.Labels.Get("env")
+	assert.Equal(t, domain.LabelVal("test"), val)
 
 	// Get
 	got, err := r.Get(ctx, n.ID)
@@ -88,12 +89,13 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	assert.Len(t, nets, 1)
 	assert.Empty(t, nextToken)
 
-	// Update
-	got.Name = "updated-network"
-	got.Description = "updated"
-	updated, err := r.Update(ctx, got)
+	// Update — Update принимает domain.Network (без CreatedAt). Берём embedded
+	// из repo-entity, меняем нужные поля.
+	got.Name = domain.RcNameVPC("updated-network")
+	got.Description = domain.RcDescription("updated")
+	updated, err := r.Update(ctx, &got.Network)
 	require.NoError(t, err)
-	assert.Equal(t, "updated-network", updated.Name)
+	assert.Equal(t, domain.RcNameVPC("updated-network"), updated.Name)
 
 	// Delete
 	err = r.Delete(ctx, n.ID)
@@ -123,12 +125,12 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	nr := repo.NewNetworkRepo(pool)
 	sr := repo.NewSubnetRepo(pool)
 
-	// Сначала создаём network (FK constraint)
+	// Сначала создаём network (FK constraint). CreatedAt больше не в domain
+	// (KAC-99/KAC-94), DB-managed via repo.
 	net := &domain.Network{
-		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "net-for-subnet",
+		ID:       ids.NewUID(),
+		FolderID: "folder-1",
+		Name:     domain.RcNameVPC("net-for-subnet"),
 	}
 	_, err = nr.Insert(ctx, net)
 	require.NoError(t, err)
@@ -200,10 +202,9 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	// Internal address — addresses.internal_subnet_id has an FK to subnets,
 	// so the referenced subnet (and its network) must exist first.
 	net := &domain.Network{
-		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "net-for-internal-addr",
+		ID:       ids.NewUID(),
+		FolderID: "folder-1",
+		Name:     domain.RcNameVPC("net-for-internal-addr"),
 	}
 	_, err = repo.NewNetworkRepo(pool).Insert(ctx, net)
 	require.NoError(t, err)
@@ -366,10 +367,9 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 	rtr := repo.NewRouteTableRepo(pool)
 
 	net := &domain.Network{
-		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "net-for-rt",
+		ID:       ids.NewUID(),
+		FolderID: "folder-1",
+		Name:     domain.RcNameVPC("net-for-rt"),
 	}
 	_, err = nr.Insert(ctx, net)
 	require.NoError(t, err)
