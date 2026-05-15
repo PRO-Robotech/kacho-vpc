@@ -12,21 +12,26 @@ spec:
     metadata:
       labels:
         app: {{ .Values.name }}
+      annotations:
+        # ConfigMap-content hash → pod rolling-restart при изменении config.yaml.
+        kacho.cloud/config-checksum: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.name }}-config
       initContainers:
         - name: migrate
           image: "{{ .Values.image }}"
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: ["/usr/local/bin/kacho-vpc", "migrate", "up"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kacho-vpc
+              readOnly: true
           env:
-            - name: KACHO_VPC_DB_HOST
-              value: "{{ .Values.db.host }}"
-            - name: KACHO_VPC_DB_PORT
-              value: "{{ .Values.db.port }}"
-            - name: KACHO_VPC_DB_USER
-              value: "{{ .Values.db.user }}"
-            - name: KACHO_VPC_DB_NAME
-              value: "{{ .Values.db.name }}"
+            - name: KACHO_VPC_CONFIG_PATH
+              value: /etc/kacho-vpc/config.yaml
             - name: KACHO_VPC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -42,26 +47,18 @@ spec:
               containerPort: {{ .Values.ports.grpc }}
             - name: grpc-internal
               containerPort: {{ .Values.ports.internalGrpc }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kacho-vpc
+              readOnly: true
           env:
-            - name: KACHO_VPC_DB_HOST
-              value: "{{ .Values.db.host }}"
-            - name: KACHO_VPC_DB_PORT
-              value: "{{ .Values.db.port }}"
-            - name: KACHO_VPC_DB_USER
-              value: "{{ .Values.db.user }}"
-            - name: KACHO_VPC_DB_NAME
-              value: "{{ .Values.db.name }}"
+            - name: KACHO_VPC_CONFIG_PATH
+              value: /etc/kacho-vpc/config.yaml
             - name: KACHO_VPC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.db.passwordSecretName }}
                   key: {{ .Values.db.passwordSecretKey }}
-            - name: KACHO_VPC_GRPC_PORT
-              value: "{{ .Values.ports.grpc }}"
-            - name: KACHO_VPC_INTERNAL_PORT
-              value: "{{ .Values.ports.internalGrpc }}"
-            - name: KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR
-              value: "{{ .Values.resourceManagerAddr }}"
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

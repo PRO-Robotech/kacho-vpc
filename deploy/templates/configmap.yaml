@@ -1,0 +1,65 @@
+{{/*
+ConfigMap с YAML-конфигом kacho-vpc (skill evgeniy §8 J.1).
+
+После KAC-95 сервис читает config из /etc/kacho-vpc/config.yaml; конкретные
+поля можно override'ить через ENV (`KACHO_VPC_REPOSITORY__POSTGRES__URL` и т.п.).
+
+Содержимое рендерится из values.yaml: смотри ключ `config` или legacy-ключи
+`ports.*` / `db.*` / `resourceManagerAddr` (см. deploy/values.yaml).
+
+DB-пароль НЕ кладётся сюда (secret); подтягивается через
+`repository.postgres.password-from-env: KACHO_VPC_DB_PASSWORD` и Secret-ENV
+в deployment.yaml.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-config
+  namespace: kacho
+data:
+  config.yaml: |
+    logger:
+      level: {{ default "INFO" .Values.logger.level | quote }}
+
+    api-server:
+      endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.grpc | quote }}
+      internal-endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.internalGrpc | quote }}
+      graceful-shutdown: {{ default "10s" .Values.apiServer.gracefulShutdown | quote }}
+
+    metrics:
+      enable: {{ default true .Values.metrics.enable }}
+    healthcheck:
+      enable: {{ default true .Values.healthcheck.enable }}
+
+    repository:
+      type: POSTGRES
+      postgres:
+        url: {{ printf "postgres://%s@%s:%v/%s" .Values.db.user .Values.db.host .Values.db.port .Values.db.name | quote }}
+        max-conns: {{ default 0 .Values.repository.postgres.maxConns }}
+        ssl-mode: {{ default "disable" .Values.repository.postgres.sslMode | quote }}
+        password-from-env: KACHO_VPC_DB_PASSWORD
+
+    authn:
+      mode: {{ default "dev" .Values.authn.mode | quote }}
+
+    extapi:
+      def-dial-duration: 10s
+      resource-manager:
+        endpoint: {{ .Values.resourceManagerAddr | quote }}
+        tls:
+          enable: {{ default false .Values.extapi.resourceManager.tls.enable }}
+        dns-lb: {{ default false .Values.extapi.resourceManager.dnsLb }}
+      compute:
+        endpoint: {{ default "compute.kacho.svc.cluster.local:9090" .Values.extapi.compute.endpoint | quote }}
+        tls:
+          enable: {{ default false .Values.extapi.compute.tls.enable }}
+
+    watch:
+      max-streams: {{ default 32 .Values.watch.maxStreams }}
+
+    network:
+      default-sg-inline: {{ default true .Values.network.defaultSgInline }}
+      folder-cache:
+        positive-ttl: {{ default "30s" .Values.network.folderCache.positiveTtl | quote }}
+        negative-ttl: {{ default "5s" .Values.network.folderCache.negativeTtl | quote }}
+        max-size: {{ default 10000 .Values.network.folderCache.maxSize }}

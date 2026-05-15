@@ -14,22 +14,54 @@ db:
   passwordSecretKey: password
 resourceManagerAddr: "resource-manager.kacho.svc.cluster.local:9090"
 
-# ─── Load-test friendly defaults (KAC-41) ─────────────────────────────
-# Tuned for high-throughput Address.Create:
-#   - DB_MAX_CONNS=200: pgxpool default of 4 caps write throughput.
-#   - FOLDER_CACHE_TTL=30s: keeps folder existence checks out of
-#     allocate hot-path.
-#
-# ⚠️ KACHO_VPC_DEFAULT_SG_INLINE намеренно НЕ переопределяется здесь:
-# product-default — `true` (см. kacho-vpc/CLAUDE.md §9 / cmd/vpc/main.go).
-# Network.Create должен inline-создавать default SG и привязывать его
-# через `default_security_group_id`. KAC-40 чарт временно ставил `false`
-# для +30-40% throughput на load-тесте — это сломало default SG в обычном
-# UI-flow (KAC-54). Если нужен load-test override — задавать как ad-hoc
-# `--set env.KACHO_VPC_DEFAULT_SG_INLINE=false`, не в product values.
-env:
-  KACHO_VPC_DB_MAX_CONNS: "200"
-  KACHO_VPC_FOLDER_CACHE_TTL: "30s"
+# ─── Config sections (KAC-95: viper YAML config) ──────────────────────
+# Все ключи ниже рендерятся в /etc/kacho-vpc/config.yaml через
+# deploy/templates/configmap.yaml. Любой ключ можно override через
+# ENV KACHO_VPC_<SECTION>__<KEY>=... (см. internal/apps/kacho/config).
+logger:
+  level: INFO
+apiServer:
+  gracefulShutdown: 10s
+metrics:
+  enable: true
+healthcheck:
+  enable: true
+repository:
+  postgres:
+    # ⚠️ Tuned for high-throughput Address.Create (KAC-41): pgxpool default
+    # of 4 caps write throughput. 200 conns/pod уже unlock'aет 10k RPS.
+    maxConns: 200
+    sslMode: disable
+authn:
+  mode: dev
+extapi:
+  resourceManager:
+    tls:
+      enable: false
+    dnsLb: false
+  compute:
+    endpoint: "compute.kacho.svc.cluster.local:9090"
+    tls:
+      enable: false
+watch:
+  maxStreams: 32
+network:
+  # ⚠️ default-sg-inline=true (product default, см. kacho-vpc/CLAUDE.md §9):
+  # Network.Create синхронно создаёт default SG. KAC-40 пробовал false для
+  # +30-40% throughput на load-тесте — это сломало default SG в UI-flow (KAC-54).
+  # Если нужен load-test override — `--set network.defaultSgInline=false`.
+  defaultSgInline: true
+  folderCache:
+    positiveTtl: 30s
+    negativeTtl: 5s
+    maxSize: 10000
+
+# ─── Legacy ENV-block (backward-compat) ───────────────────────────────
+# Раньше тут жили все ENV-переменные. KAC-95 переехал config в YAML, но
+# `env:` всё ещё уважается deployment.yaml — туда можно складывать
+# overrides и debug-флаги (например, `KACHO_VPC_AUTH_MODE=production`)
+# без правки configmap.
+env: {}
 
 resources:
   requests:
