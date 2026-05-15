@@ -140,6 +140,24 @@
 
 **Coverage: 1/1 RPC (100%).**
 
+## InternalAddressPoolService (admin/IPAM — kacho-only, prefix `IPL-*`)
+
+KAC-71 split-shape (`v4_cidr_blocks` + `v6_cidr_blocks`) — добавлено 16 новых IPL-* кейсов
+(в `cases/internal-pool.py`), 2 рефакторено (IPL-CR-CRUD-V4-OK, IPL-CR-VAL-BOTH-EMPTY) +
+2 ADR-CR-EXT-FALLTHROUGH-V4/V6 в `cases/address.py` (cascade family-skip post-split).
+
+| RPC | Классы | Cases | Статус |
+|---|---|---|---|
+| Create | CRUD (v4-only / v6-only / dual-stack), VAL (both-empty, cross-family, host-bits) | IPL-CR-CRUD-V4-OK / -V6-OK / -DS-OK, IPL-CR-VAL-BOTH-EMPTY / -CROSS-V4-IN-V6 / -BAD-CIDR-HOSTBITS / -MISSING-KIND / -MISSING-NAME / -IPV6-CIDR, IPL-CR-NEG-DUP-DEFAULT / -BAD-ZONE | ▣ |
+| Update | CRUD (description/labels/isDefault), STATE (replace-семантика per family), VAL (post-state v4∪v6≠∅) | IPL-UPD-CRUD-OK, IPL-UPD-REPLACE-V4 / -REPLACE-V6 / -CLEAR-V6-DUALSTACK-TO-V4-ONLY / -NO-FLAGS-NOOP / -EMPTY-BOTH-REPLACE | ▣ |
+| Get / List / Delete | CRUD, NEG (NF) | IPL-LST-CRUD-OK, IPL-GET-NEG-NF, IPL-DEL-NEG-NF, IPL-DEL-NEG-OVERRIDE-EXISTS | ■ |
+| Check / ExplainResolution / GetUtilization / ListAddresses | CRUD, CONF (matched_via=none on fallthrough — REQ-RESOLVE-04) | IPL-CHK-CRUD-OK / -AMBIGUOUS-WARN, IPL-EXPLAIN-NETWORK-DEFAULT / -UNRESOLVABLE / -NONE, IPL-UTIL-CRUD-OK / -NEG-NF, IPL-LISTADDR-CRUD-OK / -EMPTY-OK | ▣ |
+| BindAsNetworkDefault / UnbindNetworkDefault (Network) | CRUD, IDM, STATE, NEG, **family-agnostic** | IPL-NETBIND-CRUD-OK / -NEG-NF, IPL-NETUNBIND-IDM-NOOP, IPL-BIND-FAMILY-AGNOSTIC | ▣ |
+| OverridePoolForAddress / UnbindAddressOverride (Address) | NEG, IDM | IPL-ADDROVR-NEG-NF / -IDM-UNBIND-NOOP | ■ |
+| Cascade resolve (косвенно через Address.Create) | CONF (family-skip на Step 1/2/3/4 + dual-stack), NEG | IPL-RESOLVE-SELECTOR-FAMILY-SKIP / -OVERRIDE-FAMILY-SKIP / -NETWORK-DEFAULT-FAMILY-SKIP / -DUALSTACK-OK, ADR-CR-EXT-FALLTHROUGH-V4 / -V6, ADR-CR-EXT-V6-FAMILY-FALLTHROUGH | ▣ |
+
+**Coverage:** 8/8 групп RPC (100%) с расширенным family-filter coverage пост-KAC-71.
+
 ---
 
 ## Сводное покрытие

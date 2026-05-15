@@ -1,6 +1,14 @@
 # newman — индекс уникальных кейсов
 
-~745 кейсов / 240+ паттернов.
+~755 кейсов / 245+ паттернов.
+
+> v20 (KAC-71 / KAC-76): AddressPool split CIDR family (`cidr_blocks` → `v4_cidr_blocks`
+> + `v6_cidr_blocks`) — payload existing IPL-* кейсов обновлён под split-shape,
+> добавлено 18 новых case-id (16 IPL-* в `cases/internal-pool.py` + 2 ADR-* в
+> `cases/address.py`). Покрытие: Create v4-only/v6-only/dual-stack + cross-family/
+> both-empty валидация; Update replace_v4/v6 семантика; ExplainResolution
+> matched_via="none" fall-through; Bind* family-agnostic; cascade Step 1/2/3 family-
+> skip + dual-stack zone_default. См. `docs/specs/sub-phase-1.x-addresspool-split-cidr-family-acceptance.md`.
 
 > v18 (KAC-38): + кейсы NetworkInterface (first-class ресурс, эпик KAC-2) — секция
 > «NetworkInterface (NIC)» ниже; + v6-Subnet / optional-CIDR-Subnet / SG-без-network /
@@ -15,8 +23,9 @@
 > (см. его §3.13). Каждый кейс должен мапиться на `REQ-*` (поле `Validated-by` в регламенте).
 
 > v16 (TODO #35): + 45 кейсов для internal/admin-only IPAM RPC —
-> `internal-pool` (26: AddressPool CRUD + bindings + Check/ExplainResolution/Utilization/ListAddresses,
-> prefix `IPL-*`), `internal-region-zone` (15: Region/Zone CRUD + FK-empty-checks, prefix `RGN-*`/`ZON-*`),
+> `internal-pool` (26 → 40 после v20/KAC-71: AddressPool CRUD + bindings + Check/ExplainResolution/Utilization/ListAddresses
+> + split-shape family-фильтр и replace-семантика, prefix `IPL-*`),
+> `internal-region-zone` (15: Region/Zone CRUD + FK-empty-checks, prefix `RGN-*`/`ZON-*`),
 > `internal-cloud` (4: Cloud poolSelector set/get/unset, prefix `CLD-*`). Эти RPC возвращают
 > ресурсы напрямую (не Operation); таблицы паттернов ниже их не индексируют (кейсы — в `cases/internal-*.py`).
 
@@ -104,6 +113,8 @@
 | `ADR-CR-NEG-EXT-V6-NO-POOL` | NEG | P0 | 1 (add) | Create external_ipv6 в зоне без v6 pool → Operation `FailedPrecondition` (cascade resolve fails / pool not initialised). KAC-58. |
 | `ADR-DEL-EXT-V6-RELEASE-REUSE` | STATE,CONF | P1 | 1 (add) | Delete v6 Address пушит offset в `ipv6_released_offsets`; следующий Allocate берёт его first → reused IP равен первому. Verifies sparse-allocator release-reuse contract (KAC-60). |
 | `ADR-CR-EXT-V6-FAMILY-FALLTHROUGH` | CONF,NEG | P0 | 1 (add) | Family-filter в cascade resolve: external_v6 в зоне без v6 pool → cascade отвергает global v4 default по family и проваливается с `FailedPrecondition` (код 9). До KAC-63 был bug — `Internal` (код 13). KAC-58, KAC-63. |
+| `ADR-CR-EXT-FALLTHROUGH-V4` | CONF,NEG | P0 | 1 (add) | KAC-71 split-shape: Address.Create v4 в zone с v6-only default pool → cascade family-skip на каждом шаге → `FailedPrecondition` (код 9, не 13). Зеркало `ADR-CR-EXT-V6-FAMILY-FALLTHROUGH` для v4. Verifies REQ-RESOLVE-02. |
+| `ADR-CR-EXT-FALLTHROUGH-V6` | CONF,NEG | P0 | 1 (add) | KAC-71 split-shape: Address.Create v6 в zone с v4-only default pool → cascade family-skip → `FailedPrecondition` (код 9). После KAC-71 cascade использует `len(V4CIDRBlocks)>0`/`len(V6CIDRBlocks)>0` вместо runtime-парсинга CIDR. Verifies REQ-RESOLVE-01. |
 | `*-CR-CRUD-INT` | CRUD | P1 | 1 (add) | Create internal Address → IP в subnet |
 | `*-CR-CRUD-OK` | CRUD | P1 | 6 (gat,net,pri,rou,sec,sub) | Create subnet → Operation → Subnet visible in GET |
 | `*-CR-CRUD-WITH-SUBNET` | CRUD | P2 | 1 (pri) | PE Create с валидным addressSpec.internalIpv4AddressSpec.subnetId → address привязан |

@@ -620,9 +620,13 @@ ADDRS = "/vpc/v1/addresses"
 
 def _make_v6_pool(suffix="v6", zone="ru-central1-d", cidr="2001:db8:cafe::/64",
                   is_default=True):
-    """Создать v6-pool для конкретного case + забрать id в poolId."""
+    """Создать v6-pool для конкретного case + забрать id в poolId.
+
+    KAC-71: split-shape — v6 CIDR кладётся в v6CidrBlocks, v4CidrBlocks=[]."""
     body = {"name": f"adr-{suffix}-pool-{{{{runId}}}}", "kind": "EXTERNAL_PUBLIC",
-            "zoneId": zone, "cidrBlocks": [cidr], "isDefault": is_default}
+            "zoneId": zone,
+            "v4CidrBlocks": [], "v6CidrBlocks": [cidr],
+            "isDefault": is_default}
     return [
         Step(name=f"pre-pool-{suffix}", method="POST", path=POOLS, body=body,
              test_script=[*assert_status(200),
@@ -770,5 +774,79 @@ CASES.append(Case(
                           # KAC-63 family-filter в cascade resolve: должен быть код 9
                           # (FailedPrecondition), а НЕ 13 (Internal). 13 — регрессия.
                           "pm.test('error code 9 (FailedPrecondition), не 13 (Internal — регрессия KAC-63)', () => pm.expect(pm.response.json().error.code).to.equal(9));"]),
+    ],
+))
+
+
+# ─── KAC-71: Address.Create fallthrough на split-shape pool (REQ-RESOLVE-01/02) ─
+
+CASES.append(Case(
+    # index: ADR-CR-EXT-FALLTHROUGH-V4 — Address.Create v4 в zone где default-pool
+    # v6-only. Cascade Step 4 (zone_default) находит pool, family-фильтр
+    # (poolHasFamily v4 → len(V4CIDRBlocks)>0 → false) пропускает → fall-through
+    # на Step 5; нет v4 global default → ErrPoolNotResolved → Operation error
+    # code 9 (FailedPrecondition). Verifies REQ-RESOLVE-02 после split-рефактора.
+    id="ADR-CR-EXT-FALLTHROUGH-V4",
+    title="Create v4 Address в zone с v6-only default pool → cascade family-skip → FailedPrecondition (REQ-RESOLVE-02, KAC-71)",
+    classes=["CONF", "NEG"], priority="P0",
+    steps=[
+        # Setup v6-only default pool в throwaway zone-d.
+        Step(name="cr-v6-default", method="POST", path=POOLS,
+             body={"name": "adr-falv4-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
+                   "zoneId": "ru-central1-d",
+                   "v4CidrBlocks": [], "v6CidrBlocks": ["2001:db8:b0b::/64"],
+                   "isDefault": True},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "falV4PoolId")]),
+        # Allocate v4 → cascade falls through (нет v4 default в zone-d).
+        Step(name="create", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-falv4-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "ru-central1-d"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "falV4AddrId")]),
+        poll_operation_until_done(),
+        Step(name="check-op-failed", method="GET", path="/operations/{{opId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('operation done', () => pm.expect(pm.response.json().done).to.equal(true));",
+                          "pm.test('operation has error', () => pm.expect(pm.response.json().error).to.be.an('object'));",
+                          # family-filter post-split: код 9 (FailedPrecondition), не 13 (Internal).
+                          "pm.test('error code 9 (FailedPrecondition), не 13 (Internal)', () => pm.expect(pm.response.json().error.code).to.equal(9));"]),
+        # Cleanup pool.
+        Step(name="cleanup-pool", method="DELETE", path=POOLS + "/{{falV4PoolId}}",
+             test_script=["pm.test('cleanup pool (200 or 400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"]),
+    ],
+))
+
+
+CASES.append(Case(
+    # index: ADR-CR-EXT-FALLTHROUGH-V6 — зеркало ADR-CR-EXT-FALLTHROUGH-V4 для v6:
+    # default-pool в zone — v4-only; v6-allocate проваливает все 5 шагов cascade
+    # (family-filter постоянно). Verifies REQ-RESOLVE-01 после split-рефактора.
+    id="ADR-CR-EXT-FALLTHROUGH-V6",
+    title="Create v6 Address в zone с v4-only default pool → cascade family-skip → FailedPrecondition (REQ-RESOLVE-01, KAC-71)",
+    classes=["CONF", "NEG"], priority="P0",
+    steps=[
+        Step(name="cr-v4-default", method="POST", path=POOLS,
+             body={"name": "adr-falv6-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
+                   "zoneId": "ru-central1-d",
+                   "v4CidrBlocks": ["198.51.100.0/24"], "v6CidrBlocks": [],
+                   "isDefault": True},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "falV6PoolId")]),
+        Step(name="create", method="POST", path=ADDRS,
+             body={"folderId": "{{_suiteFolderId}}", "name": "adr-falv6-{{runId}}",
+                   "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
+             test_script=[*assert_status(200),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "falV6AddrId")]),
+        poll_operation_until_done(),
+        Step(name="check-op-failed", method="GET", path="/operations/{{opId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('operation done', () => pm.expect(pm.response.json().done).to.equal(true));",
+                          "pm.test('operation has error', () => pm.expect(pm.response.json().error).to.be.an('object'));",
+                          "pm.test('error code 9 (FailedPrecondition), не 13 (Internal)', () => pm.expect(pm.response.json().error.code).to.equal(9));"]),
+        Step(name="cleanup-pool", method="DELETE", path=POOLS + "/{{falV6PoolId}}",
+             test_script=["pm.test('cleanup pool (200 or 400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"]),
     ],
 ))
