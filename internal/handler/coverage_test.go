@@ -23,52 +23,10 @@ import (
 // в `internal/ports/portmock` (shim — в mock_test.go).
 
 // ---- Network handler — additional coverage ----
-
-func TestNetworkHandler_Update_OK(t *testing.T) {
-	nr := newMockNetworkRepo()
-	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
-	h := NewNetworkHandler(networkSvc)
-
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n1"})
-	require.NoError(t, err)
-	awaitOpDone(t, or, createOp.Id)
-
-	resp, err := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
-	require.NoError(t, err)
-	require.Len(t, resp.Networks, 1)
-
-	updOp, err := h.Update(context.Background(), &vpcv1.UpdateNetworkRequest{
-		NetworkId: resp.Networks[0].Id,
-		Name:      "n1-upd",
-	})
-	require.NoError(t, err)
-	awaitOpDone(t, or, updOp.Id)
-}
-
-func TestNetworkHandler_Update_InvalidArg(t *testing.T) {
-	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
-	_, err := h.Update(context.Background(), &vpcv1.UpdateNetworkRequest{NetworkId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestNetworkHandler_Move_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
-	_, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestNetworkHandler_ListOperations_RequiresID(t *testing.T) {
-	or := newMockOpsRepo()
-	h := NewNetworkHandler(svc.NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil))
-	_, err := h.ListOperations(context.Background(), &vpcv1.ListNetworkOperationsRequest{NetworkId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
+//
+// Wave 3a pilot (KAC-94): Network-handler-тесты переехали в
+// `internal/apps/kacho/api/network/usecase_test.go` (NetworkHandler удалён,
+// Handler теперь живёт в use-case-пакете).
 
 // ---- Subnet handler — additional coverage ----
 
