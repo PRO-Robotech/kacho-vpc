@@ -43,31 +43,23 @@ func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Получаем v6 CIDR пула (берём первый IPv6-prefix). Подтверждаем что pool
-	// существует и имеет v6.
-	var cidrBlocks []string
+	// KAC-71: после split column читаем v6_cidr_blocks напрямую (без runtime-
+	// фильтра family). Берём первый prefix. Подтверждаем что pool существует
+	// и имеет хотя бы один v6-CIDR.
+	var v6Blocks []string
 	if err := tx.QueryRow(ctx,
-		`SELECT cidr_blocks FROM address_pools WHERE id = $1`, poolID).Scan(&cidrBlocks); err != nil {
+		`SELECT v6_cidr_blocks FROM address_pools WHERE id = $1`, poolID).Scan(&v6Blocks); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", service.ErrNotFound
 		}
 		return "", fmt.Errorf("pool op: %w", err)
 	}
-	var prefix netip.Prefix
-	var hasV6 bool
-	for _, c := range cidrBlocks {
-		p, perr := netip.ParsePrefix(c)
-		if perr != nil {
-			continue
-		}
-		if p.Addr().Is6() {
-			prefix = p
-			hasV6 = true
-			break
-		}
+	if len(v6Blocks) == 0 {
+		return "", fmt.Errorf("%w: pool %s has no v6_cidr_blocks", service.ErrFailedPrecondition, poolID)
 	}
-	if !hasV6 {
-		return "", fmt.Errorf("%w: pool %s has no IPv6 cidr_blocks", service.ErrFailedPrecondition, poolID)
+	prefix, perr := netip.ParsePrefix(v6Blocks[0])
+	if perr != nil {
+		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", service.ErrInternal, poolID, v6Blocks[0])
 	}
 
 	// Step 1: пробуем переиспользовать освобождённый offset.

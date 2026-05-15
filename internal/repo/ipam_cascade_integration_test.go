@@ -63,10 +63,12 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	now := time.Now().UTC()
 	mkPool := func(name, zoneID string, isDefault bool, selector map[string]string, cidr string) *domain.AddressPool {
+		// KAC-71: cidr_blocks split — все тестовые pool'ы — v4-only (/24 v4 префиксы),
+		// поэтому кладём в V4CIDRBlocks.
 		p := &domain.AddressPool{
 			ID:             ids.NewID("apl"),
 			Name:           name,
-			CIDRBlocks:     []string{cidr},
+			V4CIDRBlocks:   []string{cidr},
 			Kind:           domain.AddressPoolKindExternalPublic,
 			ZoneID:         zoneID,
 			IsDefault:      isDefault,

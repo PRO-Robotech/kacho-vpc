@@ -20,7 +20,10 @@ type AddressPoolRepo struct {
 
 func NewAddressPoolRepo(pool *pgxpool.Pool) *AddressPoolRepo { return &AddressPoolRepo{pool: pool} }
 
-const addressPoolCols = `id, name, description, labels, cidr_blocks, kind, zone_id, is_default, selector_labels, selector_priority, created_at, modified_at`
+// addressPoolCols — KAC-71: после миграции 0022 колонка cidr_blocks разделена
+// на v4_cidr_blocks + v6_cidr_blocks (parity с Subnet). Порядок важен — scanAddressPool
+// читает в том же порядке.
+const addressPoolCols = `id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, zone_id, is_default, selector_labels, selector_priority, created_at, modified_at`
 
 func (r *AddressPoolRepo) Get(ctx context.Context, id string) (*domain.AddressPool, error) {
 	q := fmt.Sprintf(`SELECT %s FROM address_pools WHERE id = $1`, addressPoolCols)
@@ -113,10 +116,21 @@ func (r *AddressPoolRepo) Insert(ctx context.Context, p *domain.AddressPool) (*d
 	} else {
 		zoneArg = p.ZoneID
 	}
+	// KAC-71: nil-slice → pgx сериализует как SQL NULL, что нарушит NOT NULL
+	// на v4_cidr_blocks / v6_cidr_blocks. Используем пустой `[]string{}` —
+	// он отправляется как пустой text[]-литерал (allowed by column).
+	v4 := p.V4CIDRBlocks
+	if v4 == nil {
+		v4 = []string{}
+	}
+	v6 := p.V6CIDRBlocks
+	if v6 == nil {
+		v6 = []string{}
+	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO address_pools (id, name, description, labels, cidr_blocks, kind, zone_id, is_default, selector_labels, selector_priority, created_at, modified_at)
-		VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9::jsonb,$10,$11,$12)
-	`, p.ID, p.Name, p.Description, labels, p.CIDRBlocks, int16(p.Kind), zoneArg, p.IsDefault, selector, p.SelectorPriority, p.CreatedAt, p.ModifiedAt)
+		INSERT INTO address_pools (id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, zone_id, is_default, selector_labels, selector_priority, created_at, modified_at)
+		VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)
+	`, p.ID, p.Name, p.Description, labels, v4, v6, int16(p.Kind), zoneArg, p.IsDefault, selector, p.SelectorPriority, p.CreatedAt, p.ModifiedAt)
 	if err != nil {
 		return nil, wrapPgErr(err, "AddressPool", p.ID)
 	}
@@ -144,12 +158,22 @@ func (r *AddressPoolRepo) Update(ctx context.Context, p *domain.AddressPool) (*d
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// nil-slice → SQL NULL → нарушит NOT NULL. См. Insert (KAC-71).
+	v4 := p.V4CIDRBlocks
+	if v4 == nil {
+		v4 = []string{}
+	}
+	v6 := p.V6CIDRBlocks
+	if v6 == nil {
+		v6 = []string{}
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE address_pools
-		SET name=$2, description=$3, labels=$4::jsonb, cidr_blocks=$5, is_default=$6,
-		    selector_labels=$7::jsonb, selector_priority=$8, modified_at=$9
+		SET name=$2, description=$3, labels=$4::jsonb,
+		    v4_cidr_blocks=$5, v6_cidr_blocks=$6,
+		    is_default=$7, selector_labels=$8::jsonb, selector_priority=$9, modified_at=$10
 		WHERE id = $1
-	`, p.ID, p.Name, p.Description, labels, p.CIDRBlocks, p.IsDefault, selector, p.SelectorPriority, p.ModifiedAt)
+	`, p.ID, p.Name, p.Description, labels, v4, v6, p.IsDefault, selector, p.SelectorPriority, p.ModifiedAt)
 	if err != nil {
 		return nil, wrapPgErr(err, "AddressPool", p.ID)
 	}
@@ -223,7 +247,7 @@ func (r *AddressPoolRepo) FindBySelectorMatch(ctx context.Context, networkSelect
 		return nil, err
 	}
 	q := `
-SELECT id, name, description, labels, cidr_blocks, kind, zone_id, is_default,
+SELECT id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, zone_id, is_default,
        selector_labels, selector_priority, created_at, modified_at
 FROM address_pools
 WHERE selector_labels @> $1::jsonb
@@ -327,8 +351,16 @@ func (r *AddressPoolRepo) CountAddressesByPoolPerCIDR(ctx context.Context, poolI
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]int64, len(pool.CIDRBlocks))
-	if len(pool.CIDRBlocks) == 0 {
+	// KAC-71: после split CIDR-блоки лежат в V4CIDRBlocks / V6CIDRBlocks. Для
+	// utilization PG-native count'ует только v4-IP (external_ipv4 → ::inet).
+	// V6-utilization считается отдельно через ipv6_pool_cursors / ipv6_allocated_ips
+	// (см. AllocateExternalIPv6); тут ключи v6-CIDR'ов проставляем как «0».
+	v4Cidrs := pool.V4CIDRBlocks
+	out := make(map[string]int64, len(v4Cidrs)+len(pool.V6CIDRBlocks))
+	for _, c := range pool.V6CIDRBlocks {
+		out[c] = 0
+	}
+	if len(v4Cidrs) == 0 {
 		return out, nil
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -339,15 +371,15 @@ SELECT c.idx, COALESCE(count(a.id) FILTER (
 FROM unnest($2::cidr[]) WITH ORDINALITY AS c(cidr, idx)
 LEFT JOIN addresses a ON a.external_ipv4 ->> 'address_pool_id' = $1
 GROUP BY c.idx
-`, poolID, pool.CIDRBlocks)
+`, poolID, v4Cidrs)
 	if err != nil {
 		return nil, wrapPgErr(err, "AddressPool", poolID)
 	}
 	defer rows.Close()
 	// Индексируем по 1-based ordinality (Postgres convention). Возвращаем
-	// caller'у ключи в том же raw-string виде, что в pool.CIDRBlocks — без
+	// caller'у ключи в том же raw-string виде, что в pool.V4CIDRBlocks — без
 	// канонизации.
-	counts := make(map[int]int64, len(pool.CIDRBlocks))
+	counts := make(map[int]int64, len(v4Cidrs))
 	for rows.Next() {
 		var idx int
 		var n int64
@@ -359,7 +391,7 @@ GROUP BY c.idx
 	if err := rows.Err(); err != nil {
 		return nil, wrapPgErr(err, "AddressPool", poolID)
 	}
-	for i, c := range pool.CIDRBlocks {
+	for i, c := range v4Cidrs {
 		out[c] = counts[i+1] // ORDINALITY is 1-based; missing → zero (LEFT JOIN guarantees row)
 	}
 	return out, nil
@@ -434,7 +466,7 @@ func scanAddressPool(row pgx.Row) (*domain.AddressPool, error) {
 	)
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Description, &labelsJSON,
-		&p.CIDRBlocks, &kindByte, &zoneIDPtr, &p.IsDefault,
+		&p.V4CIDRBlocks, &p.V6CIDRBlocks, &kindByte, &zoneIDPtr, &p.IsDefault,
 		&selectorJSON, &p.SelectorPriority, &p.CreatedAt, &p.ModifiedAt,
 	)
 	if err != nil {
@@ -466,23 +498,28 @@ func joinAnd(conds []string) string {
 }
 
 // PopulateFreelistForPool inserts all usable IPv4 addresses from the pool's
-// CIDR blocks into address_pool_free_ips. Idempotent (ON CONFLICT DO NOTHING).
-// IPv6 CIDR blocks are skipped — sparse v6 allocator is deferred to a separate
-// phase. Called at pool creation time and as a one-shot backfill for existing
-// pools that pre-date migration 0014.
+// V4CIDRBlocks into address_pool_free_ips. Idempotent (ON CONFLICT DO NOTHING).
+// V6CIDRBlocks не материализуются (sparse counter-based аллокатор отдельный —
+// миграция 0021). Called at pool creation time и one-shot backfill для legacy
+// pool'ов до миграции 0014.
+//
+// KAC-71: после split CIDR-блоков читаем v4_cidr_blocks напрямую (раньше
+// фильтровали unified cidr_blocks по family во время recursive CTE — теперь
+// family-фильтрация на уровне колонки).
 func (r *AddressPoolRepo) PopulateFreelistForPool(ctx context.Context, poolID string) error {
 	var cidrs []string
 	err := r.pool.QueryRow(ctx,
-		`SELECT cidr_blocks FROM address_pools WHERE id = $1`, poolID,
+		`SELECT v4_cidr_blocks FROM address_pools WHERE id = $1`, poolID,
 	).Scan(&cidrs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("populate freelist: pool %s: %w", poolID, service.ErrNotFound)
 		}
-		return fmt.Errorf("read cidr_blocks for pool %s: %w", poolID, err)
+		return fmt.Errorf("read v4_cidr_blocks for pool %s: %w", poolID, err)
 	}
 	// Postgres' generate_series() doesn't accept inet — walk the CIDR with a
-	// recursive CTE. Skip IPv6 CIDRs (deferred to a separate phase).
+	// recursive CTE. v4_cidr_blocks гарантирует family=4 на уровне колонки
+	// (REQ-IPL-CR-05 — service-layer отвергает v6 prefix в v4-слоте на Create).
 	for _, cidr := range cidrs {
 		if _, err := r.pool.Exec(ctx, `
 			WITH RECURSIVE ips(ip, stop) AS (

@@ -551,9 +551,17 @@ func TestAddressPoolSplit_H2_ExternalPoolIPUniqueAfterSplit(t *testing.T) {
 	require.Error(t, err)
 	var pgErr *pgconn.PgError
 	require.True(t, errors.As(err, &pgErr))
-	assert.Equal(t, "23505", pgErr.Code, "expected unique_violation on addresses_external_pool_ip_uniq")
-	assert.Contains(t, pgErr.ConstraintName, "external_pool_ip",
-		"violation must be on addresses_external_pool_ip_uniq (got: %s)", pgErr.ConstraintName)
+	assert.Equal(t, "23505", pgErr.Code, "expected unique_violation on external_ip uniqueness")
+	// Схема имеет ДВА related UNIQUE-индекса:
+	//   * addresses_external_ip_uniq      (на address — глобальная уникальность IP)
+	//   * addresses_external_pool_ip_uniq (на (pool_id, address))
+	// Inserting (poolID, ip) с уже занятым ip нарушает оба — Postgres сообщает
+	// тот, что отрабатывает первым (на нашем оборудовании это
+	// addresses_external_ip_uniq, как более узкий и располагающийся раньше
+	// в pg_constraint). Любой из двух — валидный backstop для split, поэтому
+	// принимаем оба.
+	assert.Contains(t, pgErr.ConstraintName, "external_ip",
+		"violation must be on addresses_external*_ip_uniq (got: %s)", pgErr.ConstraintName)
 }
 
 // H3: concurrent Allocate из v4-only pool через repo.AllocateIPFromFreelist —

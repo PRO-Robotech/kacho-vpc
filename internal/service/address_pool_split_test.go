@@ -441,9 +441,9 @@ func TestAddressPool_B7_Update_ReplaceV4Only(t *testing.T) {
 	require.NoError(t, err)
 
 	updated, err := svc.Update(context.Background(), UpdatePoolReq{
-		ID:             created.ID,
-		ReplaceV4CIDR:  true,
-		V4CIDRBlocks:   []string{"192.0.2.0/24"},
+		ID:            created.ID,
+		ReplaceV4CIDR: true,
+		V4CIDRBlocks:  []string{"192.0.2.0/24"},
 		// ReplaceV6CIDR не выставлен → v6 не трогаем
 	})
 	require.NoError(t, err)
@@ -625,8 +625,8 @@ func TestAddressPool_B12_Update_NoReplaceFlags_DescriptionUpdated(t *testing.T) 
 	updated, err := svc.Update(context.Background(), UpdatePoolReq{
 		ID:           created.ID,
 		Description:  &newDesc,
-		V4CIDRBlocks: []string{"10.99.99.0/24"},          // ignored — no flag
-		V6CIDRBlocks: []string{"2001:db8:dead::/64"},     // ignored — no flag
+		V4CIDRBlocks: []string{"10.99.99.0/24"},      // ignored — no flag
+		V6CIDRBlocks: []string{"2001:db8:dead::/64"}, // ignored — no flag
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "noop update probe", updated.Description)

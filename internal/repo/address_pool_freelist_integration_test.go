@@ -16,11 +16,14 @@ import (
 
 // insertTestPoolForFreelist inserts a fresh address_pool with the given IPv4 CIDR.
 // kind=1 == EXTERNAL_PUBLIC (см. domain.AddressPoolKindExternalPublic).
+//
+// KAC-71: after migration 0022 column `cidr_blocks` is split — IPv4 prefixes go
+// into `v4_cidr_blocks`.
 func insertTestPoolForFreelist(t testing.TB, ctx context.Context, pool *pgxpool.Pool, cidr string) string {
 	t.Helper()
 	poolID := ids.NewID("apl")
 	_, err := pool.Exec(ctx, `
-        INSERT INTO address_pools (id, name, cidr_blocks, kind)
+        INSERT INTO address_pools (id, name, v4_cidr_blocks, kind)
         VALUES ($1, $2, ARRAY[$3]::text[], 1)
     `, poolID, t.Name(), cidr)
 	require.NoError(t, err)
