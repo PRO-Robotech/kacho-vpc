@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "23d04bb2-0ad0-4e95-b590-ac1aa4782785",
+    "_postman_id": "49e78dc8-d784-4dcd-8564-789c6129aac0",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -208,7 +208,7 @@
       ]
     },
     {
-      "name": "NET-GET-NO-VPNID-OK — GET /vpc/v1/networks/{id} НЕ содержит vpnId (internal-only поле)",
+      "name": "NET-GET-NO-VPNID-OK — GET /vpc/v1/networks/{id} НЕ содержит vpnId (data-plane поле удалено в KAC-36)",
       "description": "class:CRUD | class:CONF | priority:P1",
       "item": [
         {
