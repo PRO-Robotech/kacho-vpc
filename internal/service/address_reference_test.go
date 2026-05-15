@@ -45,12 +45,24 @@ func TestAddressService_SetAddressReference_OK(t *testing.T) {
 	got, _ := svc.Get(context.Background(), a.ID)
 	assert.True(t, got.Used)
 
-	// idempotent overwrite
+	// KAC-88: idempotent re-set с ТЕМ ЖЕ referrer — допустимо (CAS matches),
+	// можно обновить referrer_name.
 	ref, err = svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
-		AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000002",
+		AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000001", ReferrerName: "vm-1-renamed",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "epdvm0000000000002", ref.ReferrerID)
+	assert.Equal(t, "epdvm0000000000001", ref.ReferrerID)
+	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
+
+	// KAC-88: re-set с ДРУГИМ referrer → FailedPrecondition (CAS fail) —
+	// parity с инцидентом KAC-52 (NIC-attach race), исправляет gap G1 из KAC-84.
+	_, err = svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
+		AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000002",
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code(),
+		"set-reference к занятому address от чужого referrer → FailedPrecondition")
 }
 
 func TestAddressService_SetAddressReference_Validation(t *testing.T) {

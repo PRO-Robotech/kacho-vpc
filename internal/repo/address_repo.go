@@ -397,6 +397,24 @@ func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 
 // SetReference upsert'ит referrer-row для address_id и выставляет
 // addresses.used=true — всё в одной tx. ErrNotFound если address не существует.
+//
+// KAC-88 (G1 из audit KAC-84) — атомарный single-statement CAS на upsert:
+// `ON CONFLICT (address_id) DO UPDATE … WHERE address_references.referrer_id
+// = EXCLUDED.referrer_id`. Конфликт по адресу с ЧУЖИМ referrer'ом ⇒ DO UPDATE
+// не применяется (предикат false), RETURNING отдаёт 0 строк, что pgx маппит в
+// pgx.ErrNoRows → service.ErrFailedPrecondition.
+//
+// Это устраняет TOCTOU из service-слоя
+// (NetworkInterfaceService.validateAddressRef делал Get → check used=false →
+// SetReference), который раньше допускал second-writer-wins overwrite —
+// точный parity-case с инцидентом 2026-05-14 (KAC-52, NIC-attach race).
+//
+// Idempotent re-attach к тому же referrer проходит (CAS matches → row пишется
+// заново с новым referrer_name/attached_at, RETURNING возвращает row).
+//
+// См. workspace CLAUDE.md §«Within-service refs — DB-уровень обязателен»
+// (запрет #10) — шаблон «атомарный single-statement CAS на одной row».
+// Зеркало NetworkInterfaceRepo.SetUsedBy (network_interface_repo.go:262).
 func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -420,10 +438,15 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 		      referrer_id   = EXCLUDED.referrer_id,
 		      referrer_name = EXCLUDED.referrer_name,
 		      attached_at   = now()
+		  WHERE address_references.referrer_id = EXCLUDED.referrer_id
 		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
 	var out domain.AddressReference
 	if err := tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// CAS failed — address already referenced by another resource.
+			return nil, fmt.Errorf("%w: address already referenced by another resource", service.ErrFailedPrecondition)
+		}
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "used": true}); err != nil {
@@ -441,6 +464,11 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 // Address-ресурсов, созданных kacho-compute через AddressService.Create
 // (там reserved=true verbatim YC, но для авто-аллоцированного NIC-адреса это
 // неверно — в YC он не reserved). Идемпотентно.
+//
+// KAC-88 (G1 из audit KAC-84) — атомарный single-statement CAS на upsert
+// (parity с SetReference, см. её doc): попытка перепривязать адрес к ЧУЖОМУ
+// referrer'у → service.ErrFailedPrecondition. Idempotent re-mark к тому же
+// referrer проходит.
 func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -464,10 +492,14 @@ func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.Addres
 		      referrer_id   = EXCLUDED.referrer_id,
 		      referrer_name = EXCLUDED.referrer_name,
 		      attached_at   = now()
+		  WHERE address_references.referrer_id = EXCLUDED.referrer_id
 		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
 	var out domain.AddressReference
 	if err := tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: address already referenced by another resource", service.ErrFailedPrecondition)
+		}
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "reserved": false, "used": true}); err != nil {
