@@ -39,6 +39,15 @@ type Config struct {
 	// resource-manager (security P0 closure: иначе in-cluster MITM может
 	// подделать FolderClient.GetCloudID/Exists).
 	ResourceManagerTLS bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_TLS" default:"false"`
+	// ResourceManagerDNSLB — включить client-side round_robin LB и
+	// dns:/// resolver для разрешения multi-IP (Headless Service)
+	// resource-manager Endpoint'а. Зеркало того, что уже сделано в
+	// api-gateway → backend (round_robin). По умолчанию false для
+	// backward-compat с одно-pod RM в dev-стенде; в production /
+	// load-тестах включается для распределения нагрузки между репликами
+	// RM (KAC-39). Префикс `dns:///` добавляется автоматически, если
+	// addr им не начинается.
+	ResourceManagerDNSLB bool `envconfig:"KACHO_VPC_RESOURCE_MANAGER_DNS_LB" default:"false"`
 
 	// ComputeGRPCAddr — публичный gRPC kacho-compute. kacho-compute — owner
 	// Geography (Region/Zone), эпик KAC-15: VPC валидирует zone_id вызовом
