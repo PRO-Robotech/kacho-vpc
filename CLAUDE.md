@@ -54,6 +54,11 @@ Sub-phase 0.3 продукта Kachō. gRPC-сервис управления с
 
 ## 2. Доменная модель и связи
 
+> Полная mermaid-ER-схема всех таблиц `kacho_vpc` (PK/FK/ON DELETE policy /
+> UNIQUE / EXCLUDE / CHECK / generated columns) — см.
+> [`docs/architecture/er-diagram.md`](docs/architecture/er-diagram.md) (KAC-98,
+> Skill `evgeniy §5 E.6`). Раздел ниже — ASCII-сводка для быстрого ориентира.
+
 ```
 Network (1) ──┬──→ (N) Subnet ──→ (N) Address (internal)
               │                └──→ (N) NetworkInterface  (по subnet_id)
