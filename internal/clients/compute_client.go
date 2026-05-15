@@ -35,8 +35,11 @@ type ComputeGeographyClient struct {
 	known map[string]time.Time // zoneID → время до которого «существует» валидно
 }
 
-// NewComputeGeographyClient создаёт ComputeGeographyClient.
-func NewComputeGeographyClient(conn *grpc.ClientConn) *ComputeGeographyClient {
+// NewComputeGeographyClient создаёт ComputeGeographyClient. conn — обычно
+// `clients.Build(...)` (см. builder.go); принимается как
+// grpc.ClientConnInterface для совместимости с corlib `ClientConn` (KAC-97) и
+// `*grpc.ClientConn`.
+func NewComputeGeographyClient(conn grpc.ClientConnInterface) *ComputeGeographyClient {
 	return &ComputeGeographyClient{
 		zones: computev1.NewZoneServiceClient(conn),
 		known: make(map[string]time.Time),

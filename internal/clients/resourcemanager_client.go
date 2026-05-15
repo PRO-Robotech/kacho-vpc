@@ -40,8 +40,10 @@ type cloudIDEntry struct {
 	exp     time.Time
 }
 
-// NewFolderClient создаёт FolderClient.
-func NewFolderClient(conn *grpc.ClientConn) *FolderClient {
+// NewFolderClient создаёт FolderClient. conn — обычно `clients.Build(...)`
+// (см. builder.go), принимается как grpc.ClientConnInterface — что подходит и
+// для corlib `ClientConn` (KAC-97), и для `*grpc.ClientConn`.
+func NewFolderClient(conn grpc.ClientConnInterface) *FolderClient {
 	return &FolderClient{
 		cli:      rmv1.NewFolderServiceClient(conn),
 		exists:   make(map[string]time.Time),

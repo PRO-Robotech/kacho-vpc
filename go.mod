@@ -7,6 +7,7 @@ replace github.com/PRO-Robotech/kacho-corelib => ../kacho-corelib
 replace github.com/PRO-Robotech/kacho-proto => ../kacho-proto
 
 require (
+	github.com/H-BF/corlib v1.2.31-dev
 	github.com/PRO-Robotech/kacho-corelib v0.0.0-00010101000000-000000000000
 	github.com/PRO-Robotech/kacho-proto v0.0.0-00010101000000-000000000000
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -44,6 +45,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -65,6 +67,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
