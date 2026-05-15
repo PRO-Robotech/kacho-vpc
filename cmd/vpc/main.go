@@ -25,6 +25,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
+	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -69,8 +70,12 @@ func main() {
 // services — собранный набор бизнес-сервисов (один composition-point вместо
 // россыпи локальных переменных в runServe). Заполняется buildServices,
 // используется register{Public,Internal}Services.
+//
+// Wave 3a pilot (KAC-94, skill evgeniy §2 B.1-B.4): Network переехал на
+// use-case-структуру — здесь хранится готовый `*networkapp.Handler`, а не
+// «толстый» NetworkService. Wave 3b — replicate на оставшиеся 7 ресурсов.
 type services struct {
-	network          *service.NetworkService
+	networkHandler   *networkapp.Handler
 	subnet           *service.SubnetService
 	address          *service.AddressService
 	routeTable       *service.RouteTableService
@@ -239,8 +244,29 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	subnetSvc := service.NewSubnetService(subnetRepo, networkRepo, folderClient, opsRepo, geoClient)
 	subnetSvc.SetAddressRefRepo(addressRepo)
 	subnetSvc.SetNICRepo(niRepo)
+
+	// Wave 3a pilot (skill evgeniy §2): Network — use-case-структура.
+	// Каждый use-case инжектируется в Handler. Все use-case'ы делят repo
+	// (networkRepo / sgRepo / ...) — composition-root решает, какой sgRepo
+	// проинжектировать (defaultSGRepo может быть nil при выключенном
+	// `network.default-sg-inline`).
+	netCreateUC := networkapp.NewCreateNetworkUseCase(networkRepo, folderClient, opsRepo, defaultSGRepo)
+	netUpdateUC := networkapp.NewUpdateNetworkUseCase(networkRepo, opsRepo)
+	netDeleteUC := networkapp.NewDeleteNetworkUseCase(networkRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
+	netMoveUC := networkapp.NewMoveNetworkUseCase(networkRepo, folderClient, opsRepo)
+	netGetUC := networkapp.NewGetNetworkUseCase(networkRepo)
+	netListUC := networkapp.NewListNetworksUseCase(networkRepo)
+	netListSubUC := networkapp.NewListSubnetsUseCase(networkRepo, subnetRepo)
+	netListSGUC := networkapp.NewListSecurityGroupsUseCase(networkRepo, sgRepo)
+	netListRTUC := networkapp.NewListRouteTablesUseCase(networkRepo, routeTableRepo)
+	netListOpsUC := networkapp.NewListOperationsUseCase(opsRepo)
+	netHandler := networkapp.NewHandler(
+		netCreateUC, netUpdateUC, netDeleteUC, netMoveUC,
+		netGetUC, netListUC, netListSubUC, netListSGUC, netListRTUC, netListOpsUC,
+	)
+
 	return &services{
-		network:          service.NewNetworkService(networkRepo, subnetRepo, routeTableRepo, sgSvc, folderClient, opsRepo, defaultSGRepo),
+		networkHandler:   netHandler,
 		subnet:           subnetSvc,
 		address:          service.NewAddressService(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc),
 		routeTable:       service.NewRouteTableService(routeTableRepo, networkRepo, folderClient, opsRepo),
@@ -255,7 +281,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 
 // registerPublicServices — публичные RPC + OperationService на внешний listener.
 func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations.Repo) {
-	vpcv1.RegisterNetworkServiceServer(srv, handler.NewNetworkHandler(svcs.network))
+	vpcv1.RegisterNetworkServiceServer(srv, svcs.networkHandler)
 	vpcv1.RegisterSubnetServiceServer(srv, handler.NewSubnetHandler(svcs.subnet))
 	vpcv1.RegisterAddressServiceServer(srv, handler.NewAddressHandler(svcs.address, svcs.subnet))
 	vpcv1.RegisterRouteTableServiceServer(srv, handler.NewRouteTableHandler(svcs.routeTable))

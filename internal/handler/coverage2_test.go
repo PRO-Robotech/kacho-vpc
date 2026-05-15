@@ -311,49 +311,10 @@ func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
 // ---- pure converter functions ----
 
 // ---- Network handler — happy path Update / List* / ListOperations ----
-
-func TestNetworkHandler_Update_Happy(t *testing.T) {
-	nr := newMockNetworkRepo()
-	or := newMockOpsRepo()
-	networkSvc := svc.NewNetworkService(nr, newMockSubnetRepoForSvc(), newMockRouteTableRepoForSvc(), nil, newMockFolderClient(true), or, nil)
-	h := NewNetworkHandler(networkSvc)
-
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
-	require.NoError(t, err)
-	awaitOpDone(t, or, createOp.Id)
-
-	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
-	require.Len(t, resp.Networks, 1)
-	netID := resp.Networks[0].Id
-
-	// Update with mask
-	updOp, err := h.Update(context.Background(), &vpcv1.UpdateNetworkRequest{
-		NetworkId: netID, Name: "n-upd",
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
-	})
-	require.NoError(t, err)
-	awaitOpDone(t, or, updOp.Id)
-	got, _ := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: netID})
-	assert.Equal(t, "n-upd", got.Name)
-
-	// ListSubnets / ListRouteTables / ListSecurityGroups happy
-	_, err = h.ListSubnets(context.Background(), &vpcv1.ListNetworkSubnetsRequest{NetworkId: netID})
-	require.NoError(t, err)
-	_, err = h.ListRouteTables(context.Background(), &vpcv1.ListNetworkRouteTablesRequest{NetworkId: netID})
-	require.NoError(t, err)
-	_, err = h.ListOperations(context.Background(), &vpcv1.ListNetworkOperationsRequest{NetworkId: netID})
-	require.NoError(t, err)
-
-	// Move (worker validates)
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{NetworkId: netID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
-	require.NoError(t, err)
-	awaitOpDone(t, or, moveOp.Id)
-
-	// Delete
-	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkRequest{NetworkId: netID})
-	require.NoError(t, err)
-	awaitOpDone(t, or, delOp.Id)
-}
+//
+// Wave 3a pilot (KAC-94): Network-handler-тесты переехали в
+// `internal/apps/kacho/api/network/usecase_test.go` (NetworkHandler удалён,
+// Handler теперь живёт в use-case-пакете).
 
 // ---- Subnet handler — full happy-path ----
 

@@ -18,52 +18,10 @@ import (
 // в `internal/ports/portmock` (shim — в mock_test.go).
 
 // ---- NetworkService — extra coverage ----
-
-func TestNetworkService_Move_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
-	_, err := svc.Move(context.Background(), "", "f2")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixNetwork), "")
-	st, _ = status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestNetworkService_Delete_OK(t *testing.T) {
-	nr := newMockNetworkRepo()
-	or := newMockOpsRepo()
-	svc := NewNetworkService(nr, nil, nil, nil, newMockFolderClient(true), or, nil)
-
-	createOp, _ := svc.Create(context.Background(), CreateNetworkReq{FolderID: "f1", Name: "n"})
-	awaitOpDone(t, or, createOp.ID)
-
-	nets, _, _ := svc.List(context.Background(), NetworkFilter{FolderID: "f1"}, Pagination{})
-	require.Len(t, nets, 1)
-	delOp, err := svc.Delete(context.Background(), nets[0].ID)
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, delOp.ID)
-	assert.True(t, saved.Done)
-	assert.Nil(t, saved.Error)
-}
-
-func TestNetworkService_ListOperations_UnknownID_Empty(t *testing.T) {
-	// History must remain reachable after the resource is deleted, so an
-	// unknown (or deleted) id is not NotFound — it's an empty list.
-	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, nil, newMockFolderClient(true), or, nil)
-	ops, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
-	assert.NoError(t, err)
-	assert.Empty(t, ops)
-}
-
-func TestNetworkService_ListSubnets_NetworkNotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), newMockSubnetRepo(), nil, nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListSubnets(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+//
+// Wave 3a pilot (KAC-94): тесты Network переехали в use-case-пакет
+// `internal/apps/kacho/api/network/usecase_test.go` после рефакторинга
+// NetworkService → use-case'ы.
 
 // ---- SubnetService — extra coverage ----
 
@@ -462,22 +420,8 @@ func TestGatewayService_List_Empty(t *testing.T) {
 	assert.Empty(t, gws)
 }
 
-func TestNetworkService_ListSecurityGroups_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	sgSvc := NewSecurityGroupService(newMockSGRepo(), newMockNetworkRepo(), newMockFolderClient(true), or)
-	svc := NewNetworkService(newMockNetworkRepo(), nil, nil, sgSvc, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListSecurityGroups(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestNetworkService_ListRouteTables_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewNetworkService(newMockNetworkRepo(), nil, newMockRouteTableRepo(), nil, newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListRouteTables(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// Wave 3a pilot (KAC-94): TestNetworkService_List{SecurityGroups,RouteTables}_NotFound
+// переехали в `internal/apps/kacho/api/network/usecase_test.go`.
 
 // ---- Subnet ListOperations + Get (помимо Create/Update) ----
 
