@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,7 +14,10 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
 
 // CreateGatewayReq — запрос на создание NAT gateway.
@@ -50,7 +52,7 @@ func NewGatewayService(repo GatewayRepo, folderClient FolderClient, opsRepo oper
 }
 
 // Get возвращает Gateway по ID.
-func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, error) {
+func (s *GatewayService) Get(ctx context.Context, id string) (*domain.GatewayRecord, error) {
 	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
 		return nil, err
 	}
@@ -63,7 +65,7 @@ func (s *GatewayService) Get(ctx context.Context, id string) (*domain.Gateway, e
 
 // List возвращает список Gateways.
 // folder_id обязателен (R10 #C1 closure).
-func (s *GatewayService) List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.Gateway, string, error) {
+func (s *GatewayService) List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.GatewayRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -71,24 +73,35 @@ func (s *GatewayService) List(ctx context.Context, f GatewayFilter, p Pagination
 }
 
 // Create инициирует создание Gateway, возвращает Operation.
+//
+// Wave 2 batch B (KAC-94): description/labels — через domain.Gateway.Validate().
+// Name по-прежнему проходит через corevalidate.NameGateway (strict-name regex,
+// verbatim YC), т.к. RcNameVPC — permissive (Wave 3 заменит на RcNameGateway).
 func (s *GatewayService) Create(ctx context.Context, req CreateGatewayReq) (*operations.Operation, error) {
 	if req.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
+	// Gateway.Name — strict regex (lowercase, без uppercase/underscore — verbatim YC).
+	// Wave 2 batch B держит это в service-слое до появления RcNameGateway newtype.
 	if err := corevalidate.NameGateway("name", req.Name); err != nil {
 		return nil, err
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
+	// Domain self-validation для description/labels (skill evgeniy §4 D.5 / AP-1).
+	g := domain.Gateway{
+		FolderID:    req.FolderID,
+		Name:        domain.RcNameVPC(req.Name), // permissive newtype — strict выше через NameGateway
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
+		GatewayType: domain.GatewayType(req.GatewayType),
 	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := g.Validate(); err != nil {
 		return nil, err
 	}
 	// Verbatim YC (probe 2026-05-11): gateway-type oneof обязателен — без него (или с
 	// нераспознанным телом, напр. `sharedEgressGateway` вместо `sharedEgressGatewaySpec`)
 	// YC отвечает InvalidArgument "Illegal argument gateway". Сейчас единственный тип —
 	// shared_egress (SharedEgressGatewaySpec). kacho-vpc#9.
-	if req.GatewayType != "shared_egress" {
+	if g.GatewayType != domain.GatewayTypeSharedEgress {
 		return nil, status.Error(codes.InvalidArgument, "Illegal argument gateway")
 	}
 
@@ -127,25 +140,34 @@ func (s *GatewayService) doCreate(ctx context.Context, gwID string, req CreateGa
 		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", req.FolderID)
 	}
 
-	gtype := req.GatewayType
+	gtype := domain.GatewayType(req.GatewayType)
 	if gtype == "" {
-		gtype = "shared_egress"
+		gtype = domain.GatewayTypeSharedEgress
 	}
 
 	g := &domain.Gateway{
 		ID:          gwID,
 		FolderID:    req.FolderID,
-		CreatedAt:   time.Now().UTC(),
-		Name:        req.Name,
-		Description: req.Description,
-		Labels:      req.Labels,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 		GatewayType: gtype,
 	}
 	created, err := s.repo.Insert(ctx, g)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Gateway(created))
+	return marshalGatewayRecord(created)
+}
+
+// marshalGatewayRecord конвертирует repo-entity Gateway в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4: protoconv.Gateway → dto.Transfer).
+func marshalGatewayRecord(rec *domain.GatewayRecord) (*anypb.Any, error) {
+	var dst *vpcv1.Gateway
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Gateway: %w", err)
+	}
+	return anypb.New(dst)
 }
 
 // Update обновляет Gateway.
@@ -179,18 +201,22 @@ func (s *GatewayService) Update(ctx context.Context, req UpdateGatewayReq) (*ope
 }
 
 func (s *GatewayService) doUpdate(ctx context.Context, req UpdateGatewayReq) (*anypb.Any, error) {
-	g, err := s.repo.Get(ctx, req.GatewayID)
+	rec, err := s.repo.Get(ctx, req.GatewayID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	applyGatewayMask(g, req)
-	updated, err := s.repo.Update(ctx, g)
+	applyGatewayMask(&rec.Gateway, req)
+	updated, err := s.repo.Update(ctx, &rec.Gateway)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Gateway(updated))
+	return marshalGatewayRecord(updated)
 }
 
+// validateGatewayUpdate — sync-проверка update_mask и значений.
+//
+// Wave 2 batch B (KAC-94): description/labels — через domain newtype.Validate().
+// Name по-прежнему через corevalidate.NameGateway (strict-name).
 func validateGatewayUpdate(req UpdateGatewayReq) error {
 	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "gateway_type": {}}
 	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
@@ -207,11 +233,11 @@ func validateGatewayUpdate(req UpdateGatewayReq) error {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		}
@@ -221,25 +247,25 @@ func validateGatewayUpdate(req UpdateGatewayReq) error {
 
 func applyGatewayMask(g *domain.Gateway, req UpdateGatewayReq) {
 	if len(req.UpdateMask) == 0 {
-		g.Name = req.Name
-		g.Description = req.Description
-		g.Labels = req.Labels
+		g.Name = domain.RcNameVPC(req.Name)
+		g.Description = domain.RcDescription(req.Description)
+		g.Labels = domain.LabelsFromMap(req.Labels)
 		if req.GatewayType != "" {
-			g.GatewayType = req.GatewayType
+			g.GatewayType = domain.GatewayType(req.GatewayType)
 		}
 		return
 	}
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			g.Name = req.Name
+			g.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			g.Description = req.Description
+			g.Description = domain.RcDescription(req.Description)
 		case "labels":
-			g.Labels = req.Labels
+			g.Labels = domain.LabelsFromMap(req.Labels)
 		case "gateway_type":
 			if req.GatewayType != "" {
-				g.GatewayType = req.GatewayType
+				g.GatewayType = domain.GatewayType(req.GatewayType)
 			}
 		}
 	}
@@ -314,7 +340,7 @@ func (s *GatewayService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Gateway(updated))
+		return marshalGatewayRecord(updated)
 	})
 	return &op, nil
 }

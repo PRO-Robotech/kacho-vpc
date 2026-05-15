@@ -659,17 +659,20 @@ func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*d
 }
 
 // ---- SecurityGroupRepo ----
+//
+// Wave 2 batch B (KAC-94): port возвращает *domain.SecurityGroupRecord (repo-entity
+// с DB-managed CreatedAt). Parity с SubnetRepo (KAC-94 batch A).
 
 type SecurityGroupRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.SecurityGroup
+	data map[string]*domain.SecurityGroupRecord
 }
 
 func NewSecurityGroupRepo() *SecurityGroupRepo {
-	return &SecurityGroupRepo{data: make(map[string]*domain.SecurityGroup)}
+	return &SecurityGroupRepo{data: make(map[string]*domain.SecurityGroupRecord)}
 }
 
-func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
@@ -679,10 +682,10 @@ func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityG
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter, _ ports.Pagination) ([]*domain.SecurityGroup, string, error) {
+func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter, _ ports.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.SecurityGroup
+	var out []*domain.SecurityGroupRecord
 	for _, sg := range r.data {
 		if f.FolderID != "" && sg.FolderID != f.FolderID {
 			continue
@@ -690,7 +693,7 @@ func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter,
 		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
 			continue
 		}
-		if f.Name != "" && sg.Name != f.Name {
+		if f.Name != "" && sg.Name != domain.RcNameVPC(f.Name) {
 			continue
 		}
 		out = append(out, sg)
@@ -698,18 +701,23 @@ func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter,
 	return out, "", nil
 }
 
-func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[sg.ID] = sg
-	return sg, nil
+	rec := &domain.SecurityGroupRecord{SecurityGroup: *sg, CreatedAt: time.Now().UTC()}
+	r.data[sg.ID] = rec
+	return rec, nil
 }
 
-func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[sg.ID] = sg
-	return sg, nil
+	existing, ok := r.data[sg.ID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	existing.SecurityGroup = *sg
+	return existing, nil
 }
 
 func (r *SecurityGroupRepo) Delete(_ context.Context, id string) error {
@@ -719,7 +727,7 @@ func (r *SecurityGroupRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
@@ -729,7 +737,7 @@ func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []stri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
@@ -739,7 +747,7 @@ func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ stri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
@@ -751,15 +759,19 @@ func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) 
 }
 
 // ---- GatewayRepo ----
+//
+// Wave 2 batch B (KAC-94): port возвращает *domain.GatewayRecord.
 
 type GatewayRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.Gateway
+	data map[string]*domain.GatewayRecord
 }
 
-func NewGatewayRepo() *GatewayRepo { return &GatewayRepo{data: make(map[string]*domain.Gateway)} }
+func NewGatewayRepo() *GatewayRepo {
+	return &GatewayRepo{data: make(map[string]*domain.GatewayRecord)}
+}
 
-func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.Gateway, error) {
+func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
@@ -769,15 +781,15 @@ func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.Gateway, error)
 	return g, nil
 }
 
-func (r *GatewayRepo) List(_ context.Context, f ports.GatewayFilter, _ ports.Pagination) ([]*domain.Gateway, string, error) {
+func (r *GatewayRepo) List(_ context.Context, f ports.GatewayFilter, _ ports.Pagination) ([]*domain.GatewayRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.Gateway
+	var out []*domain.GatewayRecord
 	for _, g := range r.data {
 		if f.FolderID != "" && g.FolderID != f.FolderID {
 			continue
 		}
-		if f.Name != "" && g.Name != f.Name {
+		if f.Name != "" && g.Name != domain.RcNameVPC(f.Name) {
 			continue
 		}
 		out = append(out, g)
@@ -785,18 +797,23 @@ func (r *GatewayRepo) List(_ context.Context, f ports.GatewayFilter, _ ports.Pag
 	return out, "", nil
 }
 
-func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
+func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*domain.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[g.ID] = g
-	return g, nil
+	rec := &domain.GatewayRecord{Gateway: *g, CreatedAt: time.Now().UTC()}
+	r.data[g.ID] = rec
+	return rec, nil
 }
 
-func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*domain.Gateway, error) {
+func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*domain.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[g.ID] = g
-	return g, nil
+	existing, ok := r.data[g.ID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	existing.Gateway = *g
+	return existing, nil
 }
 
 func (r *GatewayRepo) Delete(_ context.Context, id string) error {
@@ -806,7 +823,7 @@ func (r *GatewayRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Gateway, error) {
+func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
@@ -818,17 +835,19 @@ func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 }
 
 // ---- PrivateEndpointRepo ----
+//
+// Wave 2 batch B (KAC-94): port возвращает *domain.PrivateEndpointRecord.
 
 type PrivateEndpointRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.PrivateEndpoint
+	data map[string]*domain.PrivateEndpointRecord
 }
 
 func NewPrivateEndpointRepo() *PrivateEndpointRepo {
-	return &PrivateEndpointRepo{data: make(map[string]*domain.PrivateEndpoint)}
+	return &PrivateEndpointRepo{data: make(map[string]*domain.PrivateEndpointRecord)}
 }
 
-func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.PrivateEndpoint, error) {
+func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, ok := r.data[id]
@@ -838,15 +857,15 @@ func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.Private
 	return p, nil
 }
 
-func (r *PrivateEndpointRepo) List(_ context.Context, f ports.PrivateEndpointFilter, _ ports.Pagination) ([]*domain.PrivateEndpoint, string, error) {
+func (r *PrivateEndpointRepo) List(_ context.Context, f ports.PrivateEndpointFilter, _ ports.Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.PrivateEndpoint
+	var out []*domain.PrivateEndpointRecord
 	for _, p := range r.data {
 		if f.FolderID != "" && p.FolderID != f.FolderID {
 			continue
 		}
-		if f.Name != "" && p.Name != f.Name {
+		if f.Name != "" && p.Name != domain.RcNameVPC(f.Name) {
 			continue
 		}
 		out = append(out, p)
@@ -854,18 +873,23 @@ func (r *PrivateEndpointRepo) List(_ context.Context, f ports.PrivateEndpointFil
 	return out, "", nil
 }
 
-func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
+func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
+	rec := &domain.PrivateEndpointRecord{PrivateEndpoint: *p, CreatedAt: time.Now().UTC()}
+	r.data[p.ID] = rec
+	return rec, nil
 }
 
-func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
+func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[p.ID] = p
-	return p, nil
+	existing, ok := r.data[p.ID]
+	if !ok {
+		return nil, ports.ErrNotFound
+	}
+	existing.PrivateEndpoint = *p
+	return existing, nil
 }
 
 func (r *PrivateEndpointRepo) Delete(_ context.Context, id string) error {

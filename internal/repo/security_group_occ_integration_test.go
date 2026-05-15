@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,11 +56,10 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 			ID:        ids.NewID(ids.PrefixSecurityGroup),
 			FolderID:  "folder-occ",
 			NetworkID: net.ID,
-			CreatedAt: time.Now().UTC(),
 			Name:      "", // empty name => not subject to (folder_id, name) partial unique
-			Status:    "ACTIVE",
+			Status:    domain.SecurityGroupStatusActive,
 			Rules: []domain.SecurityGroupRule{
-				{ID: "seed", Direction: "INGRESS", ProtocolName: "ANY", FromPort: -1, ToPort: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+				{ID: "seed", Direction: domain.SecurityGroupRuleDirectionIngress, ProtocolName: "ANY", FromPort: -1, ToPort: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
 			},
 		}
 		created, insErr := sgr.Insert(ctx, sg)
@@ -81,7 +79,7 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 				<-start
 				add := []domain.SecurityGroupRule{{
 					ID:           ruleIDs[idx],
-					Direction:    "EGRESS",
+					Direction:    domain.SecurityGroupRuleDirectionEgress,
 					ProtocolName: "tcp",
 					FromPort:     int64(8000 + idx),
 					ToPort:       int64(8000 + idx),

@@ -7,8 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 )
 
 // Happy-path Update сценарии для всех ресурсов — покрывают doUpdate /
@@ -360,45 +361,55 @@ func TestValidateSGRule_HappyPath(t *testing.T) {
 // ---- pure converter functions in service ----
 
 func TestDomainSGToProto_Conversion(t *testing.T) {
-	sg := &domain.SecurityGroup{
-		ID:                "sg-1",
-		FolderID:          "f",
-		NetworkID:         "n",
-		Name:              "sg",
-		Description:       "d",
-		Labels:            map[string]string{"k": "v"},
-		Status:            "ACTIVE",
-		DefaultForNetwork: true,
-		Rules: []domain.SecurityGroupRule{
-			{ID: "r1", Direction: "INGRESS", FromPort: 22, ToPort: 22},
+	rec := &domain.SecurityGroupRecord{
+		SecurityGroup: domain.SecurityGroup{
+			ID:                "sg-1",
+			FolderID:          "f",
+			NetworkID:         "n",
+			Name:              domain.RcNameVPC("sg"),
+			Description:       domain.RcDescription("d"),
+			Labels:            domain.LabelsFromMap(map[string]string{"k": "v"}),
+			Status:            domain.SecurityGroupStatusActive,
+			DefaultForNetwork: true,
+			Rules: []domain.SecurityGroupRule{
+				{ID: "r1", Direction: domain.SecurityGroupRuleDirectionIngress, FromPort: 22, ToPort: 22},
+			},
 		},
 	}
-	p := protoconv.SecurityGroup(sg)
+	any, err := marshalSecurityGroupRecord(rec)
+	require.NoError(t, err)
+	var p vpcv1.SecurityGroup
+	require.NoError(t, any.UnmarshalTo(&p))
 	assert.Equal(t, "sg-1", p.Id)
 	assert.True(t, p.DefaultForNetwork)
 	require.Len(t, p.Rules, 1)
 }
 
 func TestDomainPrivateEndpointToProto_Conversion(t *testing.T) {
-	p := &domain.PrivateEndpoint{
-		ID:          "pe-1",
-		FolderID:    "f",
-		Name:        "pe",
-		NetworkID:   "n",
-		SubnetID:    "s",
-		IPAddress:   "10.0.0.5",
-		ServiceType: "object_storage",
-		Status:      "AVAILABLE",
-		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
+	rec := &domain.PrivateEndpointRecord{
+		PrivateEndpoint: domain.PrivateEndpoint{
+			ID:          "pe-1",
+			FolderID:    "f",
+			Name:        domain.RcNameVPC("pe"),
+			NetworkID:   "n",
+			SubnetID:    "s",
+			IPAddress:   "10.0.0.5",
+			ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+			Status:      domain.PrivateEndpointStatusAvailable,
+			DnsOptions:  map[string]any{"private_dns_records_enabled": true},
+		},
 	}
-	out := protoconv.PrivateEndpoint(p)
+	any, err := marshalPrivateEndpointRecord(rec)
+	require.NoError(t, err)
+	var out pepb.PrivateEndpoint
+	require.NoError(t, any.UnmarshalTo(&out))
 	assert.Equal(t, "pe-1", out.Id)
 }
 
 func TestAssignRuleIDs_GeneratesIDs(t *testing.T) {
 	rules := assignRuleIDs([]domain.SecurityGroupRule{
-		{Direction: "INGRESS"},
-		{Direction: "EGRESS"},
+		{Direction: domain.SecurityGroupRuleDirectionIngress},
+		{Direction: domain.SecurityGroupRuleDirectionEgress},
 	})
 	require.Len(t, rules, 2)
 	assert.NotEmpty(t, rules[0].ID)

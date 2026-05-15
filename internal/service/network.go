@@ -91,7 +91,7 @@ func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pa
 }
 
 // ListSecurityGroups возвращает SG, привязанные к данной сети.
-func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroup, string, error) {
+func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroupRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}

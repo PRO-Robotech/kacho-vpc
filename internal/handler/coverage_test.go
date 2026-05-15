@@ -12,7 +12,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -271,15 +270,18 @@ func TestGatewayHandler_ListOperations_RequiresID(t *testing.T) {
 }
 
 func TestGatewayToProto_SharedEgress(t *testing.T) {
-	g := &domain.Gateway{
-		ID:          "gw-1",
-		FolderID:    "f1",
-		Name:        "gw1",
-		Description: "desc",
-		Labels:      map[string]string{"env": "prod"},
-		GatewayType: "shared_egress",
+	rec := &domain.GatewayRecord{
+		Gateway: domain.Gateway{
+			ID:          "gw-1",
+			FolderID:    "f1",
+			Name:        domain.RcNameVPC("gw1"),
+			Description: domain.RcDescription("desc"),
+			Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
+			GatewayType: domain.GatewayTypeSharedEgress,
+		},
 	}
-	p := protoconv.Gateway(g)
+	p, err := gatewayToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, "gw-1", p.Id)
 	assert.NotNil(t, p.GetSharedEgressGateway())
 }

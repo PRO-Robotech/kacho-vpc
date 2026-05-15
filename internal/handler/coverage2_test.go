@@ -14,7 +14,6 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
@@ -133,30 +132,33 @@ func TestSecurityGroupHandler_Move_RequiresID(t *testing.T) {
 }
 
 func TestSGToProto_Fields(t *testing.T) {
-	sg := &domain.SecurityGroup{
-		ID:                "sg-1",
-		FolderID:          "f1",
-		NetworkID:         "net-1",
-		Name:              "sg",
-		Description:       "desc",
-		Labels:            map[string]string{"k": "v"},
-		Status:            "ACTIVE",
-		DefaultForNetwork: false,
-		Rules: []domain.SecurityGroupRule{
-			{
-				ID: "r1", Direction: "INGRESS", Description: "in",
-				ProtocolName: "tcp",
-				FromPort:     22, ToPort: 22,
-				V4CidrBlocks: []string{"10.0.0.0/24"},
-			},
-			{
-				ID: "r2", Direction: "EGRESS",
-				ProtocolNumber: 17,
-				// Ports nil (any) — round-trip.
+	rec := &domain.SecurityGroupRecord{
+		SecurityGroup: domain.SecurityGroup{
+			ID:                "sg-1",
+			FolderID:          "f1",
+			NetworkID:         "net-1",
+			Name:              domain.RcNameVPC("sg"),
+			Description:       domain.RcDescription("desc"),
+			Labels:            domain.LabelsFromMap(map[string]string{"k": "v"}),
+			Status:            domain.SecurityGroupStatusActive,
+			DefaultForNetwork: false,
+			Rules: []domain.SecurityGroupRule{
+				{
+					ID: "r1", Direction: domain.SecurityGroupRuleDirectionIngress, Description: domain.RcDescription("in"),
+					ProtocolName: "tcp",
+					FromPort:     22, ToPort: 22,
+					V4CidrBlocks: []string{"10.0.0.0/24"},
+				},
+				{
+					ID: "r2", Direction: domain.SecurityGroupRuleDirectionEgress,
+					ProtocolNumber: 17,
+					// Ports nil (any) — round-trip.
+				},
 			},
 		},
 	}
-	p := protoconv.SecurityGroup(sg)
+	p, err := securityGroupToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, "sg-1", p.Id)
 	assert.Equal(t, vpcv1.SecurityGroup_ACTIVE, p.Status)
 	assert.Len(t, p.Rules, 2)
@@ -178,7 +180,7 @@ func TestRuleSpecFromProto_Fields(t *testing.T) {
 		},
 	}
 	r := ruleSpecFromProto(rs)
-	assert.Equal(t, "INGRESS", r.Direction)
+	assert.Equal(t, domain.SecurityGroupRuleDirectionIngress, r.Direction)
 	assert.Equal(t, int64(80), r.FromPort)
 	assert.Equal(t, "tcp", r.ProtocolName)
 	assert.Equal(t, []string{"0.0.0.0/0"}, r.V4CidrBlocks)
@@ -191,7 +193,7 @@ func TestRuleSpecFromProto_ProtocolNumber(t *testing.T) {
 		Target:    &vpcv1.SecurityGroupRuleSpec_SecurityGroupId{SecurityGroupId: "sg-2"},
 	}
 	r := ruleSpecFromProto(rs)
-	assert.Equal(t, "EGRESS", r.Direction)
+	assert.Equal(t, domain.SecurityGroupRuleDirectionEgress, r.Direction)
 	assert.Equal(t, int64(17), r.ProtocolNumber)
 	assert.Equal(t, "sg-2", r.SecurityGroupID)
 }
@@ -265,21 +267,24 @@ func TestPrivateEndpointHandler_ListOperations_RequiresID(t *testing.T) {
 }
 
 func TestPrivateEndpointToProto_Fields(t *testing.T) {
-	p := &domain.PrivateEndpoint{
-		ID:          "pe-1",
-		FolderID:    "f1",
-		Name:        "pe",
-		Description: "desc",
-		Labels:      map[string]string{"env": "test"},
-		NetworkID:   "net-1",
-		SubnetID:    "sub-1",
-		IPAddress:   "10.0.0.5",
-		AddressID:   "adr-1",
-		ServiceType: "object_storage",
-		Status:      "AVAILABLE",
-		DnsOptions:  map[string]any{"private_dns_records_enabled": true},
+	rec := &domain.PrivateEndpointRecord{
+		PrivateEndpoint: domain.PrivateEndpoint{
+			ID:          "pe-1",
+			FolderID:    "f1",
+			Name:        domain.RcNameVPC("pe"),
+			Description: domain.RcDescription("desc"),
+			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
+			NetworkID:   "net-1",
+			SubnetID:    "sub-1",
+			IPAddress:   "10.0.0.5",
+			AddressID:   "adr-1",
+			ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+			Status:      domain.PrivateEndpointStatusAvailable,
+			DnsOptions:  map[string]any{"private_dns_records_enabled": true},
+		},
 	}
-	out := protoconv.PrivateEndpoint(p)
+	out, err := privateEndpointToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, "pe-1", out.Id)
 	assert.Equal(t, pepb.PrivateEndpoint_AVAILABLE, out.Status)
 	require.NotNil(t, out.Address)
@@ -290,13 +295,15 @@ func TestPrivateEndpointToProto_Fields(t *testing.T) {
 }
 
 func TestPrivateEndpointToProto_StatusMap(t *testing.T) {
-	for status, expected := range map[string]pepb.PrivateEndpoint_Status{
-		"PENDING":   pepb.PrivateEndpoint_PENDING,
-		"AVAILABLE": pepb.PrivateEndpoint_AVAILABLE,
-		"DELETING":  pepb.PrivateEndpoint_DELETING,
-		"unknown":   pepb.PrivateEndpoint_STATUS_UNSPECIFIED,
+	for status, expected := range map[domain.PrivateEndpointStatus]pepb.PrivateEndpoint_Status{
+		domain.PrivateEndpointStatusPending:   pepb.PrivateEndpoint_PENDING,
+		domain.PrivateEndpointStatusAvailable: pepb.PrivateEndpoint_AVAILABLE,
+		domain.PrivateEndpointStatusDeleting:  pepb.PrivateEndpoint_DELETING,
+		"unknown":                             pepb.PrivateEndpoint_STATUS_UNSPECIFIED,
 	} {
-		out := protoconv.PrivateEndpoint(&domain.PrivateEndpoint{Status: status})
+		rec := &domain.PrivateEndpointRecord{PrivateEndpoint: domain.PrivateEndpoint{Status: status}}
+		out, err := privateEndpointToPb(rec)
+		require.NoError(t, err)
 		assert.Equal(t, expected, out.Status, "status=%s", status)
 	}
 }

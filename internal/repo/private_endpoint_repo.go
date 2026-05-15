@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// PrivateEndpoint — type-alias на domain.PrivateEndpointRecord (repo-entity с
+// DB-managed CreatedAt). Wave 2 batch B (KAC-94), parity с repo.Network.
+type PrivateEndpoint = domain.PrivateEndpointRecord
 
 // PrivateEndpointRepo — реализация service.PrivateEndpointRepo поверх pgxpool.
 type PrivateEndpointRepo struct {
@@ -25,7 +30,7 @@ func NewPrivateEndpointRepo(pool *pgxpool.Pool) *PrivateEndpointRepo {
 
 const peCols = `id, folder_id, created_at, name, description, labels, network_id, subnet_id, address_id, ip_address, service_type, dns_options, status`
 
-func (r *PrivateEndpointRepo) Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error) {
+func (r *PrivateEndpointRepo) Get(ctx context.Context, id string) (*PrivateEndpoint, error) {
 	q := fmt.Sprintf(`SELECT %s FROM private_endpoints WHERE id = $1`, peCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	pe, err := scanPrivateEndpoint(row)
@@ -35,7 +40,7 @@ func (r *PrivateEndpointRepo) Get(ctx context.Context, id string) (*domain.Priva
 	return pe, nil
 }
 
-func (r *PrivateEndpointRepo) List(ctx context.Context, f service.PrivateEndpointFilter, p service.Pagination) ([]*domain.PrivateEndpoint, string, error) {
+func (r *PrivateEndpointRepo) List(ctx context.Context, f service.PrivateEndpointFilter, p service.Pagination) ([]*PrivateEndpoint, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -90,7 +95,7 @@ func (r *PrivateEndpointRepo) List(ctx context.Context, f service.PrivateEndpoin
 	}
 	defer rows.Close()
 
-	var result []*domain.PrivateEndpoint
+	var result []*PrivateEndpoint
 	for rows.Next() {
 		pe, err := scanPrivateEndpoint(rows)
 		if err != nil {
@@ -111,8 +116,10 @@ func (r *PrivateEndpointRepo) List(ctx context.Context, f service.PrivateEndpoin
 	return result, nextToken, nil
 }
 
-func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	labelsJSON, err := marshalJSONB(pe.Labels, "PrivateEndpoint.labels")
+// Insert вставляет PrivateEndpoint. Принимает domain.PrivateEndpoint (без CreatedAt
+// — repo сам выставит `now()`). Возвращает *PrivateEndpoint (= *domain.PrivateEndpointRecord).
+func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*PrivateEndpoint, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(pe.Labels), "PrivateEndpoint.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +143,7 @@ func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndp
 	// FK попытается найти row с id='' → 23503. Конвертируем '' → NULL прямо
 	// в INSERT через NULLIF, чтобы service-слой мог по-прежнему передавать
 	// pe.SubnetID/pe.AddressID = "" для «не задано».
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO private_endpoints
 		(id, folder_id, created_at, name, description, labels,
@@ -144,25 +152,26 @@ func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndp
 		RETURNING ` + peCols
 
 	row := tx.QueryRow(ctx, q,
-		pe.ID, pe.FolderID, pe.CreatedAt, pe.Name, pe.Description, labelsJSON,
+		pe.ID, pe.FolderID, now, string(pe.Name), string(pe.Description), labelsJSON,
 		pe.NetworkID, pe.SubnetID, pe.AddressID, pe.IPAddress,
-		pe.ServiceType, dnsJSON, pe.Status,
+		string(pe.ServiceType), dnsJSON, string(pe.Status),
 	)
 	result, err := scanPrivateEndpoint(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "PrivateEndpoint", pe.Name)
+		return nil, wrapPgErr(err, "PrivateEndpoint", string(pe.Name))
 	}
 	if err := emitVPC(ctx, tx, "PrivateEndpoint", result.ID, "CREATED", privateEndpointPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "PrivateEndpoint", pe.Name)
+		return nil, wrapPgErr(err, "PrivateEndpoint", string(pe.Name))
 	}
 	return result, nil
 }
 
-func (r *PrivateEndpointRepo) Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error) {
-	labelsJSON, err := marshalJSONB(pe.Labels, "PrivateEndpoint.labels")
+// Update обновляет mutable-поля PrivateEndpoint. Принимает domain.PrivateEndpoint (без CreatedAt).
+func (r *PrivateEndpointRepo) Update(ctx context.Context, pe *domain.PrivateEndpoint) (*PrivateEndpoint, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(pe.Labels), "PrivateEndpoint.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +196,7 @@ func (r *PrivateEndpointRepo) Update(ctx context.Context, pe *domain.PrivateEndp
 		RETURNING ` + peCols
 
 	row := tx.QueryRow(ctx, q,
-		pe.ID, pe.Name, pe.Description, labelsJSON, dnsJSON,
+		pe.ID, string(pe.Name), string(pe.Description), labelsJSON, dnsJSON,
 	)
 	result, err := scanPrivateEndpoint(row)
 	if err != nil {
@@ -230,21 +239,27 @@ func (r *PrivateEndpointRepo) Delete(ctx context.Context, id string) error {
 
 // ---- scan helpers ----
 
-func scanPrivateEndpoint(row scannable) (*domain.PrivateEndpoint, error) {
-	var pe domain.PrivateEndpoint
+func scanPrivateEndpoint(row scannable) (*PrivateEndpoint, error) {
+	var pe PrivateEndpoint
 	var labelsJSON, dnsJSON []byte
 	var networkID, subnetID, addressID, ipAddress, serviceType *string
+	var name, description, statusStr string
 
 	err := row.Scan(
-		&pe.ID, &pe.FolderID, &pe.CreatedAt, &pe.Name, &pe.Description, &labelsJSON,
-		&networkID, &subnetID, &addressID, &ipAddress, &serviceType, &dnsJSON, &pe.Status,
+		&pe.ID, &pe.FolderID, &pe.CreatedAt, &name, &description, &labelsJSON,
+		&networkID, &subnetID, &addressID, &ipAddress, &serviceType, &dnsJSON, &statusStr,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(labelsJSON, &pe.Labels, "PrivateEndpoint.labels"); err != nil {
+	pe.Name = domain.RcNameVPC(name)
+	pe.Description = domain.RcDescription(description)
+	pe.Status = domain.PrivateEndpointStatus(statusStr)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "PrivateEndpoint.labels"); err != nil {
 		return nil, err
 	}
+	pe.Labels = domain.LabelsFromMap(labels)
 	if err := unmarshalJSONB(dnsJSON, &pe.DnsOptions, "PrivateEndpoint.dns_options"); err != nil {
 		return nil, err
 	}
@@ -261,11 +276,11 @@ func scanPrivateEndpoint(row scannable) (*domain.PrivateEndpoint, error) {
 		pe.IPAddress = *ipAddress
 	}
 	if serviceType != nil {
-		pe.ServiceType = *serviceType
+		pe.ServiceType = domain.PrivateEndpointServiceType(*serviceType)
 	}
 	return &pe, nil
 }
 
-func privateEndpointPayload(pe *domain.PrivateEndpoint) map[string]any {
+func privateEndpointPayload(pe *PrivateEndpoint) map[string]any {
 	return domainToMap(pe)
 }

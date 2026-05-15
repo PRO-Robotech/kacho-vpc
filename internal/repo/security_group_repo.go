@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,10 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// SecurityGroup — type-alias на domain.SecurityGroupRecord (repo-entity с
+// DB-managed CreatedAt). Wave 2 batch B (KAC-94), parity с repo.Network.
+type SecurityGroup = domain.SecurityGroupRecord
 
 // SecurityGroupRepo — реализация service.SecurityGroupRepo поверх pgxpool.
 type SecurityGroupRepo struct {
@@ -38,7 +43,7 @@ func wrapSGErr(err error, id string) error {
 
 const sgCols = `id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules`
 
-func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*SecurityGroup, error) {
 	q := fmt.Sprintf(`SELECT %s FROM security_groups WHERE id = $1`, sgCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	sg, err := scanSG(row)
@@ -48,7 +53,7 @@ func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*domain.Securit
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFilter, p service.Pagination) ([]*domain.SecurityGroup, string, error) {
+func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFilter, p service.Pagination) ([]*SecurityGroup, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -112,7 +117,7 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 	}
 	defer rows.Close()
 
-	var result []*domain.SecurityGroup
+	var result []*SecurityGroup
 	for rows.Next() {
 		sg, err := scanSG(rows)
 		if err != nil {
@@ -133,8 +138,11 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 	return result, nextToken, nil
 }
 
-func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON, err := marshalJSONB(sg.Labels, "SecurityGroup.labels")
+// Insert вставляет SG. Принимает domain.SecurityGroup (без CreatedAt — repo сам
+// выставит `now()` для детерминированности тестов; source of truth — БД-колонка).
+// Возвращает *SecurityGroup (= *domain.SecurityGroupRecord).
+func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroup, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +157,7 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO security_groups (id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -156,23 +165,24 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 	row := tx.QueryRow(ctx, q,
 		// network_id опционален (kacho-proto#8): пустая строка → SQL NULL, иначе
 		// FK security_groups_network_id_fkey сработал бы на '' (нет такой сети).
-		sg.ID, sg.FolderID, nullableStr(sg.NetworkID), sg.CreatedAt, sg.Name, sg.Description, labelsJSON, sg.Status, sg.DefaultForNetwork, rulesJSON,
+		sg.ID, sg.FolderID, nullableStr(sg.NetworkID), now, string(sg.Name), string(sg.Description), labelsJSON, string(sg.Status), sg.DefaultForNetwork, rulesJSON,
 	)
 	result, err := scanSG(row)
 	if err != nil {
-		return nil, wrapSGErr(err, sg.Name)
+		return nil, wrapSGErr(err, string(sg.Name))
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "CREATED", securityGroupPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapSGErr(err, sg.Name)
+		return nil, wrapSGErr(err, string(sg.Name))
 	}
 	return result, nil
 }
 
-func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error) {
-	labelsJSON, err := marshalJSONB(sg.Labels, "SecurityGroup.labels")
+// Update обновляет mutable-поля SG. Принимает domain.SecurityGroup (без CreatedAt).
+func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroup, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +201,7 @@ func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup
 		UPDATE security_groups SET name=$2, description=$3, labels=$4, rules=$5, status=$6
 		WHERE id=$1
 		RETURNING ` + sgCols
-	row := tx.QueryRow(ctx, q, sg.ID, sg.Name, sg.Description, labelsJSON, rulesJSON, sg.Status)
+	row := tx.QueryRow(ctx, q, sg.ID, string(sg.Name), string(sg.Description), labelsJSON, rulesJSON, string(sg.Status))
 	result, err := scanSG(row)
 	if err != nil {
 		return nil, wrapSGErr(err, sg.ID)
@@ -235,7 +245,7 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 // проверяет его в WHERE. Concurrent UpdateRules → один из вызовов получит
 // 0 rows → ErrFailedPrecondition "concurrent modification, please retry"
 // (защита от lost-update, см. TODO #22).
-func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -304,7 +314,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 //
 // Optimistic concurrency: см. UpdateRules. Concurrent UpdateRule на ту же SG →
 // FailedPrecondition "concurrent modification, please retry".
-func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -335,11 +345,11 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 		}
 		found = true
 		if !applyMask {
-			rules[i].Description = description
+			rules[i].Description = domain.RcDescription(description)
 			rules[i].Labels = labels
 		} else {
 			if _, ok := maskSet["description"]; ok {
-				rules[i].Description = description
+				rules[i].Description = domain.RcDescription(description)
 			}
 			if _, ok := maskSet["labels"]; ok {
 				rules[i].Labels = labels
@@ -375,7 +385,7 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error) {
+func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -399,14 +409,15 @@ func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string
 
 // ---- scan ----
 
-func scanSG(row scannable) (*domain.SecurityGroup, error) {
-	var sg domain.SecurityGroup
+func scanSG(row scannable) (*SecurityGroup, error) {
+	var sg SecurityGroup
 	var labelsJSON []byte
 	var rulesJSON []byte
 	var networkID *string // nullable (kacho-proto#8: unbound / folder-level SG)
+	var name, description, statusStr string
 
 	err := row.Scan(
-		&sg.ID, &sg.FolderID, &networkID, &sg.CreatedAt, &sg.Name, &sg.Description, &labelsJSON, &sg.Status, &sg.DefaultForNetwork, &rulesJSON,
+		&sg.ID, &sg.FolderID, &networkID, &sg.CreatedAt, &name, &description, &labelsJSON, &statusStr, &sg.DefaultForNetwork, &rulesJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -414,9 +425,14 @@ func scanSG(row scannable) (*domain.SecurityGroup, error) {
 	if networkID != nil {
 		sg.NetworkID = *networkID
 	}
-	if err := unmarshalJSONB(labelsJSON, &sg.Labels, "SecurityGroup.labels"); err != nil {
+	sg.Name = domain.RcNameVPC(name)
+	sg.Description = domain.RcDescription(description)
+	sg.Status = domain.SecurityGroupStatus(statusStr)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "SecurityGroup.labels"); err != nil {
 		return nil, err
 	}
+	sg.Labels = domain.LabelsFromMap(labels)
 	if err := unmarshalJSONB(rulesJSON, &sg.Rules, "SecurityGroup.rules"); err != nil {
 		return nil, err
 	}

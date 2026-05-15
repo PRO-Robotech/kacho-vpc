@@ -26,16 +26,22 @@ const DefaultSGDescription = "Default security group (auto-created by kacho-vpc)
 //
 // Это builder, а не глобальная переменная — каждый вызов отдаёт fresh slice
 // (caller может мутировать без побочных эффектов).
+//
+// Wave 2 batch B (KAC-94): Direction — enum `SecurityGroupRuleDirection`,
+// а не голая string-literal (skill evgeniy §4 D.8).
 func NewDefaultSecurityGroupRules() []SecurityGroupRule {
 	return []SecurityGroupRule{
-		{Direction: "INGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
-		{Direction: "EGRESS", ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+		{Direction: SecurityGroupRuleDirectionIngress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+		{Direction: SecurityGroupRuleDirectionEgress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
 	}
 }
 
 // NewDefaultSecurityGroup собирает domain.SecurityGroup для default-SG сети.
 // CreatedAt сюда не входит (DB-managed); caller (репозиторий) выставит время
 // в Insert. Status — через enum-константу, а не string-literal.
+//
+// Wave 2 batch B (KAC-94): Name/Description — newtypes (RcNameVPC / RcDescription),
+// Status — enum SecurityGroupStatus напрямую (без `string(...)`-каста).
 //
 // Используется service-слоем в worker'е Network.Create при
 // KACHO_VPC_DEFAULT_SG_INLINE=true (skill evgeniy §4 D.7).
@@ -44,9 +50,9 @@ func NewDefaultSecurityGroup(net Network) SecurityGroup {
 		ID:                ids.NewID(ids.PrefixSecurityGroup),
 		FolderID:          net.FolderID,
 		NetworkID:         net.ID,
-		Name:              DefaultSGName(net.ID),
-		Description:       DefaultSGDescription,
-		Status:            string(SecurityGroupStatusActive),
+		Name:              RcNameVPC(DefaultSGName(net.ID)),
+		Description:       RcDescription(DefaultSGDescription),
+		Status:            SecurityGroupStatusActive,
 		DefaultForNetwork: true,
 		Rules:             NewDefaultSecurityGroupRules(),
 	}

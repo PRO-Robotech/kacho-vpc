@@ -2,15 +2,30 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// privateEndpointToPb конвертирует repo-entity PE → proto PE через DTO-реестр.
+// Wave 2 batch B (KAC-94): protoconv.PrivateEndpoint удалён (skill evgeniy §3 C.6 / AP-11).
+func privateEndpointToPb(rec *domain.PrivateEndpointRecord) (*pe.PrivateEndpoint, error) {
+	var dst *pe.PrivateEndpoint
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer PrivateEndpoint: %w", err)
+	}
+	return dst, nil
+}
 
 // PrivateEndpointHandler реализует pe.PrivateEndpointServiceServer.
 type PrivateEndpointHandler struct {
@@ -34,7 +49,7 @@ func (h *PrivateEndpointHandler) Get(ctx context.Context, req *pe.GetPrivateEndp
 	if err := AssertFolderOwnership(ctx, got.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.PrivateEndpoint(got), nil
+	return privateEndpointToPb(got)
 }
 
 func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEndpointsRequest) (*pe.ListPrivateEndpointsResponse, error) {
@@ -57,7 +72,11 @@ func (h *PrivateEndpointHandler) List(ctx context.Context, req *pe.ListPrivateEn
 	}
 	resp := &pe.ListPrivateEndpointsResponse{NextPageToken: nextToken}
 	for _, p := range endpoints {
-		resp.PrivateEndpoints = append(resp.PrivateEndpoints, protoconv.PrivateEndpoint(p))
+		pb, err := privateEndpointToPb(p)
+		if err != nil {
+			return nil, err
+		}
+		resp.PrivateEndpoints = append(resp.PrivateEndpoints, pb)
 	}
 	return resp, nil
 }
