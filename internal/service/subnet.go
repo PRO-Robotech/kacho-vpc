@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,8 +16,22 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы (Subnet/Address/RouteTable/time) через
+	// init(). Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
+
+// marshalSubnetRecord конвертирует repo-entity Subnet в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4). Wave 2 batch A (KAC-94): replaced
+// `protoconv.Subnet`.
+func marshalSubnetRecord(rec *domain.SubnetRecord) (*anypb.Any, error) {
+	var dst *vpcv1.Subnet
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Subnet: %w", err)
+	}
+	return anypb.New(dst)
+}
 
 // CreateSubnetReq — запрос на создание подсети.
 type CreateSubnetReq struct {
@@ -106,7 +119,7 @@ func (s *SubnetService) validateZoneID(ctx context.Context, field, zoneID string
 }
 
 // Get возвращает Subnet по ID.
-func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, error) {
+func (s *SubnetService) Get(ctx context.Context, id string) (*domain.SubnetRecord, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
 		return nil, err
 	}
@@ -119,7 +132,7 @@ func (s *SubnetService) Get(ctx context.Context, id string) (*domain.Subnet, err
 
 // List возвращает список подсетей.
 // folder_id обязателен (R10 #C1 closure).
-func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error) {
+func (s *SubnetService) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -164,13 +177,15 @@ func (s *SubnetService) Create(ctx context.Context, req CreateSubnetReq) (*opera
 			return nil, err
 		}
 	}
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+	// Wave 2 batch A (KAC-94): domain.Subnet.Validate() — источник истины (newtype-
+	// валидация Name/Description/Labels). corevalidate.NameVPC/Description/Labels
+	// удалены — skill evgeniy §4 D.5 / AP-1.
+	subForValidate := domain.Subnet{
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := subForValidate.Validate(); err != nil {
 		return nil, err
 	}
 	if err := validateDhcpOptions(req.DhcpOptions); err != nil {
@@ -244,10 +259,9 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 	sub := &domain.Subnet{
 		ID:           subID,
 		FolderID:     req.FolderID,
-		CreatedAt:    time.Now().UTC(),
-		Name:         req.Name,
-		Description:  req.Description,
-		Labels:       req.Labels,
+		Name:         domain.RcNameVPC(req.Name),
+		Description:  domain.RcDescription(req.Description),
+		Labels:       domain.LabelsFromMap(req.Labels),
 		NetworkID:    req.NetworkID,
 		ZoneID:       req.ZoneID,
 		V4CidrBlocks: req.V4CidrBlocks,
@@ -259,7 +273,7 @@ func (s *SubnetService) doCreate(ctx context.Context, subID string, req CreateSu
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Subnet(created))
+	return marshalSubnetRecord(created)
 }
 
 // Update обновляет Subnet.
@@ -308,18 +322,18 @@ func (s *SubnetService) Update(ctx context.Context, req UpdateSubnetReq) (*opera
 }
 
 func (s *SubnetService) doUpdate(ctx context.Context, req UpdateSubnetReq) (*anypb.Any, error) {
-	sub, err := s.repo.Get(ctx, req.SubnetID)
+	rec, err := s.repo.Get(ctx, req.SubnetID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 
-	applySubnetMask(sub, req)
+	applySubnetMask(&rec.Subnet, req)
 
-	updated, err := s.repo.Update(ctx, sub)
+	updated, err := s.repo.Update(ctx, &rec.Subnet)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Subnet(updated))
+	return marshalSubnetRecord(updated)
 }
 
 // validateSubnetUpdate проверяет name/description/labels в Update.
@@ -341,19 +355,21 @@ func validateSubnetUpdate(req UpdateSubnetReq) error {
 	if len(updates) == 0 {
 		updates = []string{"name", "description", "labels"}
 	}
+	// Wave 2 batch A (KAC-94): валидация через domain newtypes (skill evgeniy
+	// §4 D.5). corevalidate.NameVPC/Description/Labels удалены.
 	for _, f := range updates {
 		switch f {
 		case "name":
 			// VPC Subnet: empty name allowed (YC permissive policy).
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		case "dhcp_options":
@@ -408,9 +424,9 @@ func validateDhcpOptions(d *domain.DhcpOptions) error {
 func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 	if len(req.UpdateMask) == 0 {
 		// Полный update — только mutable fields.
-		sub.Name = req.Name
-		sub.Description = req.Description
-		sub.Labels = req.Labels
+		sub.Name = domain.RcNameVPC(req.Name)
+		sub.Description = domain.RcDescription(req.Description)
+		sub.Labels = domain.LabelsFromMap(req.Labels)
 		sub.RouteTableID = req.RouteTableID
 		sub.DhcpOptions = req.DhcpOptions
 		return
@@ -418,11 +434,11 @@ func applySubnetMask(sub *domain.Subnet, req UpdateSubnetReq) {
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			sub.Name = req.Name
+			sub.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			sub.Description = req.Description
+			sub.Description = domain.RcDescription(req.Description)
 		case "labels":
-			sub.Labels = req.Labels
+			sub.Labels = domain.LabelsFromMap(req.Labels)
 		case "route_table_id":
 			sub.RouteTableID = req.RouteTableID
 		case "dhcp_options":
@@ -483,7 +499,7 @@ func (s *SubnetService) Move(ctx context.Context, id, destFolderID string) (*ope
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Subnet(updated))
+		return marshalSubnetRecord(updated)
 	})
 	return &op, nil
 }
@@ -558,7 +574,7 @@ func (s *SubnetService) AddCidrBlocks(ctx context.Context, id string, v4, v6 []s
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Subnet(updated))
+		return marshalSubnetRecord(updated)
 	})
 	return &op, nil
 }
@@ -622,7 +638,7 @@ func (s *SubnetService) RemoveCidrBlocks(ctx context.Context, id string, v4, v6 
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Subnet(updated))
+		return marshalSubnetRecord(updated)
 	})
 	return &op, nil
 }
@@ -675,7 +691,7 @@ func (s *SubnetService) Relocate(ctx context.Context, id, destZoneID string) (*o
 // (через internal_ipv4.subnet_id) + referrer-записи (кто использует адрес,
 // map address-id → reference; ключ отсутствует если referrer'а нет).
 // Sync RPC, не Operation.
-func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, map[string]*domain.AddressReference, string, error) {
+func (s *SubnetService) ListUsedAddresses(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, map[string]*domain.AddressReference, string, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
 		return nil, nil, "", err
 	}

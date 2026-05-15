@@ -165,7 +165,7 @@ func (r *stubAddressPoolRepo) CountAddressesByPoolPerCIDR(_ context.Context, _ s
 	return nil, nil
 }
 
-func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ ports.Pagination) ([]*domain.Address, string, error) {
+func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
@@ -710,7 +710,7 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 	// Address с external_ipv6 spec (запрос на v6-allocation, ещё без allocated IP).
 	addrID := ids.NewID(ids.PrefixAddress)
 	_, err = ar.Insert(context.Background(), &domain.Address{
-		ID: addrID, FolderID: "f1", CreatedAt: time.Now().UTC(),
+		ID: addrID, FolderID: "f1",
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
 	})

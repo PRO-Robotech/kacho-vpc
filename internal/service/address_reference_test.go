@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,18 +13,19 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
-func seedAddrForRef(ar *mockAddressRepo) *domain.Address {
-	a := &domain.Address{
-		ID:           ids.NewID(ids.PrefixAddress),
-		FolderID:     "f1",
-		CreatedAt:    time.Now().UTC(),
-		Name:         "ref-ip",
-		Type:         domain.AddressTypeExternal,
-		IpVersion:    domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.5", ZoneID: "ru-central1-a"},
+func seedAddrForRef(ar *mockAddressRepo) *domain.AddressRecord {
+	rec := &domain.AddressRecord{
+		Address: domain.Address{
+			ID:           ids.NewID(ids.PrefixAddress),
+			FolderID:     "f1",
+			Name:         domain.RcNameVPC("ref-ip"),
+			Type:         domain.AddressTypeExternal,
+			IpVersion:    domain.IpVersionIPv4,
+			ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.5", ZoneID: "ru-central1-a"},
+		},
 	}
-	ar.Seed(a)
-	return a
+	ar.Seed(rec)
+	return rec
 }
 
 func TestAddressService_SetAddressReference_OK(t *testing.T) {

@@ -102,8 +102,8 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-step2", CreatedAt: now,
-		Name: "sub-step2", NetworkID: net.ID, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-step2",
+		Name: domain.RcNameVPC("sub-step2"), NetworkID: net.ID, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	// step 1: external address with an explicit address-override binding.
 	a1 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step1", CreatedAt: now, Name: "a-step1",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step1", Name: domain.RcNameVPC("a-step1"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}
@@ -135,7 +135,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	// step 2: internal address whose subnet's network has a network_default binding.
 	a2 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step2", CreatedAt: now, Name: "a-step2",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step2", Name: domain.RcNameVPC("a-step2"),
 		Type: domain.AddressTypeInternal, IpVersion: domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: sub.ID},
 	}
@@ -144,7 +144,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	// step 3: external address whose folder->cloud has a selector matching selectorPool.
 	a3 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step3", CreatedAt: now, Name: "a-step3",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step3", Name: domain.RcNameVPC("a-step3"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}
@@ -153,7 +153,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	// step 4: external address with a zone but no override / binding / matching cloud selector.
 	a4 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step4", CreatedAt: now, Name: "a-step4",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step4", Name: domain.RcNameVPC("a-step4"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}
@@ -162,7 +162,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 
 	// step 5: external address with NO zone -> only the global default applies.
 	a5 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step5", CreatedAt: now, Name: "a-step5",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step5", Name: domain.RcNameVPC("a-step5"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: ""},
 	}
@@ -174,7 +174,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	// selector_labels ({tier:premium}) -> inverse-containment fails ->
 	// cascade falls through to zone_default, NOT the special pool.
 	aEdge := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-edge", CreatedAt: now, Name: "a-edge",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-edge", Name: domain.RcNameVPC("a-edge"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}

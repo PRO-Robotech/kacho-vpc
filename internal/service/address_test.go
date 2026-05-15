@@ -18,7 +18,7 @@ func makeSubnet(sr *mockSubnetRepo, networkID string) *domain.Subnet {
 		ID:           ids.NewID(ids.PrefixSubnet),
 		FolderID:     "f1",
 		NetworkID:    networkID,
-		Name:         "test-subnet",
+		Name:         domain.RcNameVPC("test-subnet"),
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	}
 	_, _ = sr.Insert(context.Background(), s)

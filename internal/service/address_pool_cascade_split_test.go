@@ -83,29 +83,30 @@ func (f *cascadeFixture) seedPool(t *testing.T, name string, isDefault bool, zon
 }
 
 // seedAddressV4Req — Address с external_ipv4 spec (запрос на v4-аллокацию).
-func (f *cascadeFixture) seedAddressV4Req(t *testing.T, folder, zone string) *domain.Address {
+// Wave 2 batch A (KAC-94): возвращает *domain.AddressRecord (repo-entity).
+func (f *cascadeFixture) seedAddressV4Req(t *testing.T, folder, zone string) *domain.AddressRecord {
 	t.Helper()
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder, CreatedAt: time.Now().UTC(),
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}
-	_, err := f.addrRepo.Insert(context.Background(), a)
+	rec, err := f.addrRepo.Insert(context.Background(), a)
 	require.NoError(t, err)
-	return a
+	return rec
 }
 
 // seedAddressV6Req — Address с external_ipv6 spec (запрос на v6-аллокацию).
-func (f *cascadeFixture) seedAddressV6Req(t *testing.T, folder, zone string) *domain.Address {
+func (f *cascadeFixture) seedAddressV6Req(t *testing.T, folder, zone string) *domain.AddressRecord {
 	t.Helper()
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder, CreatedAt: time.Now().UTC(),
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: zone},
 	}
-	_, err := f.addrRepo.Insert(context.Background(), a)
+	rec, err := f.addrRepo.Insert(context.Background(), a)
 	require.NoError(t, err)
-	return a
+	return rec
 }
 
 // --------------------------------------------------------------------------
@@ -259,14 +260,15 @@ func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 
 	// Address — folder привязан к cloud-d5 (folderClient.CloudID="cloud-d5").
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-d5", CreatedAt: now,
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-d5",
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
 	}
-	_, err = ar.Insert(context.Background(), a)
+	aRec, err := ar.Insert(context.Background(), a)
 	require.NoError(t, err)
+	_ = now // CreatedAt больше не в domain.Address (KAC-94, Wave 2 batch A); DB-managed.
 
-	res, err := svc.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV6)
+	res, err := svc.ResolvePoolForAddressObjFamily(context.Background(), aRec, FamilyV6)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, globalV6.ID, res.Pool.ID,
@@ -319,7 +321,7 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 	subID := ids.NewID(ids.PrefixSubnet)
 	_, err = f.subRepo.Insert(context.Background(), &domain.Subnet{
 		ID: subID, FolderID: "f-d7", NetworkID: netID,
-		ZoneID: "ru-central1-c", V4CidrBlocks: []string{"10.0.0.0/24"}, CreatedAt: now,
+		ZoneID: "ru-central1-c", V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 
@@ -328,17 +330,17 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 
 	// Address — internal v4 в этой подсети.
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "f-d7", CreatedAt: now,
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "f-d7",
 		Type:         domain.AddressTypeInternal,
 		IpVersion:    domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: subID},
 	}
-	_, err = f.addrRepo.Insert(context.Background(), a)
+	aRec, err := f.addrRepo.Insert(context.Background(), a)
 	require.NoError(t, err)
 
 	// FamilyV4 на этом address → cascade Step 2 находит netDefV6, family-skip
 	// пропускает, fall-through (другого v4-pool нет) → ErrPoolNotResolved.
-	res, err := f.svc.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV4)
+	res, err := f.svc.ResolvePoolForAddressObjFamily(context.Background(), aRec, FamilyV4)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPoolNotResolved))
 	assert.Nil(t, res)

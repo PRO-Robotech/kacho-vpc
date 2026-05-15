@@ -41,8 +41,7 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-mac", CreatedAt: now,
-		Name: "sub-mac", NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.20.0.0/24"},
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-mac", Name: domain.RcNameVPC("sub-mac"), NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.20.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
 	require.NoError(t, err)

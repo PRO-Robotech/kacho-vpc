@@ -108,49 +108,57 @@ type NetworkRepo interface {
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.
+//
+// Wave 2 batch A (KAC-94): возвращает `*domain.SubnetRecord` (repo-entity с
+// DB-managed CreatedAt) вместо `*domain.Subnet`. Insert/Update принимают
+// `*domain.Subnet` (без CreatedAt — DB-managed). Skill evgeniy §4 D.1 / §6 G.2 /
+// §7 H.1. Parity с NetworkRepo (KAC-99).
 type SubnetRepo interface {
-	Get(ctx context.Context, id string) (*domain.Subnet, error)
-	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.Subnet, string, error)
-	Insert(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
-	Update(ctx context.Context, s *domain.Subnet) (*domain.Subnet, error)
+	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error)
+	Insert(ctx context.Context, s *domain.Subnet) (*domain.SubnetRecord, error)
+	Update(ctx context.Context, s *domain.Subnet) (*domain.SubnetRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.Subnet, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.SubnetRecord, error)
 	// SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks
 	// (для AddCidrBlocks/RemoveCidrBlocks). Триггеры EXCLUDE
 	// (subnets_no_overlap_v4 / subnets_no_overlap_v6) проверяют overlap по
 	// primary CIDR каждого семейства.
-	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.Subnet, error)
+	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.SubnetRecord, error)
 	// SetZoneID меняет zone_id у подсети (для Relocate).
-	SetZoneID(ctx context.Context, id, zoneID string) (*domain.Subnet, error)
+	SetZoneID(ctx context.Context, id, zoneID string) (*domain.SubnetRecord, error)
 	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети
 	// (через internal_ipv4.subnet_id). Использовалось ListUsedAddresses и
 	// AddressService.ListBySubnet.
-	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error)
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error)
 }
 
 // AddressRepo — port-интерфейс репозитория адресов.
+//
+// Wave 2 batch A (KAC-94): возвращает `*domain.AddressRecord` (repo-entity с
+// DB-managed CreatedAt). Insert/Update принимают `*domain.Address` (без CreatedAt).
 type AddressRepo interface {
-	Get(ctx context.Context, id string) (*domain.Address, error)
-	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.Address, string, error)
-	Insert(ctx context.Context, a *domain.Address) (*domain.Address, error)
-	Update(ctx context.Context, a *domain.Address) (*domain.Address, error)
+	Get(ctx context.Context, id string) (*domain.AddressRecord, error)
+	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error)
+	Insert(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
+	Update(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
 	Delete(ctx context.Context, id string) error
 	// ExistsIP проверяет уникальность IP (external) в рамках folder/global.
 	ExistsIP(ctx context.Context, ip string) (bool, error)
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.AddressRecord, error)
 	// GetByValue возвращает Address по конкретному IP (external или internal).
 	// scope — опционально subnet_id (для уточнения внутри одной подсети).
-	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error)
+	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.AddressRecord, error)
 	// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 (JSONB-spec)
 	// + emit outbox-event Address.UPDATED. Используется AddressAllocator.
 	// Передавайте nil для поля, которое не нужно менять; оба nil — no-op.
-	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.Address, error)
+	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.AddressRecord, error)
 	// SetInternalIPv6 атомарно обновляет internal_ipv6 (JSONB-spec) + emit
 	// outbox-event Address.UPDATED. Используется AllocateInternalIPv6 (random-pick
 	// + retry на UNIQUE-violation). nil → no-op.
-	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error)
+	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.AddressRecord, error)
 
 	// AllocateIPFromFreelist атомарно достаёт один свободный IP из
 	// address_pool_free_ips для poolID (FOR UPDATE SKIP LOCKED) и проставляет
@@ -240,14 +248,17 @@ type PrivateEndpointRepo interface {
 }
 
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.
+//
+// Wave 2 batch A (KAC-94): возвращает `*domain.RouteTableRecord` (repo-entity
+// с DB-managed CreatedAt). Insert/Update принимают `*domain.RouteTable` (без CreatedAt).
 type RouteTableRepo interface {
-	Get(ctx context.Context, id string) (*domain.RouteTable, error)
-	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error)
-	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
-	Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error)
+	Get(ctx context.Context, id string) (*domain.RouteTableRecord, error)
+	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error)
+	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error)
+	Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTableRecord, error)
 }
 
 // FolderClient — port для проверки существования Folder и lookup'а cloud_id.
@@ -262,7 +273,7 @@ type FolderClient interface {
 
 // SubnetExistsChecker — port для проверки существования Subnet (используется другими сервисами).
 type SubnetExistsChecker interface {
-	GetSubnet(ctx context.Context, id string) (*domain.Subnet, error)
+	GetSubnet(ctx context.Context, id string) (*domain.SubnetRecord, error)
 }
 
 // ZoneRegistry — port для проверки существования зоны (таблица `zones`).
@@ -315,7 +326,7 @@ type AddressPoolRepo interface {
 	CountAddressesByPoolPerCIDR(ctx context.Context, poolID string) (map[string]int64, error)
 	// ListAddressesByPool — все Address (cross-folder) использующие pool.
 	// Pagination через page_size+token.
-	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.Address, string, error)
+	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.AddressRecord, string, error)
 
 	// PopulateFreelistForPool материализует все usable IPv4 адреса из
 	// pool.cidr_blocks в address_pool_free_ips (миграция 0014). Идемпотентно

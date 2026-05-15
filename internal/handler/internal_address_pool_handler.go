@@ -215,7 +215,7 @@ func (h *InternalAddressPoolHandler) ListAddresses(ctx context.Context, req *vpc
 		out = append(out, &vpcv1.AddressPoolAddressEntry{
 			Id:        a.ID,
 			FolderId:  a.FolderID,
-			Name:      a.Name,
+			Name:      string(a.Name),
 			Ipv4:      ip,
 			ZoneId:    zone,
 			Reserved:  a.Reserved,

@@ -385,24 +385,28 @@ func (s *AddressPoolService) ResolvePoolForAddress(ctx context.Context, addressI
 }
 
 // ResolvePoolForAddressObj — то же что ResolvePoolForAddress, но принимает
-// уже полученный *domain.Address. Избегает повторного s.addrRepo.Get(addressID)
+// уже полученный *domain.AddressRecord. Избегает повторного s.addrRepo.Get(addressID)
 // в hot path AllocateExternalIP, который сам уже сделал Get.
+//
+// Wave 2 batch A (KAC-94): принимает repo-entity (AddressRecord) — embedded
+// Address.ID/ExternalIpv4/InternalIpv4/etc используются дальше через embedded
+// field promotion.
 //
 // Fail-fast на nil: caller должен передать valid addr; nil-fallback на
 // hypothetical resolve без addressID был бы silent degradation
 // (теряем cascade Step 1 + folder-id для Step 3).
-func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr *domain.Address) (*ResolvedPool, error) {
+func (s *AddressPoolService) ResolvePoolForAddressObj(ctx context.Context, addr *domain.AddressRecord) (*ResolvedPool, error) {
 	return s.ResolvePoolForAddressObjFamily(ctx, addr, FamilyV4)
 }
 
 // ResolvePoolForAddressObjFamily — cascade-resolve с явным IP-family фильтром (KAC-63).
 // Каждый step отвергает pool без CIDR нужной family и проваливается на следующий step,
 // чтобы default v4-пул не «утаскивал» v6-аллокацию (и наоборот).
-func (s *AddressPoolService) ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.Address, family AddressFamily) (*ResolvedPool, error) {
+func (s *AddressPoolService) ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.AddressRecord, family AddressFamily) (*ResolvedPool, error) {
 	if addr == nil {
 		return nil, status.Error(codes.InvalidArgument, "ResolvePoolForAddressObjFamily: addr is required (use ResolvePoolForAddress for ID-only path)")
 	}
-	res, _, err := s.doResolve(ctx, addr.ID, addr, "", domain.AddressPoolKindExternalPublic, family)
+	res, _, err := s.doResolve(ctx, addr.ID, &addr.Address, "", domain.AddressPoolKindExternalPublic, family)
 	return res, err
 }
 
@@ -486,7 +490,7 @@ func (s *AddressPoolService) doResolve(
 			if err != nil {
 				return nil, nil, err
 			}
-			a = fetched
+			a = &fetched.Address
 		}
 		folderID = a.FolderID
 		if a.ExternalIpv4 != nil && a.ExternalIpv4.ZoneID != "" {
@@ -676,7 +680,7 @@ func (s *AddressPoolService) GetPoolUtilization(ctx context.Context, poolID stri
 }
 
 // ListPoolAddresses — кросс-folder список Address с IP из pool.
-func (s *AddressPoolService) ListPoolAddresses(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.Address, string, error) {
+func (s *AddressPoolService) ListPoolAddresses(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.AddressRecord, string, error) {
 	if poolID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "pool_id required")
 	}

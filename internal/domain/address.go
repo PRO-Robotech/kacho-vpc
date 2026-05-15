@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"go.uber.org/multierr"
+)
 
 // AddressType — тип IP-адреса.
 type AddressType int32
@@ -74,14 +78,18 @@ type AddressReference struct {
 	AttachedAt   time.Time
 }
 
-// Address — IP-адрес (internal или external).
+// Address — IP-адрес (internal или external). Wave 2 batch A (KAC-94).
+//
+// Семантически-нагруженные поля (Name/Description/Labels) — newtypes из
+// `domain/types.go` со встроенным Validate(). `CreatedAt` сюда НЕ входит —
+// DB-managed, живёт в `AddressRecord` (см. `domain/persistence.go`) согласно
+// skill evgeniy §4 D.1 / §7 H.1.
 type Address struct {
 	ID                 string
 	FolderID           string
-	CreatedAt          time.Time
-	Name               string
-	Description        string
-	Labels             map[string]string
+	Name               RcNameVPC
+	Description        RcDescription
+	Labels             RcLabels
 	Type               AddressType
 	IpVersion          IpVersion
 	Reserved           bool
@@ -100,4 +108,19 @@ type Address struct {
 	// для compute NIC/NAT-адресов — один элемент с ReferrerType="compute_instance".
 	// Не персистится отдельно (это denormalized view на address_references).
 	UsedBy []*AddressReference
+}
+
+// Validate проверяет name/description/labels по domain-контракту. Вызывается
+// use-case-слоем ПЕРЕД repo.Insert / repo.Update (skill evgeniy §4 D.4 / D.6).
+//
+// Кросс-полевые инварианты (oneof ExternalIpv4/InternalIpv4/InternalIpv6/
+// ExternalIpv6 — exactly-one, deletion_protection-семантика, требования
+// requirements.ddos_protection_provider whitelist) остаются в service-слое:
+// они зависят от proto-контракта и от другого ресурса (Subnet).
+func (a Address) Validate() error {
+	return multierr.Combine(
+		a.Name.Validate(),
+		a.Description.Validate(),
+		ValidateLabels(a.Labels),
+	)
 }

@@ -44,7 +44,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	rtRepo := repo.NewRouteTableRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-a", Name: domain.RcNameVPC("net-assoc-a"),
 	}
@@ -54,8 +54,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	// Подсеть #1 — без route_table_id (auto-pick должен оставить NULL, так как
 	// RT ещё нет; trigger (2) кэндидатов не находит).
 	subA := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-a", CreatedAt: now,
-		Name: "sub-assoc-a", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-a", Name: domain.RcNameVPC("sub-assoc-a"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.71.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, subA)
@@ -67,8 +66,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	// Подсеть #2 — с explicit route_table_id (укажем тот id, что заведём ниже
 	// для RT-explicit-protection); сначала создадим эту RT.
 	rtExplicit := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", CreatedAt: now,
-		Name: "rt-explicit", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", Name: domain.RcNameVPC("rt-explicit"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rtExplicit)
 	require.NoError(t, err)
@@ -82,8 +80,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	// Subnet с explicit RT — создаём новую RT-2 и Subnet-B, у которого
 	// route_table_id уже задан = rtExplicit.id (а не RT-2).
 	rt2 := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", CreatedAt: now.Add(time.Second),
-		Name: "rt-explicit-2", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", Name: domain.RcNameVPC("rt-explicit-2"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rt2)
 	require.NoError(t, err)
@@ -109,7 +106,7 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	rtRepo := repo.NewRouteTableRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-b", Name: domain.RcNameVPC("net-assoc-b"),
 	}
@@ -118,22 +115,19 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 
 	// Сначала RT, потом Subnet — BEFORE INSERT trigger должен auto-pick RT.
 	rtEarly := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", CreatedAt: now,
-		Name: "rt-early", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", Name: domain.RcNameVPC("rt-early"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rtEarly)
 	require.NoError(t, err)
 
 	rtLate := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", CreatedAt: now.Add(time.Second),
-		Name: "rt-late", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", Name: domain.RcNameVPC("rt-late"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rtLate)
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", CreatedAt: now.Add(2 * time.Second),
-		Name: "sub-autopick", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", Name: domain.RcNameVPC("sub-autopick"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.72.0.0/24"},
 		// route_table_id не задан — trigger должен подставить rtEarly (по created_at ASC).
 	}
@@ -146,8 +140,7 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 
 	// Subnet с explicit route_table_id=rtLate — trigger не должен перетереть.
 	subExplicit := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", CreatedAt: now.Add(3 * time.Second),
-		Name: "sub-explicit-late", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", Name: domain.RcNameVPC("sub-explicit-late"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.73.0.0/24"}, RouteTableID: rtLate.ID,
 	}
 	_, err = subnetRepo.Insert(ctx, subExplicit)
@@ -172,7 +165,7 @@ func TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull(t *testing.T) {
 	subnetRepo := repo.NewSubnetRepo(pool)
 	rtRepo := repo.NewRouteTableRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-c", Name: domain.RcNameVPC("net-assoc-c"),
 	}
@@ -180,15 +173,13 @@ func TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull(t *testing.T) {
 	require.NoError(t, err)
 
 	rt := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-c", CreatedAt: now,
-		Name: "rt-tobedeleted", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-c", Name: domain.RcNameVPC("rt-tobedeleted"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rt)
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-c", CreatedAt: now.Add(time.Second),
-		Name: "sub-fk-setnull", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-c", Name: domain.RcNameVPC("sub-fk-setnull"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.74.0.0/24"},
 		// route_table_id не задан — auto-pick подставит rt.ID.
 	}
@@ -221,7 +212,7 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 	subnetRepo := repo.NewSubnetRepo(pool)
 	rtRepo := repo.NewRouteTableRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-d", Name: domain.RcNameVPC("net-assoc-d"),
 	}
@@ -229,8 +220,7 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-d", CreatedAt: now,
-		Name: "sub-outbox", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-d", Name: domain.RcNameVPC("sub-outbox"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.75.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
@@ -243,8 +233,7 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 
 	// Создаём RT — trigger (1) обновит subnet, trigger (5) запишет outbox.
 	rt := &domain.RouteTable{
-		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-d", CreatedAt: now,
-		Name: "rt-outbox", NetworkID: net.ID,
+		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-d", Name: domain.RcNameVPC("rt-outbox"), NetworkID: net.ID,
 	}
 	_, err = rtRepo.Insert(ctx, rt)
 	require.NoError(t, err)

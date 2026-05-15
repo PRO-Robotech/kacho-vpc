@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,8 +16,20 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы через init(). Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
+
+// marshalRouteTableRecord конвертирует repo-entity RouteTable в *anypb.Any
+// через DTO-реестр. Wave 2 batch A (KAC-94).
+func marshalRouteTableRecord(rec *domain.RouteTableRecord) (*anypb.Any, error) {
+	var dst *vpcv1.RouteTable
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer RouteTable: %w", err)
+	}
+	return anypb.New(dst)
+}
 
 // CreateRouteTableReq — запрос на создание таблицы маршрутизации.
 type CreateRouteTableReq struct {
@@ -54,7 +65,7 @@ func NewRouteTableService(repo RouteTableRepo, networkRepo NetworkRepo, folderCl
 }
 
 // Get возвращает RouteTable по ID.
-func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
+func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTableRecord, error) {
 	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
 		return nil, err
 	}
@@ -67,7 +78,7 @@ func (s *RouteTableService) Get(ctx context.Context, id string) (*domain.RouteTa
 
 // List возвращает список таблиц маршрутизации.
 // folder_id обязателен (R10 #C1 closure).
-func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTable, string, error) {
+func (s *RouteTableService) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -89,13 +100,13 @@ func (s *RouteTableService) Create(ctx context.Context, req CreateRouteTableReq)
 	// folder_id / network_id больше НЕ валидируются sync — async через
 	// folderClient.Exists / networkRepo.Get → NotFound (verbatim YC). См.
 	// YC-DIFF-INVALID-PARENT-CODE.md, YC-DIFF-NAME-VALIDATION.md.
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+	// Wave 2 batch A (KAC-94): domain.RouteTable.Validate() — источник истины.
+	rtForValidate := domain.RouteTable{
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := rtForValidate.Validate(); err != nil {
 		return nil, err
 	}
 	// RT-CIDR-VALIDATION: каждая static route должна иметь валидный CIDR
@@ -165,10 +176,9 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 	rt := &domain.RouteTable{
 		ID:           rtID,
 		FolderID:     req.FolderID,
-		CreatedAt:    time.Now().UTC(),
-		Name:         req.Name,
-		Description:  req.Description,
-		Labels:       req.Labels,
+		Name:         domain.RcNameVPC(req.Name),
+		Description:  domain.RcDescription(req.Description),
+		Labels:       domain.LabelsFromMap(req.Labels),
 		NetworkID:    req.NetworkID,
 		StaticRoutes: req.StaticRoutes,
 	}
@@ -176,7 +186,7 @@ func (s *RouteTableService) doCreate(ctx context.Context, rtID string, req Creat
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.RouteTable(created))
+	return marshalRouteTableRecord(created)
 }
 
 // Update обновляет RouteTable.
@@ -213,18 +223,18 @@ func (s *RouteTableService) Update(ctx context.Context, req UpdateRouteTableReq)
 }
 
 func (s *RouteTableService) doUpdate(ctx context.Context, req UpdateRouteTableReq) (*anypb.Any, error) {
-	rt, err := s.repo.Get(ctx, req.RouteTableID)
+	rec, err := s.repo.Get(ctx, req.RouteTableID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 
-	applyRouteTableMask(rt, req)
+	applyRouteTableMask(&rec.RouteTable, req)
 
-	updated, err := s.repo.Update(ctx, rt)
+	updated, err := s.repo.Update(ctx, &rec.RouteTable)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.RouteTable(updated))
+	return marshalRouteTableRecord(updated)
 }
 
 // validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
@@ -249,19 +259,20 @@ func validateRouteTableUpdate(req UpdateRouteTableReq) error {
 	if len(updates) == 0 {
 		updates = []string{"name", "description", "labels"}
 	}
+	// Wave 2 batch A (KAC-94): валидация через domain newtypes.
 	for _, f := range updates {
 		switch f {
 		case "name":
 			// VPC RouteTable: empty name allowed (YC permissive policy).
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		case "static_routes":
@@ -312,20 +323,20 @@ func validateStaticRoutes(routes []domain.StaticRoute) error {
 
 func applyRouteTableMask(rt *domain.RouteTable, req UpdateRouteTableReq) {
 	if len(req.UpdateMask) == 0 {
-		rt.Name = req.Name
-		rt.Description = req.Description
-		rt.Labels = req.Labels
+		rt.Name = domain.RcNameVPC(req.Name)
+		rt.Description = domain.RcDescription(req.Description)
+		rt.Labels = domain.LabelsFromMap(req.Labels)
 		rt.StaticRoutes = req.StaticRoutes
 		return
 	}
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			rt.Name = req.Name
+			rt.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			rt.Description = req.Description
+			rt.Description = domain.RcDescription(req.Description)
 		case "labels":
-			rt.Labels = req.Labels
+			rt.Labels = domain.LabelsFromMap(req.Labels)
 		case "static_routes":
 			rt.StaticRoutes = req.StaticRoutes
 		}
@@ -385,7 +396,7 @@ func (s *RouteTableService) Move(ctx context.Context, id, destFolderID string) (
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.RouteTable(updated))
+		return marshalRouteTableRecord(updated)
 	})
 	return &op, nil
 }

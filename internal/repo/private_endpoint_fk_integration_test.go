@@ -55,14 +55,14 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-1", CreatedAt: now, Name: "sub-pe-fk",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-1", Name: domain.RcNameVPC("sub-pe-fk"),
 		NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.0.0.0/24"},
 	}
 	_, err = sr.Insert(ctx, sub)
 	require.NoError(t, err)
 
 	addr := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-1", CreatedAt: now, Name: "addr-pe-fk",
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-1", Name: domain.RcNameVPC("addr-pe-fk"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.42", ZoneID: "ru-central1-a"},
 	}

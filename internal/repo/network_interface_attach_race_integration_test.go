@@ -60,8 +60,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	require.NoError(t, err)
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race", CreatedAt: now,
-		Name: "sub-attach-race", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race", Name: domain.RcNameVPC("sub-attach-race"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.30.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
@@ -149,8 +148,7 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent", CreatedAt: now,
-		Name: "sub-idempotent", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent", Name: domain.RcNameVPC("sub-idempotent"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.31.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
@@ -202,8 +200,7 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach", CreatedAt: now,
-		Name: "sub-detach", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach", Name: domain.RcNameVPC("sub-detach"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.32.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)
