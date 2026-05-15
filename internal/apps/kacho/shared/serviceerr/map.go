@@ -1,4 +1,4 @@
-package service
+package serviceerr
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// mapRepoErr — единая трансляция repo-sentinel в gRPC status.
+// MapRepoErr — единая трансляция repo-sentinel в gRPC status.
 //
 // Sentinel-prefix (`failed precondition: `, `not found`, ...) удаляется при
 // преобразовании в gRPC-сообщение, чтобы клиент видел verbatim YC text без
@@ -18,7 +18,12 @@ import (
 // → codes.Internal с фиксированным "internal database error". Это закрывает
 // info-leak vector через Operation.error.message в случае нового repo-метода
 // который забыли обернуть.
-func mapRepoErr(err error) error {
+//
+// Note: use-case-пакеты в `internal/apps/kacho/api/<x>/` держат собственные
+// **локальные** копии `mapRepoErr` (по pattern из Wave 3 pilot). Этот общий
+// `MapRepoErr` используется не-resource service'ами в `internal/apps/kacho/services/*`
+// (AddressPoolService, AddressReferenceService, NetworkInternal).
+func MapRepoErr(err error) error {
 	if err == nil {
 		return nil
 	}

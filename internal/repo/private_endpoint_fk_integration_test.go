@@ -12,8 +12,8 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // TestIntegration_PrivateEndpoint_FK_RESTRICT (KAC-89): миграция 0024 добавила
@@ -134,7 +134,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// Repo маппит FK через wrapPgErr → ErrFailedPrecondition (или Repo
 	// возвращает sentinel — здесь нам важно, что Insert НЕ прошёл).
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || errors.Is(err, service.ErrInternal) || errors.Is(err, service.ErrAlreadyExists) || isPgFKErr(err),
+		errors.Is(err, ports.ErrFailedPrecondition) || errors.Is(err, ports.ErrInternal) || errors.Is(err, ports.ErrAlreadyExists) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 5. INSERT PE с несуществующим subnet_id → 23503 ---
@@ -150,7 +150,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	_, err = per.Insert(ctx, bad2)
 	require.Error(t, err, "INSERT PE с несуществующим subnet_id должен упасть на FK")
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || isPgFKErr(err),
+		errors.Is(err, ports.ErrFailedPrecondition) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 6. INSERT PE с несуществующим address_id → 23503 ---
@@ -166,7 +166,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	_, err = per.Insert(ctx, bad3)
 	require.Error(t, err, "INSERT PE с несуществующим address_id должен упасть на FK")
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || isPgFKErr(err),
+		errors.Is(err, ports.ErrFailedPrecondition) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 7. Корректное удаление снизу вверх — PE → Address → Subnet → Network ---

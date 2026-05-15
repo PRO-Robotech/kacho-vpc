@@ -1,8 +1,13 @@
-// Package service — AddressPool CRUD + bindings.
+// Package addresspool — AddressPool CRUD + bindings + label-cascade IPAM resolve.
 //
 // Internal-only сервис: используется через kacho.cloud.vpc.v1.InternalAddressPoolService
-// gRPC. Не выставляется через api-gateway.
-package service
+// gRPC. Не выставляется через api-gateway external endpoint.
+//
+// Wave 3 cleanup (KAC-94): перенесено из `internal/service/address_pool_service.go`
+// в `internal/apps/kacho/services/addresspool/` согласно skill evgeniy §1 A.3 —
+// это не-resource service (admin/IPAM поверх ресурсов; миграция на use-case-структуру —
+// отдельная итерация).
+package addresspool
 
 import (
 	"context"
@@ -16,7 +21,34 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+)
+
+// Type aliases на canonical-типы `internal/ports`. Это позволяет в одном
+// файле использовать привычные короткие имена без повторения `ports.` prefix.
+type (
+	AddressPoolRepo        = ports.AddressPoolRepo
+	AddressPoolBindingRepo = ports.AddressPoolBindingRepo
+	CloudPoolSelectorRepo  = ports.CloudPoolSelectorRepo
+	AddressRepo            = ports.AddressRepo
+	NetworkRepo            = ports.NetworkRepo
+	SubnetRepo             = ports.SubnetRepo
+	FolderClient           = ports.FolderClient
+	ZoneRegistry           = ports.ZoneRegistry
+	AddressPoolFilter      = ports.AddressPoolFilter
+	Pagination             = ports.Pagination
+)
+
+// Re-export sentinel-ошибок как `var` — те же error-value, что в `internal/ports`,
+// поэтому `errors.Is(err, addresspool.ErrPoolNotResolved)` совпадает с
+// `errors.Is(err, ports.ErrPoolNotResolved)`. Нужны для совместимости с
+// прежними call site'ами в handler'ах (`handler/internal_address_pool_handler.go`).
+var (
+	ErrNotFound        = ports.ErrNotFound
+	ErrPoolNotResolved = ports.ErrPoolNotResolved
 )
 
 // AddressPoolService — use-cases для AddressPool + bindings + label-cascade resolve.
@@ -34,6 +66,9 @@ type AddressPoolService struct {
 	zoneReg      ZoneRegistry // существование zone_id (Geography — домен kacho-compute, эпик KAC-15); nil → проверка пропускается
 }
 
+// NewAddressPoolService создаёт AddressPoolService.
+//
+// Имя сохранено для совместимости с composition root в `cmd/vpc/main.go`.
 func NewAddressPoolService(
 	p AddressPoolRepo,
 	b AddressPoolBindingRepo,
@@ -97,7 +132,7 @@ func (s *AddressPoolService) Create(ctx context.Context, req CreatePoolReq) (*do
 			if errors.Is(err, ErrNotFound) {
 				return nil, status.Errorf(codes.FailedPrecondition, "unknown zone id '%s'", req.ZoneID)
 			}
-			return nil, mapRepoErr(err)
+			return nil, serviceerr.MapRepoErr(err)
 		}
 	}
 	p := &domain.AddressPool{

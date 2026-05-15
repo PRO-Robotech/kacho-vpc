@@ -11,7 +11,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // Network — type-alias на domain.NetworkRecord (repo-entity с DB-managed
@@ -22,7 +22,7 @@ import (
 // repo-entity, не в domain.Network.
 type Network = domain.NetworkRecord
 
-// NetworkRepo — реализация service.NetworkRepo поверх pgxpool.
+// NetworkRepo — реализация ports.NetworkRepo поверх pgxpool.
 type NetworkRepo struct {
 	pool *pgxpool.Pool
 }
@@ -44,7 +44,7 @@ func (r *NetworkRepo) Get(ctx context.Context, id string) (*Network, error) {
 	return n, nil
 }
 
-func (r *NetworkRepo) List(ctx context.Context, f service.NetworkFilter, p service.Pagination) ([]*Network, string, error) {
+func (r *NetworkRepo) List(ctx context.Context, f ports.NetworkFilter, p ports.Pagination) ([]*Network, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -133,7 +133,7 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*Network, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -151,7 +151,7 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*Network, 
 		return nil, wrapPgErr(err, "Network", string(n.Name))
 	}
 	if err := emitVPC(ctx, tx, "Network", result.ID, "CREATED", networkPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", string(n.Name))
@@ -168,7 +168,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*Network, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -185,7 +185,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*Network, 
 		return nil, wrapPgErr(err, "Network", n.ID)
 	}
 	if err := emitVPC(ctx, tx, "Network", result.ID, "UPDATED", networkPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", n.ID)
@@ -197,7 +197,7 @@ func (r *NetworkRepo) Update(ctx context.Context, n *domain.Network) (*Network, 
 func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*Network, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -211,7 +211,7 @@ func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ne
 		return nil, wrapPgErr(err, "Network", id)
 	}
 	if err := emitVPC(ctx, tx, "Network", result.ID, "UPDATED", networkPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network", id)
@@ -222,7 +222,7 @@ func (r *NetworkRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ne
 func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -230,17 +230,17 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		if isFKViolation(err) {
 			// Network has dependent subnets/route-tables — verbatim YC error.
-			return fmt.Errorf("%w: network is not empty", service.ErrFailedPrecondition)
+			return fmt.Errorf("%w: network is not empty", ports.ErrFailedPrecondition)
 		}
 		// 22P02 → InvalidArgument "invalid network id 'X'" (verbatim YC).
 		// pgx.ErrNoRows / unique-violation / etc. — стандартный wrapPgErr.
 		return wrapPgErr(err, "Network", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Network %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Network %s not found", ports.ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "Network", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Network", id)

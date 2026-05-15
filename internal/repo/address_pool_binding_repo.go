@@ -8,10 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
-// AddressPoolBindingRepo — реализация service.AddressPoolBindingRepo
+// AddressPoolBindingRepo — реализация ports.AddressPoolBindingRepo
 // (explicit binding pool ↔ network/address).
 type AddressPoolBindingRepo struct {
 	pool *pgxpool.Pool
@@ -24,7 +24,7 @@ func NewAddressPoolBindingRepo(pool *pgxpool.Pool) *AddressPoolBindingRepo {
 func (r *AddressPoolBindingRepo) SetNetworkDefault(ctx context.Context, networkID, poolID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `
@@ -37,7 +37,7 @@ func (r *AddressPoolBindingRepo) SetNetworkDefault(ctx context.Context, networkI
 	}
 	if err := emitVPC(ctx, tx, "AddressPoolNetworkDefault", networkID, "UPDATED",
 		map[string]any{"network_id": networkID, "pool_id": poolID}); err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	return tx.Commit(ctx)
 }
@@ -49,7 +49,7 @@ func (r *AddressPoolBindingRepo) GetNetworkDefault(ctx context.Context, networkI
 		networkID).Scan(&poolID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", service.ErrNotFound
+			return "", ports.ErrNotFound
 		}
 		return "", wrapPgErr(err, "AddressPoolNetworkDefault", networkID)
 	}
@@ -59,7 +59,7 @@ func (r *AddressPoolBindingRepo) GetNetworkDefault(ctx context.Context, networkI
 func (r *AddressPoolBindingRepo) UnsetNetworkDefault(ctx context.Context, networkID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	tag, err := tx.Exec(ctx,
@@ -78,7 +78,7 @@ func (r *AddressPoolBindingRepo) UnsetNetworkDefault(ctx context.Context, networ
 func (r *AddressPoolBindingRepo) SetAddressOverride(ctx context.Context, addressID, poolID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `
@@ -101,7 +101,7 @@ func (r *AddressPoolBindingRepo) GetAddressOverride(ctx context.Context, address
 		addressID).Scan(&poolID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", service.ErrNotFound
+			return "", ports.ErrNotFound
 		}
 		return "", wrapPgErr(err, "AddressPoolAddressOverride", addressID)
 	}
@@ -111,7 +111,7 @@ func (r *AddressPoolBindingRepo) GetAddressOverride(ctx context.Context, address
 func (r *AddressPoolBindingRepo) UnsetAddressOverride(ctx context.Context, addressID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	tag, err := tx.Exec(ctx,

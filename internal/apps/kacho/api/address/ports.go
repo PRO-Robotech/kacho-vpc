@@ -10,17 +10,18 @@
 //
 // Локальные port-интерфейсы (а не type-alias на `internal/ports.*Repo`)
 // — skill §6 G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО
-// использует. AddressPoolService остаётся в `internal/service/` (миграция
-// AddressPool — отдельная итерация) — здесь объявлен лишь port `PoolService`,
-// которому `*service.AddressPoolService` удовлетворяет в composition root.
+// использует. AddressPoolService живёт в `internal/apps/kacho/services/addresspool/`
+// (миграция на use-case-структуру — отдельная итерация) — здесь объявлен лишь
+// port `PoolService`, которому `*addresspool.AddressPoolService` удовлетворяет
+// в composition root.
 package address
 
 import (
 	"context"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // Pagination, *Filter — пере-используем единые value-объекты `internal/ports`.
@@ -78,12 +79,12 @@ type FolderClient interface {
 }
 
 // PoolService — узкий port AddressPoolService для cascade-резолва pool по
-// family. Реализуется `*service.AddressPoolService` (миграция AddressPool —
+// family. Реализуется `*addresspool.AddressPoolService` (миграция AddressPool —
 // отдельная итерация, см. ports.go header).
 //
-// Использует FamilyV4 / FamilyV6 как enum (alias на service.AddressFamily —
+// Использует FamilyV4 / FamilyV6 как enum (alias на addresspool.AddressFamily —
 // не вводим параллельный тип, чтобы вызывающий handler/cmd прозрачно
 // переиспользовал константы pool service'а).
 type PoolService interface {
-	ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.AddressRecord, family service.AddressFamily) (*service.ResolvedPool, error)
+	ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.AddressRecord, family addresspool.AddressFamily) (*addresspool.ResolvedPool, error)
 }

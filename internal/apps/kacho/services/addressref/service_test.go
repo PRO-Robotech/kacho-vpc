@@ -1,4 +1,4 @@
-package service
+package addressref
 
 import (
 	"context"
@@ -11,15 +11,16 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
 )
 
 // Wave 3 (KAC-94): AddressService переехал в `internal/apps/kacho/api/address/`,
-// SetAddressReference/Mark/Clear/Get вынесены в отдельный `AddressReferenceService`
-// (этот файл — `address_reference.go`). Эти тесты обновлены под новый
-// конструктор `NewAddressReferenceService(repo)` — поведение/контракт не
-// изменилось.
+// SetAddressReference/Mark/Clear/Get вынесены в отдельный сервис (этот пакет
+// `addressref`). Эти тесты — те же что были в `internal/service/`, но используют
+// `portmock.AddressRepo` напрямую и конструктор `NewService(repo)`. Поведение
+// и контракт идентичны.
 
-func seedAddrForRef(ar *mockAddressRepo) *domain.AddressRecord {
+func seedAddrForRef(ar *portmock.AddressRepo) *domain.AddressRecord {
 	rec := &domain.AddressRecord{
 		Address: domain.Address{
 			ID:           ids.NewID(ids.PrefixAddress),
@@ -35,8 +36,8 @@ func seedAddrForRef(ar *mockAddressRepo) *domain.AddressRecord {
 }
 
 func TestAddressReferenceService_SetAddressReference_OK(t *testing.T) {
-	ar := newMockAddressRepo()
-	svc := NewAddressReferenceService(ar)
+	ar := portmock.NewAddressRepo()
+	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
 	ref, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
@@ -70,8 +71,8 @@ func TestAddressReferenceService_SetAddressReference_OK(t *testing.T) {
 }
 
 func TestAddressReferenceService_SetAddressReference_Validation(t *testing.T) {
-	ar := newMockAddressRepo()
-	svc := NewAddressReferenceService(ar)
+	ar := portmock.NewAddressRepo()
+	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
 	// malformed address id
@@ -96,8 +97,8 @@ func TestAddressReferenceService_SetAddressReference_Validation(t *testing.T) {
 }
 
 func TestAddressReferenceService_GetAddressReference(t *testing.T) {
-	ar := newMockAddressRepo()
-	svc := NewAddressReferenceService(ar)
+	ar := portmock.NewAddressRepo()
+	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
 	// no referrer yet → NotFound
@@ -114,8 +115,8 @@ func TestAddressReferenceService_GetAddressReference(t *testing.T) {
 }
 
 func TestAddressReferenceService_ClearAddressReference(t *testing.T) {
-	ar := newMockAddressRepo()
-	svc := NewAddressReferenceService(ar)
+	ar := portmock.NewAddressRepo()
+	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
 	_, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{AddressID: a.ID, ReferrerType: "compute_instance", ReferrerID: "epdvm0000000000001"})

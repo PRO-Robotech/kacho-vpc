@@ -19,7 +19,7 @@
 // пока не имеет V4CIDRBlocks/V6CIDRBlocks полей). После rpc-implementer
 // KAC-74 — позеленеют (poolHasFamily станет len(pool.V4CIDRBlocks)>0 /
 // len(pool.V6CIDRBlocks)>0).
-package service
+package addresspool
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
 )
 
 // makeCascadeFixture — собирает полный набор моков + 1 Network (для Step 2
@@ -40,9 +41,9 @@ type cascadeFixture struct {
 	svc      *AddressPoolService
 	poolRepo *stubAddressPoolRepo
 	bindings *stubBindingRepo
-	addrRepo *mockAddressRepo
-	netRepo  *mockNetworkRepo
-	subRepo  *mockSubnetRepo
+	addrRepo *portmock.AddressRepo
+	netRepo  *portmock.NetworkRepo
+	subRepo  *portmock.SubnetRepo
 	cloudSel *stubCloudSelRepo
 }
 
@@ -50,11 +51,11 @@ func newCascadeFixture(_ *testing.T) *cascadeFixture {
 	r := newStubAddressPoolRepo()
 	br := newStubBindingRepo()
 	cs := newStubCloudSelRepo()
-	ar := newMockAddressRepo()
-	sr := newMockSubnetRepo()
-	nr := newMockNetworkRepo()
-	zr := newMockZoneRegistry("ru-central1-c", "ru-central1-a")
-	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, newMockFolderClient(true), zr)
+	ar := portmock.NewAddressRepo()
+	sr := portmock.NewSubnetRepo()
+	nr := portmock.NewNetworkRepo()
+	zr := portmock.NewZoneRegistry("ru-central1-c", "ru-central1-a")
+	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, &portmock.FolderClient{OK: true}, zr)
 	return &cascadeFixture{
 		svc: svc, poolRepo: r, bindings: br,
 		addrRepo: ar, netRepo: nr, subRepo: sr, cloudSel: cs,
@@ -217,13 +218,13 @@ func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 	r := newStubAddressPoolRepo()
 	br := newStubBindingRepo()
 	cs := newStubCloudSelRepo()
-	ar := newMockAddressRepo()
-	sr := newMockSubnetRepo()
-	nr := newMockNetworkRepo()
-	zr := newMockZoneRegistry("ru-central1-c")
+	ar := portmock.NewAddressRepo()
+	sr := portmock.NewSubnetRepo()
+	nr := portmock.NewNetworkRepo()
+	zr := portmock.NewZoneRegistry("ru-central1-c")
 
 	// folderClient с reverse mapping folder-d5 → cloud-d5.
-	fc := newMockFolderClient(true)
+	fc := &portmock.FolderClient{OK: true}
 	fc.CloudID = "cloud-d5"
 	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, fc, zr)
 

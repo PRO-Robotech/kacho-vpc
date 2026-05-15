@@ -12,15 +12,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 )
 
 type InternalCloudHandler struct {
 	vpcv1.UnimplementedInternalCloudServiceServer
-	pools *service.AddressPoolService
+	pools *addresspool.AddressPoolService
 }
 
-func NewInternalCloudHandler(pools *service.AddressPoolService) *InternalCloudHandler {
+func NewInternalCloudHandler(pools *addresspool.AddressPoolService) *InternalCloudHandler {
 	return &InternalCloudHandler{pools: pools}
 }
 

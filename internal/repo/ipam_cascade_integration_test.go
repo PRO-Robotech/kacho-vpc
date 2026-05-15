@@ -11,9 +11,9 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // stubFolderClient maps folder_id -> cloud_id for the IPAM cascade step-3
@@ -119,7 +119,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-step3", map[string]string{"tier": "premium"}, "admin@test"))
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
 
-	apSvc := service.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient, nil) // zoneReg=nil → zone-existence-check пропускается (тест не про неё)
+	apSvc := addresspool.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient, nil) // zoneReg=nil → zone-existence-check пропускается (тест не про неё)
 	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
 	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apSvc)
 

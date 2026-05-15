@@ -1,4 +1,9 @@
-package service
+// Package macutil — генерация MAC-адресов для NIC'ов Kachō.
+//
+// Wave 3 (KAC-94 cleanup): перенесено из `internal/service/mac.go` в shared-пакет
+// согласно skill evgeniy §1 A.3 — этот helper не относится ни к одному use-case'у
+// и используется только из `internal/apps/kacho/api/networkinterface`.
+package macutil
 
 import (
 	"crypto/rand"
@@ -15,7 +20,7 @@ const kachoMACPrefix byte = 0x0e
 // macRandomBytes — сколько байт энтропии добавляется к префиксу, чтобы получить
 // полный 6-октетный MAC. 5 байт = 40 бит ≈ 1T значений; вероятность коллизии
 // при 1M NIC'ов в облаке порядка 1e-3 — ловится UNIQUE-constraint'ом в БД +
-// retry на стороне NetworkInterfaceService.doCreate.
+// retry на стороне NIC use-case'а CreateNetworkInterfaceUseCase.
 const macRandomBytes = 5
 
 // GenerateMAC возвращает свежий MAC-адрес для NIC. Формат — lowercase,

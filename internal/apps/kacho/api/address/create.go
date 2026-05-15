@@ -20,9 +20,9 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -402,7 +402,7 @@ func (u *CreateAddressUseCase) compensatingDelete(ctx context.Context, addressID
 
 // --- Allocation helpers ------------------------------------------------------
 //
-// These mirror service.AddressService.AllocateInternalIP / AllocateInternalIPv6 /
+// These mirror addressref → addresspool path / AllocateInternalIPv6 /
 // AllocateExternalIP / AllocateExternalIPv6 — kept inside the create.go use-case
 // for now (Wave 3 scope is moving the user-facing CRUD; internal-only allocate
 // RPC continues to live in `internal/service/address.go::AddressService` until
@@ -429,7 +429,7 @@ const allocateRandomPhase = 8
 // небольшого числа попыток достаточно.
 const v6AllocateMaxAttempts = 16
 
-// allocResult — local copy of service.AllocateResult.
+// allocResult — local copy of allocResult.
 type allocResult struct {
 	IP     string
 	PoolID string // только для external; "" для internal
@@ -600,7 +600,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *d
 			PoolID: addr.ExternalIpv4.AddressPoolID,
 		}, nil
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV4)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV4)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -634,7 +634,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *d
 			PoolID: addr.ExternalIpv6.AddressPoolID,
 		}, nil
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV6)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV6)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}

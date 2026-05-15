@@ -1,4 +1,14 @@
-package service
+// Package addressref — sync (не Operation) referrer-tracking над Address.
+//
+// Wave 3 cleanup (KAC-94): перенесено из `internal/service/address_reference.go`
+// в `internal/apps/kacho/services/addressref/` согласно skill evgeniy §1 A.3 —
+// это не-resource service (не относится ни к одному use-case'у в `api/<resource>/`),
+// но и не horizontal helper.
+//
+// Конструктор `NewService` + тип `Service`. Раньше был `AddressReferenceService`
+// — переименован к каноничному `Service` (skill evgeniy §3 C.3: имя типа
+// дублирует имя пакета в полном referrer'е — `addressref.Service`).
+package addressref
 
 import (
 	"context"
@@ -8,28 +18,34 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
-// AddressReferenceService — Sync (не Operation) referrer-tracking над Address.
+// Repo — узкий port-интерфейс над `repo.AddressRepo`: только методы, нужные
+// для referrer-tracking. `repo.AddressRepo` ⊇ этого интерфейса.
+type Repo interface {
+	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
+	MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
+	ClearReference(ctx context.Context, addressID string) error
+	GetReference(ctx context.Context, addressID string) (*domain.AddressReference, error)
+}
+
+// Service — sync (не Operation) референс-операции над Address.
+//
 // Wave 3 (KAC-94): эти методы раньше висели на `*AddressService` (extension
 // methods на fat-сервисе). После переноса CRUD-логики Address в use-case-пакет
 // `internal/apps/kacho/api/address/` AddressService удалён; референс-методы
 // собраны в собственный сервис, который инжектируется в `Internal*`-handler'ы
-// напрямую через свой port (см. task §4 — «инжектируем как dependency»).
-//
-// Использует только узкий контракт AddressRepo (SetReference / MarkEphemeralInUse /
-// ClearReference / GetReference) — нам не нужен общий AddressRepo с List/Insert/…
-// для этой работы, но мы переиспользуем ports.AddressRepo чтобы не плодить
-// параллельный интерфейс. Реализация — тот же `repo.AddressRepo`, который
-// инжектируется и в Address use-case-пакет, и в pool service.
-type AddressReferenceService struct {
-	repo AddressRepo
+// напрямую через свой port.
+type Service struct {
+	repo Repo
 }
 
-// NewAddressReferenceService создаёт AddressReferenceService.
-func NewAddressReferenceService(repo AddressRepo) *AddressReferenceService {
-	return &AddressReferenceService{repo: repo}
+// NewService создаёт Service.
+func NewService(repo Repo) *Service {
+	return &Service{repo: repo}
 }
 
 // SetAddressReferenceReq — параметры привязки referrer'а к адресу.
@@ -45,7 +61,7 @@ type SetAddressReferenceReq struct {
 //
 // Errors: InvalidArgument (пустой/malformed address_id, пустой referrer_type/id),
 // NotFound (address не существует).
-func (s *AddressReferenceService) SetAddressReference(ctx context.Context, req SetAddressReferenceReq) (*domain.AddressReference, error) {
+func (s *Service) SetAddressReference(ctx context.Context, req SetAddressReferenceReq) (*domain.AddressReference, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, req.AddressID); err != nil {
 		return nil, err
 	}
@@ -62,7 +78,7 @@ func (s *AddressReferenceService) SetAddressReference(ctx context.Context, req S
 		ReferrerName: req.ReferrerName,
 	})
 	if err != nil {
-		return nil, mapRepoErr(err)
+		return nil, serviceerr.MapRepoErr(err)
 	}
 	return ref, nil
 }
@@ -76,7 +92,7 @@ func (s *AddressReferenceService) SetAddressReference(ctx context.Context, req S
 //
 // Errors: InvalidArgument (пустой/malformed address_id, пустой referrer_type/id),
 // NotFound (address не существует).
-func (s *AddressReferenceService) MarkAddressEphemeralInUse(ctx context.Context, req SetAddressReferenceReq) (*domain.AddressReference, error) {
+func (s *Service) MarkAddressEphemeralInUse(ctx context.Context, req SetAddressReferenceReq) (*domain.AddressReference, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, req.AddressID); err != nil {
 		return nil, err
 	}
@@ -93,7 +109,7 @@ func (s *AddressReferenceService) MarkAddressEphemeralInUse(ctx context.Context,
 		ReferrerName: req.ReferrerName,
 	})
 	if err != nil {
-		return nil, mapRepoErr(err)
+		return nil, serviceerr.MapRepoErr(err)
 	}
 	return ref, nil
 }
@@ -102,12 +118,12 @@ func (s *AddressReferenceService) MarkAddressEphemeralInUse(ctx context.Context,
 // выставляет Address.used=false. Sync RPC.
 //
 // Errors: InvalidArgument (пустой/malformed address_id), NotFound (address не существует).
-func (s *AddressReferenceService) ClearAddressReference(ctx context.Context, addressID string) error {
+func (s *Service) ClearAddressReference(ctx context.Context, addressID string) error {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, addressID); err != nil {
 		return err
 	}
 	if err := s.repo.ClearReference(ctx, addressID); err != nil {
-		return mapRepoErr(err)
+		return serviceerr.MapRepoErr(err)
 	}
 	return nil
 }
@@ -116,13 +132,13 @@ func (s *AddressReferenceService) ClearAddressReference(ctx context.Context, add
 //
 // Errors: InvalidArgument (пустой/malformed address_id), NotFound (address не
 // существует ИЛИ у него нет referrer'а).
-func (s *AddressReferenceService) GetAddressReference(ctx context.Context, addressID string) (*domain.AddressReference, error) {
+func (s *Service) GetAddressReference(ctx context.Context, addressID string) (*domain.AddressReference, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, addressID); err != nil {
 		return nil, err
 	}
 	ref, err := s.repo.GetReference(ctx, addressID)
 	if err != nil {
-		return nil, mapRepoErr(err)
+		return nil, serviceerr.MapRepoErr(err)
 	}
 	return ref, nil
 }

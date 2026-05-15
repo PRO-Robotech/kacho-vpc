@@ -10,24 +10,24 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // InternalAddressPoolHandler — gRPC server для InternalAddressPoolService.
 type InternalAddressPoolHandler struct {
 	vpcv1.UnimplementedInternalAddressPoolServiceServer
-	svc *service.AddressPoolService
+	svc *addresspool.AddressPoolService
 }
 
-func NewInternalAddressPoolHandler(svc *service.AddressPoolService) *InternalAddressPoolHandler {
+func NewInternalAddressPoolHandler(svc *addresspool.AddressPoolService) *InternalAddressPoolHandler {
 	return &InternalAddressPoolHandler{svc: svc}
 }
 
 // -- CRUD --
 
 func (h *InternalAddressPoolHandler) Create(ctx context.Context, req *vpcv1.CreateAddressPoolRequest) (*vpcv1.AddressPool, error) {
-	p, err := h.svc.Create(ctx, service.CreatePoolReq{
+	p, err := h.svc.Create(ctx, addresspool.CreatePoolReq{
 		Name:             req.GetName(),
 		Description:      req.GetDescription(),
 		Labels:           req.GetLabels(),
@@ -54,10 +54,10 @@ func (h *InternalAddressPoolHandler) Get(ctx context.Context, req *vpcv1.GetAddr
 }
 
 func (h *InternalAddressPoolHandler) List(ctx context.Context, req *vpcv1.ListAddressPoolsRequest) (*vpcv1.ListAddressPoolsResponse, error) {
-	pools, next, err := h.svc.List(ctx, service.AddressPoolFilter{
+	pools, next, err := h.svc.List(ctx, addresspool.AddressPoolFilter{
 		Kind:   domain.AddressPoolKind(req.GetKind()),
 		ZoneID: req.GetZoneId(),
-	}, service.Pagination{
+	}, addresspool.Pagination{
 		PageToken: req.GetPageToken(),
 		PageSize:  req.GetPageSize(),
 	})
@@ -72,7 +72,7 @@ func (h *InternalAddressPoolHandler) List(ctx context.Context, req *vpcv1.ListAd
 }
 
 func (h *InternalAddressPoolHandler) Update(ctx context.Context, req *vpcv1.UpdateAddressPoolRequest) (*vpcv1.AddressPool, error) {
-	in := service.UpdatePoolReq{ID: req.GetPoolId()}
+	in := addresspool.UpdatePoolReq{ID: req.GetPoolId()}
 	if req.GetName() != "" {
 		n := req.GetName()
 		in.Name = &n
@@ -176,7 +176,7 @@ func (h *InternalAddressPoolHandler) Check(ctx context.Context, req *vpcv1.Check
 func (h *InternalAddressPoolHandler) ExplainResolution(ctx context.Context, req *vpcv1.ExplainResolutionRequest) (*vpcv1.ExplainResolutionResponse, error) {
 	primary, runner, err := h.svc.ExplainResolution(ctx, req.GetAddressId(), req.GetNetworkId())
 	if err != nil {
-		if errors.Is(err, service.ErrPoolNotResolved) {
+		if errors.Is(err, addresspool.ErrPoolNotResolved) {
 			return &vpcv1.ExplainResolutionResponse{MatchedVia: "none"}, nil
 		}
 		return nil, mapPoolErr(err)
@@ -197,7 +197,7 @@ func (h *InternalAddressPoolHandler) ExplainResolution(ctx context.Context, req 
 // -- Admin observability --
 
 func (h *InternalAddressPoolHandler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolAddressesRequest) (*vpcv1.ListAddressPoolAddressesResponse, error) {
-	addrs, next, err := h.svc.ListPoolAddresses(ctx, req.GetPoolId(), req.GetFolderId(), service.Pagination{
+	addrs, next, err := h.svc.ListPoolAddresses(ctx, req.GetPoolId(), req.GetFolderId(), addresspool.Pagination{
 		PageToken: req.GetPageToken(),
 		PageSize:  req.GetPageSize(),
 	})

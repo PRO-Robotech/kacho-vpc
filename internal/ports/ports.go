@@ -92,6 +92,18 @@ type AddressPoolFilter struct {
 	ZoneID string                 // "" = any
 }
 
+// NetworkInterfaceFilter — фильтр для List NIC. Используется repo-уровнем;
+// use-case-пакет `internal/apps/kacho/api/networkinterface` экспортирует
+// type-alias на него.
+type NetworkInterfaceFilter struct {
+	FolderID   string
+	InstanceID string
+	SubnetID   string
+	// NetworkID — не поддерживается фильтром (NIC не хранит network_id), поле
+	// оставлено для совместимости с handler-сигнатурой; репо его игнорирует.
+	NetworkID string
+}
+
 // NetworkRepo — port-интерфейс репозитория сетей. Возвращает
 // `*domain.NetworkRecord` (repo-entity с DB-managed CreatedAt) — skill evgeniy
 // §4 D.1 / §6 G.2 / §7 H.1: CreatedAt живёт в repo-проекции, не в

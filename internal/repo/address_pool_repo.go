@@ -10,10 +10,10 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
-// AddressPoolRepo — реализация service.AddressPoolRepo.
+// AddressPoolRepo — реализация ports.AddressPoolRepo.
 type AddressPoolRepo struct {
 	pool *pgxpool.Pool
 }
@@ -35,7 +35,7 @@ func (r *AddressPoolRepo) Get(ctx context.Context, id string) (*domain.AddressPo
 	return p, nil
 }
 
-func (r *AddressPoolRepo) List(ctx context.Context, f service.AddressPoolFilter, p service.Pagination) ([]*domain.AddressPool, string, error) {
+func (r *AddressPoolRepo) List(ctx context.Context, f ports.AddressPoolFilter, p ports.Pagination) ([]*domain.AddressPool, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -106,7 +106,7 @@ func (r *AddressPoolRepo) Insert(ctx context.Context, p *domain.AddressPool) (*d
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -135,10 +135,10 @@ func (r *AddressPoolRepo) Insert(ctx context.Context, p *domain.AddressPool) (*d
 		return nil, wrapPgErr(err, "AddressPool", p.ID)
 	}
 	if err := emitVPC(ctx, tx, "AddressPool", p.ID, "CREATED", domainToMap(p)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	return p, nil
 }
@@ -154,7 +154,7 @@ func (r *AddressPoolRepo) Update(ctx context.Context, p *domain.AddressPool) (*d
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -178,13 +178,13 @@ func (r *AddressPoolRepo) Update(ctx context.Context, p *domain.AddressPool) (*d
 		return nil, wrapPgErr(err, "AddressPool", p.ID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: AddressPool %s", service.ErrNotFound, p.ID)
+		return nil, fmt.Errorf("%w: AddressPool %s", ports.ErrNotFound, p.ID)
 	}
 	if err := emitVPC(ctx, tx, "AddressPool", p.ID, "UPDATED", domainToMap(p)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, service.ErrInternal
+		return nil, ports.ErrInternal
 	}
 	return p, nil
 }
@@ -192,7 +192,7 @@ func (r *AddressPoolRepo) Update(ctx context.Context, p *domain.AddressPool) (*d
 func (r *AddressPoolRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	tag, err := tx.Exec(ctx, `DELETE FROM address_pools WHERE id = $1`, id)
@@ -200,10 +200,10 @@ func (r *AddressPoolRepo) Delete(ctx context.Context, id string) error {
 		return wrapPgErr(err, "AddressPool", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: AddressPool %s", service.ErrNotFound, id)
+		return fmt.Errorf("%w: AddressPool %s", ports.ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "AddressPool", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ports.ErrInternal
 	}
 	return tx.Commit(ctx)
 }
@@ -225,7 +225,7 @@ func (r *AddressPoolRepo) GetDefaultForZone(ctx context.Context, zoneID string, 
 	p, err := scanAddressPool(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, service.ErrNotFound
+			return nil, ports.ErrNotFound
 		}
 		return nil, wrapPgErr(err, "AddressPool", "")
 	}
@@ -237,7 +237,7 @@ func (r *AddressPoolRepo) GetDefaultForZone(ctx context.Context, zoneID string, 
 // к указанной zone + глобальные (zone_id IS NULL).
 func (r *AddressPoolRepo) FindBySelectorMatch(ctx context.Context, networkSelector map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*domain.AddressPool, error) {
 	if len(networkSelector) == 0 {
-		return nil, service.ErrNotFound
+		return nil, ports.ErrNotFound
 	}
 	if limit <= 0 {
 		limit = 1
@@ -274,7 +274,7 @@ LIMIT $4
 		out = append(out, p)
 	}
 	if len(out) == 0 {
-		return nil, service.ErrNotFound
+		return nil, ports.ErrNotFound
 	}
 	return out, rows.Err()
 }
@@ -399,7 +399,7 @@ GROUP BY c.idx
 
 // ListAddressesByPool — кросс-folder список Address, держащих IP из pool'а.
 // Используется в admin UI для AddressPool detail page.
-func (r *AddressPoolRepo) ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p service.Pagination) ([]*Address, string, error) {
+func (r *AddressPoolRepo) ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p ports.Pagination) ([]*Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -513,7 +513,7 @@ func (r *AddressPoolRepo) PopulateFreelistForPool(ctx context.Context, poolID st
 	).Scan(&cidrs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("populate freelist: pool %s: %w", poolID, service.ErrNotFound)
+			return fmt.Errorf("populate freelist: pool %s: %w", poolID, ports.ErrNotFound)
 		}
 		return fmt.Errorf("read v4_cidr_blocks for pool %s: %w", poolID, err)
 	}

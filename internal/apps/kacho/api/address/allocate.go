@@ -21,9 +21,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // AllocateUseCase — internal-only IPAM allocate (4 family-варианта).
@@ -235,7 +235,7 @@ func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID stri
 	if u.pools == nil {
 		return nil, status.Error(codes.Unavailable, "address pool service not configured")
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV4)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV4)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -279,7 +279,7 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 	if u.pools == nil {
 		return nil, status.Error(codes.Unavailable, "address pool service not configured")
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV6)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV6)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -305,4 +305,3 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 	}
 	return &domain.AllocateResult{IP: ip, PoolID: pool.ID}, nil
 }
-

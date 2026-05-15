@@ -13,9 +13,9 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/macutil"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // niReferrerType — ReferrerType в address_references для адресов, привязанных к NIC.
@@ -27,7 +27,7 @@ const niUsedByReferrerType = "compute_instance"
 
 // niMacRetryAttempts — количество попыток сгенерировать уникальный MAC при
 // cloud-wide UNIQUE-collision (~1e-3 на 1M NIC при 40 битах энтропии — см.
-// `internal/service/mac.go`).
+// `internal/apps/kacho/shared/macutil`).
 const niMacRetryAttempts = 3
 
 // CreateInput — параметры для CreateNetworkInterfaceUseCase.Execute. Использует
@@ -152,7 +152,7 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	var created *domain.NetworkInterfaceRecord
 	var insertErr error
 	for attempt := 0; attempt < niMacRetryAttempts; attempt++ {
-		mac, merr := service.GenerateMAC()
+		mac, merr := macutil.GenerateMAC()
 		if merr != nil {
 			u.detachAddresses(ctx, append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...))
 			return nil, status.Errorf(codes.Internal, "generate mac: %v", merr)

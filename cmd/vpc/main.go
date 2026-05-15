@@ -34,10 +34,13 @@ import (
 	sgapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup"
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // configPathEnv — путь к YAML-конфигу. Пустое значение допустимо (defaults +
@@ -86,13 +89,13 @@ type services struct {
 	subnetHandler           *subnetapp.Handler
 	addressHandler          *addressapp.Handler
 	addressAllocate         *addressapp.AllocateUseCase
-	addressRefService       *service.AddressReferenceService
+	addressRefService       *addressref.Service
 	routeTableHandler       *routetableapp.Handler
 	securityGroupHandler    *sgapp.Handler
 	gatewayHandler          *gatewayapp.Handler
 	privateEndpointHandler  *peapp.Handler
-	addressPool             *service.AddressPoolService
-	networkInternal         *service.NetworkInternal
+	addressPool             *addresspool.AddressPoolService
+	networkInternal         *networkinternal.Service
 	networkInterfaceHandler *niapp.Handler
 }
 
@@ -228,7 +231,7 @@ func runServe(cfg config.Config) error {
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
 // inline default SG.
-func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoClient service.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool *pgxpool.Pool, folderClient ports.FolderClient, geoClient ports.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
@@ -241,15 +244,15 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	var defaultSGRepo service.SecurityGroupRepo
+	var defaultSGRepo ports.SecurityGroupRepo
 	if cfg.Network.DefaultSGInline {
 		defaultSGRepo = sgRepo
 	} else {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
-	addressRefSvc := service.NewAddressReferenceService(addressRepo)
+	addressPoolSvc := addresspool.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
+	addressRefSvc := addressref.NewService(addressRepo)
 
 	// Wave 3a pilot (skill evgeniy §2): Network — use-case-структура.
 	// Каждый use-case инжектируется в Handler. Все use-case'ы делят repo
@@ -377,7 +380,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		gatewayHandler:          gwHandler,
 		privateEndpointHandler:  peHandler,
 		addressPool:             addressPoolSvc,
-		networkInternal:         service.NewNetworkInternal(networkRepo, sgRepo),
+		networkInternal:         networkinternal.NewService(networkRepo, sgRepo),
 		networkInterfaceHandler: niHandler,
 	}
 }

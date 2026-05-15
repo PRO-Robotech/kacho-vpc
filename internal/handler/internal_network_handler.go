@@ -19,15 +19,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 )
 
 type InternalNetworkHandler struct {
 	vpcv1.UnimplementedInternalNetworkServiceServer
-	netInternal *service.NetworkInternal
+	netInternal *networkinternal.Service
 }
 
-func NewInternalNetworkHandler(ni *service.NetworkInternal) *InternalNetworkHandler {
+func NewInternalNetworkHandler(ni *networkinternal.Service) *InternalNetworkHandler {
 	return &InternalNetworkHandler{netInternal: ni}
 }
 

@@ -10,8 +10,8 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-99 / KAC-94 (Wave 2 pilot, skill evgeniy §5 E.2): миграция
@@ -20,7 +20,7 @@ import (
 // (прямой INSERT через repo, поля которого помимо вызова `Validate` ничего не
 // проверяют) — и убеждаются что DB-CHECK срабатывает.
 //
-// 23514 → wrapPgErr → service.ErrInvalidArg.
+// 23514 → wrapPgErr → ports.ErrInvalidArg.
 
 func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	if testing.Short() {
@@ -53,7 +53,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	}
 	_, err = netRepo.Insert(ctx, bad)
 	require.Error(t, err, "name начинающееся с цифры должно быть отклонено CHECK")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, ports.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation, got: %v", err)
 
 	// 3. Description длиннее 256 chars — отклоняется DB-CHECK length.
@@ -69,7 +69,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	}
 	_, err = netRepo.Insert(ctx, tooLong)
 	require.Error(t, err, "description >256 chars должно быть отклонено CHECK")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, ports.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation, got: %v", err)
 
 	// 4. Empty name — OK (verbatim YC permissive allows empty).

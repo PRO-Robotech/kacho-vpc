@@ -15,8 +15,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 func setupTestDB(t testing.TB) string {
@@ -83,7 +83,7 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	assert.Equal(t, n.ID, got.ID)
 
 	// List
-	nets, nextToken, err := r.List(ctx, service.NetworkFilter{FolderID: "folder-1"}, service.Pagination{})
+	nets, nextToken, err := r.List(ctx, ports.NetworkFilter{FolderID: "folder-1"}, ports.Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, nets, 1)
 	assert.Empty(t, nextToken)
@@ -102,7 +102,7 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 
 	// Get after delete — должна вернуть ErrNotFound
 	_, err = r.Get(ctx, n.ID)
-	assert.ErrorIs(t, err, service.ErrNotFound)
+	assert.ErrorIs(t, err, ports.ErrNotFound)
 }
 
 // TestIntegration_NetworkRepo_VPNIDAllocation — удалён в KAC-79/KAC-36
@@ -263,7 +263,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 
 	// No reference yet → NotFound.
 	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, service.ErrNotFound)
+	require.ErrorIs(t, err, ports.ErrNotFound)
 
 	// SetReference → upsert + used=true.
 	ref, err := ar.SetReference(ctx, &domain.AddressReference{
@@ -290,7 +290,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 		ReferrerType: "compute_instance",
 		ReferrerID:   "epdinstance00000002",
 	})
-	require.ErrorIs(t, err, service.ErrFailedPrecondition,
+	require.ErrorIs(t, err, ports.ErrFailedPrecondition,
 		"SetReference к занятому address от чужого referrer → ErrFailedPrecondition")
 
 	// Idempotent re-set с ТЕМ ЖЕ referrer (CAS matches) — допустимо обновить
@@ -323,7 +323,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, got.Used)
 	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, service.ErrNotFound)
+	require.ErrorIs(t, err, ports.ErrNotFound)
 
 	// ClearReference again → no-op (still no error, address still exists).
 	require.NoError(t, ar.ClearReference(ctx, addr.ID))
@@ -332,7 +332,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	_, err = ar.SetReference(ctx, &domain.AddressReference{
 		AddressID: "e9bnonexistent00001", ReferrerType: "compute_instance", ReferrerID: "x",
 	})
-	require.ErrorIs(t, err, service.ErrNotFound)
+	require.ErrorIs(t, err, ports.ErrNotFound)
 
 	// FK CASCADE: deleting the address removes the reference row too. Set a
 	// referrer, then delete the address, then ensure GetReference → NotFound.
@@ -342,7 +342,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ar.Delete(ctx, addr.ID))
 	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, service.ErrNotFound)
+	require.ErrorIs(t, err, ports.ErrNotFound)
 }
 
 func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {

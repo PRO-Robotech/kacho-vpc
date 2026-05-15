@@ -13,8 +13,8 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-88 / G1 of KAC-84 audit — address_references.SetReference race.
@@ -33,7 +33,7 @@ import (
 // Защита (parity c NIC SetUsedBy): repo.SetReference (и MarkEphemeralInUse)
 // делают атомарный single-statement CAS — `INSERT … ON CONFLICT (address_id)
 // DO UPDATE … WHERE address_references.referrer_id = EXCLUDED.referrer_id`.
-// 0 rows из RETURNING (через pgx.ErrNoRows) → service.ErrFailedPrecondition.
+// 0 rows из RETURNING (через pgx.ErrNoRows) → ports.ErrFailedPrecondition.
 // Single-statement upsert на одной row защищён row-level lock-ом Postgres:
 // конкурентный writer ждёт commit-а первого, видит уже заполнённую row,
 // CAS не matches → 0 rows.
@@ -103,7 +103,7 @@ func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 				winner = rid
 				muWin.Unlock()
 				ok.Add(1)
-			case errors.Is(err, service.ErrFailedPrecondition):
+			case errors.Is(err, ports.ErrFailedPrecondition):
 				conflict.Add(1)
 			default:
 				require.Failf(t, "unexpected error", "referrer=%s err=%v", rid, err)
@@ -193,7 +193,7 @@ func TestIntegration_AddressRepo_SetReferenceIdempotent(t *testing.T) {
 		ReferrerName: "nic-other",
 	})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, service.ErrFailedPrecondition),
+	require.True(t, errors.Is(err, ports.ErrFailedPrecondition),
 		"SetReference к занятому address от чужого referrer-а → ErrFailedPrecondition, got %v", err)
 
 	// После ClearReference адрес снова свободен — новый referrer проходит.

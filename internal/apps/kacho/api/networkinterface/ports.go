@@ -22,16 +22,15 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // Pagination — alias на единый value-объект `internal/ports`.
 type Pagination = ports.Pagination
 
-// NetworkInterfaceFilter — фильтр для List. Зеркалит `service.NetworkInterfaceFilter`
-// (репо реализует service-shape; локальный alias избавляет от прокидывания
-// service-типа в use-case-package, но удерживает совместимость с repo-адаптером).
-type NetworkInterfaceFilter = service.NetworkInterfaceFilter
+// NetworkInterfaceFilter — фильтр для List. Зеркалит `ports.NetworkInterfaceFilter`
+// (репо реализует ports-shape; локальный alias избавляет от прокидывания
+// ports-типа в use-case-package, но удерживает совместимость с repo-адаптером).
+type NetworkInterfaceFilter = ports.NetworkInterfaceFilter
 
 // NetworkInterfaceRepo — то, что use-case'ам NIC нужно от репозитория NIC.
 //

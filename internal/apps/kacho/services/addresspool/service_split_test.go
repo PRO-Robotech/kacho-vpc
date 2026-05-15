@@ -20,9 +20,9 @@
 //   - B13 — Bind* family-agnostic (не валидирует family, фильтр только на resolve)
 //
 // Все тесты — failing на текущей реализации (domain.AddressPool пока имеет
-// CIDRBlocks (старое поле); service.UpdatePoolReq пока имеет ReplaceCIDR, не
+// CIDRBlocks (старое поле); UpdatePoolReq пока имеет ReplaceCIDR, не
 // ReplaceV4CIDR/ReplaceV6CIDR). После rpc-implementer KAC-74 — позеленеют.
-package service
+package addresspool
 
 import (
 	"context"
@@ -38,6 +38,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
 )
 
 // --------------------------------------------------------------------------
@@ -280,11 +281,11 @@ func makeAddressPoolService(
 	bindings *stubBindingRepo,
 	cloudSel *stubCloudSelRepo,
 ) *AddressPoolService {
-	ar := newMockAddressRepo()
-	sr := newMockSubnetRepo()
-	nr := newMockNetworkRepo()
-	fc := newMockFolderClient(true)
-	zr := newMockZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
+	ar := portmock.NewAddressRepo()
+	sr := portmock.NewSubnetRepo()
+	nr := portmock.NewNetworkRepo()
+	fc := &portmock.FolderClient{OK: true}
+	zr := portmock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
 	return NewAddressPoolService(poolRepo, bindings, cloudSel, ar, nr, sr, fc, zr)
 }
 
@@ -663,17 +664,17 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert network через netRepo (mock). Доступ — через wrapping helper:
-	// makeAddressPoolService использует newMockNetworkRepo()-инстанс, но не
+	// makeAddressPoolService использует portmock.NewNetworkRepo()-инстанс, но не
 	// возвращает его наружу. Re-write — пересоберём service с явным netRepo.
-	nr := newMockNetworkRepo()
+	nr := portmock.NewNetworkRepo()
 	netID := ids.NewID(ids.PrefixNetwork)
 	_, err = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind")})
 	require.NoError(t, err)
 
-	sr := newMockSubnetRepo()
-	ar := newMockAddressRepo()
-	zr := newMockZoneRegistry("ru-central1-c")
-	svc2 := NewAddressPoolService(r, br, cs, ar, nr, sr, newMockFolderClient(true), zr)
+	sr := portmock.NewSubnetRepo()
+	ar := portmock.NewAddressRepo()
+	zr := portmock.NewZoneRegistry("ru-central1-c")
+	svc2 := NewAddressPoolService(r, br, cs, ar, nr, sr, &portmock.FolderClient{OK: true}, zr)
 
 	// Bind — должно пройти НЕ смотря на то что pool v6-only, и Network может
 	// быть v4-предназначен.
@@ -692,11 +693,11 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 	r := newStubAddressPoolRepo()
 	br := newStubBindingRepo()
 	cs := newStubCloudSelRepo()
-	ar := newMockAddressRepo()
-	sr := newMockSubnetRepo()
-	nr := newMockNetworkRepo()
-	zr := newMockZoneRegistry("ru-central1-c")
-	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, newMockFolderClient(true), zr)
+	ar := portmock.NewAddressRepo()
+	sr := portmock.NewSubnetRepo()
+	nr := portmock.NewNetworkRepo()
+	zr := portmock.NewZoneRegistry("ru-central1-c")
+	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, &portmock.FolderClient{OK: true}, zr)
 
 	// v4-only pool.
 	pool, err := svc.Create(context.Background(), CreatePoolReq{
