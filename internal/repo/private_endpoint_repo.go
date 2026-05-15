@@ -130,11 +130,17 @@ func (r *PrivateEndpointRepo) Insert(ctx context.Context, pe *domain.PrivateEndp
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// KAC-89: subnet_id / address_id — optional within-service refs c FK на
+	// subnets(id) / addresses(id) (миграция 0024). Postgres FK с MATCH SIMPLE
+	// пропускает NULL, но empty-string '' трактуется как обычное значение и
+	// FK попытается найти row с id='' → 23503. Конвертируем '' → NULL прямо
+	// в INSERT через NULLIF, чтобы service-слой мог по-прежнему передавать
+	// pe.SubnetID/pe.AddressID = "" для «не задано».
 	const q = `
 		INSERT INTO private_endpoints
 		(id, folder_id, created_at, name, description, labels,
 		 network_id, subnet_id, address_id, ip_address, service_type, dns_options, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10, $11, $12, $13)
 		RETURNING ` + peCols
 
 	row := tx.QueryRow(ctx, q,
