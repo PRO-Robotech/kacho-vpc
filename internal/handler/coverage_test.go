@@ -47,23 +47,9 @@ func TestSubnetHandler_ListOperations_RequiresID(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-// ---- Address handler — additional coverage ----
-
-func TestAddressHandler_Update_InvalidArg(t *testing.T) {
-	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.Update(context.Background(), &vpcv1.UpdateAddressRequest{AddressId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestAddressHandler_ListOperations_RequiresID(t *testing.T) {
-	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
+// ---- Address handler — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressHandler_Update_InvalidArg / ListOperations_RequiresID → TestHandler_Update_InvalidArg
+// / TestHandler_ListOperations_RequiresID в новом пакете.
 
 // ---- RouteTable handler — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 

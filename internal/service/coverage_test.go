@@ -136,49 +136,12 @@ func TestSubnetService_Delete_RequiresID(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-// ---- AddressService — extra coverage ----
-
-func TestAddressService_Move_Validates(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.Move(context.Background(), "", "f2")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-	_, err = svc.Move(context.Background(), ids.NewID(ids.PrefixAddress), "")
-	st, _ = status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestAddressService_Delete_RequiresID(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.Delete(context.Background(), "")
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestAddressService_GetByValue_Empty(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.GetByValue(context.Background(), "", "", "")
-	require.Error(t, err)
-}
-
-func TestAddressService_ListBySubnet_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, _, err := svc.ListBySubnet(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
-
-func TestAddressService_ListOperations_UnknownID_Empty(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	ops, _, err := svc.ListOperations(context.Background(), ids.NewID(ids.PrefixAddress), Pagination{})
-	assert.NoError(t, err)
-	assert.Empty(t, ops)
-}
+// ---- AddressService — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressService_Move_Validates / Delete_RequiresID / GetByValue_Empty /
+// ListBySubnet_NotFound / ListOperations_UnknownID_Empty переехали в новый
+// use-case-пакет под именами TestMoveUseCase_Validates / TestDeleteUseCase_NotFound /
+// TestGetByValueUseCase_Empty / TestListBySubnetUseCase_NotFound /
+// TestListOperationsUseCase_UnknownID_Empty.
 
 // ---- RouteTableService — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
@@ -347,14 +310,7 @@ func TestSubnetService_ListOperations_UnknownID_Empty(t *testing.T) {
 	assert.Empty(t, ops)
 }
 
-// ---- Address Get ----
-
-func TestAddressService_Get_NotFound(t *testing.T) {
-	or := newMockOpsRepo()
-	svc := NewAddressService(newMockAddressRepo(), newMockSubnetRepo(), newMockFolderClient(true), or, nil)
-	_, err := svc.Get(context.Background(), ids.NewID(ids.PrefixAddress))
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// ---- Address Get — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressService_Get_NotFound → TestHandler_Get_NotFound в новом пакете.
 
 // ---- RouteTable Get / PrivateEndpoint — moved to internal/apps/kacho/api/{routetable,privateendpoint}/usecase_test.go (Wave 3b) ----
