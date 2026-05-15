@@ -102,15 +102,19 @@ func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 }
 
 // ---- SubnetRepo ----
+//
+// Wave 2 batch A (KAC-94): port возвращает *domain.SubnetRecord (repo-entity
+// с DB-managed CreatedAt). Mock хранит записи в map[id]*SubnetRecord и
+// проставляет CreatedAt при Insert. Parity с NetworkRepo (KAC-99).
 
 type SubnetRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.Subnet
+	data map[string]*domain.SubnetRecord
 }
 
-func NewSubnetRepo() *SubnetRepo { return &SubnetRepo{data: make(map[string]*domain.Subnet)} }
+func NewSubnetRepo() *SubnetRepo { return &SubnetRepo{data: make(map[string]*domain.SubnetRecord)} }
 
-func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.Subnet, error) {
+func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -120,35 +124,38 @@ func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.Subnet, error) {
 	return s, nil
 }
 
-func (r *SubnetRepo) List(_ context.Context, f ports.SubnetFilter, _ ports.Pagination) ([]*domain.Subnet, string, error) {
+func (r *SubnetRepo) List(_ context.Context, f ports.SubnetFilter, _ ports.Pagination) ([]*domain.SubnetRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.Subnet
+	var result []*domain.SubnetRecord
 	for _, s := range r.data {
 		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
 			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
-			(f.Name == "" || s.Name == f.Name) {
+			(f.Name == "" || string(s.Name) == f.Name) {
 			result = append(result, s)
 		}
 	}
 	return result, "", nil
 }
 
-func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*domain.Subnet, error) {
+func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[s.ID] = s
-	return s, nil
+	rec := &domain.SubnetRecord{Subnet: *s, CreatedAt: time.Now().UTC()}
+	r.data[s.ID] = rec
+	return rec, nil
 }
 
-func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.Subnet, error) {
+func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[s.ID]; !ok {
+	existing, ok := r.data[s.ID]
+	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	r.data[s.ID] = s
-	return s, nil
+	// keep existing CreatedAt; overwrite mutable domain-fields.
+	existing.Subnet = *s
+	return existing, nil
 }
 
 func (r *SubnetRepo) Delete(_ context.Context, id string) error {
@@ -161,7 +168,7 @@ func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Subnet, error) {
+func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -172,7 +179,7 @@ func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domai
 	return s, nil
 }
 
-func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*domain.Subnet, error) {
+func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -184,7 +191,7 @@ func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string
 	return s, nil
 }
 
-func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.Subnet, error) {
+func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -195,21 +202,25 @@ func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.Su
 	return s, nil
 }
 
-func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ ports.Pagination) ([]*domain.Address, string, error) {
+func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
 // ---- AddressRepo ----
+//
+// Wave 2 batch A (KAC-94): port возвращает *domain.AddressRecord (repo-entity
+// с DB-managed CreatedAt). Mock хранит записи в map[id]*AddressRecord и
+// проставляет CreatedAt при Insert.
 
 type AddressRepo struct {
 	mu        sync.Mutex
-	data      map[string]*domain.Address
+	data      map[string]*domain.AddressRecord
 	refs      map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
 	freelists map[string][]string                 // poolID → ordered free IPs (FIFO)
 	v6        map[string]*v6CursorState           // KAC-60: per-pool v6 sparse counter
 }
 
-func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.Address)} }
+func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.AddressRecord)} }
 
 // SeedFreelist засыпает poolID-freelist ровно перечисленными IP в указанном
 // порядке (для unit-тестов, чтобы не материализовать CIDR целиком).
@@ -222,14 +233,16 @@ func (r *AddressRepo) SeedFreelist(poolID string, ips ...string) {
 	r.freelists[poolID] = append([]string(nil), ips...)
 }
 
-// Seed добавляет address напрямую в стор (для тестовых fixture'ов).
-func (r *AddressRepo) Seed(a *domain.Address) {
+// Seed добавляет address напрямую в стор (для тестовых fixture'ов). Принимает
+// repo-entity (AddressRecord) — caller выставляет CreatedAt сам (либо оставляет
+// zero для unit-тестов, где TS не важен).
+func (r *AddressRepo) Seed(rec *domain.AddressRecord) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[a.ID] = a
+	r.data[rec.ID] = rec
 }
 
-func (r *AddressRepo) Get(_ context.Context, id string) (*domain.Address, error) {
+func (r *AddressRepo) Get(_ context.Context, id string) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -239,34 +252,36 @@ func (r *AddressRepo) Get(_ context.Context, id string) (*domain.Address, error)
 	return a, nil
 }
 
-func (r *AddressRepo) List(_ context.Context, f ports.AddressFilter, _ ports.Pagination) ([]*domain.Address, string, error) {
+func (r *AddressRepo) List(_ context.Context, f ports.AddressFilter, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.Address
+	var result []*domain.AddressRecord
 	for _, a := range r.data {
 		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
-			(f.Name == "" || a.Name == f.Name) {
+			(f.Name == "" || string(a.Name) == f.Name) {
 			result = append(result, a)
 		}
 	}
 	return result, "", nil
 }
 
-func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*domain.Address, error) {
+func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[a.ID] = a
-	return a, nil
+	rec := &domain.AddressRecord{Address: *a, CreatedAt: time.Now().UTC()}
+	r.data[a.ID] = rec
+	return rec, nil
 }
 
-func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*domain.Address, error) {
+func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[a.ID]; !ok {
+	existing, ok := r.data[a.ID]
+	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	r.data[a.ID] = a
-	return a, nil
+	existing.Address = *a
+	return existing, nil
 }
 
 func (r *AddressRepo) Delete(_ context.Context, id string) error {
@@ -280,7 +295,7 @@ func (r *AddressRepo) Delete(_ context.Context, id string) error {
 }
 
 // SetIPSpec — mock-stub (порт обязателен, для test'а возвращаем как Update).
-func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -297,7 +312,7 @@ func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.Extern
 }
 
 // SetInternalIPv6 — mock-stub (порт обязателен).
-func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error) {
+func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -310,7 +325,7 @@ func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain
 	return a, nil
 }
 
-func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.Address, error) {
+func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -335,7 +350,7 @@ func (r *AddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
 	return false, nil
 }
 
-func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domain.Address, error) {
+func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domain.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, a := range r.data {
@@ -566,17 +581,20 @@ func (r *AddressRepo) FreeExternalIPv6(_ context.Context, addressID string) erro
 }
 
 // ---- RouteTableRepo ----
+//
+// Wave 2 batch A (KAC-94): port возвращает *domain.RouteTableRecord (repo-entity
+// с DB-managed CreatedAt). Mock хранит записи в map[id]*RouteTableRecord.
 
 type RouteTableRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.RouteTable
+	data map[string]*domain.RouteTableRecord
 }
 
 func NewRouteTableRepo() *RouteTableRepo {
-	return &RouteTableRepo{data: make(map[string]*domain.RouteTable)}
+	return &RouteTableRepo{data: make(map[string]*domain.RouteTableRecord)}
 }
 
-func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
@@ -586,35 +604,37 @@ func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTable, 
 	return rt, nil
 }
 
-func (r *RouteTableRepo) List(_ context.Context, f ports.RouteTableFilter, _ ports.Pagination) ([]*domain.RouteTable, string, error) {
+func (r *RouteTableRepo) List(_ context.Context, f ports.RouteTableFilter, _ ports.Pagination) ([]*domain.RouteTableRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.RouteTable
+	var result []*domain.RouteTableRecord
 	for _, rt := range r.data {
 		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
 			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
-			(f.Name == "" || rt.Name == f.Name) {
+			(f.Name == "" || string(rt.Name) == f.Name) {
 			result = append(result, rt)
 		}
 	}
 	return result, "", nil
 }
 
-func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data[rt.ID] = rt
-	return rt, nil
+	rec := &domain.RouteTableRecord{RouteTable: *rt, CreatedAt: time.Now().UTC()}
+	r.data[rt.ID] = rec
+	return rec, nil
 }
 
-func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[rt.ID]; !ok {
+	existing, ok := r.data[rt.ID]
+	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	r.data[rt.ID] = rt
-	return rt, nil
+	existing.RouteTable = *rt
+	return existing, nil
 }
 
 func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
@@ -627,7 +647,7 @@ func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]

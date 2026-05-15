@@ -399,7 +399,7 @@ GROUP BY c.idx
 
 // ListAddressesByPool — кросс-folder список Address, держащих IP из pool'а.
 // Используется в admin UI для AddressPool detail page.
-func (r *AddressPoolRepo) ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p service.Pagination) ([]*domain.Address, string, error) {
+func (r *AddressPoolRepo) ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p service.Pagination) ([]*Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -435,7 +435,7 @@ LIMIT $%d`, joinAnd(conds), idx)
 	}
 	defer rows.Close()
 
-	var out []*domain.Address
+	var out []*Address
 	for rows.Next() {
 		a, scanErr := scanAddress(rows)
 		if scanErr != nil {

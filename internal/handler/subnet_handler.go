@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -10,9 +11,23 @@ import (
 	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы Subnet/Address/RouteTable/time через
+	// init() — dto.Transfer находит их в реестре. Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// subnetToPb — wrapper над DTO-реестром для конверсии repo-entity Subnet →
+// *vpcv1.Subnet. Wave 2 batch A (KAC-94): протосhodит через generic
+// dto.Transfer; старый protoconv.Subnet удалён.
+func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
+	var dst *vpcv1.Subnet
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Subnet: %w", err)
+	}
+	return dst, nil
+}
 
 // SubnetHandler реализует vpcv1.SubnetServiceServer.
 type SubnetHandler struct {
@@ -36,7 +51,7 @@ func (h *SubnetHandler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*
 	if err := AssertFolderOwnership(ctx, sub.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.Subnet(sub), nil
+	return subnetToPb(sub)
 }
 
 func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
@@ -55,7 +70,11 @@ func (h *SubnetHandler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest)
 	}
 	resp := &vpcv1.ListSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
+		pb, err := subnetToPb(s)
+		if err != nil {
+			return nil, err
+		}
+		resp.Subnets = append(resp.Subnets, pb)
 	}
 	return resp, nil
 }

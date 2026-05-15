@@ -581,20 +581,25 @@ func TestAddressHandler_FullFlow(t *testing.T) {
 }
 
 func TestSubnetToProto_Fields(t *testing.T) {
-	s := &domain.Subnet{
-		ID:           "sub-1",
-		FolderID:     "f1",
-		Name:         "sub",
-		NetworkID:    "net-1",
-		ZoneID:       "ru-central1-a",
-		V4CidrBlocks: []string{"10.0.0.0/24"},
-		DhcpOptions: &domain.DhcpOptions{
-			DomainName:        "example.com",
-			DomainNameServers: []string{"8.8.8.8"},
-			NtpServers:        []string{"1.1.1.1"},
+	// Wave 2 batch A (KAC-94): Subnet → DTO type2pb. Тест проверяет тот же
+	// контракт что и раньше, но через `subnetToPb` (DTO-реестр).
+	rec := &domain.SubnetRecord{
+		Subnet: domain.Subnet{
+			ID:           "sub-1",
+			FolderID:     "f1",
+			Name:         domain.RcNameVPC("sub"),
+			NetworkID:    "net-1",
+			ZoneID:       "ru-central1-a",
+			V4CidrBlocks: []string{"10.0.0.0/24"},
+			DhcpOptions: &domain.DhcpOptions{
+				DomainName:        "example.com",
+				DomainNameServers: []string{"8.8.8.8"},
+				NtpServers:        []string{"1.1.1.1"},
+			},
 		},
 	}
-	p := protoconv.Subnet(s)
+	p, err := subnetToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, "sub-1", p.Id)
 	assert.Equal(t, "ru-central1-a", p.ZoneId)
 	require.NotNil(t, p.DhcpOptions)

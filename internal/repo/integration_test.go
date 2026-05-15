@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -139,8 +138,7 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
 		FolderID:     "folder-1",
-		CreatedAt:    time.Now().UTC(),
-		Name:         "test-subnet",
+		Name:         domain.RcNameVPC("test-subnet"),
 		NetworkID:    net.ID,
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
@@ -174,8 +172,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	extAddr := &domain.Address{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "my-external-ip",
+		Name:      domain.RcNameVPC("my-external-ip"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
 		Reserved:  true,
@@ -211,8 +208,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
 		FolderID:     "folder-1",
-		CreatedAt:    time.Now().UTC(),
-		Name:         "sub-for-internal-addr",
+		Name:         domain.RcNameVPC("sub-for-internal-addr"),
 		NetworkID:    net.ID,
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
@@ -223,7 +219,6 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	intAddr := &domain.Address{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
 		Type:      domain.AddressTypeInternal,
 		IpVersion: domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{
@@ -254,8 +249,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	addr := &domain.Address{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "ref-tracked-ip",
+		Name:      domain.RcNameVPC("ref-tracked-ip"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{
@@ -377,8 +371,7 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 	rt := &domain.RouteTable{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
-		CreatedAt: time.Now().UTC(),
-		Name:      "test-rt",
+		Name:      domain.RcNameVPC("test-rt"),
 		NetworkID: net.ID,
 		StaticRoutes: []domain.StaticRoute{
 			{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
@@ -394,7 +387,7 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 	created.StaticRoutes = []domain.StaticRoute{
 		{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "10.10.10.1"},
 	}
-	updated, err := rtr.Update(ctx, created)
+	updated, err := rtr.Update(ctx, &created.RouteTable)
 	require.NoError(t, err)
 	require.Len(t, updated.StaticRoutes, 1)
 	assert.Equal(t, "10.10.10.1", updated.StaticRoutes[0].NextHopAddress)

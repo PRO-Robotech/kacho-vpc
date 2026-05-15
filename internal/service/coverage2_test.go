@@ -43,7 +43,7 @@ func TestSubnetService_Update_NameOnly(t *testing.T) {
 	require.Nil(t, saved.Error)
 
 	got, _ := svc.Get(context.Background(), subs[0].ID)
-	assert.Equal(t, "sub1-upd", got.Name)
+	assert.Equal(t, "sub1-upd", string(got.Name))
 }
 
 func TestSubnetService_Update_FullPATCH(t *testing.T) {
@@ -74,8 +74,8 @@ func TestSubnetService_Update_FullPATCH(t *testing.T) {
 	require.Nil(t, saved.Error)
 
 	got, _ := svc.Get(context.Background(), subs[0].ID)
-	assert.Equal(t, "sub-new", got.Name)
-	assert.Equal(t, "new desc", got.Description)
+	assert.Equal(t, "sub-new", string(got.Name))
+	assert.Equal(t, "new desc", string(got.Description))
 	// Immutable v4_cidr_blocks НЕ обновился.
 	assert.Equal(t, []string{"10.0.0.0/24"}, got.V4CidrBlocks)
 }

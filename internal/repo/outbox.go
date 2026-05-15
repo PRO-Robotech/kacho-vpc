@@ -7,8 +7,14 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-corelib/outbox"
+
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
+
+// Wave 2 batch A (KAC-94): Type-alias'ы Network/Subnet/Address/RouteTable на
+// domain.*Record — объявлены в соответствующих repo-файлах. Здесь они
+// доступны через package-scope. Import `domain` остаётся для SecurityGroup
+// payload (он ещё не имеет Record-wrapper'а в этой итерации).
 
 // vpcOutboxTable — имя таблицы outbox в kacho_vpc DB.
 const vpcOutboxTable = "vpc_outbox"
@@ -51,18 +57,19 @@ func networkPayload(n *Network) map[string]any {
 	return domainToMap(n)
 }
 
-// subnetPayload — snapshot Subnet.
-func subnetPayload(s *domain.Subnet) map[string]any {
+// subnetPayload — snapshot Subnet (repo-entity, с CreatedAt). Wave 2 batch A
+// (KAC-94) переместил CreatedAt из domain в repo.
+func subnetPayload(s *Subnet) map[string]any {
 	return domainToMap(s)
 }
 
-// addressPayload — snapshot Address.
-func addressPayload(a *domain.Address) map[string]any {
+// addressPayload — snapshot Address (repo-entity, с CreatedAt).
+func addressPayload(a *Address) map[string]any {
 	return domainToMap(a)
 }
 
-// routeTablePayload — snapshot RouteTable.
-func routeTablePayload(rt *domain.RouteTable) map[string]any {
+// routeTablePayload — snapshot RouteTable (repo-entity, с CreatedAt).
+func routeTablePayload(rt *RouteTable) map[string]any {
 	return domainToMap(rt)
 }
 

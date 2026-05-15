@@ -152,7 +152,11 @@ func (h *NetworkHandler) ListSubnets(ctx context.Context, req *vpcv1.ListNetwork
 	}
 	resp := &vpcv1.ListNetworkSubnetsResponse{NextPageToken: nextToken}
 	for _, s := range subs {
-		resp.Subnets = append(resp.Subnets, protoconv.Subnet(s))
+		pb, err := subnetToPb(s)
+		if err != nil {
+			return nil, err
+		}
+		resp.Subnets = append(resp.Subnets, pb)
 	}
 	return resp, nil
 }
@@ -202,7 +206,11 @@ func (h *NetworkHandler) ListRouteTables(ctx context.Context, req *vpcv1.ListNet
 	}
 	resp := &vpcv1.ListNetworkRouteTablesResponse{NextPageToken: nextToken}
 	for _, rt := range rts {
-		resp.RouteTables = append(resp.RouteTables, protoconv.RouteTable(rt))
+		pb, err := routeTableToPb(rt)
+		if err != nil {
+			return nil, err
+		}
+		resp.RouteTables = append(resp.RouteTables, pb)
 	}
 	return resp, nil
 }

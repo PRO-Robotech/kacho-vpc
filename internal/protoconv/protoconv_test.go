@@ -15,16 +15,15 @@ import (
 // TestCreatedAt_TruncatedToSeconds — регрессия на FINDING/drift: раньше service-копии
 // конвертеров не ставили created_at вообще (Operation.response отдавал created_at == null),
 // а handler-копии ставили с truncate до секунд. Теперь конвертер один и всегда truncate.
+//
+// Wave 2 batch A (KAC-94): Subnet/Address/RouteTable конверторы переехали в
+// `internal/dto/type2pb/` — тут остаются только SecurityGroup/Gateway/PrivateEndpoint/
+// NetworkInterface/Network (Network — pilot KAC-99, остальные мигрируют в Wave 2 batch B/C).
 func TestCreatedAt_TruncatedToSeconds(t *testing.T) {
 	at := time.Date(2026, 5, 11, 12, 34, 56, 789_000_000, time.UTC)
 
-	// Wave 2 pilot (KAC-99/KAC-94): Network теперь принимает repo-entity
-	// (NetworkRecord) с CreatedAt в repo-проекции, не в domain.Network.
 	require.NotNil(t, Network(&domain.NetworkRecord{Network: domain.Network{ID: "enp1"}, CreatedAt: at}).CreatedAt)
 	assert.Equal(t, at.Truncate(time.Second), Network(&domain.NetworkRecord{CreatedAt: at}).CreatedAt.AsTime())
-	assert.Equal(t, at.Truncate(time.Second), Subnet(&domain.Subnet{CreatedAt: at}).CreatedAt.AsTime())
-	assert.Equal(t, at.Truncate(time.Second), Address(&domain.Address{CreatedAt: at}).CreatedAt.AsTime())
-	assert.Equal(t, at.Truncate(time.Second), RouteTable(&domain.RouteTable{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), SecurityGroup(&domain.SecurityGroup{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), Gateway(&domain.Gateway{CreatedAt: at}).CreatedAt.AsTime())
 	assert.Equal(t, at.Truncate(time.Second), PrivateEndpoint(&domain.PrivateEndpoint{CreatedAt: at}).CreatedAt.AsTime())
@@ -71,21 +70,7 @@ func TestSecurityGroup_RulesAndTarget(t *testing.T) {
 
 func TestNetworkInterface_MacAddressSurfaced(t *testing.T) {
 	// KAC-48: mac_address присутствует на публичной проекции NetworkInterface.
-	// (Раньше тест проверял также InternalNetworkInterface — удалён в KAC-79/KAC-36,
-	// post-kube-ovn: internal data-plane проекции больше нет.)
 	n := &domain.NetworkInterface{ID: "e9bnic", SubnetID: "e9bsub", MAC: "0e:1a:2b:3c:4d:5e", Status: domain.NIStatusAvailable}
 	pub := NetworkInterface(n)
 	assert.Equal(t, "0e:1a:2b:3c:4d:5e", pub.MacAddress)
-}
-
-func TestAddress_ExternalAndInternalOneof(t *testing.T) {
-	ext := Address(&domain.Address{ID: "e9b1", ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.5", ZoneID: "ru-central1-a"}})
-	require.NotNil(t, ext.GetExternalIpv4Address())
-	assert.Equal(t, "203.0.113.5", ext.GetExternalIpv4Address().Address)
-	assert.Nil(t, ext.GetInternalIpv4Address())
-
-	in := Address(&domain.Address{ID: "e9b2", InternalIpv4: &domain.InternalIpv4Spec{Address: "10.1.2.3", SubnetID: "e9bsub"}})
-	require.NotNil(t, in.GetInternalIpv4Address())
-	assert.Equal(t, "e9bsub", in.GetInternalIpv4Address().GetSubnetId())
-	assert.Nil(t, in.GetExternalIpv4Address())
 }

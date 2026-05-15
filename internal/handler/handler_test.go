@@ -106,17 +106,23 @@ func TestNetworkToProto_Fields(t *testing.T) {
 	assert.Equal(t, "test", p.Labels["env"])
 }
 
+// Wave 2 batch A (KAC-94): тесты Address/RouteTable/Subnet → proto перешли
+// на DTO type2pb. Конверсия через handler-local helper'ы (subnetToPb /
+// addressToPb / routeTableToPb), которые внутри зовут dto.Transfer.
 func TestAddressToProto_External(t *testing.T) {
-	a := &domain.Address{
-		ID:       "addr-1",
-		FolderID: "f1",
-		Type:     domain.AddressTypeExternal,
-		ExternalIpv4: &domain.ExternalIpv4Spec{
-			Address: "203.0.113.10",
-			ZoneID:  "ru-central1-a",
+	rec := &domain.AddressRecord{
+		Address: domain.Address{
+			ID:       "addr-1",
+			FolderID: "f1",
+			Type:     domain.AddressTypeExternal,
+			ExternalIpv4: &domain.ExternalIpv4Spec{
+				Address: "203.0.113.10",
+				ZoneID:  "ru-central1-a",
+			},
 		},
 	}
-	p := protoconv.Address(a)
+	p, err := addressToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, "addr-1", p.Id)
 	ext := p.GetExternalIpv4Address()
 	require.NotNil(t, ext)
@@ -125,16 +131,19 @@ func TestAddressToProto_External(t *testing.T) {
 }
 
 func TestAddressToProto_Internal(t *testing.T) {
-	a := &domain.Address{
-		ID:       "addr-2",
-		FolderID: "f1",
-		Type:     domain.AddressTypeInternal,
-		InternalIpv4: &domain.InternalIpv4Spec{
-			Address:  "10.0.0.5",
-			SubnetID: "subnet-1",
+	rec := &domain.AddressRecord{
+		Address: domain.Address{
+			ID:       "addr-2",
+			FolderID: "f1",
+			Type:     domain.AddressTypeInternal,
+			InternalIpv4: &domain.InternalIpv4Spec{
+				Address:  "10.0.0.5",
+				SubnetID: "subnet-1",
+			},
 		},
 	}
-	p := protoconv.Address(a)
+	p, err := addressToPb(rec)
+	require.NoError(t, err)
 	intAddr := p.GetInternalIpv4Address()
 	require.NotNil(t, intAddr)
 	assert.Equal(t, "10.0.0.5", intAddr.Address)
@@ -142,26 +151,32 @@ func TestAddressToProto_Internal(t *testing.T) {
 }
 
 func TestRouteTableToProto_StaticRoutes(t *testing.T) {
-	rt := &domain.RouteTable{
-		ID:        "rt-1",
-		FolderID:  "f1",
-		NetworkID: "net-1",
-		StaticRoutes: []domain.StaticRoute{
-			{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
+	rec := &domain.RouteTableRecord{
+		RouteTable: domain.RouteTable{
+			ID:        "rt-1",
+			FolderID:  "f1",
+			NetworkID: "net-1",
+			StaticRoutes: []domain.StaticRoute{
+				{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
+			},
 		},
 	}
-	p := protoconv.RouteTable(rt)
+	p, err := routeTableToPb(rec)
+	require.NoError(t, err)
 	require.Len(t, p.StaticRoutes, 1)
 	assert.Equal(t, "0.0.0.0/0", p.StaticRoutes[0].GetDestinationPrefix())
 	assert.Equal(t, "192.168.0.1", p.StaticRoutes[0].GetNextHopAddress())
 }
 
 func TestSubnetToProto_CidrBlocks(t *testing.T) {
-	s := &domain.Subnet{
-		ID:           "sub-1",
-		FolderID:     "f1",
-		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
+	rec := &domain.SubnetRecord{
+		Subnet: domain.Subnet{
+			ID:           "sub-1",
+			FolderID:     "f1",
+			V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
+		},
 	}
-	p := protoconv.Subnet(s)
+	p, err := subnetToPb(rec)
+	require.NoError(t, err)
 	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, p.V4CidrBlocks)
 }

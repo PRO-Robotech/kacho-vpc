@@ -22,8 +22,20 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы через init(). Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
+
+// marshalAddressRecord конвертирует repo-entity Address в *anypb.Any через
+// DTO-реестр. Wave 2 batch A (KAC-94): replaced `protoconv.Address`.
+func marshalAddressRecord(rec *domain.AddressRecord) (*anypb.Any, error) {
+	var dst *vpcv1.Address
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Address: %w", err)
+	}
+	return anypb.New(dst)
+}
 
 // CreateAddressReq — запрос на создание адреса.
 type CreateAddressReq struct {
@@ -142,7 +154,7 @@ func (s *AddressService) validateInternalIPInSubnet(ctx context.Context, subnetI
 //   - oneof address: external_ipv4_address или internal_ipv4_address.
 //   - oneof scope (опционально): subnet_id (для уточнения).
 //   - При не-существовании → NotFound.
-func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error) {
+func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.AddressRecord, error) {
 	if externalIP == "" && internalIP == "" {
 		return nil, invalidArg("address", "address (external_ipv4_address or internal_ipv4_address) is required")
 	}
@@ -150,7 +162,7 @@ func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP,
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	s.loadUsedBy(ctx, []*domain.Address{a})
+	s.loadUsedBy(ctx, []*domain.AddressRecord{a})
 	return a, nil
 }
 
@@ -158,7 +170,10 @@ func (s *AddressService) GetByValue(ctx context.Context, externalIP, internalIP,
 // output-only) — кто использует адрес. Best-effort: ошибка чтения
 // address_references → лог + адреса без UsedBy (graceful degradation, не валит
 // чтение). Пустой/nil вход — no-op.
-func (s *AddressService) loadUsedBy(ctx context.Context, addrs []*domain.Address) {
+//
+// Wave 2 batch A (KAC-94): принимает []*domain.AddressRecord (repo-entity).
+// Embedded Address.UsedBy обновляется in-place.
+func (s *AddressService) loadUsedBy(ctx context.Context, addrs []*domain.AddressRecord) {
 	if len(addrs) == 0 {
 		return
 	}
@@ -189,7 +204,7 @@ func (s *AddressService) loadUsedBy(ctx context.Context, addrs []*domain.Address
 // ListBySubnet возвращает Address-ы, привязанные к указанной подсети.
 //
 // Использует subnetRepo.AddressesBySubnet (joining через internal_ipv4.subnet_id).
-func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.Address, string, error) {
+func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
 		return nil, "", err
 	}
@@ -208,7 +223,7 @@ func (s *AddressService) ListBySubnet(ctx context.Context, subnetID string, p Pa
 }
 
 // Get возвращает Address по ID.
-func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, error) {
+func (s *AddressService) Get(ctx context.Context, id string) (*domain.AddressRecord, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
 		return nil, err
 	}
@@ -216,13 +231,13 @@ func (s *AddressService) Get(ctx context.Context, id string) (*domain.Address, e
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	s.loadUsedBy(ctx, []*domain.Address{a})
+	s.loadUsedBy(ctx, []*domain.AddressRecord{a})
 	return a, nil
 }
 
 // List возвращает список адресов.
 // folder_id обязателен (R10 #C1 closure).
-func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.Address, string, error) {
+func (s *AddressService) List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -256,13 +271,13 @@ func (s *AddressService) Create(ctx context.Context, req CreateAddressReq) (*ope
 	// folderClient.Exists / subnetRepo.Get → NotFound (verbatim YC). См.
 	// YC-DIFF-INVALID-PARENT-CODE.md.
 	// VPC Address: empty name allowed (verbatim YC permissive policy).
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+	// Wave 2 batch A (KAC-94): domain.Address.Validate() — источник истины.
+	addrForValidate := domain.Address{
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := addrForValidate.Validate(); err != nil {
 		return nil, err
 	}
 	// Verbatim YC: requirements.ddos_protection_provider только из whitelist;
@@ -357,10 +372,9 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 	a := &domain.Address{
 		ID:                 addrID,
 		FolderID:           req.FolderID,
-		CreatedAt:          time.Now().UTC(),
-		Name:               req.Name,
-		Description:        req.Description,
-		Labels:             req.Labels,
+		Name:               domain.RcNameVPC(req.Name),
+		Description:        domain.RcDescription(req.Description),
+		Labels:             domain.LabelsFromMap(req.Labels),
 		DeletionProtection: req.DeletionProtection,
 		Reserved:           true,
 	}
@@ -479,7 +493,7 @@ func (s *AddressService) doCreate(ctx context.Context, addrID string, req Create
 		created.ExternalIpv6.Address = res.IP
 		created.ExternalIpv6.AddressPoolID = res.PoolID
 	}
-	return anypb.New(protoconv.Address(created))
+	return marshalAddressRecord(created)
 }
 
 // compensatingDelete — undo Insert при failed allocate. Использует fresh
@@ -536,18 +550,18 @@ func (s *AddressService) Update(ctx context.Context, req UpdateAddressReq) (*ope
 }
 
 func (s *AddressService) doUpdate(ctx context.Context, req UpdateAddressReq) (*anypb.Any, error) {
-	a, err := s.repo.Get(ctx, req.AddressID)
+	rec, err := s.repo.Get(ctx, req.AddressID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 
-	applyAddressMask(a, req)
+	applyAddressMask(&rec.Address, req)
 
-	updated, err := s.repo.Update(ctx, a)
+	updated, err := s.repo.Update(ctx, &rec.Address)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.Address(updated))
+	return marshalAddressRecord(updated)
 }
 
 // validateAddressUpdate проверяет name/description/labels в Update Address.
@@ -566,19 +580,21 @@ func validateAddressUpdate(req UpdateAddressReq) error {
 	if len(updates) == 0 {
 		updates = []string{"name", "description", "labels"}
 	}
+	// Wave 2 batch A (KAC-94): валидация через domain newtypes. corevalidate.*
+	// удалены (skill evgeniy §4 D.5 / AP-1).
 	for _, f := range updates {
 		switch f {
 		case "name":
 			// VPC Address: empty name allowed (YC permissive policy).
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		}
@@ -588,9 +604,9 @@ func validateAddressUpdate(req UpdateAddressReq) error {
 
 func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
 	if len(req.UpdateMask) == 0 {
-		a.Name = req.Name
-		a.Description = req.Description
-		a.Labels = req.Labels
+		a.Name = domain.RcNameVPC(req.Name)
+		a.Description = domain.RcDescription(req.Description)
+		a.Labels = domain.LabelsFromMap(req.Labels)
 		a.DeletionProtection = req.DeletionProtection
 		a.Reserved = req.Reserved
 		return
@@ -598,11 +614,11 @@ func applyAddressMask(a *domain.Address, req UpdateAddressReq) {
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			a.Name = req.Name
+			a.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			a.Description = req.Description
+			a.Description = domain.RcDescription(req.Description)
 		case "labels":
-			a.Labels = req.Labels
+			a.Labels = domain.LabelsFromMap(req.Labels)
 		case "deletion_protection":
 			a.DeletionProtection = req.DeletionProtection
 		case "reserved":
@@ -670,7 +686,7 @@ func (s *AddressService) Move(ctx context.Context, id, destFolderID string) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.Address(updated))
+		return marshalAddressRecord(updated)
 	})
 	return &op, nil
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,9 +10,21 @@ import (
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы через init(). Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// routeTableToPb — wrapper над DTO-реестром для конверсии repo-entity
+// RouteTable → *vpcv1.RouteTable. Wave 2 batch A (KAC-94).
+func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
+	var dst *vpcv1.RouteTable
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer RouteTable: %w", err)
+	}
+	return dst, nil
+}
 
 // RouteTableHandler реализует vpcv1.RouteTableServiceServer.
 type RouteTableHandler struct {
@@ -35,7 +48,7 @@ func (h *RouteTableHandler) Get(ctx context.Context, req *vpcv1.GetRouteTableReq
 	if err := AssertFolderOwnership(ctx, rt.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.RouteTable(rt), nil
+	return routeTableToPb(rt)
 }
 
 func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
@@ -54,7 +67,11 @@ func (h *RouteTableHandler) List(ctx context.Context, req *vpcv1.ListRouteTables
 	}
 	resp := &vpcv1.ListRouteTablesResponse{NextPageToken: nextToken}
 	for _, rt := range rts {
-		resp.RouteTables = append(resp.RouteTables, protoconv.RouteTable(rt))
+		pb, err := routeTableToPb(rt)
+		if err != nil {
+			return nil, err
+		}
+		resp.RouteTables = append(resp.RouteTables, pb)
 	}
 	return resp, nil
 }

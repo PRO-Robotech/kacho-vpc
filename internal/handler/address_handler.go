@@ -2,15 +2,30 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// Blank-import регистрирует трансферы (Subnet/Address/RouteTable/time) через
+	// init(). Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// addressToPb — wrapper над DTO-реестром для конверсии repo-entity Address →
+// *vpcv1.Address. Wave 2 batch A (KAC-94).
+func addressToPb(rec *domain.AddressRecord) (*vpcv1.Address, error) {
+	var dst *vpcv1.Address
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Address: %w", err)
+	}
+	return dst, nil
+}
 
 // AddressHandler реализует vpcv1.AddressServiceServer.
 type AddressHandler struct {
@@ -38,7 +53,7 @@ func (h *AddressHandler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) 
 	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.Address(a), nil
+	return addressToPb(a)
 }
 
 func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRequest) (*vpcv1.Address, error) {
@@ -56,7 +71,7 @@ func (h *AddressHandler) GetByValue(ctx context.Context, req *vpcv1.GetAddressBy
 	if err := AssertFolderOwnership(ctx, a.FolderID); err != nil {
 		return nil, status.Error(codes.NotFound, "Address not found")
 	}
-	return protoconv.Address(a), nil
+	return addressToPb(a)
 }
 
 func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySubnetRequest) (*vpcv1.ListAddressesBySubnetResponse, error) {
@@ -83,7 +98,11 @@ func (h *AddressHandler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddres
 	}
 	resp := &vpcv1.ListAddressesBySubnetResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
+		pb, err := addressToPb(a)
+		if err != nil {
+			return nil, err
+		}
+		resp.Addresses = append(resp.Addresses, pb)
 	}
 	return resp, nil
 }
@@ -105,7 +124,11 @@ func (h *AddressHandler) List(ctx context.Context, req *vpcv1.ListAddressesReque
 	}
 	resp := &vpcv1.ListAddressesResponse{NextPageToken: nextToken}
 	for _, a := range addrs {
-		resp.Addresses = append(resp.Addresses, protoconv.Address(a))
+		pb, err := addressToPb(a)
+		if err != nil {
+			return nil, err
+		}
+		resp.Addresses = append(resp.Addresses, pb)
 	}
 	return resp, nil
 }

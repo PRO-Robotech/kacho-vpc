@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,10 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// Address — type-alias на domain.AddressRecord (repo-entity с DB-managed
+// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
+type Address = domain.AddressRecord
 
 // AddressRepo — реализация service.AddressRepo поверх pgxpool.
 type AddressRepo struct {
@@ -28,7 +33,7 @@ func NewAddressRepo(pool *pgxpool.Pool) *AddressRepo {
 
 const addressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
 
-func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, error) {
+func (r *AddressRepo) Get(ctx context.Context, id string) (*Address, error) {
 	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, addressCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	a, err := scanAddress(row)
@@ -38,7 +43,7 @@ func (r *AddressRepo) Get(ctx context.Context, id string) (*domain.Address, erro
 	return a, nil
 }
 
-func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*domain.Address, string, error) {
+func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -98,7 +103,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	}
 	defer rows.Close()
 
-	var result []*domain.Address
+	var result []*Address
 	for rows.Next() {
 		a, err := scanAddress(rows)
 		if err != nil {
@@ -119,8 +124,10 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 	return result, nextToken, nil
 }
 
-func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON, err := marshalJSONB(a.Labels, "Address.labels")
+// Insert вставляет Address. Принимает domain.Address (без CreatedAt — DB-managed).
+// Возвращает *Address (= *domain.AddressRecord) с заполненным CreatedAt.
+func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*Address, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -147,31 +154,33 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*domain.Ad
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + addressCols
 
 	row := tx.QueryRow(ctx, q,
-		a.ID, a.FolderID, a.CreatedAt, a.Name, a.Description, labelsJSON,
+		a.ID, a.FolderID, now, string(a.Name), string(a.Description), labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
 		extJSON, intJSON, int6JSON, ext6JSON,
 	)
 	result, err := scanAddress(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "Address", a.Name)
+		return nil, wrapPgErr(err, "Address", string(a.Name))
 	}
 	if err := emitVPC(ctx, tx, "Address", result.ID, "CREATED", addressPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "Address", a.Name)
+		return nil, wrapPgErr(err, "Address", string(a.Name))
 	}
 	return result, nil
 }
 
-func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Address, error) {
-	labelsJSON, err := marshalJSONB(a.Labels, "Address.labels")
+// Update обновляет mutable-поля Address. Принимает domain.Address (без CreatedAt).
+func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*Address, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +197,7 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 		RETURNING ` + addressCols
 
 	row := tx.QueryRow(ctx, q,
-		a.ID, a.Name, a.Description, labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
+		a.ID, string(a.Name), string(a.Description), labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
 	)
 	result, err := scanAddress(row)
 	if err != nil {
@@ -205,7 +214,7 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*domain.Ad
 
 // SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 JSONB-spec.
 // Передавайте nil для поля, которое не нужно менять.
-func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.Address, error) {
+func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*Address, error) {
 	if ext == nil && intn == nil {
 		return r.Get(ctx, id)
 	}
@@ -263,7 +272,7 @@ func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.Exte
 // SetInternalIPv6 атомарно обновляет internal_ipv6 JSONB-spec + emit outbox-event.
 // Используется AllocateInternalIPv6 (random-pick + retry на UNIQUE-violation —
 // constraint addresses_internal_subnet_ipv6_uniq → ErrAlreadyExists через wrapPgErr).
-func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.Address, error) {
+func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*Address, error) {
 	if spec == nil {
 		return r.Get(ctx, id)
 	}
@@ -292,7 +301,7 @@ func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *doma
 }
 
 // SetFolderID меняет folder_id у Address.
-func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Address, error) {
+func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*Address, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -346,7 +355,7 @@ func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 //
 // Поведение verbatim YC: внутри одной подсети IP уникален, поэтому LIMIT 1.
 // При отсутствии возвращает ErrNotFound.
-func (r *AddressRepo) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.Address, error) {
+func (r *AddressRepo) GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*Address, error) {
 	args := []any{}
 	conds := []string{}
 	argIdx := 1
@@ -581,25 +590,31 @@ func (r *AddressRepo) ReferencesForAddresses(ctx context.Context, addressIDs []s
 
 // ---- scan helpers ----
 
-func scanAddress(row scannable) (*domain.Address, error) {
-	var a domain.Address
+func scanAddress(row scannable) (*Address, error) {
+	var a Address
 	var labelsJSON, extJSON, intJSON, int6JSON, ext6JSON []byte
 	var addrType, ipVersion int32
+	var name string
+	var description string
 
 	err := row.Scan(
-		&a.ID, &a.FolderID, &a.CreatedAt, &a.Name, &a.Description, &labelsJSON,
+		&a.ID, &a.FolderID, &a.CreatedAt, &name, &description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
 		&extJSON, &intJSON, &int6JSON, &ext6JSON,
 	)
 	if err != nil {
 		return nil, err
 	}
+	a.Name = domain.RcNameVPC(name)
+	a.Description = domain.RcDescription(description)
 	a.Type = domain.AddressType(addrType)
 	a.IpVersion = domain.IpVersion(ipVersion)
 
-	if err := unmarshalJSONB(labelsJSON, &a.Labels, "Address.labels"); err != nil {
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "Address.labels"); err != nil {
 		return nil, err
 	}
+	a.Labels = domain.LabelsFromMap(labels)
 	if extJSON != nil {
 		var ext domain.ExternalIpv4Spec
 		if err := unmarshalJSONB(extJSON, &ext, "Address.external_ipv4"); err != nil {

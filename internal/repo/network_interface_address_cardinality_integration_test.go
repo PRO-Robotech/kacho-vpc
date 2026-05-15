@@ -45,8 +45,7 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 	_, err = netRepo.Insert(ctx, net)
 	require.NoError(t, err)
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card", CreatedAt: now,
-		Name: "sub-card", NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card", Name: domain.RcNameVPC("sub-card"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.40.0.0/24"},
 	}
 	_, err = subnetRepo.Insert(ctx, sub)

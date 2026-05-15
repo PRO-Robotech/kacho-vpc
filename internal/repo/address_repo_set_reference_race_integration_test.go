@@ -55,12 +55,11 @@ func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 
 	ar := repo.NewAddressRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed, см. KAC-94 Wave 2.
 	addr := &domain.Address{
 		ID:        ids.NewID(ids.PrefixAddress),
 		FolderID:  "folder-setref-race",
-		CreatedAt: now,
-		Name:      "addr-setref-race",
+		Name:      domain.RcNameVPC("addr-setref-race"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{
@@ -149,12 +148,11 @@ func TestIntegration_AddressRepo_SetReferenceIdempotent(t *testing.T) {
 
 	ar := repo.NewAddressRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed.
 	addr := &domain.Address{
 		ID:        ids.NewID(ids.PrefixAddress),
 		FolderID:  "folder-setref-idempotent",
-		CreatedAt: now,
-		Name:      "addr-setref-idempotent",
+		Name:      domain.RcNameVPC("addr-setref-idempotent"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{

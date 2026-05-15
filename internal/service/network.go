@@ -77,7 +77,7 @@ func NewNetworkService(repo NetworkRepo, subnetRepo SubnetRepo, routeTableRepo R
 
 // ListSubnets возвращает подсети, принадлежащие данной сети.
 // Перед вызовом проверяется наличие самой сети (NotFound — verbatim YC).
-func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pagination) ([]*domain.Subnet, string, error) {
+func (s *NetworkService) ListSubnets(ctx context.Context, networkID string, p Pagination) ([]*domain.SubnetRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
@@ -105,7 +105,7 @@ func (s *NetworkService) ListSecurityGroups(ctx context.Context, networkID strin
 }
 
 // ListRouteTables возвращает route tables, привязанные к данной сети.
-func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTable, string, error) {
+func (s *NetworkService) ListRouteTables(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTableRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}

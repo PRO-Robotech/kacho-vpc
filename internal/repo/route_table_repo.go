@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// RouteTable — type-alias на domain.RouteTableRecord (repo-entity с DB-managed
+// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
+type RouteTable = domain.RouteTableRecord
 
 // RouteTableRepo — реализация service.RouteTableRepo поверх pgxpool.
 type RouteTableRepo struct {
@@ -25,7 +30,7 @@ func NewRouteTableRepo(pool *pgxpool.Pool) *RouteTableRepo {
 
 const routeTableCols = `id, folder_id, created_at, name, description, labels, network_id, static_routes`
 
-func (r *RouteTableRepo) Get(ctx context.Context, id string) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) Get(ctx context.Context, id string) (*RouteTable, error) {
 	q := fmt.Sprintf(`SELECT %s FROM route_tables WHERE id = $1`, routeTableCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	rt, err := scanRouteTable(row)
@@ -35,7 +40,7 @@ func (r *RouteTableRepo) Get(ctx context.Context, id string) (*domain.RouteTable
 	return rt, nil
 }
 
-func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p service.Pagination) ([]*domain.RouteTable, string, error) {
+func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p service.Pagination) ([]*RouteTable, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -95,7 +100,7 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 	}
 	defer rows.Close()
 
-	var result []*domain.RouteTable
+	var result []*RouteTable
 	for rows.Next() {
 		rt, err := scanRouteTable(rows)
 		if err != nil {
@@ -116,8 +121,10 @@ func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p
 	return result, nextToken, nil
 }
 
-func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON, err := marshalJSONB(rt.Labels, "RouteTable.labels")
+// Insert вставляет RouteTable. Принимает domain.RouteTable (без CreatedAt).
+// Возвращает *RouteTable (= *domain.RouteTableRecord) с заполненным CreatedAt.
+func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*RouteTable, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(rt.Labels), "RouteTable.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -132,30 +139,32 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*do
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO route_tables (id, folder_id, created_at, name, description, labels, network_id, static_routes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING ` + routeTableCols
 
 	row := tx.QueryRow(ctx, q,
-		rt.ID, rt.FolderID, rt.CreatedAt, rt.Name, rt.Description, labelsJSON,
+		rt.ID, rt.FolderID, now, string(rt.Name), string(rt.Description), labelsJSON,
 		rt.NetworkID, routesJSON,
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "Route table", rt.Name)
+		return nil, wrapPgErr(err, "Route table", string(rt.Name))
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "CREATED", routeTablePayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "Route table", rt.Name)
+		return nil, wrapPgErr(err, "Route table", string(rt.Name))
 	}
 	return result, nil
 }
 
-func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTable, error) {
-	labelsJSON, err := marshalJSONB(rt.Labels, "RouteTable.labels")
+// Update обновляет mutable-поля RouteTable. Принимает domain.RouteTable (без CreatedAt).
+func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*RouteTable, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(rt.Labels), "RouteTable.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +185,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 		RETURNING ` + routeTableCols
 
 	row := tx.QueryRow(ctx, q,
-		rt.ID, rt.Name, rt.Description, labelsJSON, routesJSON,
+		rt.ID, string(rt.Name), string(rt.Description), labelsJSON, routesJSON,
 	)
 	result, err := scanRouteTable(row)
 	if err != nil {
@@ -192,7 +201,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*do
 }
 
 // SetFolderID меняет folder_id у RouteTable.
-func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTable, error) {
+func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (*RouteTable, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -243,20 +252,26 @@ func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 
 // ---- scan helpers ----
 
-func scanRouteTable(row scannable) (*domain.RouteTable, error) {
-	var rt domain.RouteTable
+func scanRouteTable(row scannable) (*RouteTable, error) {
+	var rt RouteTable
 	var labelsJSON, routesJSON []byte
+	var name string
+	var description string
 
 	err := row.Scan(
-		&rt.ID, &rt.FolderID, &rt.CreatedAt, &rt.Name, &rt.Description, &labelsJSON,
+		&rt.ID, &rt.FolderID, &rt.CreatedAt, &name, &description, &labelsJSON,
 		&rt.NetworkID, &routesJSON,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(labelsJSON, &rt.Labels, "RouteTable.labels"); err != nil {
+	rt.Name = domain.RcNameVPC(name)
+	rt.Description = domain.RcDescription(description)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "RouteTable.labels"); err != nil {
 		return nil, err
 	}
+	rt.Labels = domain.LabelsFromMap(labels)
 	if err := unmarshalJSONB(routesJSON, &rt.StaticRoutes, "RouteTable.static_routes"); err != nil {
 		return nil, err
 	}
