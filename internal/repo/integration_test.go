@@ -287,26 +287,40 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, got.Used)
 
-	// Idempotent re-set with a different referrer → overwrite.
-	ref, err = ar.SetReference(ctx, &domain.AddressReference{
+	// KAC-88: re-set с ДРУГИМ referrer → ErrFailedPrecondition (CAS-guard).
+	// До KAC-88 это был silent overwrite — parity-case с инцидентом KAC-52
+	// (NIC-attach race). Теперь нужно явно ClearReference перед сменой owner-а.
+	_, err = ar.SetReference(ctx, &domain.AddressReference{
 		AddressID:    addr.ID,
 		ReferrerType: "compute_instance",
 		ReferrerID:   "epdinstance00000002",
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "epdinstance00000002", ref.ReferrerID)
-	assert.Equal(t, "", ref.ReferrerName)
+	require.ErrorIs(t, err, service.ErrFailedPrecondition,
+		"SetReference к занятому address от чужого referrer → ErrFailedPrecondition")
 
-	// GetReference returns the referrer.
+	// Idempotent re-set с ТЕМ ЖЕ referrer (CAS matches) — допустимо обновить
+	// referrer_name; address.used остаётся true; addr_references row не меняется.
+	ref, err = ar.SetReference(ctx, &domain.AddressReference{
+		AddressID:    addr.ID,
+		ReferrerType: "compute_instance",
+		ReferrerID:   "epdinstance00000001",
+		ReferrerName: "vm-1-renamed",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
+	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
+
+	// GetReference returns the (still-original-id) referrer.
 	ref, err = ar.GetReference(ctx, addr.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "epdinstance00000002", ref.ReferrerID)
+	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
+	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
 
 	// Batch lookup.
 	refs, err := ar.ReferencesForAddresses(ctx, []string{addr.ID, "e9bnonexistent00001"})
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
-	assert.Equal(t, "epdinstance00000002", refs[addr.ID].ReferrerID)
+	assert.Equal(t, "epdinstance00000001", refs[addr.ID].ReferrerID)
 
 	// ClearReference → used=false, no referrer.
 	require.NoError(t, ar.ClearReference(ctx, addr.ID))

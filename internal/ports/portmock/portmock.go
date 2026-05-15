@@ -341,6 +341,8 @@ func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domai
 }
 
 // SetReference upsert'ит referrer-row (если address существует) и выставляет used=true.
+// KAC-88: CAS-семантика — если уже есть referrer-row с ДРУГИМ referrer_id →
+// ErrFailedPrecondition (parity c repo.AddressRepo.SetReference).
 func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -348,10 +350,13 @@ func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReferen
 	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	a.Used = true
 	if r.refs == nil {
 		r.refs = make(map[string]*domain.AddressReference)
 	}
+	if existing, ok := r.refs[ref.AddressID]; ok && existing.ReferrerID != ref.ReferrerID {
+		return nil, ports.ErrFailedPrecondition
+	}
+	a.Used = true
 	cp := *ref
 	cp.AttachedAt = time.Now()
 	r.refs[ref.AddressID] = &cp
@@ -359,6 +364,7 @@ func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReferen
 }
 
 // MarkEphemeralInUse атомарно: reserved=false + used=true + upsert referrer-row.
+// KAC-88: CAS-семантика — попытка перепривязать к чужому referrer → ErrFailedPrecondition.
 func (r *AddressRepo) MarkEphemeralInUse(_ context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -366,11 +372,14 @@ func (r *AddressRepo) MarkEphemeralInUse(_ context.Context, ref *domain.AddressR
 	if !ok {
 		return nil, ports.ErrNotFound
 	}
-	a.Reserved = false
-	a.Used = true
 	if r.refs == nil {
 		r.refs = make(map[string]*domain.AddressReference)
 	}
+	if existing, ok := r.refs[ref.AddressID]; ok && existing.ReferrerID != ref.ReferrerID {
+		return nil, ports.ErrFailedPrecondition
+	}
+	a.Reserved = false
+	a.Used = true
 	cp := *ref
 	cp.AttachedAt = time.Now()
 	r.refs[ref.AddressID] = &cp
