@@ -25,20 +25,20 @@ func NewNetworkInterfaceRepo(pool *pgxpool.Pool) *NetworkInterfaceRepo {
 	return &NetworkInterfaceRepo{pool: pool}
 }
 
+// Data-plane колонки (hv_id/sid/sid_seq/host_iface/netns/gateway_ip/container_id/
+// status_error/dataplane_revision/dataplane_updated_at) удалены в KAC-79/KAC-36
+// (post-kube-ovn: kube-ovn управляет underlay сам, у kacho-vpc больше нет своей
+// data-plane-проекции).
 const niCols = `id, folder_id, created_at, name, description, labels, subnet_id,
-	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status,
-	hv_id, sid, sid_seq, host_iface, netns, gateway_ip, container_id, status_error, dataplane_revision, dataplane_updated_at`
+	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status`
 
 func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	var n domain.NetworkInterface
 	var labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON []byte
 	var statusName string
-	var sidSeq int32
 	if err := row.Scan(
 		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON, &n.SubnetID,
 		&v4IDsJSON, &v6IDsJSON, &sgJSON, &n.UsedByType, &n.UsedByID, &n.UsedByName, &n.MAC, &statusName,
-		&n.Dataplane.HVID, &n.Dataplane.SID, &sidSeq, &n.Dataplane.HostIface, &n.Dataplane.Netns, &n.Dataplane.GatewayIP,
-		&n.Dataplane.ContainerID, &n.Dataplane.StatusError, &n.Dataplane.Revision, &n.Dataplane.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -54,48 +54,8 @@ func scanNI(row scannable) (*domain.NetworkInterface, error) {
 	if err := unmarshalJSONB(sgJSON, &n.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
 		return nil, err
 	}
-	n.Dataplane.SIDSeq = uint32(sidSeq)
 	n.Status = niStatusFromName(statusName)
 	return &n, nil
-}
-
-// resolveNIAddresses обогащает n.V4Addresses/n.V6Addresses резолвленными IP-строками
-// из таблицы addresses по n.V4AddressIDs/n.V6AddressIDs (denorm для data-plane —
-// см. workspace CLAUDE.md §«Инфра-чувствительные данные»; пустые refs → пустые срезы).
-func (r *NetworkInterfaceRepo) resolveNIAddresses(ctx context.Context, n *domain.NetworkInterface) error {
-	all := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
-	if len(all) == 0 {
-		return nil
-	}
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, COALESCE(internal_ipv4->>'address', external_ipv4->>'address', '') FROM addresses WHERE id = ANY($1)`, all)
-	if err != nil {
-		return wrapPgErr(err, "Address", "")
-	}
-	defer rows.Close()
-	ipByID := make(map[string]string, len(all))
-	for rows.Next() {
-		var id, ip string
-		if err := rows.Scan(&id, &ip); err != nil {
-			return wrapPgErr(err, "Address", "")
-		}
-		ipByID[id] = ip
-	}
-	if err := rows.Err(); err != nil {
-		return wrapPgErr(err, "Address", "")
-	}
-	collect := func(ids []string) []string {
-		out := make([]string, 0, len(ids))
-		for _, id := range ids {
-			if ip := ipByID[id]; ip != "" {
-				out = append(out, ip)
-			}
-		}
-		return out
-	}
-	n.V4Addresses = collect(n.V4AddressIDs)
-	n.V6Addresses = collect(n.V6AddressIDs)
-	return nil
 }
 
 // Get возвращает NIC по id.
@@ -103,9 +63,6 @@ func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*domain.Netw
 	n, err := scanNI(r.pool.QueryRow(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE id = $1`, id))
 	if err != nil {
 		return nil, wrapPgErr(err, "Network interface", id)
-	}
-	if err := r.resolveNIAddresses(ctx, n); err != nil {
-		return nil, err
 	}
 	return n, nil
 }
@@ -168,33 +125,6 @@ func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterf
 		out = out[:pageSize]
 	}
 	return out, next, nil
-}
-
-// ListByHypervisor возвращает все NIC, размещённые на указанном гипервизоре.
-func (r *NetworkInterfaceRepo) ListByHypervisor(ctx context.Context, hvID string) ([]*domain.NetworkInterface, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE hv_id = $1 ORDER BY id ASC`, hvID)
-	if err != nil {
-		return nil, wrapPgErr(err, "Network interface", "")
-	}
-	defer rows.Close()
-	var out []*domain.NetworkInterface
-	for rows.Next() {
-		n, err := scanNI(rows)
-		if err != nil {
-			return nil, wrapPgErr(err, "Network interface", "")
-		}
-		out = append(out, n)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, wrapPgErr(err, "Network interface", "")
-	}
-	rows.Close()
-	for _, n := range out {
-		if err := r.resolveNIAddresses(ctx, n); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
 }
 
 // ListBySubnet возвращает все NIC, привязанные к указанной подсети.
@@ -375,42 +305,9 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 	return res, nil
 }
 
-// SetDataplane сохраняет write-back data-plane-проекцию и (опц.) меняет публичный status.
-// Возвращает (ni, applied) — applied=false, если revision устарела.
-func (r *NetworkInterfaceRepo) SetDataplane(ctx context.Context, id string, dp domain.NICDataplane, newStatus domain.NetworkInterfaceStatus, setStatus bool) (*domain.NetworkInterface, bool, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, false, service.ErrInternal
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	cur, err := scanNI(tx.QueryRow(ctx, `SELECT `+niCols+` FROM network_interfaces WHERE id = $1 FOR UPDATE`, id))
-	if err != nil {
-		return nil, false, wrapPgErr(err, "Network interface", id)
-	}
-	if dp.Revision < cur.Dataplane.Revision {
-		_ = tx.Rollback(ctx)
-		return cur, false, nil
-	}
-	statusCol := "status"
-	statusVal := niStatusName(cur.Status)
-	if setStatus {
-		statusVal = niStatusName(newStatus)
-	}
-	res, err := scanNI(tx.QueryRow(ctx,
-		`UPDATE network_interfaces SET hv_id=$2, sid=$3, sid_seq=$4, host_iface=$5, netns=$6, gateway_ip=$7, container_id=$8, status_error=$9, dataplane_revision=$10, dataplane_updated_at=now(), `+statusCol+`=$11
-		 WHERE id=$1 RETURNING `+niCols,
-		id, dp.HVID, dp.SID, int32(dp.SIDSeq), dp.HostIface, dp.Netns, dp.GatewayIP, dp.ContainerID, dp.StatusError, int64(dp.Revision), statusVal))
-	if err != nil {
-		return nil, false, wrapPgErr(err, "Network interface", id)
-	}
-	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", domainToMap(res)); err != nil {
-		return nil, false, service.ErrInternal
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, false, wrapPgErr(err, "Network interface", id)
-	}
-	return res, true, nil
-}
+// SetDataplane / ReportNiDataplane / ListByHypervisor / NICDataplane — удалены в
+// KAC-79/KAC-36 (post-kube-ovn: data-plane-проекция NIC + write-back от
+// kacho-vpc-implement больше не нужны, kube-ovn управляет underlay сам).
 
 // Delete удаляет NIC.
 func (r *NetworkInterfaceRepo) Delete(ctx context.Context, id string) error {

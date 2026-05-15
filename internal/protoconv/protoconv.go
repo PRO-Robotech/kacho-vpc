@@ -24,8 +24,9 @@ import (
 
 func ts(t time.Time) *timestamppb.Timestamp { return timestamppb.New(t.Truncate(time.Second)) }
 
-// Network конвертирует domain.Network → vpcv1.Network (публичная проекция —
-// БЕЗ vpn_id; инфра-чувствительный vpn_id — только через InternalNetwork).
+// Network конвертирует domain.Network → vpcv1.Network. InternalNetwork message
+// (с инфра-чувствительным vpn_id) удалён в KAC-79/KAC-36 (post-kube-ovn:
+// kube-ovn управляет underlay сам, vpn_id в kacho-vpc больше не аллоцируется).
 func Network(n *domain.Network) *vpcv1.Network {
 	return &vpcv1.Network{
 		Id:                     n.ID,
@@ -38,14 +39,9 @@ func Network(n *domain.Network) *vpcv1.Network {
 	}
 }
 
-// InternalNetwork конвертирует domain.Network → vpcv1.InternalNetwork (публичные
-// поля + vpn_id; только для InternalNetworkService.GetNetwork).
-func InternalNetwork(n *domain.Network) *vpcv1.InternalNetwork {
-	return &vpcv1.InternalNetwork{Network: Network(n), VpnId: n.VPNID}
-}
-
-// NetworkInterface конвертирует domain.NetworkInterface → vpcv1.NetworkInterface
-// (публичная проекция — БЕЗ data-plane-полей; те — в InternalNetworkInterface).
+// NetworkInterface конвертирует domain.NetworkInterface → vpcv1.NetworkInterface.
+// Публичная проекция — без data-plane-полей; раньше data-plane была в отдельной
+// InternalNetworkInterface message, удалена в KAC-79/KAC-36 (post-kube-ovn).
 func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 	p := &vpcv1.NetworkInterface{
 		Id:               n.ID,
@@ -70,31 +66,6 @@ func NetworkInterface(n *domain.NetworkInterface) *vpcv1.NetworkInterface {
 		}
 	}
 	return p
-}
-
-// InternalNetworkInterface конвертирует domain.NetworkInterface → vpcv1.InternalNetworkInterface
-// (публичные поля + data-plane-проекция; только для InternalNetworkInterfaceService).
-func InternalNetworkInterface(n *domain.NetworkInterface) *vpcv1.InternalNetworkInterface {
-	out := &vpcv1.InternalNetworkInterface{
-		NetworkInterface:  NetworkInterface(n),
-		V4Addresses:       n.V4Addresses,
-		V6Addresses:       n.V6Addresses,
-		HypervisorId:      n.Dataplane.HVID,
-		Sid:               n.Dataplane.SID,
-		SidSeq:            n.Dataplane.SIDSeq,
-		HostIface:         n.Dataplane.HostIface,
-		Netns:             n.Dataplane.Netns,
-		GatewayIp:         n.Dataplane.GatewayIP,
-		ContainerId:       n.Dataplane.ContainerID,
-		StatusError:       n.Dataplane.StatusError,
-		DataplaneRevision: n.Dataplane.Revision,
-	}
-	if n.Dataplane.UpdatedAt != nil {
-		out.DataplaneUpdatedAt = ts(*n.Dataplane.UpdatedAt)
-	}
-	// vpn_id — резолвится consumer'ом отдельно (InternalNetworkService.GetNetwork);
-	// здесь оставляем 0 (NIC-репо его не хранит — это поле resolved сети, не NIC'а).
-	return out
 }
 
 // Subnet конвертирует domain.Subnet → vpcv1.Subnet.
