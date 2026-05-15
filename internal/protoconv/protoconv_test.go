@@ -68,15 +68,12 @@ func TestSecurityGroup_RulesAndTarget(t *testing.T) {
 }
 
 func TestNetworkInterface_MacAddressSurfaced(t *testing.T) {
-	// KAC-48: mac_address присутствует и на публичной проекции, и (через
-	// композицию) на InternalNetworkInterface.
+	// KAC-48: mac_address присутствует на публичной проекции NetworkInterface.
+	// (Раньше тест проверял также InternalNetworkInterface — удалён в KAC-79/KAC-36,
+	// post-kube-ovn: internal data-plane проекции больше нет.)
 	n := &domain.NetworkInterface{ID: "e9bnic", SubnetID: "e9bsub", MAC: "0e:1a:2b:3c:4d:5e", Status: domain.NIStatusAvailable}
 	pub := NetworkInterface(n)
 	assert.Equal(t, "0e:1a:2b:3c:4d:5e", pub.MacAddress)
-
-	intp := InternalNetworkInterface(n)
-	require.NotNil(t, intp.NetworkInterface)
-	assert.Equal(t, "0e:1a:2b:3c:4d:5e", intp.NetworkInterface.MacAddress, "internal проекция несёт MAC через композицию NetworkInterface")
 }
 
 func TestAddress_ExternalAndInternalOneof(t *testing.T) {

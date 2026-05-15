@@ -22,12 +22,6 @@ func NewNetworkInternal(repo NetworkRepo, sgs SecurityGroupRepo) *NetworkInterna
 	return &NetworkInternal{repo: repo, sgs: sgs}
 }
 
-// GetNetwork возвращает Network с инфра-чувствительным vpn_id (для
-// InternalNetworkService.GetNetwork). Публичный NetworkService.Get vpn_id не отдаёт.
-func (s *NetworkInternal) GetNetwork(ctx context.Context, networkID string) (*domain.Network, error) {
-	return s.repo.Get(ctx, networkID)
-}
-
 // SetDefaultSecurityGroupId — выставляет computed-поле
 // Network.default_security_group_id. Public Update API не принимает это
 // поле в UpdateMask (immutable / output-only по convention).

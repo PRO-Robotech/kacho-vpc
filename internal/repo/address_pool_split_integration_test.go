@@ -331,13 +331,15 @@ func TestMigration0022_C5_GooseDownUpIdempotent(t *testing.T) {
 	`, poolID)
 	require.NoError(t, err)
 
-	// goose down (rollback 0022).
+	// goose down (rollback 0022). DownTo(21) — потому что в репо могут быть
+	// миграции выше 22 (например, 0023 post-kube-ovn drop vpn_id, KAC-79/KAC-36):
+	// в этом случае single-step goose.Down откатит только 0023, не 0022.
 	db, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	defer db.Close()
 	goose.SetBaseFS(migrations.FS)
 	require.NoError(t, goose.SetDialect("postgres"))
-	require.NoError(t, goose.Down(db, "."))
+	require.NoError(t, goose.DownTo(db, ".", 21))
 
 	// После down — cidr_blocks снова есть, v4_/v6_ удалены, данные слиты.
 	var hasOld bool

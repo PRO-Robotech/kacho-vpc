@@ -78,7 +78,6 @@ type services struct {
 	addressPool      *service.AddressPoolService
 	networkInternal  *service.NetworkInternal
 	networkInterface *service.NetworkInterfaceService
-	niInternal       *service.NetworkInterfaceInternal
 }
 
 func runServe(cfg config.Config) error {
@@ -291,7 +290,6 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		addressPool:      addressPoolSvc,
 		networkInternal:  service.NewNetworkInternal(networkRepo, sgRepo),
 		networkInterface: service.NewNetworkInterfaceService(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
-		niInternal:       service.NewNetworkInterfaceInternal(niRepo),
 	}
 }
 
@@ -317,7 +315,7 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.address))
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
-	vpcv1.RegisterInternalNetworkInterfaceServiceServer(srv, handler.NewInternalNetworkInterfaceHandler(svcs.niInternal))
+	// InternalNetworkInterfaceService удалён в KAC-79/KAC-36 (post-kube-ovn).
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
 }
 

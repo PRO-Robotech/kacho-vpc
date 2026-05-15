@@ -1,15 +1,16 @@
 // Package service — NetworkInterface (NIC) use-cases (public CRUD/Operations +
-// Attach/Detach) и internal-проекция (InternalNetworkInterfaceService).
+// Attach/Detach).
 //
 // NIC — first-class сетевой интерфейс (AWS-ENI-style; epic KAC-2). Принадлежит
-// подсети (и транзитивно сети/VPN). Несёт набор ссылок на Address-ресурсы
+// подсети (и транзитивно сети). Несёт набор ссылок на Address-ресурсы
 // (kacho-vpc) по id: v4_address_ids / v6_address_ids (KAC-7). Один Address —
 // максимум на одном NIC: обеспечивается на уровне сервиса через addresses.used +
 // referrer-tracking (Create/Update проверяют used, выставляют used=true + referrer;
 // Delete/detach снимают used + referrer). Публичный NetworkInterface — lean (несёт
-// только id-ссылки); резолвленные IP уходят в data-plane через internal-проекцию
-// (InternalNetworkInterface.v4_addresses/v6_addresses) — workspace CLAUDE.md
-// §«Инфра-чувствительные данные».
+// только id-ссылки). Раньше существовала internal-проекция NetworkInterfaceInternal /
+// InternalNetworkInterfaceService с data-plane-полями (hv_id/sid/sid_seq/...), но
+// она удалена в KAC-79/KAC-36 (post-kube-ovn: kube-ovn управляет underlay сам, у
+// kacho-vpc больше нет своих data-plane проекций).
 package service
 
 import (
@@ -53,7 +54,6 @@ type NetworkInterfaceFilter struct {
 type NetworkInterfaceRepo interface {
 	Get(ctx context.Context, id string) (*domain.NetworkInterface, error)
 	List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterface, string, error)
-	ListByHypervisor(ctx context.Context, hvID string) ([]*domain.NetworkInterface, error)
 	// ListBySubnet возвращает все NIC, привязанные к указанной подсети (без
 	// пагинации — используется для precondition-проверки при Subnet.Delete).
 	ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterface, error)
@@ -62,7 +62,6 @@ type NetworkInterfaceRepo interface {
 	// SetUsedBy выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка)
 	// и публичный status. Зеркало AddressRepo.SetReference/ClearReference.
 	SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterface, error)
-	SetDataplane(ctx context.Context, id string, dp domain.NICDataplane, newStatus domain.NetworkInterfaceStatus, setStatus bool) (*domain.NetworkInterface, bool, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -594,73 +593,7 @@ func (s *NetworkInterfaceService) ListOperations(ctx context.Context, id string,
 	return s.opsRepo.List(ctx, operations.ListFilter{ResourceID: id, PageSize: p.PageSize, PageToken: p.PageToken})
 }
 
-// ---- internal NetworkInterfaceInternal (InternalNetworkInterfaceService) ----
-
-// NetworkInterfaceInternal — internal-only операции над NIC: полная проекция +
-// write-back data-plane-проекции от kacho-vpc-implement.
-type NetworkInterfaceInternal struct {
-	repo NetworkInterfaceRepo
-}
-
-// NewNetworkInterfaceInternal создаёт NetworkInterfaceInternal.
-func NewNetworkInterfaceInternal(repo NetworkInterfaceRepo) *NetworkInterfaceInternal {
-	return &NetworkInterfaceInternal{repo: repo}
-}
-
-// Get возвращает NIC (с data-plane-полями).
-func (s *NetworkInterfaceInternal) Get(ctx context.Context, id string) (*domain.NetworkInterface, error) {
-	if id == "" {
-		return nil, status.Error(codes.InvalidArgument, "network_interface_id required")
-	}
-	n, err := s.repo.Get(ctx, id)
-	if err != nil {
-		return nil, mapRepoErr(err)
-	}
-	return n, nil
-}
-
-// ListByHypervisor возвращает все NIC на указанном HV.
-func (s *NetworkInterfaceInternal) ListByHypervisor(ctx context.Context, hvID string) ([]*domain.NetworkInterface, error) {
-	out, err := s.repo.ListByHypervisor(ctx, hvID)
-	if err != nil {
-		return nil, mapRepoErr(err)
-	}
-	return out, nil
-}
-
-// ReportNiDataplane — write-back от kacho-vpc-implement. status: PROGRAMMING/ACTIVE/
-// FAILED/DELETED (NiDataplaneStatus). ACTIVE→public ACTIVE; FAILED→public FAILED;
-// DELETED→удаляем NIC; PROGRAMMING→public не трогаем. Идемпотентно по revision.
-// Возвращает applied=false если revision устарела.
-func (s *NetworkInterfaceInternal) ReportNiDataplane(ctx context.Context, id string, dp domain.NICDataplane, dpStatus int) (bool, error) {
-	if id == "" {
-		return false, status.Error(codes.InvalidArgument, "network_interface_id required")
-	}
-	// dpStatus: 0=UNSPEC,1=PROGRAMMING,2=ACTIVE,3=FAILED,4=DELETED (vpcv1.NiDataplaneStatus)
-	if dpStatus == 4 { // DELETED — финализируем удаление NIC
-		cur, err := s.repo.Get(ctx, id)
-		if err != nil {
-			return false, mapRepoErr(err)
-		}
-		if dp.Revision < cur.Dataplane.Revision {
-			return false, nil
-		}
-		if err := s.repo.Delete(ctx, id); err != nil {
-			return false, mapRepoErr(err)
-		}
-		return true, nil
-	}
-	var newStatus domain.NetworkInterfaceStatus
-	setStatus := false
-	switch dpStatus {
-	case 2: // ACTIVE
-		newStatus, setStatus = domain.NIStatusActive, true
-	case 3: // FAILED
-		newStatus, setStatus = domain.NIStatusFailed, true
-	}
-	_, applied, err := s.repo.SetDataplane(ctx, id, dp, newStatus, setStatus)
-	if err != nil {
-		return false, mapRepoErr(err)
-	}
-	return applied, nil
-}
+// NetworkInterfaceInternal / InternalNetworkInterfaceService / ReportNiDataplane /
+// ListByHypervisor / SetDataplane — удалены в KAC-79/KAC-36 (post-kube-ovn:
+// data-plane-проекция NIC + write-back от kacho-vpc-implement больше не нужны,
+// kube-ovn управляет underlay сам).

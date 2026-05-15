@@ -23,7 +23,7 @@ func NewNetworkRepo(pool *pgxpool.Pool) *NetworkRepo {
 	return &NetworkRepo{pool: pool}
 }
 
-const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id, vpn_id`
+const networkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id`
 
 func (r *NetworkRepo) Get(ctx context.Context, id string) (*domain.Network, error) {
 	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, networkCols)
@@ -123,17 +123,11 @@ func (r *NetworkRepo) Insert(ctx context.Context, n *domain.Network) (*domain.Ne
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// vpn_id аллоцируется атомарно в этом же INSERT: сначала пробуем
-	// переиспользовать минимальный из vpn_id_free (popped CTE), иначе nextval
-	// (COALESCE в Postgres коротко замыкается — nextval вызывается только если
-	// free-list пуст). Конкурентные insert'ы безопасны: DELETE берёт row-lock,
-	// проигравший пойдёт в nextval.
+	// vpn_id allocation удалён в KAC-79/KAC-36 (post-kube-ovn: data-plane id
+	// сети теперь не нужен — kube-ovn управляет underlay сам).
 	const q = `
-		WITH popped AS (
-			DELETE FROM vpn_id_free WHERE id = (SELECT id FROM vpn_id_free ORDER BY id LIMIT 1) RETURNING id
-		)
-		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id, vpn_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE((SELECT id FROM popped), nextval('vpn_id_seq')::int))
+		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + networkCols
 
 	row := tx.QueryRow(ctx, q,
@@ -218,10 +212,8 @@ func (r *NetworkRepo) Delete(ctx context.Context, id string) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Удаляем сеть и возвращаем её vpn_id во free-list одной statement'ой.
-	tag, err := tx.Exec(ctx, `
-		WITH d AS (DELETE FROM networks WHERE id = $1 RETURNING vpn_id)
-		INSERT INTO vpn_id_free (id) SELECT vpn_id FROM d ON CONFLICT DO NOTHING`, id)
+	// vpn_id allocation удалён в KAC-79/KAC-36 — простой DELETE без free-list.
+	tag, err := tx.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
 			// Network has dependent subnets/route-tables — verbatim YC error.
@@ -253,15 +245,13 @@ func scanNetwork(row scannable) (*domain.Network, error) {
 	var n domain.Network
 	var labelsJSON []byte
 
-	var vpnID int32
 	err := row.Scan(
 		&n.ID, &n.FolderID, &n.CreatedAt, &n.Name, &n.Description, &labelsJSON,
-		&n.DefaultSecurityGroupID, &vpnID,
+		&n.DefaultSecurityGroupID,
 	)
 	if err != nil {
 		return nil, err
 	}
-	n.VPNID = uint32(vpnID)
 	if err := unmarshalJSONB(labelsJSON, &n.Labels, "Network.labels"); err != nil {
 		return nil, err
 	}

@@ -61,12 +61,12 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    # vpn_id — 24-bit data-plane идентификатор сети (KAC-2), ИНФРА-ЧУВСТВИТЕЛЬНОЕ:
-    # отдаётся только через InternalNetworkService.GetNetwork (не REST-exposed),
-    # на публичном GET /vpc/v1/networks/{id} его быть НЕ должно (workspace CLAUDE.md
-    # §«Инфра-чувствительные данные»).
+    # KAC-36 (post-kube-ovn): vpn_id из proto/БД удалён вовсе — kube-ovn управляет
+    # data-plane сам. Этот regression-кейс остаётся как guard: на публичном GET
+    # /vpc/v1/networks/{id} поля `vpnId` НЕ должно быть. Если кто-то по ошибке
+    # вернёт data-plane-инфу — тест поймает.
     id="NET-GET-NO-VPNID-OK",
-    title="GET /vpc/v1/networks/{id} НЕ содержит vpnId (internal-only поле)",
+    title="GET /vpc/v1/networks/{id} НЕ содержит vpnId (data-plane поле удалено в KAC-36)",
     classes=["CRUD", "CONF"],
     priority="P1",
     steps=[
