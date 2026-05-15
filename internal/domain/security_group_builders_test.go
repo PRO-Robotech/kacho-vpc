@@ -27,16 +27,16 @@ func TestTruncateID_ShortIDLen(t *testing.T) {
 func TestNewDefaultSecurityGroupRules(t *testing.T) {
 	rules := domain.NewDefaultSecurityGroupRules()
 	require.Len(t, rules, 2)
-	assert.Equal(t, "INGRESS", rules[0].Direction)
+	assert.Equal(t, domain.SecurityGroupRuleDirectionIngress, rules[0].Direction)
 	assert.Equal(t, "ANY", rules[0].ProtocolName)
 	assert.Equal(t, int64(-1), rules[0].ProtocolNumber)
 	assert.Equal(t, []string{"0.0.0.0/0"}, rules[0].V4CidrBlocks)
-	assert.Equal(t, "EGRESS", rules[1].Direction)
+	assert.Equal(t, domain.SecurityGroupRuleDirectionEgress, rules[1].Direction)
 
 	// Каждый вызов отдаёт fresh slice (caller может мутировать).
 	rules2 := domain.NewDefaultSecurityGroupRules()
 	rules[0].Direction = "MUTATED"
-	assert.Equal(t, "INGRESS", rules2[0].Direction)
+	assert.Equal(t, domain.SecurityGroupRuleDirectionIngress, rules2[0].Direction)
 }
 
 func TestNewDefaultSecurityGroup(t *testing.T) {
@@ -48,9 +48,9 @@ func TestNewDefaultSecurityGroup(t *testing.T) {
 	assert.NotEmpty(t, sg.ID, "ID generated")
 	assert.Equal(t, "folder-1", sg.FolderID)
 	assert.Equal(t, "enpabcdefghij", sg.NetworkID)
-	assert.Equal(t, "default-sg-enpabcde", sg.Name)
-	assert.Equal(t, string(domain.SecurityGroupStatusActive), sg.Status)
+	assert.Equal(t, domain.RcNameVPC("default-sg-enpabcde"), sg.Name)
+	assert.Equal(t, domain.SecurityGroupStatusActive, sg.Status)
 	assert.True(t, sg.DefaultForNetwork)
-	assert.Equal(t, domain.DefaultSGDescription, sg.Description)
+	assert.Equal(t, domain.RcDescription(domain.DefaultSGDescription), sg.Description)
 	assert.Len(t, sg.Rules, 2)
 }

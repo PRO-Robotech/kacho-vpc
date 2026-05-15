@@ -1,0 +1,82 @@
+package type2pb
+
+import (
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+)
+
+// securityGroup — receiver-объект под трансфер domain.SecurityGroupRecord →
+// *vpcv1.SecurityGroup. Wave 2 batch B (KAC-94), parity с network.go (pilot KAC-99).
+type securityGroup struct{}
+
+// toPb формирует *vpcv1.SecurityGroup из repo-entity. CreatedAt — truncate до
+// секунд через inline вызов time-трансфера (verbatim YC `YC-DIFF-TIMESTAMP-PRECISION`).
+func (securityGroup) toPb(rec domain.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
+	ts, err := (timeObj{}).toPb(rec.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	p := &vpcv1.SecurityGroup{
+		Id:                rec.ID,
+		FolderId:          rec.FolderID,
+		NetworkId:         rec.NetworkID,
+		CreatedAt:         ts,
+		Name:              string(rec.Name),
+		Description:       string(rec.Description),
+		Labels:            domain.LabelsToMap(rec.Labels),
+		Status:            sgStatusToPb(rec.Status),
+		DefaultForNetwork: rec.DefaultForNetwork,
+	}
+	for _, r := range rec.Rules {
+		pr := &vpcv1.SecurityGroupRule{
+			Id:             r.ID,
+			Description:    string(r.Description),
+			Labels:         r.Labels,
+			Direction:      sgDirectionToPb(r.Direction),
+			ProtocolName:   r.ProtocolName,
+			ProtocolNumber: r.ProtocolNumber,
+		}
+		if r.FromPort != 0 || r.ToPort != 0 {
+			pr.Ports = &vpcv1.PortRange{FromPort: r.FromPort, ToPort: r.ToPort}
+		}
+		if len(r.V4CidrBlocks) > 0 || len(r.V6CidrBlocks) > 0 {
+			pr.Target = &vpcv1.SecurityGroupRule_CidrBlocks{
+				CidrBlocks: &vpcv1.CidrBlocks{
+					V4CidrBlocks: r.V4CidrBlocks,
+					V6CidrBlocks: r.V6CidrBlocks,
+				},
+			}
+		}
+		p.Rules = append(p.Rules, pr)
+	}
+	return p, nil
+}
+
+func sgStatusToPb(s domain.SecurityGroupStatus) vpcv1.SecurityGroup_Status {
+	switch s {
+	case domain.SecurityGroupStatusCreating:
+		return vpcv1.SecurityGroup_CREATING
+	case domain.SecurityGroupStatusActive:
+		return vpcv1.SecurityGroup_ACTIVE
+	case domain.SecurityGroupStatusUpdating:
+		return vpcv1.SecurityGroup_UPDATING
+	case domain.SecurityGroupStatusDeleting:
+		return vpcv1.SecurityGroup_DELETING
+	}
+	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
+}
+
+func sgDirectionToPb(d domain.SecurityGroupRuleDirection) vpcv1.SecurityGroupRule_Direction {
+	switch d {
+	case domain.SecurityGroupRuleDirectionIngress:
+		return vpcv1.SecurityGroupRule_INGRESS
+	case domain.SecurityGroupRuleDirectionEgress:
+		return vpcv1.SecurityGroupRule_EGRESS
+	}
+	return vpcv1.SecurityGroupRule_DIRECTION_UNSPECIFIED
+}
+
+func init() {
+	dto.RegTransfer(dto.Fn2Face(securityGroup{}.toPb))
+}

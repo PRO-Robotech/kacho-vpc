@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +15,10 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
 
 // CreatePrivateEndpointReq — запрос на создание PrivateEndpoint.
@@ -62,7 +64,7 @@ func NewPrivateEndpointService(repo PrivateEndpointRepo, folderClient FolderClie
 }
 
 // Get возвращает PrivateEndpoint по ID.
-func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error) {
+func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.PrivateEndpointRecord, error) {
 	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
 		return nil, err
 	}
@@ -75,7 +77,7 @@ func (s *PrivateEndpointService) Get(ctx context.Context, id string) (*domain.Pr
 
 // List возвращает список PrivateEndpoints.
 // folder_id обязателен (R10 #C1 closure).
-func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpoint, string, error) {
+func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -83,6 +85,9 @@ func (s *PrivateEndpointService) List(ctx context.Context, f PrivateEndpointFilt
 }
 
 // Create инициирует создание PrivateEndpoint, возвращает Operation.
+//
+// Wave 2 batch B (KAC-94): валидация name/description/labels — через
+// domain.PrivateEndpoint.Validate() (skill evgeniy §4 D.5 / AP-1).
 func (s *PrivateEndpointService) Create(ctx context.Context, req CreatePrivateEndpointReq) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
 		return nil, err
@@ -96,13 +101,21 @@ func (s *PrivateEndpointService) Create(ctx context.Context, req CreatePrivateEn
 	if req.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
-		return nil, err
+
+	// Domain self-validation для name/description/labels (skill evgeniy §4 D.5 / AP-1).
+	p := domain.PrivateEndpoint{
+		FolderID:    req.FolderID,
+		NetworkID:   req.NetworkID,
+		SubnetID:    req.SubnetID,
+		AddressID:   req.AddressID,
+		IPAddress:   req.IPAddress,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
+		ServiceType: domain.PrivateEndpointServiceType(req.ServiceType),
+		DnsOptions:  req.DnsOptions,
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := p.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -173,31 +186,40 @@ func (s *PrivateEndpointService) doCreate(ctx context.Context, peID string, req 
 		}
 	}
 
-	stype := req.ServiceType
+	stype := domain.PrivateEndpointServiceType(req.ServiceType)
 	if stype == "" {
-		stype = "object_storage"
+		stype = domain.PrivateEndpointServiceTypeObjectStorage
 	}
 
 	p := &domain.PrivateEndpoint{
 		ID:          peID,
 		FolderID:    req.FolderID,
-		CreatedAt:   time.Now().UTC(),
-		Name:        req.Name,
-		Description: req.Description,
-		Labels:      req.Labels,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 		NetworkID:   req.NetworkID,
 		SubnetID:    req.SubnetID,
 		AddressID:   req.AddressID,
 		IPAddress:   req.IPAddress,
 		ServiceType: stype,
 		DnsOptions:  req.DnsOptions,
-		Status:      "AVAILABLE",
+		Status:      domain.PrivateEndpointStatusAvailable,
 	}
 	created, err := s.repo.Insert(ctx, p)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	return anypb.New(protoconv.PrivateEndpoint(created))
+	return marshalPrivateEndpointRecord(created)
+}
+
+// marshalPrivateEndpointRecord конвертирует repo-entity PE в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4: protoconv.PrivateEndpoint → dto.Transfer).
+func marshalPrivateEndpointRecord(rec *domain.PrivateEndpointRecord) (*anypb.Any, error) {
+	var dst *pe.PrivateEndpoint
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer PrivateEndpoint: %w", err)
+	}
+	return anypb.New(dst)
 }
 
 // Update обновляет PrivateEndpoint.
@@ -225,20 +247,24 @@ func (s *PrivateEndpointService) Update(ctx context.Context, req UpdatePrivateEn
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		got, err := s.repo.Get(ctx, req.PrivateEndpointID)
+		rec, err := s.repo.Get(ctx, req.PrivateEndpointID)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		applyPrivateEndpointMask(got, req)
-		updated, err := s.repo.Update(ctx, got)
+		applyPrivateEndpointMask(&rec.PrivateEndpoint, req)
+		updated, err := s.repo.Update(ctx, &rec.PrivateEndpoint)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.PrivateEndpoint(updated))
+		return marshalPrivateEndpointRecord(updated)
 	})
 	return &op, nil
 }
 
+// validatePrivateEndpointUpdate — sync-валидация update_mask.
+//
+// Wave 2 batch B (KAC-94): name/description/labels — через newtype.Validate()
+// (skill evgeniy §4 D.5 / AP-1).
 func validatePrivateEndpointUpdate(req UpdatePrivateEndpointReq) error {
 	known := map[string]struct{}{"name": {}, "description": {}, "labels": {}, "dns_options": {}}
 	if err := corevalidate.UpdateMask("update_mask", req.UpdateMask, known); err != nil {
@@ -251,15 +277,15 @@ func validatePrivateEndpointUpdate(req UpdatePrivateEndpointReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		}
@@ -269,9 +295,9 @@ func validatePrivateEndpointUpdate(req UpdatePrivateEndpointReq) error {
 
 func applyPrivateEndpointMask(p *domain.PrivateEndpoint, req UpdatePrivateEndpointReq) {
 	if len(req.UpdateMask) == 0 {
-		p.Name = req.Name
-		p.Description = req.Description
-		p.Labels = req.Labels
+		p.Name = domain.RcNameVPC(req.Name)
+		p.Description = domain.RcDescription(req.Description)
+		p.Labels = domain.LabelsFromMap(req.Labels)
 		if req.DnsOptions != nil {
 			p.DnsOptions = req.DnsOptions
 		}
@@ -280,11 +306,11 @@ func applyPrivateEndpointMask(p *domain.PrivateEndpoint, req UpdatePrivateEndpoi
 	for _, field := range req.UpdateMask {
 		switch field {
 		case "name":
-			p.Name = req.Name
+			p.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			p.Description = req.Description
+			p.Description = domain.RcDescription(req.Description)
 		case "labels":
-			p.Labels = req.Labels
+			p.Labels = domain.LabelsFromMap(req.Labels)
 		case "dns_options":
 			p.DnsOptions = req.DnsOptions
 		}

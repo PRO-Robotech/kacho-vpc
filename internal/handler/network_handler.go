@@ -12,15 +12,14 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// Blank-import регистрирует Network/time DTO трансферы; см. service/network.go.
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // networkToPb формирует *vpcv1.Network из repo-entity через DTO-реестр.
 // Wave 2 pilot (KAC-99/KAC-94): handler больше не зовёт protoconv.Network(...)
-// для Network — это место единственного fan-out через DTO. Остальные ресурсы
-// в этом handler-е (Subnet/SecurityGroup/RouteTable) по-прежнему через
-// protoconv.X до их Wave 2 итераций.
+// для Network. Wave 2 batches A+B (KAC-94): Subnet/Address/RouteTable +
+// SecurityGroup/Gateway/PrivateEndpoint тоже на DTO через `*ToPb` helpers
+// рядом со своими handler-ами.
 func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
 	var dst *vpcv1.Network
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
@@ -181,7 +180,11 @@ func (h *NetworkHandler) ListSecurityGroups(ctx context.Context, req *vpcv1.List
 	}
 	resp := &vpcv1.ListNetworkSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
+		pb, err := securityGroupToPb(sg)
+		if err != nil {
+			return nil, err
+		}
+		resp.SecurityGroups = append(resp.SecurityGroups, pb)
 	}
 	return resp, nil
 }

@@ -2,15 +2,30 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// gatewayToPb конвертирует repo-entity Gateway → proto Gateway через DTO-реестр.
+// Wave 2 batch B (KAC-94): protoconv.Gateway удалён (skill evgeniy §3 C.6 / AP-11).
+func gatewayToPb(rec *domain.GatewayRecord) (*vpcv1.Gateway, error) {
+	var dst *vpcv1.Gateway
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer Gateway: %w", err)
+	}
+	return dst, nil
+}
 
 // GatewayHandler реализует vpcv1.GatewayServiceServer.
 type GatewayHandler struct {
@@ -34,7 +49,7 @@ func (h *GatewayHandler) Get(ctx context.Context, req *vpcv1.GetGatewayRequest) 
 	if err := AssertFolderOwnership(ctx, g.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.Gateway(g), nil
+	return gatewayToPb(g)
 }
 
 func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysRequest) (*vpcv1.ListGatewaysResponse, error) {
@@ -53,7 +68,11 @@ func (h *GatewayHandler) List(ctx context.Context, req *vpcv1.ListGatewaysReques
 	}
 	resp := &vpcv1.ListGatewaysResponse{NextPageToken: nextToken}
 	for _, g := range gws {
-		resp.Gateways = append(resp.Gateways, protoconv.Gateway(g))
+		pb, err := gatewayToPb(g)
+		if err != nil {
+			return nil, err
+		}
+		resp.Gateways = append(resp.Gateways, pb)
 	}
 	return resp, nil
 }

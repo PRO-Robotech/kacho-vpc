@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -9,9 +10,22 @@ import (
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	svc "github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// securityGroupToPb конвертирует repo-entity SG → proto SG через DTO-реестр.
+// Wave 2 batch B (KAC-94): protoconv.SecurityGroup удалён (skill evgeniy §3 C.6 / AP-11).
+func securityGroupToPb(rec *domain.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
+	var dst *vpcv1.SecurityGroup
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer SecurityGroup: %w", err)
+	}
+	return dst, nil
+}
 
 // SecurityGroupHandler реализует vpcv1.SecurityGroupServiceServer.
 type SecurityGroupHandler struct {
@@ -35,7 +49,7 @@ func (h *SecurityGroupHandler) Get(ctx context.Context, req *vpcv1.GetSecurityGr
 	if err := AssertFolderOwnership(ctx, sg.FolderID); err != nil {
 		return nil, err
 	}
-	return protoconv.SecurityGroup(sg), nil
+	return securityGroupToPb(sg)
 }
 
 func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
@@ -54,7 +68,11 @@ func (h *SecurityGroupHandler) List(ctx context.Context, req *vpcv1.ListSecurity
 	}
 	resp := &vpcv1.ListSecurityGroupsResponse{NextPageToken: nextToken}
 	for _, sg := range sgs {
-		resp.SecurityGroups = append(resp.SecurityGroups, protoconv.SecurityGroup(sg))
+		pb, err := securityGroupToPb(sg)
+		if err != nil {
+			return nil, err
+		}
+		resp.SecurityGroups = append(resp.SecurityGroups, pb)
 	}
 	return resp, nil
 }
@@ -232,16 +250,20 @@ func (h *SecurityGroupHandler) ListOperations(ctx context.Context, req *vpcv1.Li
 // sgToProto конвертирует domain SG → proto SG (с timestamp truncation).
 
 // ruleSpecFromProto конвертирует proto SecurityGroupRuleSpec → domain SecurityGroupRule.
+//
+// Wave 2 batch B (KAC-94): Description — newtype RcDescription, Direction — enum
+// SecurityGroupRuleDirection. Labels на rule-уровне остаётся map[string]string
+// (см. domain/security_group.go — JSONB-friendly без HDict unexported map).
 func ruleSpecFromProto(rs *vpcv1.SecurityGroupRuleSpec) domain.SecurityGroupRule {
 	r := domain.SecurityGroupRule{
-		Description: rs.Description,
+		Description: domain.RcDescription(rs.Description),
 		Labels:      rs.Labels,
 	}
 	switch rs.Direction {
 	case vpcv1.SecurityGroupRule_INGRESS:
-		r.Direction = "INGRESS"
+		r.Direction = domain.SecurityGroupRuleDirectionIngress
 	case vpcv1.SecurityGroupRule_EGRESS:
-		r.Direction = "EGRESS"
+		r.Direction = domain.SecurityGroupRuleDirectionEgress
 	}
 	if rs.Ports != nil {
 		r.FromPort = rs.Ports.FromPort

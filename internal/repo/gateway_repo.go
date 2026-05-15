@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
+
+// Gateway — type-alias на domain.GatewayRecord (repo-entity с DB-managed CreatedAt).
+// Wave 2 batch B (KAC-94), parity с repo.Network.
+type Gateway = domain.GatewayRecord
 
 // GatewayRepo — реализация service.GatewayRepo поверх pgxpool.
 type GatewayRepo struct {
@@ -25,7 +30,7 @@ func NewGatewayRepo(pool *pgxpool.Pool) *GatewayRepo {
 
 const gatewayCols = `id, folder_id, created_at, name, description, labels, gateway_type`
 
-func (r *GatewayRepo) Get(ctx context.Context, id string) (*domain.Gateway, error) {
+func (r *GatewayRepo) Get(ctx context.Context, id string) (*Gateway, error) {
 	q := fmt.Sprintf(`SELECT %s FROM gateways WHERE id = $1`, gatewayCols)
 	row := r.pool.QueryRow(ctx, q, id)
 	g, err := scanGateway(row)
@@ -35,7 +40,7 @@ func (r *GatewayRepo) Get(ctx context.Context, id string) (*domain.Gateway, erro
 	return g, nil
 }
 
-func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p service.Pagination) ([]*domain.Gateway, string, error) {
+func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p service.Pagination) ([]*Gateway, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -90,7 +95,7 @@ func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p servi
 	}
 	defer rows.Close()
 
-	var result []*domain.Gateway
+	var result []*Gateway
 	for rows.Next() {
 		g, err := scanGateway(rows)
 		if err != nil {
@@ -111,8 +116,11 @@ func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p servi
 	return result, nextToken, nil
 }
 
-func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON, err := marshalJSONB(g.Labels, "Gateway.labels")
+// Insert вставляет Gateway. Принимает domain.Gateway (без CreatedAt — repo сам
+// выставит `now()`; source of truth — БД-колонка). Возвращает *Gateway
+// (= *domain.GatewayRecord) с заполненным CreatedAt.
+func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*Gateway, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -123,29 +131,31 @@ func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*domain.Ga
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	now := time.Now().UTC()
 	const q = `
 		INSERT INTO gateways (id, folder_id, created_at, name, description, labels, gateway_type)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + gatewayCols
 
 	row := tx.QueryRow(ctx, q,
-		g.ID, g.FolderID, g.CreatedAt, g.Name, g.Description, labelsJSON, g.GatewayType,
+		g.ID, g.FolderID, now, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
 	)
 	result, err := scanGateway(row)
 	if err != nil {
-		return nil, wrapPgErr(err, "Gateway", g.Name)
+		return nil, wrapPgErr(err, "Gateway", string(g.Name))
 	}
 	if err := emitVPC(ctx, tx, "Gateway", result.ID, "CREATED", gatewayPayload(result)); err != nil {
 		return nil, service.ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, wrapPgErr(err, "Gateway", g.Name)
+		return nil, wrapPgErr(err, "Gateway", string(g.Name))
 	}
 	return result, nil
 }
 
-func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error) {
-	labelsJSON, err := marshalJSONB(g.Labels, "Gateway.labels")
+// Update обновляет mutable-поля Gateway. Принимает domain.Gateway (без CreatedAt).
+func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*Gateway, error) {
+	labelsJSON, err := marshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +172,7 @@ func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*domain.Ga
 		RETURNING ` + gatewayCols
 
 	row := tx.QueryRow(ctx, q,
-		g.ID, g.Name, g.Description, labelsJSON, g.GatewayType,
+		g.ID, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
 	)
 	result, err := scanGateway(row)
 	if err != nil {
@@ -178,7 +188,7 @@ func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*domain.Ga
 }
 
 // SetFolderID меняет folder_id у Gateway (для :move).
-func (r *GatewayRepo) SetFolderID(ctx context.Context, id, folderID string) (*domain.Gateway, error) {
+func (r *GatewayRepo) SetFolderID(ctx context.Context, id, folderID string) (*Gateway, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, service.ErrInternal
@@ -228,23 +238,29 @@ func (r *GatewayRepo) Delete(ctx context.Context, id string) error {
 
 // ---- scan helpers ----
 
-func scanGateway(row scannable) (*domain.Gateway, error) {
-	var g domain.Gateway
+func scanGateway(row scannable) (*Gateway, error) {
+	var g Gateway
 	var labelsJSON []byte
+	var name, description, gatewayType string
 
 	err := row.Scan(
-		&g.ID, &g.FolderID, &g.CreatedAt, &g.Name, &g.Description, &labelsJSON,
-		&g.GatewayType,
+		&g.ID, &g.FolderID, &g.CreatedAt, &name, &description, &labelsJSON,
+		&gatewayType,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := unmarshalJSONB(labelsJSON, &g.Labels, "Gateway.labels"); err != nil {
+	g.Name = domain.RcNameVPC(name)
+	g.Description = domain.RcDescription(description)
+	g.GatewayType = domain.GatewayType(gatewayType)
+	var labels map[string]string
+	if err := unmarshalJSONB(labelsJSON, &labels, "Gateway.labels"); err != nil {
 		return nil, err
 	}
+	g.Labels = domain.LabelsFromMap(labels)
 	return &g, nil
 }
 
-func gatewayPayload(g *domain.Gateway) map[string]any {
+func gatewayPayload(g *Gateway) map[string]any {
 	return domainToMap(g)
 }

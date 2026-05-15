@@ -49,3 +49,24 @@ type RouteTableRecord struct {
 	RouteTable
 	CreatedAt time.Time
 }
+
+// SecurityGroupRecord — repo-entity для SecurityGroup. domain.SecurityGroup +
+// CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
+type SecurityGroupRecord struct {
+	SecurityGroup
+	CreatedAt time.Time
+}
+
+// GatewayRecord — repo-entity для Gateway. domain.Gateway + CreatedAt
+// (DB-managed). Wave 2 batch B (KAC-94).
+type GatewayRecord struct {
+	Gateway
+	CreatedAt time.Time
+}
+
+// PrivateEndpointRecord — repo-entity для PrivateEndpoint. domain.PrivateEndpoint
+// + CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
+type PrivateEndpointRecord struct {
+	PrivateEndpoint
+	CreatedAt time.Time
+}

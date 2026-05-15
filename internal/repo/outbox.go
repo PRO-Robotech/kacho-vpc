@@ -7,14 +7,11 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-corelib/outbox"
-
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
-// Wave 2 batch A (KAC-94): Type-alias'ы Network/Subnet/Address/RouteTable на
-// domain.*Record — объявлены в соответствующих repo-файлах. Здесь они
-// доступны через package-scope. Import `domain` остаётся для SecurityGroup
-// payload (он ещё не имеет Record-wrapper'а в этой итерации).
+// Wave 2 batch A (KAC-94) + batch B (KAC-94): Type-alias'ы Network/Subnet/
+// Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint на domain.*Record —
+// объявлены в соответствующих repo-файлах. Здесь они доступны через package-scope.
 
 // vpcOutboxTable — имя таблицы outbox в kacho_vpc DB.
 const vpcOutboxTable = "vpc_outbox"
@@ -73,7 +70,13 @@ func routeTablePayload(rt *RouteTable) map[string]any {
 	return domainToMap(rt)
 }
 
-// securityGroupPayload — snapshot SecurityGroup.
-func securityGroupPayload(sg *domain.SecurityGroup) map[string]any {
+// securityGroupPayload — snapshot SecurityGroup (repo-entity, с CreatedAt).
+// Wave 2 batch B (KAC-94) переместил CreatedAt из domain в repo.
+func securityGroupPayload(sg *SecurityGroup) map[string]any {
 	return domainToMap(sg)
 }
+
+// gatewayPayload (repo-entity, с CreatedAt) объявлен в gateway_repo.go —
+// чтобы не разрывать связку scan*<→>payload* по файлам.
+
+// privateEndpointPayload (repo-entity, с CreatedAt) объявлен в private_endpoint_repo.go.

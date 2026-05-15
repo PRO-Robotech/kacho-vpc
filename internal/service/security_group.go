@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +15,10 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// type2pb регистрирует DTO-трансферы в init() — нужны для dto.Transfer.
+	// Skill evgeniy §3 C.4.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 )
 
 // SecurityGroupService — бизнес-логика SG.
@@ -58,7 +60,7 @@ type UpdateSecurityGroupReq struct {
 }
 
 // Get возвращает SG.
-func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.SecurityGroup, error) {
+func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error) {
 	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (s *SecurityGroupService) Get(ctx context.Context, id string) (*domain.Secu
 
 // List возвращает список SG.
 // folder_id обязателен (R10 #C1 closure).
-func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroup, string, error) {
+func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -79,6 +81,10 @@ func (s *SecurityGroupService) List(ctx context.Context, f SecurityGroupFilter, 
 }
 
 // Create создаёт SG (асинхронно через Operation).
+//
+// Wave 2 batch B (KAC-94): валидация name/description/labels — через
+// domain.SecurityGroup.Validate() (skill evgeniy §4 D.5 / AP-1). Service-слой
+// больше НЕ вызывает corevalidate.NameVPC/Description/Labels.
 func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGroupReq) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.NetworkID); err != nil {
 		return nil, err
@@ -89,14 +95,27 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 	// network_id больше НЕ обязателен (kacho-proto#8): пустой network_id →
 	// "глобальная" (folder-level, unbound) security group. Если network_id
 	// задан — существование сети проверяется (sync + async backstop в worker'е).
-	if err := corevalidate.NameVPC("name", req.Name); err != nil {
+
+	// Domain self-validation: имя/описание/labels через newtype.Validate() +
+	// каждое правило через r.Validate() (description/labels). Cross-cutting
+	// rule-валидация (direction, CIDR, protocol) — отдельно через validateSGRule
+	// ниже (это не newtype-level).
+	sg := domain.SecurityGroup{
+		FolderID:    req.FolderID,
+		NetworkID:   req.NetworkID,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
+		Status:      domain.SecurityGroupStatusActive,
+		Rules:       req.RuleSpecs,
+	}
+	if err := sg.Validate(); err != nil {
 		return nil, err
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
-		return nil, err
-	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
-		return nil, err
+	for i, r := range req.RuleSpecs {
+		if err := validateSGRule(fmt.Sprintf("rule_specs[%d]", i), r); err != nil {
+			return nil, err
+		}
 	}
 
 	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
@@ -151,53 +170,61 @@ func (s *SecurityGroupService) Create(ctx context.Context, req CreateSecurityGro
 			}
 		}
 
-		sg := &domain.SecurityGroup{
+		sgDomain := &domain.SecurityGroup{
 			ID:          sgID,
 			FolderID:    req.FolderID,
 			NetworkID:   req.NetworkID,
-			CreatedAt:   time.Now().UTC(),
-			Name:        req.Name,
-			Description: req.Description,
-			Labels:      req.Labels,
-			Status:      "ACTIVE",
+			Name:        domain.RcNameVPC(req.Name),
+			Description: domain.RcDescription(req.Description),
+			Labels:      domain.LabelsFromMap(req.Labels),
+			Status:      domain.SecurityGroupStatusActive,
 			Rules:       assignRuleIDs(req.RuleSpecs),
 		}
-		created, err := s.repo.Insert(ctx, sg)
+		created, err := s.repo.Insert(ctx, sgDomain)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.SecurityGroup(created))
+		return marshalSecurityGroupRecord(created)
 	})
 
 	return &op, nil
+}
+
+// marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через
+// DTO-реестр (skill evgeniy §3 C.3 / C.4: protoconv.SecurityGroup → dto.Transfer).
+func marshalSecurityGroupRecord(rec *domain.SecurityGroupRecord) (*anypb.Any, error) {
+	var dst *vpcv1.SecurityGroup
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, fmt.Errorf("dto.Transfer SecurityGroup: %w", err)
+	}
+	return anypb.New(dst)
 }
 
 // CreateDefaultForNetwork создаёт default SG для сети (синхронно — вызывается из Network worker'а).
 // Возвращает созданный SG.
 //
 // Стандартный default SG в YC: 2 правила (INGRESS и EGRESS), protocol ANY, cidr 0.0.0.0/0.
-func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, folderID, networkID string) (*domain.SecurityGroup, error) {
+func (s *SecurityGroupService) CreateDefaultForNetwork(ctx context.Context, folderID, networkID string) (*domain.SecurityGroupRecord, error) {
 	sg := &domain.SecurityGroup{
 		ID:                ids.NewID(ids.PrefixSecurityGroup),
 		FolderID:          folderID,
 		NetworkID:         networkID,
-		CreatedAt:         time.Now().UTC(),
-		Name:              "default-sg-" + networkID,
-		Description:       "Default security group for network",
-		Labels:            nil,
-		Status:            "ACTIVE",
+		Name:              domain.RcNameVPC("default-sg-" + networkID),
+		Description:       domain.RcDescription("Default security group for network"),
+		Labels:            domain.RcLabels{},
+		Status:            domain.SecurityGroupStatusActive,
 		DefaultForNetwork: true,
 		Rules: []domain.SecurityGroupRule{
 			{
 				ID:             ids.NewID(ids.PrefixSecurityGroup),
-				Direction:      "INGRESS",
+				Direction:      domain.SecurityGroupRuleDirectionIngress,
 				ProtocolName:   "ANY",
 				ProtocolNumber: -1,
 				V4CidrBlocks:   []string{"0.0.0.0/0"},
 			},
 			{
 				ID:             ids.NewID(ids.PrefixSecurityGroup),
-				Direction:      "EGRESS",
+				Direction:      domain.SecurityGroupRuleDirectionEgress,
 				ProtocolName:   "ANY",
 				ProtocolNumber: -1,
 				V4CidrBlocks:   []string{"0.0.0.0/0"},
@@ -234,15 +261,16 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 	}
 
 	operations.Run(ctx, s.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		sg, err := s.repo.Get(ctx, req.SecurityGroupID)
+		rec, err := s.repo.Get(ctx, req.SecurityGroupID)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
 		mask := req.UpdateMask
+		sg := &rec.SecurityGroup
 		if len(mask) == 0 {
-			sg.Name = req.Name
-			sg.Description = req.Description
-			sg.Labels = req.Labels
+			sg.Name = domain.RcNameVPC(req.Name)
+			sg.Description = domain.RcDescription(req.Description)
+			sg.Labels = domain.LabelsFromMap(req.Labels)
 			if req.RuleSpecs != nil {
 				sg.Rules = assignRuleIDs(req.RuleSpecs)
 			}
@@ -250,11 +278,11 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 			for _, f := range mask {
 				switch f {
 				case "name":
-					sg.Name = req.Name
+					sg.Name = domain.RcNameVPC(req.Name)
 				case "description":
-					sg.Description = req.Description
+					sg.Description = domain.RcDescription(req.Description)
 				case "labels":
-					sg.Labels = req.Labels
+					sg.Labels = domain.LabelsFromMap(req.Labels)
 				case "rule_specs":
 					sg.Rules = assignRuleIDs(req.RuleSpecs)
 				}
@@ -264,7 +292,7 @@ func (s *SecurityGroupService) Update(ctx context.Context, req UpdateSecurityGro
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.SecurityGroup(updated))
+		return marshalSecurityGroupRecord(updated)
 	})
 	return &op, nil
 }
@@ -309,7 +337,7 @@ func (s *SecurityGroupService) UpdateRules(ctx context.Context, req UpdateRulesR
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.SecurityGroup(updated))
+		return marshalSecurityGroupRecord(updated)
 	})
 	return &op, nil
 }
@@ -340,10 +368,11 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 	if corevalidate.ResourceID("rule", "", req.RuleID) != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid rule id %s", req.RuleID)
 	}
-	if err := corevalidate.Description("description", req.Description); err != nil {
+	// Domain self-validation для description/labels.
+	if err := domain.RcDescription(req.Description).Validate(); err != nil {
 		return nil, err
 	}
-	if err := corevalidate.Labels("labels", req.Labels); err != nil {
+	if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 		return nil, err
 	}
 	if _, err := s.repo.Get(ctx, req.SecurityGroupID); err != nil {
@@ -370,17 +399,20 @@ func (s *SecurityGroupService) UpdateRule(ctx context.Context, req UpdateRuleReq
 		// Response — parent SecurityGroup (verbatim YC CLI 1.x compat).
 		// CLI hardcodes expectation на SecurityGroup, не SecurityGroupRule.
 		// См. finding SG-UPDATERULE-RESPONSE-TYPE-MISMATCH.md.
-		return anypb.New(protoconv.SecurityGroup(updated))
+		return marshalSecurityGroupRecord(updated)
 	})
 	return &op, nil
 }
 
 // validateSGUpdate — sync-проверка update_mask и значений (как в Network/Subnet).
 //
+// Wave 2 batch B (KAC-94): name/description/labels — через newtype.Validate()
+// (skill evgeniy §4 D.5 / AP-1). Mask-семантика — через corevalidate.UpdateMask.
+//
 // Decision table (для каждого поля в mask):
-//   - name        → corevalidate.NameVPC (permissive: empty + uppercase + underscore).
-//   - description → ≤256 chars utf-8.
-//   - labels      → ≤64 пары, key/value verbatim YC.
+//   - name        → RcNameVPC.Validate() (verbatim YC permissive name regex).
+//   - description → RcDescription.Validate() (≤256 chars utf-8).
+//   - labels      → domain.ValidateLabels() (≤64 пары, key/value verbatim YC).
 //   - rule_specs  → каждое правило проходит validateSGRule.
 //
 // Поле, не упомянутое в mask, не валидируется (= unchanged). Unknown field в
@@ -399,15 +431,15 @@ func validateSGUpdate(req UpdateSecurityGroupReq) error {
 	for _, f := range updates {
 		switch f {
 		case "name":
-			if err := corevalidate.NameVPC("name", req.Name); err != nil {
+			if err := domain.RcNameVPC(req.Name).Validate(); err != nil {
 				return err
 			}
 		case "description":
-			if err := corevalidate.Description("description", req.Description); err != nil {
+			if err := domain.RcDescription(req.Description).Validate(); err != nil {
 				return err
 			}
 		case "labels":
-			if err := corevalidate.Labels("labels", req.Labels); err != nil {
+			if err := domain.ValidateLabels(domain.LabelsFromMap(req.Labels)); err != nil {
 				return err
 			}
 		case "rule_specs":
@@ -422,11 +454,18 @@ func validateSGUpdate(req UpdateSecurityGroupReq) error {
 }
 
 // validateSGRule — sync-валидация правила.
+//
+// Direction-семантика и CIDR host-bits — это cross-field invariants, не
+// newtype-level (description/labels валидируются через r.Validate() внутри
+// SecurityGroup.Validate()).
 func validateSGRule(field string, r domain.SecurityGroupRule) error {
-	if r.Direction != "INGRESS" && r.Direction != "EGRESS" {
+	if r.Direction != domain.SecurityGroupRuleDirectionIngress && r.Direction != domain.SecurityGroupRuleDirectionEgress {
 		return invalidArg(field+".direction", "direction must be INGRESS or EGRESS")
 	}
-	if err := corevalidate.Description(field+".description", r.Description); err != nil {
+	if err := r.Description.Validate(); err != nil {
+		return err
+	}
+	if err := domain.ValidateLabels(domain.LabelsFromMap(r.Labels)); err != nil {
 		return err
 	}
 	for i, c := range r.V4CidrBlocks {
@@ -511,7 +550,7 @@ func (s *SecurityGroupService) Move(ctx context.Context, id, destFolderID string
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		return anypb.New(protoconv.SecurityGroup(updated))
+		return marshalSecurityGroupRecord(updated)
 	})
 	return &op, nil
 }

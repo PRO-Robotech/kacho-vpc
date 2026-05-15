@@ -213,37 +213,47 @@ type AddressRepo interface {
 }
 
 // SecurityGroupRepo — port-интерфейс репозитория SG.
+//
+// Wave 2 batch B (KAC-94): возвращает `*domain.SecurityGroupRecord` (repo-entity с
+// DB-managed CreatedAt). Insert/Update принимают `*domain.SecurityGroup` (без CreatedAt).
+// Skill evgeniy §4 D.1 / §6 G.2 / §7 H.1. Parity с NetworkRepo (KAC-99).
 type SecurityGroupRepo interface {
-	Get(ctx context.Context, id string) (*domain.SecurityGroup, error)
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroup, string, error)
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error)
-	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroup, error)
+	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroup, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroupRecord, error)
 	// UpdateRules атомарно заменяет набор правил SG: удаляет правила с
 	// id ∈ deleteIDs и добавляет правила из add (с auto-id если пусто).
 	// Возвращает обновлённый SG с актуальным списком правил.
-	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroup, error)
+	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error)
 	// UpdateRule обновляет description/labels единичного правила в SG.
-	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroup, error)
+	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error)
 }
 
 // GatewayRepo — port-интерфейс репозитория Gateways.
+//
+// Wave 2 batch B (KAC-94): возвращает `*domain.GatewayRecord` (repo-entity с
+// DB-managed CreatedAt). Insert/Update принимают `*domain.Gateway` (без CreatedAt).
 type GatewayRepo interface {
-	Get(ctx context.Context, id string) (*domain.Gateway, error)
-	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.Gateway, string, error)
-	Insert(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error)
-	Update(ctx context.Context, g *domain.Gateway) (*domain.Gateway, error)
+	Get(ctx context.Context, id string) (*domain.GatewayRecord, error)
+	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.GatewayRecord, string, error)
+	Insert(ctx context.Context, g *domain.Gateway) (*domain.GatewayRecord, error)
+	Update(ctx context.Context, g *domain.Gateway) (*domain.GatewayRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.Gateway, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*domain.GatewayRecord, error)
 }
 
 // PrivateEndpointRepo — port-интерфейс репозитория PrivateEndpoints.
+//
+// Wave 2 batch B (KAC-94): возвращает `*domain.PrivateEndpointRecord` (repo-entity
+// с DB-managed CreatedAt). Insert/Update принимают `*domain.PrivateEndpoint` (без CreatedAt).
 type PrivateEndpointRepo interface {
-	Get(ctx context.Context, id string) (*domain.PrivateEndpoint, error)
-	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpoint, string, error)
-	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error)
-	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpoint, error)
+	Get(ctx context.Context, id string) (*domain.PrivateEndpointRecord, error)
+	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpointRecord, string, error)
+	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error)
+	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error)
 	Delete(ctx context.Context, id string) error
 }
 

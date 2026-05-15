@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
@@ -45,8 +44,6 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	ar := repo.NewAddressRepo(pool)
 	per := repo.NewPrivateEndpointRepo(pool)
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
-
 	// --- setup: Network + Subnet + Address + PE ---
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-pe-fk"),
@@ -70,14 +67,15 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	pe := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:        "pe-fk-1",
+		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:    "folder-1",
+		Name:        domain.RcNameVPC("pe-fk-1"),
 		NetworkID:   net.ID,
 		SubnetID:    sub.ID,
 		AddressID:   addr.ID,
 		IPAddress:   "10.0.0.5",
-		ServiceType: "object_storage",
-		Status:      "PENDING",
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, pe)
 	require.NoError(t, err)
@@ -124,11 +122,12 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	// --- 4. INSERT PE с несуществующим network_id → 23503 ---
 	bad := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:        "pe-fk-bad-net",
+		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:    "folder-1",
+		Name:        domain.RcNameVPC("pe-fk-bad-net"),
 		NetworkID:   ids.NewID(ids.PrefixNetwork), // не существует
-		ServiceType: "object_storage",
-		Status:      "PENDING",
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, bad)
 	require.Error(t, err, "INSERT PE с несуществующим network_id должен упасть на FK")
@@ -140,12 +139,13 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	// --- 5. INSERT PE с несуществующим subnet_id → 23503 ---
 	bad2 := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:        "pe-fk-bad-sub",
+		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:    "folder-1",
+		Name:        domain.RcNameVPC("pe-fk-bad-sub"),
 		NetworkID:   net.ID,
 		SubnetID:    ids.NewID(ids.PrefixSubnet), // не существует
-		ServiceType: "object_storage",
-		Status:      "PENDING",
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, bad2)
 	require.Error(t, err, "INSERT PE с несуществующим subnet_id должен упасть на FK")
@@ -155,12 +155,13 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	// --- 6. INSERT PE с несуществующим address_id → 23503 ---
 	bad3 := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:        "pe-fk-bad-addr",
+		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:    "folder-1",
+		Name:        domain.RcNameVPC("pe-fk-bad-addr"),
 		NetworkID:   net.ID,
 		AddressID:   ids.NewID(ids.PrefixAddress), // не существует
-		ServiceType: "object_storage",
-		Status:      "PENDING",
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, bad3)
 	require.Error(t, err, "INSERT PE с несуществующим address_id должен упасть на FK")
@@ -185,8 +186,12 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	_, err = nr.Insert(ctx, netIso)
 	require.NoError(t, err)
 	peIso := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name: "pe-iso", NetworkID: netIso.ID, ServiceType: "object_storage", Status: "PENDING",
+		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:    "folder-1",
+		Name:        domain.RcNameVPC("pe-iso"),
+		NetworkID:   netIso.ID,
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, peIso)
 	require.NoError(t, err)
@@ -209,13 +214,14 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	peNoOpt := &domain.PrivateEndpoint{
-		ID: ids.NewID(ids.PrefixPrivateEndpoint), FolderID: "folder-1", CreatedAt: now,
-		Name:      "pe-fk-no-opt",
+		ID:        ids.NewID(ids.PrefixPrivateEndpoint),
+		FolderID:  "folder-1",
+		Name:      domain.RcNameVPC("pe-fk-no-opt"),
 		NetworkID: net2.ID,
 		// SubnetID / AddressID — empty → должны пойти в БД как NULL (NULLIF в Insert),
 		// FK с MATCH SIMPLE пропускает NULL.
-		ServiceType: "object_storage",
-		Status:      "PENDING",
+		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
+		Status:      domain.PrivateEndpointStatusPending,
 	}
 	_, err = per.Insert(ctx, peNoOpt)
 	require.NoError(t, err, "PE с пустыми subnet_id/address_id должен Insert'иться (NULLIF → NULL → FK пропускает)")
