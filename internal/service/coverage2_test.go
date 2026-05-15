@@ -114,32 +114,9 @@ func TestSubnetService_Update_UnknownMask(t *testing.T) {
 
 // ---- RouteTable.Update — moved to internal/apps/kacho/api/routetable/usecase_test.go (Wave 3b) ----
 
-// ---- Address.Update happy-path ----
-
-func TestAddressService_Update_FullPATCH(t *testing.T) {
-	or := newMockOpsRepo()
-	ar := newMockAddressRepo()
-	sr := newMockSubnetRepo()
-	svc := NewAddressService(ar, sr, newMockFolderClient(true), or, nil)
-
-	createOp, _ := svc.Create(context.Background(), CreateAddressReq{
-		FolderID:     "f1",
-		Name:         "a1",
-		ExternalSpec: &ExternalAddrSpec{Address: "203.0.113.10", ZoneID: "ru-central1-a"},
-	})
-	awaitOpDone(t, or, createOp.ID)
-
-	addrs, _, _ := svc.List(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
-	require.Len(t, addrs, 1)
-	updOp, err := svc.Update(context.Background(), UpdateAddressReq{
-		AddressID:   addrs[0].ID,
-		Name:        "a1-upd",
-		Description: "updated",
-	})
-	require.NoError(t, err)
-	saved := awaitOpDone(t, or, updOp.ID)
-	require.Nil(t, saved.Error)
-}
+// ---- Address.Update — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressService_Update_FullPATCH покрыт TestHandler_FullFlow +
+// TestUpdateUseCase_DeletionProtection в новом пакете.
 
 // ---- SecurityGroup.Update happy-path → triger doUpdate / applyMask ----
 

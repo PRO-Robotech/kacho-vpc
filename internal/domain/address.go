@@ -124,3 +124,16 @@ func (a Address) Validate() error {
 		ValidateLabels(a.Labels),
 	)
 }
+
+// AllocateResult — результат IPAM allocate (используется и use-case-пакетом
+// `internal/apps/kacho/api/address.AllocateUseCase`, и
+// `internal/handler.AddressAllocator` port'ом). Живёт в domain leaf'е, чтобы
+// избежать import-cycle между двумя пакетами (handler ↔ apps/.../address).
+//
+// PoolID непустой только для external-аллокаций; для internal — "".
+// AlreadyAllocated=true означает, что allocate был idempotent no-op.
+type AllocateResult struct {
+	IP               string
+	PoolID           string
+	AlreadyAllocated bool
+}

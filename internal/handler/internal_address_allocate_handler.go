@@ -6,11 +6,26 @@
 //     referrer-tracking (кто использует адрес; YC-like). Idempotent set,
 //     no-op clear, NotFound get.
 //
-// Legacy SetInternalIP RPC удалён (см. удалённые internal_address_handler.go
-// + internal_address_composite_handler.go). Если старый stub'нутый proto
-// generated code всё ещё содержит метод — он автоматически возвращает
-// codes.Unimplemented через UnimplementedInternalAddressServiceServer
-// embedding.
+// Wave 3 (KAC-94): AddressService разобран на use-case-структуру в
+// `internal/apps/kacho/api/address/`. Allocate-методы теперь — отдельный
+// `address.AllocateUseCase`; Reference-методы — отдельный
+// `service.AddressReferenceService`. Handler инжектирует оба и проксирует
+// proto-запросы в их методы.
+//
+// Composition root (cmd/vpc/main.go) обновляется в той же ветке, что и
+// этот пакет — там собирается AllocateUseCase + AddressReferenceService и
+// передаётся в `NewInternalAddressAllocateHandler`. Импорт addressapp
+// должен идти ЧЕРЕЗ cmd/, чтобы избежать import-cycle с use-case-пакетом
+// (который импортирует `internal/handler` для AssertFolderOwnership).
+//
+// Для разрыва циклической зависимости handler не импортирует
+// `internal/apps/kacho/api/address` напрямую — вместо этого определена
+// узкая port-абстракция `AddressAllocator`, которой удовлетворяет
+// `*address.AllocateUseCase`. Та же стратегия применена к
+// `AddressReferenceService` (этот, наоборот, в `internal/service` —
+// нет цикла, но единый стиль).
+//
+// Legacy SetInternalIP RPC удалён.
 package handler
 
 import (
@@ -27,21 +42,46 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
+// AddressAllocator — port для allocate-методов; реализуется
+// `*addressapp.AllocateUseCase` в composition root (cmd/vpc/main.go).
+// Возвращает `*domain.AllocateResult` — общий тип, живущий в domain leaf,
+// чтобы избежать import-cycle между `internal/handler` и
+// `internal/apps/kacho/api/address` (тот импортирует `internal/handler`
+// для AssertFolderOwnership).
+type AddressAllocator interface {
+	AllocateInternalIP(ctx context.Context, addressID string) (*domain.AllocateResult, error)
+	AllocateInternalIPv6(ctx context.Context, addressID string) (*domain.AllocateResult, error)
+	AllocateExternalIP(ctx context.Context, addressID string) (*domain.AllocateResult, error)
+}
+
+// AddressReferenceManager — port для referrer-tracking; реализуется
+// `*service.AddressReferenceService`.
+type AddressReferenceManager interface {
+	SetAddressReference(ctx context.Context, req service.SetAddressReferenceReq) (*domain.AddressReference, error)
+	MarkAddressEphemeralInUse(ctx context.Context, req service.SetAddressReferenceReq) (*domain.AddressReference, error)
+	ClearAddressReference(ctx context.Context, addressID string) error
+	GetAddressReference(ctx context.Context, addressID string) (*domain.AddressReference, error)
+}
+
 // InternalAddressAllocateHandler — InternalAddressService implementation.
 type InternalAddressAllocateHandler struct {
 	vpcv1.UnimplementedInternalAddressServiceServer
-	addressSvc *service.AddressService
+	allocate AddressAllocator
+	refs     AddressReferenceManager
 }
 
-func NewInternalAddressAllocateHandler(s *service.AddressService) *InternalAddressAllocateHandler {
-	return &InternalAddressAllocateHandler{addressSvc: s}
+// NewInternalAddressAllocateHandler собирает handler из двух port'ов —
+// composition root (cmd/vpc/main.go) передаёт `*addressapp.AllocateUseCase`
+// и `*service.AddressReferenceService`.
+func NewInternalAddressAllocateHandler(allocate AddressAllocator, refs AddressReferenceManager) *InternalAddressAllocateHandler {
+	return &InternalAddressAllocateHandler{allocate: allocate, refs: refs}
 }
 
 func (h *InternalAddressAllocateHandler) AllocateInternalIP(ctx context.Context, req *vpcv1.AllocateInternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	res, err := h.addressSvc.AllocateInternalIP(ctx, req.GetAddressId())
+	res, err := h.allocate.AllocateInternalIP(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, mapAllocErr(err)
 	}
@@ -55,7 +95,7 @@ func (h *InternalAddressAllocateHandler) AllocateInternalIPv6(ctx context.Contex
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	res, err := h.addressSvc.AllocateInternalIPv6(ctx, req.GetAddressId())
+	res, err := h.allocate.AllocateInternalIPv6(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, mapAllocErr(err)
 	}
@@ -69,7 +109,7 @@ func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context,
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	res, err := h.addressSvc.AllocateExternalIP(ctx, req.GetAddressId())
+	res, err := h.allocate.AllocateExternalIP(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, mapAllocErr(err)
 	}
@@ -84,7 +124,7 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	ref, err := h.addressSvc.SetAddressReference(ctx, service.SetAddressReferenceReq{
+	ref, err := h.refs.SetAddressReference(ctx, service.SetAddressReferenceReq{
 		AddressID:    req.GetAddressId(),
 		ReferrerType: req.GetReferrerType(),
 		ReferrerID:   req.GetReferrerId(),
@@ -100,7 +140,7 @@ func (h *InternalAddressAllocateHandler) ClearAddressReference(ctx context.Conte
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	if err := h.addressSvc.ClearAddressReference(ctx, req.GetAddressId()); err != nil {
+	if err := h.refs.ClearAddressReference(ctx, req.GetAddressId()); err != nil {
 		return nil, err
 	}
 	return &vpcv1.ClearAddressReferenceResponse{}, nil
@@ -110,7 +150,7 @@ func (h *InternalAddressAllocateHandler) GetAddressReference(ctx context.Context
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	ref, err := h.addressSvc.GetAddressReference(ctx, req.GetAddressId())
+	ref, err := h.refs.GetAddressReference(ctx, req.GetAddressId())
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +161,7 @@ func (h *InternalAddressAllocateHandler) MarkAddressEphemeralInUse(ctx context.C
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	if _, err := h.addressSvc.MarkAddressEphemeralInUse(ctx, service.SetAddressReferenceReq{
+	if _, err := h.refs.MarkAddressEphemeralInUse(ctx, service.SetAddressReferenceReq{
 		AddressID:    req.GetAddressId(),
 		ReferrerType: req.GetReferrerType(),
 		ReferrerID:   req.GetReferrerId(),
@@ -152,14 +192,8 @@ func mapAllocErr(err error) error {
 	if errors.Is(err, service.ErrNotFound) {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	// allocator already returns gRPC status errors for FailedPrecondition /
-	// ResourceExhausted; pass through (status.FromError возвращает (status, true)
-	// и для не-status err с Unknown code — поэтому проверяем code != Unknown).
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		return err
 	}
-	// Defensive: не leak'аем raw err.Error() (может содержать pgx-text с
-	// hostname/db/query). Generic Internal без leak'а — info-leak vector
-	// закрыт симметрично mapRepoErr.
 	return status.Error(codes.Internal, "internal allocator error")
 }

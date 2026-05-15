@@ -68,30 +68,10 @@ func TestSubnetHandler_ListUsedAddresses_Validates(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
-// ---- Address handler — additional ----
-
-func TestAddressHandler_Move_Validates(t *testing.T) {
-	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: ""})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.InvalidArgument, st.Code())
-}
-
-func TestAddressHandler_GetByValue_Empty(t *testing.T) {
-	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.GetByValue(context.Background(), &vpcv1.GetAddressByValueRequest{})
-	require.Error(t, err)
-}
-
-func TestAddressHandler_ListBySubnet_NotFound(t *testing.T) {
-	addrSvc, _ := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-	_, err := h.ListBySubnet(context.Background(), &vpcv1.ListAddressesBySubnetRequest{SubnetId: ids.NewID(ids.PrefixSubnet)})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
-}
+// ---- Address handler — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressHandler_Move_Validates / GetByValue_Empty / ListBySubnet_NotFound →
+// TestHandler_Move_RequiresID / TestHandler_GetByValue_Empty / TestHandler_ListBySubnet_RequiresID
+// в новом пакете.
 
 // ---- RouteTable handler — moved (Wave 3b) ----
 
@@ -326,46 +306,8 @@ func TestSecurityGroupHandler_FullFlow(t *testing.T) {
 
 // ---- Gateway handler — moved (Wave 3b) ----
 
-// ---- Address handler — happy-path Update/Move/ListBySubnet ----
-
-func TestAddressHandler_FullFlow(t *testing.T) {
-	addrSvc, or := makeAddressService()
-	h := NewAddressHandler(addrSvc, nil)
-
-	createOp, _ := h.Create(context.Background(), &vpcv1.CreateAddressRequest{
-		FolderId: "f1",
-		Name:     "addr1",
-		AddressSpec: &vpcv1.CreateAddressRequest_ExternalIpv4AddressSpec{
-			ExternalIpv4AddressSpec: &vpcv1.ExternalIpv4AddressSpec{
-				Address: "203.0.113.10", ZoneId: "ru-central1-a",
-			},
-		},
-	})
-	awaitOpDone(t, or, createOp.Id)
-
-	listResp, _ := h.List(context.Background(), &vpcv1.ListAddressesRequest{FolderId: "f1"})
-	require.NotEmpty(t, listResp.Addresses)
-	addrID := listResp.Addresses[0].Id
-
-	_, err := h.Get(context.Background(), &vpcv1.GetAddressRequest{AddressId: addrID})
-	require.NoError(t, err)
-
-	updOp, _ := h.Update(context.Background(), &vpcv1.UpdateAddressRequest{
-		AddressId:  addrID,
-		Name:       "addr1-upd",
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
-	})
-	awaitOpDone(t, or, updOp.Id)
-
-	_, err = h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: addrID})
-	require.NoError(t, err)
-
-	moveOp, _ := h.Move(context.Background(), &vpcv1.MoveAddressRequest{AddressId: addrID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
-	awaitOpDone(t, or, moveOp.Id)
-
-	delOp, _ := h.Delete(context.Background(), &vpcv1.DeleteAddressRequest{AddressId: addrID})
-	awaitOpDone(t, or, delOp.Id)
-}
+// ---- Address handler — moved to internal/apps/kacho/api/address/usecase_test.go (Wave 3, KAC-94) ----
+// TestAddressHandler_FullFlow → TestHandler_FullFlow в новом пакете.
 
 func TestSubnetToProto_Fields(t *testing.T) {
 	// Wave 2 batch A (KAC-94): Subnet → DTO type2pb. Тест проверяет тот же
