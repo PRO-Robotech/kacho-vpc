@@ -28,6 +28,7 @@ import (
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
+	addresspoolapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
@@ -36,7 +37,6 @@ import (
 	sgapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup"
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
-	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
@@ -96,7 +96,10 @@ type services struct {
 	securityGroupHandler    *sgapp.Handler
 	gatewayHandler          *gatewayapp.Handler
 	privateEndpointHandler  *peapp.Handler
-	addressPool             *addresspool.AddressPoolService
+	addressPoolHandler      *addresspoolapp.Handler
+	cloudSelSet             *addresspoolapp.SetCloudPoolSelectorUseCase
+	cloudSelUnset           *addresspoolapp.UnsetCloudPoolSelectorUseCase
+	cloudSelGet             *addresspoolapp.GetCloudPoolSelectorUseCase
 	networkInternal         *networkinternal.Service
 	networkInterfaceHandler *niapp.Handler
 }
@@ -280,7 +283,10 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	routeTableRepo := repo.NewRouteTableRepo(pool)
 	sgRepo := repo.NewSecurityGroupRepo(pool)
 	gatewayRepo := repo.NewGatewayRepo(pool)
-	peRepo := repo.NewPrivateEndpointRepo(pool)
+	// Wave 5 replicate (KAC-94): PrivateEndpoint use-case'ы работают через
+	// CQRS-Repository (kachoRepo); legacy *PrivateEndpointRepo больше не
+	// инжектируется. Если потребуется admin-tooling на pgxpool напрямую —
+	// раскомментируйте: peRepo := repo.NewPrivateEndpointRepo(pool)
 	addressPoolRepo := repo.NewAddressPoolRepo(pool)
 	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
@@ -290,7 +296,34 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	addressPoolSvc := addresspool.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
+	// Wave 5 batch 36 (KAC-94, skill `evgeniy` §2 B.1): AddressPool — use-case-
+	// структура (см. `internal/apps/kacho/api/addresspool/`). Composition root
+	// собирает 13 use-case'ов + ResolverService под единый Handler. Узкий
+	// adapter `addressPoolNetworkRepo` оборачивает legacy `*repo.NetworkRepo`
+	// под порт `addresspool.NetworkRepo` (Get → *kacho.NetworkRecord).
+	addressPoolResolver := addresspoolapp.NewResolverService(
+		addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo,
+		addressRepo, subnetRepo, folderClient,
+	)
+	addressPoolHandler := addresspoolapp.NewHandler(
+		addresspoolapp.NewCreateAddressPoolUseCase(addressPoolRepo, addressRepo, geoClient),
+		addresspoolapp.NewUpdateAddressPoolUseCase(addressPoolRepo, addressRepo),
+		addresspoolapp.NewDeleteAddressPoolUseCase(addressPoolRepo),
+		addresspoolapp.NewGetAddressPoolUseCase(addressPoolRepo),
+		addresspoolapp.NewListAddressPoolsUseCase(addressPoolRepo),
+		addresspoolapp.NewCheckUseCase(addressPoolRepo),
+		addresspoolapp.NewExplainResolutionUseCase(addressRepo, addressPoolResolver),
+		addresspoolapp.NewBindAsNetworkDefaultUseCase(addressPoolRepo, addressPoolBindingRepo, networkRepo),
+		addresspoolapp.NewUnbindNetworkDefaultUseCase(addressPoolBindingRepo),
+		addresspoolapp.NewBindAsAddressOverrideUseCase(addressPoolRepo, addressPoolBindingRepo, addressRepo),
+		addresspoolapp.NewUnbindAddressOverrideUseCase(addressPoolBindingRepo),
+		addresspoolapp.NewGetPoolUtilizationUseCase(addressPoolRepo),
+		addresspoolapp.NewListPoolAddressesUseCase(addressPoolRepo),
+	)
+	cloudSelSet := addresspoolapp.NewSetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
+	cloudSelUnset := addresspoolapp.NewUnsetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
+	cloudSelGet := addresspoolapp.NewGetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
+
 	addressRefSvc := addressref.NewService(addressRepo)
 
 	// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network use-case'ы
@@ -333,22 +366,31 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		gatewayapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): PrivateEndpoint
+	// use-case'ы работают через CQRS-Repository (kachoRepo) вместо legacy
+	// *PrivateEndpointRepo. NetworkReader/SubnetReader для request-path-precheck
+	// — пока legacy repos (network/subnet ещё не на CQRS pilot'е, переедут
+	// отдельной replicate-волной).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(peRepo, networkRepo, subnetRepo, folderClient, opsRepo),
-		peapp.NewUpdatePrivateEndpointUseCase(peRepo, opsRepo),
-		peapp.NewDeletePrivateEndpointUseCase(peRepo, opsRepo),
-		peapp.NewGetPrivateEndpointUseCase(peRepo),
-		peapp.NewListPrivateEndpointsUseCase(peRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkRepo, subnetRepo, folderClient, opsRepo),
+		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
+		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
+		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
+		peapp.NewListPrivateEndpointsUseCase(kachoRepo),
 		peapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 5 replicate (KAC-94, skill evgeniy §6): RouteTable use-case'ы
+	// переехали на CQRS-Repository (parity с pilot Network). Legacy
+	// `routeTableRepo` оставлен — его всё ещё использует Network.Delete
+	// (subnet/rt children check) и integration-тесты `route_table_*test.go`.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(routeTableRepo, networkRepo, folderClient, opsRepo),
-		routetableapp.NewUpdateRouteTableUseCase(routeTableRepo, opsRepo),
-		routetableapp.NewDeleteRouteTableUseCase(routeTableRepo, opsRepo),
-		routetableapp.NewMoveRouteTableUseCase(routeTableRepo, folderClient, opsRepo),
-		routetableapp.NewGetRouteTableUseCase(routeTableRepo),
-		routetableapp.NewListRouteTablesUseCase(routeTableRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
+		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
+		routetableapp.NewMoveRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewGetRouteTableUseCase(kachoRepo),
+		routetableapp.NewListRouteTablesUseCase(kachoRepo),
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
@@ -372,7 +414,7 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	// Wave 3 (skill evgeniy §2): Address — use-case-структура. Composition с
 	// AddressPoolService для IPAM cascade resolve. Internal Allocate UC отделён —
 	// принимается InternalAddressAllocateHandler через узкий port.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolResolver)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(addressRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(addressRepo, opsRepo)
 	addressMoveUC := addressapp.NewMoveAddressUseCase(addressRepo, folderClient, opsRepo)
@@ -381,7 +423,7 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	addressListUC := addressapp.NewListAddressesUseCase(addressRepo)
 	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(addressRepo, subnetRepo)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
-	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolSvc)
+	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolResolver)
 	addressHandler := addressapp.NewHandler(
 		addressCreateUC, addressUpdateUC, addressDeleteUC, addressMoveUC,
 		addressGetUC, addressGetByValueUC, addressListUC, addressListBySubnetUC, addressListOpsUC,
@@ -402,17 +444,22 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		sgapp.NewListOperationsUseCase(sgRepo, opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура. Replicate
-	// Wave 3a pilot шаблона. У NIC нет Move RPC (NIC привязан к Subnet), но есть
-	// специфические AttachToInstance / DetachFromInstance с atomic CAS (KAC-52).
+	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура.
+	// Wave 5 replicate (KAC-94, NIC batch): use-case'ы NIC переехали на
+	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к Subnet),
+	// но есть специфические AttachToInstance / DetachFromInstance с atomic CAS
+	// (KAC-52); CAS теперь живёт на DB-уровне через
+	// `writer.NetworkInterfaces().AttachToInstance`. Legacy `niRepo` остаётся
+	// (используется internal admin-сервисами + legacy integration-тестами
+	// `network_interface_attach_race_integration_test.go`).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
-		niapp.NewUpdateNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
-		niapp.NewDeleteNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
-		niapp.NewGetNetworkInterfaceUseCase(niRepo),
-		niapp.NewListNetworkInterfacesUseCase(niRepo),
-		niapp.NewAttachToInstanceUseCase(niRepo, opsRepo),
-		niapp.NewDetachFromInstanceUseCase(niRepo, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
+		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
+		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),
+		niapp.NewListNetworkInterfacesUseCase(kachoRepo),
+		niapp.NewAttachToInstanceUseCase(kachoRepo, opsRepo),
+		niapp.NewDetachFromInstanceUseCase(kachoRepo, opsRepo),
 		niapp.NewListOperationsUseCase(opsRepo),
 	)
 
@@ -426,7 +473,10 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		securityGroupHandler:    sgHandler,
 		gatewayHandler:          gwHandler,
 		privateEndpointHandler:  peHandler,
-		addressPool:             addressPoolSvc,
+		addressPoolHandler:      addressPoolHandler,
+		cloudSelSet:             cloudSelSet,
+		cloudSelUnset:           cloudSelUnset,
+		cloudSelGet:             cloudSelGet,
 		networkInternal:         networkinternal.NewService(networkRepo, sgRepo),
 		networkInterfaceHandler: niHandler,
 	}
@@ -449,7 +499,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Pool, dsn string, logger *slog.Logger, watchMaxStreams int) {
 	vpcv1.RegisterInternalWatchServiceServer(srv, handler.NewInternalWatchHandler(pool, dsn, logger.With("component", "internal-watch"), watchMaxStreams))
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.addressAllocate, svcs.addressRefService))
-	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
+	vpcv1.RegisterInternalAddressPoolServiceServer(srv, svcs.addressPoolHandler)
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
-	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
+	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.cloudSelSet, svcs.cloudSelUnset, svcs.cloudSelGet))
 }

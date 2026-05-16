@@ -1,31 +1,19 @@
-// KAC-71: TDD red-phase service-level тесты для split AddressPool.cidr_blocks
-// → v4_cidr_blocks + v6_cidr_blocks.
+// Package addresspool — usecase_test.go: unit-тесты use-case'ов через
+// in-memory stubs. Перенесено из `internal/apps/kacho/services/addresspool/
+// service_split_test.go` (KAC-71 B-Group: split AddressPool.cidr_blocks →
+// v4_cidr_blocks + v6_cidr_blocks) и `service_cascade_split_test.go`
+// (KAC-71 D-Group: IPAM cascade family-skip).
 //
-// Acceptance: docs/specs/sub-phase-1.x-addresspool-split-cidr-family-acceptance.md
-//
-// Покрытие — Group B (REQ-IPL-CR-01..06, REQ-IPL-UPD-01..06,
-// REQ-IPL-BIND-FAMILY-AGNOSTIC):
-//   - B1/B2/B3 — Create v4-only / v6-only / dual-stack
-//   - B4 — Create отвергается если оба пусты (InvalidArgument)
-//   - B5 — Create отвергается при cross-family (IPv6 в v4_cidr_blocks или
-//     наоборот, InvalidArgument)
-//   - B7 — Update replace_v4=true заменяет v4, v6 не тронут
-//   - B8 — Update replace_v6=true заменяет v6, v4 не тронут
-//   - B9 — Update без обоих replace_v*=true → array body ignored
-//     (poll-update no-op для CIDR-полей)
-//   - B10 — Update попытка очистить оба family → InvalidArgument
-//   - B11 — Update dual-stack pool, v6=[] + replace_v6=true → pool становится v4-only
-//   - B12 — Update без replace-флагов с непустым массивом — body массивы
-//     игнорируются, description обновляется
-//   - B13 — Bind* family-agnostic (не валидирует family, фильтр только на resolve)
-//
-// Все тесты — failing на текущей реализации (domain.AddressPool пока имеет
-// CIDRBlocks (старое поле); UpdatePoolReq пока имеет ReplaceCIDR, не
-// ReplaceV4CIDR/ReplaceV6CIDR). После rpc-implementer KAC-74 — позеленеют.
+// Wave 5 batch 36 (KAC-94, skill evgeniy §2 B.1): после переезда на
+// use-case-структуру тесты вызывают каждый use-case напрямую (а не толстый
+// `AddressPoolService.Create`/`Update`/...). Stubs — repo-port реализации —
+// также живут в этом файле (parity с предыдущей версией; portmock не содержит
+// AddressPool*-моков).
 package addresspool
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -38,19 +26,18 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // --------------------------------------------------------------------------
 // Local fakes — portmock не содержит реализаций AddressPoolRepo /
-// AddressPoolBindingRepo / CloudPoolSelectorRepo. Делаем их inline здесь,
-// чтобы не загромождать общий portmock package.
+// AddressPoolBindingRepo / CloudPoolSelectorRepo. Inline здесь.
 // --------------------------------------------------------------------------
 
 type stubAddressPoolRepo struct {
-	mu    sync.Mutex
-	pools map[string]*domain.AddressPool
-	// freelistCalls регистрирует PopulateFreelistForPool — для assertion'ов.
+	mu            sync.Mutex
+	pools         map[string]*domain.AddressPool
 	freelistCalls []string
 }
 
@@ -69,7 +56,7 @@ func (r *stubAddressPoolRepo) Get(_ context.Context, id string) (*domain.Address
 	return &cp, nil
 }
 
-func (r *stubAddressPoolRepo) List(_ context.Context, _ repo.AddressPoolFilter, _ repo.Pagination) ([]*domain.AddressPool, string, error) {
+func (r *stubAddressPoolRepo) List(_ context.Context, _ AddressPoolFilter, _ Pagination) ([]*domain.AddressPool, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]*domain.AddressPool, 0, len(r.pools))
@@ -166,7 +153,7 @@ func (r *stubAddressPoolRepo) CountAddressesByPoolPerCIDR(_ context.Context, _ s
 	return nil, nil
 }
 
-func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
@@ -273,20 +260,86 @@ func (r *stubCloudSelRepo) Unset(_ context.Context, cloudID string) error {
 	return nil
 }
 
-// makeAddressPoolService — собирает AddressPoolService с тестовыми моками.
-// Все 7 портов передаются; addressRepo и subnetRepo используются только на
-// cascade-path (D-тесты — отдельный файл). Для B-тестов это просто заглушки.
-func makeAddressPoolService(
-	poolRepo *stubAddressPoolRepo,
-	bindings *stubBindingRepo,
-	cloudSel *stubCloudSelRepo,
-) *AddressPoolService {
+// networkRepoAdapter — repomock.NetworkRepo возвращает kacho.NetworkRecord,
+// что точно matches порт `NetworkRepo` в ports.go (Get → *kacho.NetworkRecord).
+// type-alias просто переименовывает для удобства test-кода.
+type networkRepoAdapter struct {
+	*repomock.NetworkRepo
+}
+
+func newNetworkRepoAdapter() *networkRepoAdapter {
+	return &networkRepoAdapter{NetworkRepo: repomock.NewNetworkRepo()}
+}
+
+// Get матчит сигнатуру NetworkRepo port интерфейса.
+func (a *networkRepoAdapter) Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error) {
+	return a.NetworkRepo.Get(ctx, id)
+}
+
+// subnetRepoAdapter оборачивает repomock.SubnetRepo, сужая интерфейс до SubnetReader.
+type subnetRepoAdapter struct {
+	*repomock.SubnetRepo
+}
+
+func newSubnetRepoAdapter() *subnetRepoAdapter {
+	return &subnetRepoAdapter{SubnetRepo: repomock.NewSubnetRepo()}
+}
+
+// folderClientAdapter оборачивает repomock.FolderClient в порт FolderClient
+// (только GetCloudID — Exists не используется AddressPool use-case'ами).
+type folderClientAdapter struct {
+	*repomock.FolderClient
+}
+
+// makeUseCases — собирает полный набор use-case'ов на in-memory stubs.
+// addr/net/sub/folder/zone — могут быть nil если тест их не использует
+// (CreateAddressPoolUseCase требует addrRepo + zoneReg; resolve использует
+// addr + sub + folder).
+type useCasesFixture struct {
+	poolRepo *stubAddressPoolRepo
+	bindings *stubBindingRepo
+	cloudSel *stubCloudSelRepo
+	addrRepo *repomock.AddressRepo
+	netRepo  *networkRepoAdapter
+	subRepo  *subnetRepoAdapter
+
+	create     *CreateAddressPoolUseCase
+	update     *UpdateAddressPoolUseCase
+	deleteUC   *DeleteAddressPoolUseCase
+	bindNet    *BindAsNetworkDefaultUseCase
+	bindAddr   *BindAsAddressOverrideUseCase
+	unbindNet  *UnbindNetworkDefaultUseCase
+	unbindAddr *UnbindAddressOverrideUseCase
+	resolver   *ResolverService
+	explain    *ExplainResolutionUseCase
+}
+
+func newUseCases(t *testing.T) *useCasesFixture {
+	t.Helper()
+	pr := newStubAddressPoolRepo()
+	br := newStubBindingRepo()
+	cs := newStubCloudSelRepo()
 	ar := repomock.NewAddressRepo()
-	sr := repomock.NewSubnetRepo()
-	nr := repomock.NewNetworkRepo()
-	fc := &repomock.FolderClient{OK: true}
+	nr := newNetworkRepoAdapter()
+	sr := newSubnetRepoAdapter()
 	zr := repomock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
-	return NewAddressPoolService(poolRepo, bindings, cloudSel, ar, nr, sr, fc, zr)
+	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
+
+	resolver := NewResolverService(pr, br, cs, ar, sr, fc)
+	return &useCasesFixture{
+		poolRepo: pr, bindings: br, cloudSel: cs,
+		addrRepo: ar, netRepo: nr, subRepo: sr,
+
+		create:     NewCreateAddressPoolUseCase(pr, ar, zr),
+		update:     NewUpdateAddressPoolUseCase(pr, ar),
+		deleteUC:   NewDeleteAddressPoolUseCase(pr),
+		bindNet:    NewBindAsNetworkDefaultUseCase(pr, br, nr),
+		bindAddr:   NewBindAsAddressOverrideUseCase(pr, br, ar),
+		unbindNet:  NewUnbindNetworkDefaultUseCase(br),
+		unbindAddr: NewUnbindAddressOverrideUseCase(br),
+		resolver:   resolver,
+		explain:    NewExplainResolutionUseCase(ar, resolver),
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -294,10 +347,9 @@ func makeAddressPoolService(
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B1_Create_V4Only_OK(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	p, err := svc.Create(context.Background(), CreatePoolReq{
+	p, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-v4-only",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -310,8 +362,8 @@ func TestAddressPool_B1_Create_V4Only_OK(t *testing.T) {
 	assert.Equal(t, []string{"203.0.113.0/24"}, p.V4CIDRBlocks)
 	assert.Empty(t, p.V6CIDRBlocks, "v6_cidr_blocks must be empty for v4-only pool")
 	// PopulateFreelistForPool вызван — pool готов к v4-аллокациям.
-	require.Len(t, r.freelistCalls, 1)
-	assert.Equal(t, p.ID, r.freelistCalls[0])
+	require.Len(t, f.poolRepo.freelistCalls, 1)
+	assert.Equal(t, p.ID, f.poolRepo.freelistCalls[0])
 }
 
 // --------------------------------------------------------------------------
@@ -319,10 +371,9 @@ func TestAddressPool_B1_Create_V4Only_OK(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B2_Create_V6Only_OK(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	p, err := svc.Create(context.Background(), CreatePoolReq{
+	p, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-v6-only",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -340,10 +391,9 @@ func TestAddressPool_B2_Create_V6Only_OK(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B3_Create_DualStack_OK(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	p, err := svc.Create(context.Background(), CreatePoolReq{
+	p, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-dual-stack",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -357,17 +407,13 @@ func TestAddressPool_B3_Create_DualStack_OK(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// B5 (был B4 в acceptance — теперь B5: оба пусты → InvalidArgument).
-// (Сам acceptance имеет нумерацию B1..B13; здесь сохраняю те же ID что
-// в задаче — B5 = both empty.)
+// B5: Create отвергается если v4_cidr_blocks и v6_cidr_blocks оба пустые.
 // --------------------------------------------------------------------------
 
-// B5: Create отвергается если v4_cidr_blocks и v6_cidr_blocks оба пустые.
 func TestAddressPool_B5_Create_BothEmpty_InvalidArgument(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	_, err := svc.Create(context.Background(), CreatePoolReq{
+	_, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-empty",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -382,15 +428,13 @@ func TestAddressPool_B5_Create_BothEmpty_InvalidArgument(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// B6 (acceptance B5/B6): cross-family CIDR placement → InvalidArgument
+// B6: cross-family CIDR placement → InvalidArgument
 // --------------------------------------------------------------------------
 
-// B6a: IPv6 prefix в v4_cidr_blocks → InvalidArgument с verbatim текстом.
 func TestAddressPool_B6_Create_V6InV4Slot_InvalidArgument(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	_, err := svc.Create(context.Background(), CreatePoolReq{
+	_, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-cross-family",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -404,12 +448,10 @@ func TestAddressPool_B6_Create_V6InV4Slot_InvalidArgument(t *testing.T) {
 	assert.Contains(t, st.Message(), "is not an IPv4 prefix")
 }
 
-// B6b: IPv4 prefix в v6_cidr_blocks → InvalidArgument с verbatim текстом.
 func TestAddressPool_B6_Create_V4InV6Slot_InvalidArgument(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	_, err := svc.Create(context.Background(), CreatePoolReq{
+	_, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "pool-cross-family-2",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -428,11 +470,9 @@ func TestAddressPool_B6_Create_V4InV6Slot_InvalidArgument(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B7_Update_ReplaceV4Only(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	// Pre-create dual-stack pool.
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -441,7 +481,7 @@ func TestAddressPool_B7_Update_ReplaceV4Only(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	updated, err := svc.Update(context.Background(), UpdatePoolReq{
+	updated, err := f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:            created.ID,
 		ReplaceV4CIDR: true,
 		V4CIDRBlocks:  []string{"192.0.2.0/24"},
@@ -459,10 +499,9 @@ func TestAddressPool_B7_Update_ReplaceV4Only(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B8_Update_ReplaceV6Only(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -471,7 +510,7 @@ func TestAddressPool_B8_Update_ReplaceV6Only(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	updated, err := svc.Update(context.Background(), UpdatePoolReq{
+	updated, err := f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:            created.ID,
 		ReplaceV6CIDR: true,
 		V6CIDRBlocks:  []string{"2001:db8:2::/64"},
@@ -484,14 +523,13 @@ func TestAddressPool_B8_Update_ReplaceV6Only(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// B9: Update без обоих replace_v*=true → no-op (200, прежние CIDR в echo)
+// B9: Update без обоих replace_v*=true → no-op для CIDR (но другие поля — ОК)
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B9_Update_NoReplaceFlags_NoOpForCIDR(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual-noop",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -500,9 +538,7 @@ func TestAddressPool_B9_Update_NoReplaceFlags_NoOpForCIDR(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Body с непустыми CIDR-полями, но без replace-флагов → body-array должен
-	// быть проигнорирован.
-	updated, err := svc.Update(context.Background(), UpdatePoolReq{
+	updated, err := f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:           created.ID,
 		V4CIDRBlocks: []string{"10.99.99.0/24"},
 		V6CIDRBlocks: []string{"2001:db8:dead::/64"},
@@ -520,10 +556,9 @@ func TestAddressPool_B9_Update_NoReplaceFlags_NoOpForCIDR(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B10_Update_ClearBoth_InvalidArgument(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -532,7 +567,7 @@ func TestAddressPool_B10_Update_ClearBoth_InvalidArgument(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = svc.Update(context.Background(), UpdatePoolReq{
+	_, err = f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:            created.ID,
 		ReplaceV4CIDR: true,
 		V4CIDRBlocks:  []string{},
@@ -544,7 +579,7 @@ func TestAddressPool_B10_Update_ClearBoth_InvalidArgument(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 	assert.Contains(t, st.Message(), "v4_cidr_blocks and v6_cidr_blocks must not be both empty")
 	// В БД pool остаётся без изменений (v4/v6 непустые).
-	got, _ := r.Get(context.Background(), created.ID)
+	got, _ := f.poolRepo.Get(context.Background(), created.ID)
 	assert.NotEmpty(t, got.V4CIDRBlocks)
 	assert.NotEmpty(t, got.V6CIDRBlocks)
 }
@@ -552,10 +587,9 @@ func TestAddressPool_B10_Update_ClearBoth_InvalidArgument(t *testing.T) {
 // B10-symmetric: попытка очистить единственный непустой family (v4-only pool,
 // replaceV4=true v4=[]) → InvalidArgument.
 func TestAddressPool_B10_Update_ClearOnlyFamily_InvalidArgument(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "v4-only",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -563,7 +597,7 @@ func TestAddressPool_B10_Update_ClearOnlyFamily_InvalidArgument(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = svc.Update(context.Background(), UpdatePoolReq{
+	_, err = f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:            created.ID,
 		ReplaceV4CIDR: true,
 		V4CIDRBlocks:  []string{},
@@ -579,10 +613,9 @@ func TestAddressPool_B10_Update_ClearOnlyFamily_InvalidArgument(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B11_Update_ClearOneFamily_OnDualStack(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual-clear",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -591,7 +624,7 @@ func TestAddressPool_B11_Update_ClearOneFamily_OnDualStack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	updated, err := svc.Update(context.Background(), UpdatePoolReq{
+	updated, err := f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:            created.ID,
 		ReplaceV6CIDR: true,
 		V6CIDRBlocks:  []string{},
@@ -609,10 +642,9 @@ func TestAddressPool_B11_Update_ClearOneFamily_OnDualStack(t *testing.T) {
 // --------------------------------------------------------------------------
 
 func TestAddressPool_B12_Update_NoReplaceFlags_DescriptionUpdated(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	svc := makeAddressPoolService(r, newStubBindingRepo(), newStubCloudSelRepo())
+	f := newUseCases(t)
 
-	created, err := svc.Create(context.Background(), CreatePoolReq{
+	created, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "dual-noop",
 		Description:  "old desc",
 		Kind:         domain.AddressPoolKindExternalPublic,
@@ -623,7 +655,7 @@ func TestAddressPool_B12_Update_NoReplaceFlags_DescriptionUpdated(t *testing.T) 
 	require.NoError(t, err)
 
 	newDesc := "noop update probe"
-	updated, err := svc.Update(context.Background(), UpdatePoolReq{
+	updated, err := f.update.Execute(context.Background(), UpdatePoolReq{
 		ID:           created.ID,
 		Description:  &newDesc,
 		V4CIDRBlocks: []string{"10.99.99.0/24"},      // ignored — no flag
@@ -639,22 +671,10 @@ func TestAddressPool_B12_Update_NoReplaceFlags_DescriptionUpdated(t *testing.T) 
 // B13: Bind*/Override family-agnostic (не валидирует family при bind)
 // --------------------------------------------------------------------------
 
-// B13: BindAsNetworkDefault на v6-only pool — Bind не валидирует family;
-// фильтрация работает на resolve-этапе (см. D-тесты).
 func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	br := newStubBindingRepo()
-	cs := newStubCloudSelRepo()
-	svc := makeAddressPoolService(r, br, cs)
+	f := newUseCases(t)
 
-	// Создаём v6-only pool и Network. Для тестового Network нам нужен
-	// netRepo (через makeAddressPoolService уже передан) — заинжектим row через
-	// AddressPoolService.netRepo напрямую невозможно (private field). Воркараунд:
-	// предварительно создадим pool, потом insert network в svc.netRepo через
-	// рефлексию-эквивалент — но проще создать Network отдельной фабрикой,
-	// поэтому свяжем через специальный entry-point: BindAsNetworkDefault сам
-	// зовёт netRepo.Get → не должно быть NotFound, поэтому добавим Network.
-	pool, err := svc.Create(context.Background(), CreatePoolReq{
+	pool, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "v6-bind",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -663,44 +683,25 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Insert network через netRepo (mock). Доступ — через wrapping helper:
-	// makeAddressPoolService использует repomock.NewNetworkRepo()-инстанс, но не
-	// возвращает его наружу. Re-write — пересоберём service с явным netRepo.
-	nr := repomock.NewNetworkRepo()
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, err = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind")})
+	_, err = f.netRepo.NetworkRepo.Insert(context.Background(), &domain.Network{
+		ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind"),
+	})
 	require.NoError(t, err)
 
-	sr := repomock.NewSubnetRepo()
-	ar := repomock.NewAddressRepo()
-	zr := repomock.NewZoneRegistry("ru-central1-c")
-	svc2 := NewAddressPoolService(r, br, cs, ar, nr, sr, &repomock.FolderClient{OK: true}, zr)
-
-	// Bind — должно пройти НЕ смотря на то что pool v6-only, и Network может
-	// быть v4-предназначен.
-	err = svc2.BindAsNetworkDefault(context.Background(), netID, pool.ID)
+	// Bind — должно пройти НЕ смотря на то что pool v6-only.
+	err = f.bindNet.Execute(context.Background(), netID, pool.ID)
 	require.NoError(t, err, "Bind* should be family-agnostic")
 
-	// Sanity: в bindings record появилась.
-	got, gerr := br.GetNetworkDefault(context.Background(), netID)
+	got, gerr := f.bindings.GetNetworkDefault(context.Background(), netID)
 	require.NoError(t, gerr)
 	assert.Equal(t, pool.ID, got)
 }
 
-// B13-override: BindAsAddressOverride на pool не той family тоже не
-// валидируется — symmetric к BindAsNetworkDefault.
 func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
-	r := newStubAddressPoolRepo()
-	br := newStubBindingRepo()
-	cs := newStubCloudSelRepo()
-	ar := repomock.NewAddressRepo()
-	sr := repomock.NewSubnetRepo()
-	nr := repomock.NewNetworkRepo()
-	zr := repomock.NewZoneRegistry("ru-central1-c")
-	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, &repomock.FolderClient{OK: true}, zr)
+	f := newUseCases(t)
 
-	// v4-only pool.
-	pool, err := svc.Create(context.Background(), CreatePoolReq{
+	pool, err := f.create.Execute(context.Background(), CreatePoolReq{
 		Name:         "v4-bind-override",
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "ru-central1-c",
@@ -708,26 +709,264 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Address с external_ipv6 spec (запрос на v6-allocation, ещё без allocated IP).
 	addrID := ids.NewID(ids.PrefixAddress)
-	_, err = ar.Insert(context.Background(), &domain.Address{
+	_, err = f.addrRepo.Insert(context.Background(), &domain.Address{
 		ID: addrID, FolderID: "f1",
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
 	})
 	require.NoError(t, err)
 
-	// Bind override — должно пройти, family-фильтр будет на resolve.
-	err = svc.BindAsAddressOverride(context.Background(), addrID, pool.ID)
+	err = f.bindAddr.Execute(context.Background(), addrID, pool.ID)
 	require.NoError(t, err, "Override Bind should be family-agnostic")
 
-	got, gerr := br.GetAddressOverride(context.Background(), addrID)
+	got, gerr := f.bindings.GetAddressOverride(context.Background(), addrID)
 	require.NoError(t, gerr)
 	assert.Equal(t, pool.ID, got)
 }
 
 // --------------------------------------------------------------------------
-// Sanity: ErrPoolNotResolved sentinel доступен (используется в D-тестах).
+// D1: v4-only pool не резолвится для v6-allocate.
 // --------------------------------------------------------------------------
 
-var _ = ErrPoolNotResolved
+// seedPool — insert pool с явными V4/V6 CIDR-блоками через repo (без UC,
+// чтобы избежать valid-zone проверки на test fixtures с разными zone-id).
+func (f *useCasesFixture) seedPool(t *testing.T, name string, isDefault bool, zone string, v4, v6 []string, selector map[string]string) *domain.AddressPool {
+	t.Helper()
+	now := time.Now().UTC()
+	p := &domain.AddressPool{
+		ID:             ids.NewID("apl"),
+		Name:           name,
+		V4CIDRBlocks:   v4,
+		V6CIDRBlocks:   v6,
+		Kind:           domain.AddressPoolKindExternalPublic,
+		ZoneID:         zone,
+		IsDefault:      isDefault,
+		SelectorLabels: selector,
+		CreatedAt:      now,
+		ModifiedAt:     now,
+	}
+	out, err := f.poolRepo.Insert(context.Background(), p)
+	require.NoError(t, err)
+	return out
+}
+
+// seedAddressV4Req — Address с external_ipv4 spec.
+func (f *useCasesFixture) seedAddressV4Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
+	t.Helper()
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
+		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
+	}
+	rec, err := f.addrRepo.Insert(context.Background(), a)
+	require.NoError(t, err)
+	return rec
+}
+
+// seedAddressV6Req — Address с external_ipv6 spec.
+func (f *useCasesFixture) seedAddressV6Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
+	t.Helper()
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
+		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: zone},
+	}
+	rec, err := f.addrRepo.Insert(context.Background(), a)
+	require.NoError(t, err)
+	return rec
+}
+
+func TestCascade_D1_V4OnlyPool_DoesNotResolveForV6(t *testing.T) {
+	f := newUseCases(t)
+	f.seedPool(t, "global-v4", true, "", []string{"203.0.113.0/24"}, nil, nil)
+
+	a := f.seedAddressV6Req(t, "f-d1", "ru-central1-c")
+
+	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV6)
+	require.Error(t, err, "v6-allocate must NOT pick v4-only pool")
+	assert.True(t, errors.Is(err, ErrPoolNotResolved),
+		"expected ErrPoolNotResolved, got %v", err)
+	assert.Nil(t, res)
+}
+
+// --------------------------------------------------------------------------
+// D2: v6-only pool не резолвится для v4-allocate.
+// --------------------------------------------------------------------------
+
+func TestCascade_D2_V6OnlyPool_DoesNotResolveForV4(t *testing.T) {
+	f := newUseCases(t)
+	f.seedPool(t, "global-v6", true, "", nil, []string{"2001:db8::/64"}, nil)
+
+	a := f.seedAddressV4Req(t, "f-d2", "ru-central1-c")
+
+	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV4)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPoolNotResolved))
+	assert.Nil(t, res)
+}
+
+// --------------------------------------------------------------------------
+// D3: dual-stack pool — резолвится для обоих family (Step 4 zone_default).
+// --------------------------------------------------------------------------
+
+func TestCascade_D3_DualStackPool_ResolvesForBothFamilies(t *testing.T) {
+	f := newUseCases(t)
+	dual := f.seedPool(t, "dual", true, "ru-central1-c",
+		[]string{"198.51.100.0/24"}, []string{"2001:db8:ff::/64"}, nil)
+
+	v4Addr := f.seedAddressV4Req(t, "f-d3", "ru-central1-c")
+	v6Addr := f.seedAddressV6Req(t, "f-d3", "ru-central1-c")
+
+	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), v4Addr, FamilyV4)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, dual.ID, res.Pool.ID)
+	assert.Equal(t, "zone_default", res.MatchedVia)
+
+	res2, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), v6Addr, FamilyV6)
+	require.NoError(t, err)
+	require.NotNil(t, res2)
+	assert.Equal(t, dual.ID, res2.Pool.ID)
+	assert.Equal(t, "zone_default", res2.MatchedVia)
+}
+
+// --------------------------------------------------------------------------
+// D4: ExplainResolution на fall-through отдаёт ErrPoolNotResolved.
+// --------------------------------------------------------------------------
+
+func TestCascade_D4_ExplainResolution_FallThrough_ReturnsErrPoolNotResolved(t *testing.T) {
+	f := newUseCases(t)
+	f.seedPool(t, "v4-only", true, "ru-central1-c", []string{"203.0.113.0/24"}, nil, nil)
+
+	a := f.seedAddressV6Req(t, "f-d4", "ru-central1-c")
+
+	primary, runnerUp, err := f.explain.Execute(context.Background(), a.ID, "")
+	require.Error(t, err, "ExplainResolution must return ErrPoolNotResolved when no family-match pool")
+	assert.True(t, errors.Is(err, ErrPoolNotResolved),
+		"sentinel must be ErrPoolNotResolved (handler converts to gRPC OK + matched_via=none)")
+	assert.Nil(t, primary)
+	assert.Nil(t, runnerUp)
+}
+
+// --------------------------------------------------------------------------
+// D5: Step 3 label-selector — pool без нужной family пропускается; cascade
+// выбирает global_default другой family.
+// --------------------------------------------------------------------------
+
+func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
+	// Кастомный fixture с folderClient.CloudID="cloud-d5".
+	pr := newStubAddressPoolRepo()
+	br := newStubBindingRepo()
+	cs := newStubCloudSelRepo()
+	ar := repomock.NewAddressRepo()
+	sr := newSubnetRepoAdapter()
+
+	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
+	fc.CloudID = "cloud-d5"
+
+	resolver := NewResolverService(pr, br, cs, ar, sr, fc)
+
+	now := time.Now().UTC()
+	// Premium pool v4-only.
+	premiumV4 := &domain.AddressPool{
+		ID:             ids.NewID("apl"),
+		Name:           "premium-v4",
+		V4CIDRBlocks:   []string{"203.0.113.0/24"},
+		Kind:           domain.AddressPoolKindExternalPublic,
+		ZoneID:         "ru-central1-c",
+		SelectorLabels: map[string]string{"tier": "premium"},
+		CreatedAt:      now,
+	}
+	_, err := pr.Insert(context.Background(), premiumV4)
+	require.NoError(t, err)
+
+	// Global default v6.
+	globalV6 := &domain.AddressPool{
+		ID:           ids.NewID("apl"),
+		Name:         "global-v6",
+		V6CIDRBlocks: []string{"2001:db8::/64"},
+		Kind:         domain.AddressPoolKindExternalPublic,
+		ZoneID:       "",
+		IsDefault:    true,
+		CreatedAt:    now,
+	}
+	_, err = pr.Insert(context.Background(), globalV6)
+	require.NoError(t, err)
+
+	require.NoError(t, cs.Set(context.Background(), "cloud-d5",
+		map[string]string{"tier": "premium"}, "admin@test"))
+
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-d5",
+		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
+		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
+	}
+	aRec, err := ar.Insert(context.Background(), a)
+	require.NoError(t, err)
+
+	res, err := resolver.ResolvePoolForAddressObjFamily(context.Background(), aRec, FamilyV6)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, globalV6.ID, res.Pool.ID,
+		"v6-allocate must skip v4-only premium pool (Step 3) and fall through to global_default")
+	assert.Equal(t, "global_default", res.MatchedVia)
+}
+
+// --------------------------------------------------------------------------
+// D6: Step 1 — per-address override family-skip.
+// --------------------------------------------------------------------------
+
+func TestCascade_D6_AddressOverride_FamilySkip(t *testing.T) {
+	f := newUseCases(t)
+	overrideV4 := f.seedPool(t, "override-v4", false, "ru-central1-c",
+		[]string{"203.0.113.0/24"}, nil, nil)
+
+	a := f.seedAddressV6Req(t, "f-d6", "ru-central1-c")
+
+	require.NoError(t, f.bindings.SetAddressOverride(context.Background(),
+		a.ID, overrideV4.ID))
+
+	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV6)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPoolNotResolved))
+	assert.Nil(t, res)
+}
+
+// --------------------------------------------------------------------------
+// D7: Step 2 — per-network default family-skip.
+// --------------------------------------------------------------------------
+
+func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
+	f := newUseCases(t)
+	netDefV6 := f.seedPool(t, "net-def-v6", false, "ru-central1-c",
+		nil, []string{"2001:db8::/64"}, nil)
+
+	netID := ids.NewID(ids.PrefixNetwork)
+	_, err := f.netRepo.NetworkRepo.Insert(context.Background(), &domain.Network{
+		ID: netID, FolderID: "f-d7", Name: domain.RcNameVPC("net-bind-mismatch"),
+	})
+	require.NoError(t, err)
+	subID := ids.NewID(ids.PrefixSubnet)
+	_, err = f.subRepo.SubnetRepo.Insert(context.Background(), &domain.Subnet{
+		ID: subID, FolderID: "f-d7", NetworkID: netID,
+		ZoneID: "ru-central1-c", V4CidrBlocks: []string{"10.0.0.0/24"},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, f.bindings.SetNetworkDefault(context.Background(), netID, netDefV6.ID))
+
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: "f-d7",
+		Type:         domain.AddressTypeInternal,
+		IpVersion:    domain.IpVersionIPv4,
+		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: subID},
+	}
+	aRec, err := f.addrRepo.Insert(context.Background(), a)
+	require.NoError(t, err)
+
+	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), aRec, FamilyV4)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrPoolNotResolved))
+	assert.Nil(t, res)
+}
