@@ -28,7 +28,7 @@ type SubnetReaderIface interface {
 	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети
 	// (через internal_ipv4.subnet_id ИЛИ internal_ipv6.subnet_id).
 	// Используется ListUsedAddresses и SubnetService.Delete (sync precheck).
-	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error)
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*AddressRecord, string, error)
 }
 
 // SubnetWriterIface — write-операции + read (G.2 — writer видит свои writes).

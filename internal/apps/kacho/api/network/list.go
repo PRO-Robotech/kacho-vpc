@@ -9,7 +9,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -81,7 +80,7 @@ func NewListSecurityGroupsUseCase(r Repo, sgRepo SecurityGroupRepo) *ListSecurit
 }
 
 // Execute — id validate → existence check → list SG.
-func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.SecurityGroupRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
@@ -111,7 +110,7 @@ func NewListRouteTablesUseCase(r Repo, routeTableRead RouteTableReader) *ListRou
 }
 
 // Execute — id validate → existence check → list RT.
-func (u *ListRouteTablesUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTableRecord, string, error) {
+func (u *ListRouteTablesUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.RouteTableRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}

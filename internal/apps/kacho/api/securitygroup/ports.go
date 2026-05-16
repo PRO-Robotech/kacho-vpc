@@ -39,25 +39,25 @@ type (
 
 // SecurityGroupRepo — то, что use-case'ам SG нужно от репозитория.
 //
-// Все методы возвращают `*domain.SecurityGroupRecord` (skill evgeniy §4 D.1 /
+// Все методы возвращают `*kachorepo.SecurityGroupRecord` (skill evgeniy §4 D.1 /
 // §7 H.1 — repo-entity несёт DB-managed CreatedAt). Insert/Update принимают
 // `*domain.SecurityGroup` (без CreatedAt).
 //
 // UpdateRules / UpdateRule — SG-специфические split-endpoint'ы. OCC через
 // `xmin::text` живёт в repo (см. `security_group_repo.go`).
 type SecurityGroupRepo interface {
-	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
-	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kachorepo.SecurityGroupRecord, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error)
+	Update(ctx context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroupRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error)
 	// UpdateRules атомарно заменяет набор правил SG: удаляет правила с
 	// id ∈ deleteIDs и добавляет правила из add (с auto-id если пусто).
 	// Возвращает обновлённый SG с актуальным списком правил.
-	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error)
+	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*kachorepo.SecurityGroupRecord, error)
 	// UpdateRule обновляет description/labels единичного правила в SG.
-	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error)
+	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*kachorepo.SecurityGroupRecord, error)
 }
 
 // NetworkReader — узкое чтение Network для sync-precondition'а

@@ -55,15 +55,15 @@ type SubnetReader interface {
 // RouteTableReader — узкое чтение RouteTable, нужное для ListRouteTables /
 // checkNetworkEmpty.
 type RouteTableReader interface {
-	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error)
+	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error)
 }
 
 // SecurityGroupRepo — то, что use-case'ам Network нужно от репозитория SG: List
 // (для checkNetworkEmpty / ListSecurityGroups), Insert (для inline default-SG),
 // Delete (для cleanup default-SG при Network.Delete).
 type SecurityGroupRepo interface {
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kacho.SecurityGroupRecord, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
 }
 

@@ -126,7 +126,7 @@ func (r *subnetReader) List(ctx context.Context, f kacho.SubnetFilter, p kacho.P
 // internal_ipv4.subnet_id ИЛИ internal_ipv6.subnet_id (KAC-34 family-agnostic).
 // Используется ListUsedAddresses и SubnetService.Delete (sync precheck) — поэтому
 // предикат покрывает обе семьи. Парность с legacy `*repo.SubnetRepo.AddressesBySubnet`.
-func (r *subnetReader) AddressesBySubnet(ctx context.Context, subnetID string, p kacho.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *subnetReader) AddressesBySubnet(ctx context.Context, subnetID string, p kacho.Pagination) ([]*kacho.AddressRecord, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -156,7 +156,7 @@ func (r *subnetReader) AddressesBySubnet(ctx context.Context, subnetID string, p
 		return nil, "", repo.WrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
-	var result []*domain.AddressRecord
+	var result []*kacho.AddressRecord
 	for rows.Next() {
 		a, err := repo.ScanAddress(rows)
 		if err != nil {

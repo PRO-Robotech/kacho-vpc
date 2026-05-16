@@ -203,7 +203,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, rerr := apSvc.ResolvePoolForAddress(ctx, tc.addressID)
+			res, rerr := apResolver.ResolvePoolForAddress(ctx, tc.addressID)
 			require.NoError(t, rerr)
 			require.NotNil(t, res)
 			assert.Equal(t, tc.wantPoolID, res.Pool.ID, "wrong pool resolved")

@@ -5,7 +5,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // GetSecurityGroupUseCase — простой read; единственная «логика» — id-валидация
@@ -21,7 +21,7 @@ func NewGetSecurityGroupUseCase(repo SecurityGroupRepo) *GetSecurityGroupUseCase
 }
 
 // Execute возвращает repo-entity SG. NotFound → mapRepoErr → gRPC NotFound.
-func (u *GetSecurityGroupUseCase) Execute(ctx context.Context, id string) (*domain.SecurityGroupRecord, error) {
+func (u *GetSecurityGroupUseCase) Execute(ctx context.Context, id string) (*kacho.SecurityGroupRecord, error) {
 	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
 		return nil, err
 	}

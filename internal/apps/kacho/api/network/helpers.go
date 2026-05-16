@@ -13,7 +13,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// Blank-import регистрирует трансферы Network/time через init() (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
@@ -42,7 +41,7 @@ func networkPayloadMap(n *kachorepo.NetworkRecord) map[string]any {
 // эмитит SecurityGroup.CREATED событие из use-case-кода (а не из legacy
 // SG-репо), поэтому payload-snapshot нужен здесь. Семантика — JSON
 // round-trip, parity с `securityGroupPayload` в `internal/repo/outbox.go`.
-func securityGroupPayloadMap(sg *domain.SecurityGroupRecord) map[string]any {
+func securityGroupPayloadMap(sg *kachorepo.SecurityGroupRecord) map[string]any {
 	b, err := json.Marshal(sg)
 	if err != nil {
 		return map[string]any{}

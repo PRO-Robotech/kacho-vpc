@@ -39,12 +39,10 @@ type RouteTableRecord struct {
 	CreatedAt time.Time
 }
 
-// SecurityGroupRecord — repo-entity для SecurityGroup. domain.SecurityGroup +
-// CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
-type SecurityGroupRecord struct {
-	SecurityGroup
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): SecurityGroupRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_security_group.go` как `kacho.SecurityGroupRecord`
+// (parity с NetworkRecord, §4 D.1). Здесь его больше нет — все consumer'ы
+// импортируют `kacho.SecurityGroupRecord` напрямую.
 
 // Wave 5 replicate (KAC-94): GatewayRecord уехал в repo-leaf
 // `internal/repo/kacho/entity_gateway.go` как `kacho.GatewayRecord` (parity с

@@ -340,7 +340,7 @@ func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	return dst, nil
 }
 
-func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
+func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	var dst *vpcv1.RouteTable
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer RouteTable failed")
@@ -348,7 +348,7 @@ func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	return dst, nil
 }
 
-func securityGroupToPb(rec *domain.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
+func securityGroupToPb(rec *kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
 	var dst *vpcv1.SecurityGroup
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer SecurityGroup failed")

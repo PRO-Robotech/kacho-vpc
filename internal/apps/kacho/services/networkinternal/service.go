@@ -30,7 +30,7 @@ type NetworkRepo interface {
 // SecurityGroupRepo — узкий port-интерфейс над repo.SecurityGroupRepo: только
 // Get (для FK-валидации SG→Network).
 type SecurityGroupRepo interface {
-	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SecurityGroupRecord, error)
 }
 
 // Service — internal-only operations над Network (computed-fields).

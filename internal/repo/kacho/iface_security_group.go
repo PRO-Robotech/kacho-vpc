@@ -19,8 +19,8 @@ type SecurityGroupFilter struct {
 
 // SecurityGroupReaderIface — read-операции над SecurityGroup в TX-области.
 type SecurityGroupReaderIface interface {
-	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
+	Get(ctx context.Context, id string) (*SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*SecurityGroupRecord, string, error)
 }
 
 // SecurityGroupWriterIface — write-операции + read (G.2 — writer видит свои writes).
@@ -35,14 +35,14 @@ type SecurityGroupReaderIface interface {
 // трёх отдельных TX (orphan-SG window закрыт).
 type SecurityGroupWriterIface interface {
 	SecurityGroupReaderIface
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
-	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroupRecord, error)
+	Update(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id у SG (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroupRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*SecurityGroupRecord, error)
 	// UpdateRules атомарно заменяет набор правил SG (xmin-OCC).
 	// Concurrent-modification → ErrFailedPrecondition.
-	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error)
+	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*SecurityGroupRecord, error)
 	// UpdateRule обновляет description/labels единичного правила в SG (xmin-OCC).
-	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error)
+	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*SecurityGroupRecord, error)
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListSecurityGroupsUseCase — список SG с пагинацией. folder_id обязателен
@@ -24,7 +24,7 @@ func NewListSecurityGroupsUseCase(repo SecurityGroupRepo) *ListSecurityGroupsUse
 }
 
 // Execute — folder_id required.
-func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}

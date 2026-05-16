@@ -19,7 +19,6 @@ package privateendpoint
 import (
 	"context"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
@@ -56,7 +55,7 @@ type NetworkReader interface {
 // SubnetReader — узкий read-интерфейс для проверки parent Subnet. Subnet
 // optional на PrivateEndpoint (oneof AddressSpec.InternalIpv4AddressSpec).
 type SubnetReader interface {
-	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kacho.SubnetRecord, error)
 }
 
 // FolderClient — peer-сервис kacho-resource-manager.

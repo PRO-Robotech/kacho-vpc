@@ -14,11 +14,14 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// SecurityGroup — type-alias на domain.SecurityGroupRecord (repo-entity с
-// DB-managed CreatedAt). Wave 2 batch B (KAC-94), parity с repo.Network.
-type SecurityGroup = domain.SecurityGroupRecord
+// SecurityGroup — type-alias на kachorepo.SecurityGroupRecord (repo-entity с
+// DB-managed CreatedAt). Wave 5 D.1 (KAC-94): переехало в repo-leaf
+// `internal/repo/kacho/entity_security_group.go`; этот alias остался для
+// обратной совместимости с legacy `*repo.SecurityGroupRepo`-консьюмерами.
+type SecurityGroup = kachorepo.SecurityGroupRecord
 
 // SecurityGroupRepo — реализация SecurityGroupRepoIface поверх pgxpool.
 type SecurityGroupRepo struct {
@@ -139,7 +142,7 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f SecurityGroupFilter, p P
 
 // Insert вставляет SG. Принимает domain.SecurityGroup (без CreatedAt — repo сам
 // выставит `now()` для детерминированности тестов; source of truth — БД-колонка).
-// Возвращает *SecurityGroup (= *domain.SecurityGroupRecord).
+// Возвращает *SecurityGroup (= *kachorepo.SecurityGroupRecord).
 func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroup, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {

@@ -119,7 +119,7 @@ type NetworkRepo interface {
 // SubnetReader — узкое чтение Subnet для cascade-resolve (internal IP path:
 // subnet → network → network_default bind).
 type SubnetReader interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // FolderClient — то, что use-case'ам AddressPool нужно от peer-сервиса

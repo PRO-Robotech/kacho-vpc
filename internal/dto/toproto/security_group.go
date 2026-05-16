@@ -4,15 +4,17 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// securityGroup — receiver-объект под трансфер domain.SecurityGroupRecord →
-// *vpcv1.SecurityGroup. Wave 2 batch B (KAC-94), parity с network.go (pilot KAC-99).
+// securityGroup — receiver-объект под трансфер kachorepo.SecurityGroupRecord →
+// *vpcv1.SecurityGroup. Wave 5 D.1 (KAC-94): запись переехала в repo-leaf
+// `internal/repo/kacho/entity_security_group.go`.
 type securityGroup struct{}
 
 // toPb формирует *vpcv1.SecurityGroup из repo-entity. CreatedAt — truncate до
 // секунд через inline вызов time-трансфера (verbatim YC `YC-DIFF-TIMESTAMP-PRECISION`).
-func (securityGroup) toPb(rec domain.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
+func (securityGroup) toPb(rec kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
 	ts, err := (timeObj{}).toPb(rec.CreatedAt)
 	if err != nil {
 		return nil, err

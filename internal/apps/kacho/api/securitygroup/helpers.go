@@ -16,6 +16,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	// Blank-import регистрирует трансферы SecurityGroup/time через init() (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -148,7 +149,7 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 // marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/UpdateRules/UpdateRule/Move для запихивания результата в Operation.response.
-func marshalSecurityGroupRecord(rec *domain.SecurityGroupRecord) (*anypb.Any, error) {
+func marshalSecurityGroupRecord(rec *kacho.SecurityGroupRecord) (*anypb.Any, error) {
 	var dst *vpcv1.SecurityGroup
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer SecurityGroup: %w", err)

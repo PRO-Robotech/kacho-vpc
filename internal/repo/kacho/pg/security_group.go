@@ -35,7 +35,7 @@ type securityGroupReader struct {
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с
 // "Security group SecurityGroup.Id(value=<id>) not found" (через WrapSGErr).
-func (r *securityGroupReader) Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error) {
+func (r *securityGroupReader) Get(ctx context.Context, id string) (*kacho.SecurityGroupRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM security_groups WHERE id = $1`, repo.SGCols)
 	row := r.tx.QueryRow(ctx, q, id)
 	sg, err := repo.ScanSG(row)
@@ -47,7 +47,7 @@ func (r *securityGroupReader) Get(ctx context.Context, id string) (*domain.Secur
 
 // List — cursor-based pagination + filter.Parse (YC-syntax с whitelist полей
 // ["name","network_id"]). Парность с legacy SG-репо.
-func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFilter, p kacho.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFilter, p kacho.Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -107,7 +107,7 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 	}
 	defer rows.Close()
 
-	var result []*domain.SecurityGroupRecord
+	var result []*kacho.SecurityGroupRecord
 	for rows.Next() {
 		sg, err := repo.ScanSG(rows)
 		if err != nil {
@@ -146,7 +146,7 @@ type securityGroupWriter struct {
 // пустая строка → SQL NULL, иначе FK сработает на ”.
 //
 // outbox-write — в use-case'е через `writer.Outbox().Emit(...)`.
-func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
 	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGro
 
 // Update — UPDATE security_groups RETURNING name/description/labels/rules/status.
 // outbox-write — в use-case'е.
-func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
 	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGro
 }
 
 // SetFolderID меняет folder_id у SG (для :move). outbox-write — в use-case'е.
-func (w *securityGroupWriter) SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroupRecord, error) {
+func (w *securityGroupWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
 	q := fmt.Sprintf(`UPDATE security_groups SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.SGCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	sg, err := repo.ScanSG(row)
@@ -231,7 +231,7 @@ func (w *securityGroupWriter) Delete(ctx context.Context, id string) error {
 // Parity с legacy SG-репо.
 //
 // outbox-write — в use-case'е.
-func (w *securityGroupWriter) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error) {
+func (w *securityGroupWriter) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*kacho.SecurityGroupRecord, error) {
 	var rulesJSON []byte
 	var rowXmin string
 	if err := w.tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin); err != nil {
@@ -280,7 +280,7 @@ func (w *securityGroupWriter) UpdateRules(ctx context.Context, sgID string, dele
 // Concurrent-modification → FailedPrecondition. Parity с legacy SG-репо.
 //
 // outbox-write — в use-case'е.
-func (w *securityGroupWriter) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error) {
+func (w *securityGroupWriter) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*kacho.SecurityGroupRecord, error) {
 	var rulesJSON []byte
 	var rowXmin string
 	if err := w.tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin); err != nil {

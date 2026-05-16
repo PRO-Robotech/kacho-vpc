@@ -50,13 +50,9 @@ type AddressFilter struct {
 	SubnetID string
 }
 
-// RouteTableFilter — фильтр для списка таблиц маршрутизации.
-type RouteTableFilter struct {
-	FolderID  string
-	NetworkID string
-	Name      string
-	Filter    string
-}
+// RouteTableFilter — фильтр для списка таблиц маршрутизации. Wave 5
+// replicate (KAC-94 D.1): type-alias на `kacho.RouteTableFilter`.
+type RouteTableFilter = kachorepo.RouteTableFilter
 
 // SecurityGroupFilter — фильтр для списка SG.
 //
@@ -71,12 +67,9 @@ type GatewayFilter struct {
 	Filter   string
 }
 
-// PrivateEndpointFilter — фильтр для списка PrivateEndpoints.
-type PrivateEndpointFilter struct {
-	FolderID string
-	Name     string
-	Filter   string
-}
+// PrivateEndpointFilter — фильтр для списка PrivateEndpoints. Wave 5
+// replicate (KAC-94 D.1): type-alias на `kacho.PrivateEndpointFilter`.
+type PrivateEndpointFilter = kachorepo.PrivateEndpointFilter
 
 // AddressPoolFilter — фильтр для списка пулов. AddressPool — глобальный
 // infrastructure-ресурс, поэтому folder/cloud/org здесь нет.
