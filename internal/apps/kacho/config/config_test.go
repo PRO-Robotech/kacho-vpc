@@ -118,6 +118,11 @@ extapi:
 	require.Contains(t, cfg.DSN(), "pool_max_conns=99")
 	// MigrateDSN — без pool_max_conns.
 	require.NotContains(t, cfg.MigrateDSN(), "pool_max_conns")
+	// KAC-94 (миграция 0034): оба DSN обязаны нести libpq-параметр
+	// `options=-c search_path=kacho_vpc,public`, иначе session попадёт в
+	// `public` (default) и не найдёт переехавшие таблицы.
+	require.Contains(t, cfg.DSN(), "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
+	require.Contains(t, cfg.MigrateDSN(), "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
 }
 
 // TestLoad_ENVOverride — KACHO_VPC_REPOSITORY__POSTGRES__URL перекрывает YAML/defaults.

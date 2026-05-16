@@ -3,6 +3,7 @@ package pg_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,7 +57,24 @@ func setupTestDB(t testing.TB) string {
 	require.NoError(t, goose.SetDialect("postgres"))
 	require.NoError(t, goose.Up(db, "."))
 
-	return dsn
+	// KAC-94 (миграция 0034): схема `public` → `kacho_vpc`. Production-DSN
+	// получает search_path через config.baseDSN(); тесты строят DSN из
+	// testcontainers напрямую, поэтому добавляем то же значение здесь.
+	return appendSearchPathOptions(dsn)
+}
+
+// appendSearchPathOptions добавляет libpq `options=-c search_path=kacho_vpc,public`
+// в DSN. См. config.baseDSN — production-эквивалент.
+func appendSearchPathOptions(dsn string) string {
+	const optionsParam = "options=-c%20search_path%3Dkacho_vpc%2Cpublic"
+	if strings.Contains(dsn, "options=") || strings.Contains(dsn, "options%3D") {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + optionsParam
 }
 
 func newNetwork(folderID, name string) *domain.Network {
