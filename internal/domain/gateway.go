@@ -41,3 +41,14 @@ func (g Gateway) Validate() error {
 		ValidateLabels(g.Labels),
 	)
 }
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). skill evgeniy §4 D.10.
+func (g Gateway) Equal(other Gateway) bool {
+	return g.ID == other.ID &&
+		g.FolderID == other.FolderID &&
+		g.Name == other.Name &&
+		g.Description == other.Description &&
+		LabelsEqual(g.Labels, other.Labels) &&
+		g.GatewayType == other.GatewayType
+}

@@ -46,6 +46,34 @@ func (s SecurityGroup) Validate() error {
 	return multierr.Combine(errs...)
 }
 
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). `xmin` (runtime concurrency token, см. CLAUDE.md §12) тоже не входит —
+// он живёт в repo-leaf record, не в domain-структуре. Rules — order-sensitive
+// (порядок rule-id в YC контракте значим). skill evgeniy §4 D.10.
+func (s SecurityGroup) Equal(other SecurityGroup) bool {
+	if s.ID != other.ID ||
+		s.FolderID != other.FolderID ||
+		s.NetworkID != other.NetworkID ||
+		s.Name != other.Name ||
+		s.Description != other.Description ||
+		s.Status != other.Status ||
+		s.DefaultForNetwork != other.DefaultForNetwork {
+		return false
+	}
+	if !LabelsEqual(s.Labels, other.Labels) {
+		return false
+	}
+	if len(s.Rules) != len(other.Rules) {
+		return false
+	}
+	for i := range s.Rules {
+		if !s.Rules[i].Equal(other.Rules[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // SecurityGroupRule — встроенное правило SG (Wave 2 batch B, KAC-94).
 //
 // Description — newtype `RcDescription` (skill evgeniy §4 D.2). Direction — enum
@@ -84,4 +112,24 @@ func (r SecurityGroupRule) Validate() error {
 		r.Description.Validate(),
 		ValidateLabels(LabelsFromMap(r.Labels)),
 	)
+}
+
+// Equal — deep equality. Labels (map[string]string) — order-insensitive
+// (map-семантика). V4CidrBlocks/V6CidrBlocks — order-sensitive (порядок CIDR
+// в правиле формально не значим, но мы держимся order-sensitive для
+// consistency с RouteTable.StaticRoutes и NIC.SecurityGroupIDs).
+// skill evgeniy §4 D.10.
+func (r SecurityGroupRule) Equal(other SecurityGroupRule) bool {
+	return r.ID == other.ID &&
+		r.Description == other.Description &&
+		labelsMapEqual(r.Labels, other.Labels) &&
+		r.Direction == other.Direction &&
+		r.FromPort == other.FromPort &&
+		r.ToPort == other.ToPort &&
+		r.ProtocolName == other.ProtocolName &&
+		r.ProtocolNumber == other.ProtocolNumber &&
+		stringSlicesEqual(r.V4CidrBlocks, other.V4CidrBlocks) &&
+		stringSlicesEqual(r.V6CidrBlocks, other.V6CidrBlocks) &&
+		r.SecurityGroupID == other.SecurityGroupID &&
+		r.PredefinedTarget == other.PredefinedTarget
 }

@@ -9,6 +9,14 @@ type StaticRoute struct {
 	Labels            map[string]string `json:"labels,omitempty"`
 }
 
+// Equal — deep equality. Labels — map-семантика (order-insensitive).
+// skill evgeniy §4 D.10.
+func (r StaticRoute) Equal(other StaticRoute) bool {
+	return r.DestinationPrefix == other.DestinationPrefix &&
+		r.NextHopAddress == other.NextHopAddress &&
+		labelsMapEqual(r.Labels, other.Labels)
+}
+
 // RouteTable — таблица маршрутизации (Wave 2 batch A, KAC-94).
 //
 // Семантически-нагруженные поля (Name/Description/Labels) — newtypes из
@@ -36,4 +44,29 @@ func (rt RouteTable) Validate() error {
 		rt.Description.Validate(),
 		ValidateLabels(rt.Labels),
 	)
+}
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). StaticRoutes — order-sensitive (порядок маршрутов значим для
+// matching priority). skill evgeniy §4 D.10.
+func (rt RouteTable) Equal(other RouteTable) bool {
+	if rt.ID != other.ID ||
+		rt.FolderID != other.FolderID ||
+		rt.Name != other.Name ||
+		rt.Description != other.Description ||
+		rt.NetworkID != other.NetworkID {
+		return false
+	}
+	if !LabelsEqual(rt.Labels, other.Labels) {
+		return false
+	}
+	if len(rt.StaticRoutes) != len(other.StaticRoutes) {
+		return false
+	}
+	for i := range rt.StaticRoutes {
+		if !rt.StaticRoutes[i].Equal(other.StaticRoutes[i]) {
+			return false
+		}
+	}
+	return true
 }
