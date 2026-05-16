@@ -95,6 +95,17 @@ func (r *Repository) SeedAddress(rec *kacho.AddressRecord) {
 	r.addresses[rec.ID] = rec
 }
 
+// SeedSubnet добавляет SubnetRecord в Subnet-state. Нужен тестам, которые
+// проверяют parent-Subnet validation через CQRS-Reader (KAC-94 A.7 sub-PR 3/6:
+// NIC use-case'ы больше не зависят от legacy *repo.SubnetRepo peer-port'а —
+// существование Subnet проверяется через `kachoRepo.Reader().Subnets().Get`,
+// поэтому fixture-Subnet seed'ится прямо в kachomock).
+func (r *Repository) SeedSubnet(rec *kacho.SubnetRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.subnets[rec.ID] = rec
+}
+
 // Outbox возвращает копию выпущенных outbox-event'ов (post-commit only).
 func (r *Repository) Outbox() []OutboxEvent {
 	r.mu.Lock()

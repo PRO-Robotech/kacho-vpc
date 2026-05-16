@@ -60,19 +60,22 @@ type CreateInput struct {
 // атомарно. Address-attach (SetReference на addresses) пока через legacy
 // AddressRepo — отдельная TX (Address ещё не полностью на CQRS-writer для
 // SetReference); переход на single writer-TX — следующий шаг replicate-фазы.
+//
+// A.7 sub-PR 3/6 (KAC-94): parent-Subnet validation в `doCreate` идёт через
+// `kachoRepo.Reader().Subnets().Get` (Reader-TX на slave-pool по G.4), а не
+// через legacy `*repo.SubnetRepo` peer-port — последняя legacy-зависимость из
+// NIC use-case'ов выпилена.
 type CreateNetworkInterfaceUseCase struct {
 	repo         Repo
-	subnetRead   SubnetReader
 	addressRepo  AddressRepo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateNetworkInterfaceUseCase создаёт CreateNetworkInterfaceUseCase.
-func NewCreateNetworkInterfaceUseCase(r Repo, subnetRead SubnetReader, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
+func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
 	return &CreateNetworkInterfaceUseCase{
 		repo:         r,
-		subnetRead:   subnetRead,
 		addressRepo:  addressRepo,
 		folderClient: folderClient,
 		opsRepo:      opsRepo,
@@ -141,8 +144,19 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", n.FolderID)
 	}
-	if _, err := u.subnetRead.Get(ctx, n.SubnetID); err != nil {
-		return nil, mapRepoErr(err)
+	// A.7 sub-PR 3/6 (KAC-94): parent-Subnet check через CQRS-Reader (G.4 — на
+	// slave-pool, если он настроен). DB-уровень backstop остаётся: FK
+	// `network_interfaces.subnet_id → subnets.id` ON DELETE RESTRICT — если
+	// между sync-Get и Insert'ом подсеть удалят, Insert провалится с
+	// foreign_key_violation → `mapRepoErr` → FailedPrecondition.
+	rd, rerr := u.repo.Reader(ctx)
+	if rerr != nil {
+		return nil, mapRepoErr(rerr)
+	}
+	_, serr := rd.Subnets().Get(ctx, n.SubnetID)
+	_ = rd.Close()
+	if serr != nil {
+		return nil, mapRepoErr(serr)
 	}
 	// Валидируем ссылки на Address-ресурсы (существуют, нужной версии, в той же
 	// подсети, не заняты другим референтом) и помечаем их used=true + referrer.
