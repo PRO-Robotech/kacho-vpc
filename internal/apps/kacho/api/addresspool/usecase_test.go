@@ -1,14 +1,22 @@
 // Package addresspool — usecase_test.go: unit-тесты use-case'ов через
-// in-memory stubs. Перенесено из `internal/apps/kacho/services/addresspool/
+// kachomock-Repository.
+//
+// Перенесено из `internal/apps/kacho/services/addresspool/
 // service_split_test.go` (KAC-71 B-Group: split AddressPool.cidr_blocks →
 // v4_cidr_blocks + v6_cidr_blocks) и `service_cascade_split_test.go`
 // (KAC-71 D-Group: IPAM cascade family-skip).
 //
 // Wave 5 batch 36 (KAC-94, skill evgeniy §2 B.1): после переезда на
-// use-case-структуру тесты вызывают каждый use-case напрямую (а не толстый
-// `AddressPoolService.Create`/`Update`/...). Stubs — repo-port реализации —
-// также живут в этом файле (parity с предыдущей версией; portmock не содержит
-// AddressPool*-моков).
+// use-case-структуру тесты вызывают каждый use-case напрямую.
+//
+// Wave 5 A.7 sub-PR 1/6 (KAC-94, skill evgeniy §6 G.1-G.7): AddressPool /
+// Binding / CloudPoolSelector переехали на CQRS-Repository (`kacho.Repository`).
+// Stubs `stub*AddressPoolRepo` / `stubBindingRepo` / `stubCloudSelRepo` удалены —
+// заменены на `kachomock.Repository` (in-memory CQRS-impl с TX-семантикой и
+// outbox-буфером). Network/Subnet/Address у kachomock тоже есть, но для cascade
+// и Bind* тестов сохраняем legacy-mock'и (`repomock.NetworkRepo` / `SubnetRepo`
+// / `AddressRepo`) — они подходят под узкие port'ы `NetworkRepo` / `SubnetReader`
+// / `AddressRepo` через duck-typing (Get → *kacho.{Network,Subnet,Address}Record).
 package addresspool
 
 import (
@@ -27,242 +35,88 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // --------------------------------------------------------------------------
-// Local fakes — portmock не содержит реализаций AddressPoolRepo /
-// AddressPoolBindingRepo / CloudPoolSelectorRepo. Inline здесь.
+// CQRS-Repository wrapper — KAC-94 A.7 sub-PR 1/6
+//
+// `kachomock.Repository` покрывает все 8 ресурсов + AddressPool + Binding +
+// CloudPoolSelector. У него семантика in-memory TX (Writer накапливает
+// изменения, Commit flush'ит). PopulateFreelistForPool — no-op в mock'е;
+// чтобы тесты могли проверить «freelist materialized for pool X», мы
+// оборачиваем Repository в `freelistRecordingRepo` ниже.
 // --------------------------------------------------------------------------
 
-type stubAddressPoolRepo struct {
-	mu            sync.Mutex
-	pools         map[string]*domain.AddressPool
-	freelistCalls []string
+// freelistRecordingRepo — kachomock-Repository + запись поlistCalls
+// (PopulateFreelistForPool calls). Lightweight wrapper для B1 (Create v4-only
+// pool — happy path) — там тест проверяет что use-case **позвал** populate.
+type freelistRecordingRepo struct {
+	inner *kachomock.Repository
+	mu    sync.Mutex
+	calls []string
 }
 
-func newStubAddressPoolRepo() *stubAddressPoolRepo {
-	return &stubAddressPoolRepo{pools: map[string]*domain.AddressPool{}}
+func newFreelistRepo() *freelistRecordingRepo {
+	return &freelistRecordingRepo{inner: kachomock.NewRepository()}
 }
 
-func (r *stubAddressPoolRepo) Get(_ context.Context, id string) (*domain.AddressPool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	p, ok := r.pools[id]
-	if !ok {
-		return nil, repo.ErrNotFound
+func (r *freelistRecordingRepo) Reader(ctx context.Context) (kachorepo.RepositoryReader, error) {
+	return r.inner.Reader(ctx)
+}
+
+func (r *freelistRecordingRepo) Writer(ctx context.Context) (kachorepo.RepositoryWriter, error) {
+	w, err := r.inner.Writer(ctx)
+	if err != nil {
+		return nil, err
 	}
-	cp := *p
-	return &cp, nil
+	return &freelistRecordingWriter{RepositoryWriter: w, parent: r}, nil
 }
 
-func (r *stubAddressPoolRepo) List(_ context.Context, _ AddressPoolFilter, _ Pagination) ([]*domain.AddressPool, string, error) {
+func (r *freelistRecordingRepo) Close() {}
+
+func (r *freelistRecordingRepo) FreelistCalls() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]*domain.AddressPool, 0, len(r.pools))
-	for _, p := range r.pools {
-		cp := *p
-		out = append(out, &cp)
+	out := make([]string, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+func (r *freelistRecordingRepo) recordFreelist(poolID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, poolID)
+}
+
+type freelistRecordingWriter struct {
+	kachorepo.RepositoryWriter
+	parent *freelistRecordingRepo
+}
+
+func (w *freelistRecordingWriter) AddressPools() kachorepo.AddressPoolWriterIface {
+	return &freelistRecordingPoolWriter{
+		AddressPoolWriterIface: w.RepositoryWriter.AddressPools(),
+		parent:                 w.parent,
 	}
-	return out, "", nil
 }
 
-func (r *stubAddressPoolRepo) Insert(_ context.Context, p *domain.AddressPool) (*domain.AddressPool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	cp := *p
-	r.pools[p.ID] = &cp
-	return p, nil
+type freelistRecordingPoolWriter struct {
+	kachorepo.AddressPoolWriterIface
+	parent *freelistRecordingRepo
 }
 
-func (r *stubAddressPoolRepo) Update(_ context.Context, p *domain.AddressPool) (*domain.AddressPool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.pools[p.ID]; !ok {
-		return nil, repo.ErrNotFound
-	}
-	cp := *p
-	r.pools[p.ID] = &cp
-	return p, nil
+func (pw *freelistRecordingPoolWriter) PopulateFreelistForPool(ctx context.Context, poolID string) error {
+	pw.parent.recordFreelist(poolID)
+	return pw.AddressPoolWriterIface.PopulateFreelistForPool(ctx, poolID)
 }
 
-func (r *stubAddressPoolRepo) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.pools[id]; !ok {
-		return repo.ErrNotFound
-	}
-	delete(r.pools, id)
-	return nil
-}
+// --------------------------------------------------------------------------
+// Adapter-ы (parity с legacy-stubs)
+// --------------------------------------------------------------------------
 
-func (r *stubAddressPoolRepo) GetDefaultForZone(_ context.Context, zoneID string, kind domain.AddressPoolKind) (*domain.AddressPool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, p := range r.pools {
-		if p.Kind == kind && p.IsDefault && p.ZoneID == zoneID {
-			cp := *p
-			return &cp, nil
-		}
-	}
-	return nil, repo.ErrNotFound
-}
-
-func (r *stubAddressPoolRepo) FindBySelectorMatch(_ context.Context, sel map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*domain.AddressPool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []*domain.AddressPool
-	for _, p := range r.pools {
-		if p.Kind != kind || (p.ZoneID != zoneID && p.ZoneID != "") {
-			continue
-		}
-		if len(p.SelectorLabels) == 0 {
-			continue
-		}
-		// containment: networkSelector ⊆ pool.SelectorLabels
-		match := true
-		for k, v := range sel {
-			if p.SelectorLabels[k] != v {
-				match = false
-				break
-			}
-		}
-		if match {
-			cp := *p
-			out = append(out, &cp)
-		}
-	}
-	if len(out) == 0 {
-		return nil, repo.ErrNotFound
-	}
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
-}
-
-func (r *stubAddressPoolRepo) FindAmbiguousSelectorGroups(_ context.Context, _ string) ([][]*domain.AddressPool, error) {
-	return nil, nil
-}
-
-func (r *stubAddressPoolRepo) CountAddressesByPool(_ context.Context, _ string) (int64, error) {
-	return 0, nil
-}
-
-func (r *stubAddressPoolRepo) CountAddressesByPoolPerCIDR(_ context.Context, _ string) (map[string]int64, error) {
-	return nil, nil
-}
-
-func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ Pagination) ([]*kachorepo.AddressRecord, string, error) {
-	return nil, "", nil
-}
-
-func (r *stubAddressPoolRepo) PopulateFreelistForPool(_ context.Context, poolID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.freelistCalls = append(r.freelistCalls, poolID)
-	return nil
-}
-
-// stubBindingRepo — fake AddressPoolBindingRepo.
-type stubBindingRepo struct {
-	mu       sync.Mutex
-	netDef   map[string]string // network_id → pool_id
-	addrOver map[string]string // address_id → pool_id
-}
-
-func newStubBindingRepo() *stubBindingRepo {
-	return &stubBindingRepo{netDef: map[string]string{}, addrOver: map[string]string{}}
-}
-
-func (r *stubBindingRepo) SetNetworkDefault(_ context.Context, networkID, poolID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.netDef[networkID] = poolID
-	return nil
-}
-
-func (r *stubBindingRepo) GetNetworkDefault(_ context.Context, networkID string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	p, ok := r.netDef[networkID]
-	if !ok {
-		return "", repo.ErrNotFound
-	}
-	return p, nil
-}
-
-func (r *stubBindingRepo) UnsetNetworkDefault(_ context.Context, networkID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.netDef, networkID)
-	return nil
-}
-
-func (r *stubBindingRepo) SetAddressOverride(_ context.Context, addressID, poolID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.addrOver[addressID] = poolID
-	return nil
-}
-
-func (r *stubBindingRepo) GetAddressOverride(_ context.Context, addressID string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	p, ok := r.addrOver[addressID]
-	if !ok {
-		return "", repo.ErrNotFound
-	}
-	return p, nil
-}
-
-func (r *stubBindingRepo) UnsetAddressOverride(_ context.Context, addressID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.addrOver, addressID)
-	return nil
-}
-
-// stubCloudSelRepo — fake CloudPoolSelectorRepo.
-type stubCloudSelRepo struct {
-	mu sync.Mutex
-	m  map[string]*domain.CloudPoolSelector
-}
-
-func newStubCloudSelRepo() *stubCloudSelRepo {
-	return &stubCloudSelRepo{m: map[string]*domain.CloudPoolSelector{}}
-}
-
-func (r *stubCloudSelRepo) Set(_ context.Context, cloudID string, sel map[string]string, setBy string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.m[cloudID] = &domain.CloudPoolSelector{
-		CloudID: cloudID, Selector: sel, SetBy: setBy, SetAt: time.Now().UTC(),
-	}
-	return nil
-}
-
-func (r *stubCloudSelRepo) Get(_ context.Context, cloudID string) (*domain.CloudPoolSelector, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	c, ok := r.m[cloudID]
-	if !ok {
-		return nil, repo.ErrNotFound
-	}
-	cp := *c
-	return &cp, nil
-}
-
-func (r *stubCloudSelRepo) Unset(_ context.Context, cloudID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.m, cloudID)
-	return nil
-}
-
-// networkRepoAdapter — repomock.NetworkRepo возвращает kacho.NetworkRecord,
-// что точно matches порт `NetworkRepo` в iface.go (Get → *kacho.NetworkRecord).
-// type-alias просто переименовывает для удобства test-кода.
+// networkRepoAdapter оборачивает repomock.NetworkRepo под port `NetworkRepo`.
 type networkRepoAdapter struct {
 	*repomock.NetworkRepo
 }
@@ -271,12 +125,11 @@ func newNetworkRepoAdapter() *networkRepoAdapter {
 	return &networkRepoAdapter{NetworkRepo: repomock.NewNetworkRepo()}
 }
 
-// Get матчит сигнатуру NetworkRepo port интерфейса.
 func (a *networkRepoAdapter) Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error) {
 	return a.NetworkRepo.Get(ctx, id)
 }
 
-// subnetRepoAdapter оборачивает repomock.SubnetRepo, сужая интерфейс до SubnetReader.
+// subnetRepoAdapter оборачивает repomock.SubnetRepo под `SubnetReader`.
 type subnetRepoAdapter struct {
 	*repomock.SubnetRepo
 }
@@ -285,23 +138,18 @@ func newSubnetRepoAdapter() *subnetRepoAdapter {
 	return &subnetRepoAdapter{SubnetRepo: repomock.NewSubnetRepo()}
 }
 
-// folderClientAdapter оборачивает repomock.FolderClient в порт FolderClient
-// (только GetCloudID — Exists не используется AddressPool use-case'ами).
+// folderClientAdapter — repomock.FolderClient под port `FolderClient`.
 type folderClientAdapter struct {
 	*repomock.FolderClient
 }
 
-// makeUseCases — собирает полный набор use-case'ов на in-memory stubs.
-// addr/net/sub/folder/zone — могут быть nil если тест их не использует
-// (CreateAddressPoolUseCase требует addrRepo + zoneReg; resolve использует
-// addr + sub + folder).
+// useCasesFixture — общий набор зависимостей для use-case-тестов AddressPool.
 type useCasesFixture struct {
-	poolRepo *stubAddressPoolRepo
-	bindings *stubBindingRepo
-	cloudSel *stubCloudSelRepo
+	kr       *freelistRecordingRepo // kachomock + recorded freelist-calls
 	addrRepo *repomock.AddressRepo
 	netRepo  *networkRepoAdapter
 	subRepo  *subnetRepoAdapter
+	cloudSel string // helper-state, не используется напрямую (Set/Get идут через kr)
 
 	create     *CreateAddressPoolUseCase
 	update     *UpdateAddressPoolUseCase
@@ -310,36 +158,116 @@ type useCasesFixture struct {
 	bindAddr   *BindAsAddressOverrideUseCase
 	unbindNet  *UnbindNetworkDefaultUseCase
 	unbindAddr *UnbindAddressOverrideUseCase
+	setCloud   *SetCloudPoolSelectorUseCase
 	resolver   *ResolverService
 	explain    *ExplainResolutionUseCase
 }
 
 func newUseCases(t *testing.T) *useCasesFixture {
 	t.Helper()
-	pr := newStubAddressPoolRepo()
-	br := newStubBindingRepo()
-	cs := newStubCloudSelRepo()
+	kr := newFreelistRepo()
 	ar := repomock.NewAddressRepo()
 	nr := newNetworkRepoAdapter()
 	sr := newSubnetRepoAdapter()
 	zr := repomock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
 	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
 
-	resolver := NewResolverService(pr, br, cs, ar, sr, fc)
+	resolver := NewResolverService(kr, ar, sr, fc)
 	return &useCasesFixture{
-		poolRepo: pr, bindings: br, cloudSel: cs,
+		kr:       kr,
 		addrRepo: ar, netRepo: nr, subRepo: sr,
 
-		create:     NewCreateAddressPoolUseCase(pr, ar, zr),
-		update:     NewUpdateAddressPoolUseCase(pr, ar),
-		deleteUC:   NewDeleteAddressPoolUseCase(pr),
-		bindNet:    NewBindAsNetworkDefaultUseCase(pr, br, nr),
-		bindAddr:   NewBindAsAddressOverrideUseCase(pr, br, ar),
-		unbindNet:  NewUnbindNetworkDefaultUseCase(br),
-		unbindAddr: NewUnbindAddressOverrideUseCase(br),
+		create:     NewCreateAddressPoolUseCase(kr, zr),
+		update:     NewUpdateAddressPoolUseCase(kr),
+		deleteUC:   NewDeleteAddressPoolUseCase(kr),
+		bindNet:    NewBindAsNetworkDefaultUseCase(kr, nr),
+		bindAddr:   NewBindAsAddressOverrideUseCase(kr, ar),
+		unbindNet:  NewUnbindNetworkDefaultUseCase(kr),
+		unbindAddr: NewUnbindAddressOverrideUseCase(kr),
+		setCloud:   NewSetCloudPoolSelectorUseCase(kr),
 		resolver:   resolver,
 		explain:    NewExplainResolutionUseCase(ar, resolver),
 	}
+}
+
+// poolGet — helper: достать pool через Reader-TX kachomock'а.
+func (f *useCasesFixture) poolGet(t *testing.T, id string) *kachorepo.AddressPoolRecord {
+	t.Helper()
+	rd, err := f.kr.Reader(context.Background())
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	p, err := rd.AddressPools().Get(context.Background(), id)
+	require.NoError(t, err)
+	return p
+}
+
+// netDefaultBinding — helper.
+func (f *useCasesFixture) netDefaultBinding(t *testing.T, networkID string) string {
+	t.Helper()
+	rd, err := f.kr.Reader(context.Background())
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	p, err := rd.AddressPoolBindings().GetNetworkDefault(context.Background(), networkID)
+	require.NoError(t, err)
+	return p
+}
+
+// addrOverrideBinding — helper.
+func (f *useCasesFixture) addrOverrideBinding(t *testing.T, addressID string) string {
+	t.Helper()
+	rd, err := f.kr.Reader(context.Background())
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	p, err := rd.AddressPoolBindings().GetAddressOverride(context.Background(), addressID)
+	require.NoError(t, err)
+	return p
+}
+
+// seedPool — insert pool в kachomock-state (минуя use-case, чтобы избежать
+// валидаций и freelist-init для тестовых fixture'ов).
+func (f *useCasesFixture) seedPool(t *testing.T, name string, isDefault bool, zone string, v4, v6 []string, selector map[string]string) *domain.AddressPool {
+	t.Helper()
+	now := time.Now().UTC()
+	p := &domain.AddressPool{
+		ID:             ids.NewID("apl"),
+		Name:           name,
+		V4CIDRBlocks:   v4,
+		V6CIDRBlocks:   v6,
+		Kind:           domain.AddressPoolKindExternalPublic,
+		ZoneID:         zone,
+		IsDefault:      isDefault,
+		SelectorLabels: selector,
+		CreatedAt:      now,
+		ModifiedAt:     now,
+	}
+	f.kr.inner.SeedAddressPool(&kachorepo.AddressPoolRecord{AddressPool: *p})
+	return p
+}
+
+// seedAddressV4Req — Address с external_ipv4 spec.
+func (f *useCasesFixture) seedAddressV4Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
+	t.Helper()
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
+		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
+	}
+	rec, err := f.addrRepo.Insert(context.Background(), a)
+	require.NoError(t, err)
+	return rec
+}
+
+// seedAddressV6Req — Address с external_ipv6 spec.
+func (f *useCasesFixture) seedAddressV6Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
+	t.Helper()
+	a := &domain.Address{
+		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
+		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: zone},
+	}
+	rec, err := f.addrRepo.Insert(context.Background(), a)
+	require.NoError(t, err)
+	return rec
 }
 
 // --------------------------------------------------------------------------
@@ -362,8 +290,9 @@ func TestAddressPool_B1_Create_V4Only_OK(t *testing.T) {
 	assert.Equal(t, []string{"203.0.113.0/24"}, p.V4CIDRBlocks)
 	assert.Empty(t, p.V6CIDRBlocks, "v6_cidr_blocks must be empty for v4-only pool")
 	// PopulateFreelistForPool вызван — pool готов к v4-аллокациям.
-	require.Len(t, f.poolRepo.freelistCalls, 1)
-	assert.Equal(t, p.ID, f.poolRepo.freelistCalls[0])
+	calls := f.kr.FreelistCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, p.ID, calls[0])
 }
 
 // --------------------------------------------------------------------------
@@ -579,7 +508,7 @@ func TestAddressPool_B10_Update_ClearBoth_InvalidArgument(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 	assert.Contains(t, st.Message(), "v4_cidr_blocks and v6_cidr_blocks must not be both empty")
 	// В БД pool остаётся без изменений (v4/v6 непустые).
-	got, _ := f.poolRepo.Get(context.Background(), created.ID)
+	got := f.poolGet(t, created.ID)
 	assert.NotEmpty(t, got.V4CIDRBlocks)
 	assert.NotEmpty(t, got.V6CIDRBlocks)
 }
@@ -693,9 +622,7 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 	err = f.bindNet.Execute(context.Background(), netID, pool.ID)
 	require.NoError(t, err, "Bind* should be family-agnostic")
 
-	got, gerr := f.bindings.GetNetworkDefault(context.Background(), netID)
-	require.NoError(t, gerr)
-	assert.Equal(t, pool.ID, got)
+	assert.Equal(t, pool.ID, f.netDefaultBinding(t, netID))
 }
 
 func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
@@ -720,62 +647,12 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 	err = f.bindAddr.Execute(context.Background(), addrID, pool.ID)
 	require.NoError(t, err, "Override Bind should be family-agnostic")
 
-	got, gerr := f.bindings.GetAddressOverride(context.Background(), addrID)
-	require.NoError(t, gerr)
-	assert.Equal(t, pool.ID, got)
+	assert.Equal(t, pool.ID, f.addrOverrideBinding(t, addrID))
 }
 
 // --------------------------------------------------------------------------
 // D1: v4-only pool не резолвится для v6-allocate.
 // --------------------------------------------------------------------------
-
-// seedPool — insert pool с явными V4/V6 CIDR-блоками через repo (без UC,
-// чтобы избежать valid-zone проверки на test fixtures с разными zone-id).
-func (f *useCasesFixture) seedPool(t *testing.T, name string, isDefault bool, zone string, v4, v6 []string, selector map[string]string) *domain.AddressPool {
-	t.Helper()
-	now := time.Now().UTC()
-	p := &domain.AddressPool{
-		ID:             ids.NewID("apl"),
-		Name:           name,
-		V4CIDRBlocks:   v4,
-		V6CIDRBlocks:   v6,
-		Kind:           domain.AddressPoolKindExternalPublic,
-		ZoneID:         zone,
-		IsDefault:      isDefault,
-		SelectorLabels: selector,
-		CreatedAt:      now,
-		ModifiedAt:     now,
-	}
-	out, err := f.poolRepo.Insert(context.Background(), p)
-	require.NoError(t, err)
-	return out
-}
-
-// seedAddressV4Req — Address с external_ipv4 spec.
-func (f *useCasesFixture) seedAddressV4Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
-	t.Helper()
-	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
-	}
-	rec, err := f.addrRepo.Insert(context.Background(), a)
-	require.NoError(t, err)
-	return rec
-}
-
-// seedAddressV6Req — Address с external_ipv6 spec.
-func (f *useCasesFixture) seedAddressV6Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
-	t.Helper()
-	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
-		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: zone},
-	}
-	rec, err := f.addrRepo.Insert(context.Background(), a)
-	require.NoError(t, err)
-	return rec
-}
 
 func TestCascade_D1_V4OnlyPool_DoesNotResolveForV6(t *testing.T) {
 	f := newUseCases(t)
@@ -856,16 +733,14 @@ func TestCascade_D4_ExplainResolution_FallThrough_ReturnsErrPoolNotResolved(t *t
 
 func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 	// Кастомный fixture с folderClient.CloudID="cloud-d5".
-	pr := newStubAddressPoolRepo()
-	br := newStubBindingRepo()
-	cs := newStubCloudSelRepo()
+	kr := newFreelistRepo()
 	ar := repomock.NewAddressRepo()
 	sr := newSubnetRepoAdapter()
 
 	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
 	fc.CloudID = "cloud-d5"
 
-	resolver := NewResolverService(pr, br, cs, ar, sr, fc)
+	resolver := NewResolverService(kr, ar, sr, fc)
 
 	now := time.Now().UTC()
 	// Premium pool v4-only.
@@ -878,8 +753,7 @@ func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 		SelectorLabels: map[string]string{"tier": "premium"},
 		CreatedAt:      now,
 	}
-	_, err := pr.Insert(context.Background(), premiumV4)
-	require.NoError(t, err)
+	kr.inner.SeedAddressPool(&kachorepo.AddressPoolRecord{AddressPool: *premiumV4})
 
 	// Global default v6.
 	globalV6 := &domain.AddressPool{
@@ -891,11 +765,13 @@ func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 		IsDefault:    true,
 		CreatedAt:    now,
 	}
-	_, err = pr.Insert(context.Background(), globalV6)
-	require.NoError(t, err)
+	kr.inner.SeedAddressPool(&kachorepo.AddressPoolRecord{AddressPool: *globalV6})
 
-	require.NoError(t, cs.Set(context.Background(), "cloud-d5",
-		map[string]string{"tier": "premium"}, "admin@test"))
+	kr.inner.SeedCloudPoolSelector(&domain.CloudPoolSelector{
+		CloudID:  "cloud-d5",
+		Selector: map[string]string{"tier": "premium"},
+		SetAt:    now, SetBy: "admin@test",
+	})
 
 	a := &domain.Address{
 		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-d5",
@@ -924,8 +800,7 @@ func TestCascade_D6_AddressOverride_FamilySkip(t *testing.T) {
 
 	a := f.seedAddressV6Req(t, "f-d6", "ru-central1-c")
 
-	require.NoError(t, f.bindings.SetAddressOverride(context.Background(),
-		a.ID, overrideV4.ID))
+	f.kr.inner.SeedAddressOverrideBinding(a.ID, overrideV4.ID)
 
 	res, err := f.resolver.ResolvePoolForAddressObjFamily(context.Background(), a, FamilyV6)
 	require.Error(t, err)
@@ -954,7 +829,7 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, f.bindings.SetNetworkDefault(context.Background(), netID, netDefV6.ID))
+	f.kr.inner.SeedNetworkDefaultBinding(netID, netDefV6.ID)
 
 	a := &domain.Address{
 		ID: ids.NewID(ids.PrefixAddress), FolderID: "f-d7",
@@ -970,3 +845,6 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrPoolNotResolved))
 	assert.Nil(t, res)
 }
+
+// _ = repo: для будущих тестов, если потребуется использовать sentinels из repo.
+var _ = repo.ErrNotFound

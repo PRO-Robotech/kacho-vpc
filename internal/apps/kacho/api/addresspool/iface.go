@@ -1,5 +1,5 @@
 // Package addresspool — use-case-структура admin-only ресурса AddressPool
-// (skill evgeniy §2 B.1-B.4 + §6 G.1-G.3).
+// (skill evgeniy §2 B.1-B.4 + §6 G.1-G.7).
 //
 // Wave 5 batch 36 (KAC-94, skill `evgeniy`): миграция из старой «толстой»
 // `internal/apps/kacho/services/addresspool/service.go` (AP-B.1) на
@@ -23,17 +23,19 @@
 // синхронный, ответ — `*vpcv1.AddressPool` напрямую. Это сохраняется
 // verbatim относительно legacy `*addresspool.AddressPoolService`.
 //
-// CQRS-Repository extension: AddressPool остаётся на concrete-структурах
-// `*repo.AddressPoolRepo` / `*repo.AddressPoolBindingRepo` /
-// `*repo.CloudPoolSelectorRepo` (бывшие реализации удалённых
-// `*RepoIface`). Use-case-слой описывает узкие port'ы у себя
-// (skill evgeniy §6 G.2 — duck-typing). Объяснение: AP — admin resource
-// (низкая частота write'ов, нет multi-resource atomic-инвариантов внутри
-// одной writer-TX), а pg-репо уже делает own-Begin/emitVPC/Commit и
-// гарантирует DML+outbox-атомарность. Расширять `kacho.Repository` на
-// AddressPool (как сделано для Network/SG/Address) — следующая итерация
-// эпика KAC-94 если/когда это потребуется (например, для cross-resource
-// writer-TX с `address_pool_address_override` + `addresses`).
+// Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7):
+// AddressPool / AddressPoolBinding / CloudPoolSelector переехали на CQRS-
+// Repository (`kacho.Repository`). Use-case-слой больше не описывает узких
+// port'ов на legacy `*repo.AddressPoolRepo` / `*repo.AddressPoolBindingRepo` /
+// `*repo.CloudPoolSelectorRepo` — он работает через `kacho.Repository` с
+// явным открытием `Reader(ctx)` / `Writer(ctx)`. Каждый mutate-use-case
+// открывает writer, делает DML + outbox emit, потом Commit. Атомарность
+// DML + outbox гарантируется одной pgx.Tx writer'а (G.5).
+//
+// Legacy `*repo.AddressPoolRepo` / `*repo.AddressPoolBindingRepo` /
+// `*repo.CloudPoolSelectorRepo` НЕ удалены — на них завязаны
+// `internal/repo/*_integration_test.go` (raw-SQL coverage of constraints).
+// Финальное удаление — следующий sub-PR эпика A.7.
 package addresspool
 
 import (
@@ -52,6 +54,16 @@ type (
 	AddressPoolFilter = repo.AddressPoolFilter
 )
 
+// Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
+// работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Parity
+// с `internal/apps/kacho/api/network/iface.go`.
+type (
+	Repo          = kachorepo.Repository
+	Reader        = kachorepo.RepositoryReader
+	Writer        = kachorepo.RepositoryWriter
+	OutboxEmitter = kachorepo.OutboxEmitter
+)
+
 // Re-export sentinel-ошибок repo-слоя как `var`. errors.Is(err,
 // addresspool.ErrPoolNotResolved) совпадает с repo.ErrPoolNotResolved —
 // одна и та же error-value. Нужно: handler делает
@@ -62,63 +74,25 @@ var (
 	ErrPoolNotResolved = repo.ErrPoolNotResolved
 )
 
-// AddressPoolRepo — то, что use-case'ам AddressPool нужно от
-// pgxpool-репо (`*repo.AddressPoolRepo`). Локальная декларация (skill evgeniy
-// §6 G.2: каждый use-case-пакет описывает узкий port). В KAC-94 finalize
-// общий `repo.AddressPoolRepoIface` удалён — concrete-структура
-// `*repo.AddressPoolRepo` удовлетворяет этому интерфейсу duck-typing'ом.
-// Расширение CQRS-Repository на AddressPool — отдельная итерация (admin-resource,
-// низкая частота write'ов, нет multi-resource atomic-инвариантов в одной
-// writer-TX; pg-репо уже делает own-Begin/emit/Commit и гарантирует DML+outbox
-// атомарность).
-type AddressPoolRepo interface {
-	Get(ctx context.Context, id string) (*domain.AddressPool, error)
-	List(ctx context.Context, f AddressPoolFilter, p Pagination) ([]*domain.AddressPool, string, error)
-	Insert(ctx context.Context, p *domain.AddressPool) (*domain.AddressPool, error)
-	Update(ctx context.Context, p *domain.AddressPool) (*domain.AddressPool, error)
-	Delete(ctx context.Context, id string) error
-	GetDefaultForZone(ctx context.Context, zoneID string, kind domain.AddressPoolKind) (*domain.AddressPool, error)
-	FindBySelectorMatch(ctx context.Context, networkSelector map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*domain.AddressPool, error)
-	FindAmbiguousSelectorGroups(ctx context.Context, zoneID string) ([][]*domain.AddressPool, error)
-	CountAddressesByPool(ctx context.Context, poolID string) (int64, error)
-	CountAddressesByPoolPerCIDR(ctx context.Context, poolID string) (map[string]int64, error)
-	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
-	PopulateFreelistForPool(ctx context.Context, poolID string) error
-}
-
-// AddressPoolBindingRepo — узкий port для explicit-биндингов (per-resource pinning).
-type AddressPoolBindingRepo interface {
-	SetNetworkDefault(ctx context.Context, networkID, poolID string) error
-	GetNetworkDefault(ctx context.Context, networkID string) (string, error)
-	UnsetNetworkDefault(ctx context.Context, networkID string) error
-	SetAddressOverride(ctx context.Context, addressID, poolID string) error
-	GetAddressOverride(ctx context.Context, addressID string) (string, error)
-	UnsetAddressOverride(ctx context.Context, addressID string) error
-}
-
-// CloudPoolSelectorRepo — admin-controlled routing-labels for Cloud.
-// folder_id → cloud_id резолвится через FolderClient.GetCloudID на cascade-path.
-type CloudPoolSelectorRepo interface {
-	Set(ctx context.Context, cloudID string, selector map[string]string, setBy string) error
-	Get(ctx context.Context, cloudID string) (*domain.CloudPoolSelector, error)
-	Unset(ctx context.Context, cloudID string) error
-}
-
 // AddressRepo — узкое чтение Address для cascade-resolve + IPv6 cursor init.
 // AddressPool ↔ Address связаны через JSONB external_ipv4.address_pool_id /
 // external_ipv6.address_pool_id; FK на стороне БД отсутствует (см. §16 в
 // `kacho-vpc/CLAUDE.md`).
+//
+// Wave 5 A.7 sub-PR 1/6: AddressRepo осталась узким port'ом (а не через
+// `kacho.Repository.Addresses()`), т.к. AddressPool-use-case'ы не требуют
+// атомарной writer-TX (`Address.Insert` происходит из `CreateAddressUseCase`,
+// который сам открывает свою writer-TX). `InitIPv6PoolCursor` — admin-side
+// setup pool'а, идёт в writer-TX `CreateAddressPool/UpdateAddressPool` через
+// `kacho.Repository.Writer().Addresses().InitIPv6PoolCursor` — НЕ через этот
+// port (это duck-typed wrapper, см. update.go / create.go).
 type AddressRepo interface {
 	Get(ctx context.Context, id string) (*kachorepo.AddressRecord, error)
-	// InitIPv6PoolCursor — sparse v6 counter init (миграция 0021, KAC-60).
-	// Идемпотентно (ON CONFLICT DO NOTHING). Вызывается на Create / Update
-	// если pool получил v6 CIDR впервые.
-	InitIPv6PoolCursor(ctx context.Context, poolID string) error
 }
 
 // NetworkRepo — узкое чтение Network для BindAsNetworkDefault (FK-валидация).
-// Возвращает kacho.NetworkRecord (repo-leaf): bind-use-case'у нужен сам факт
-// existence + folder_id (не нужен) — поэтому здесь обобщённый Get.
+// Wave 5 A.7 sub-PR 1/6: остаётся узким port'ом (parity с AddressRepo) —
+// admin-side проверка существования Network не требует writer-TX.
 type NetworkRepo interface {
 	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
 }

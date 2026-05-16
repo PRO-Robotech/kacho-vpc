@@ -317,51 +317,50 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// CQRS-Repository (kachoRepo); legacy *PrivateEndpointRepo больше не
 	// инжектируется. Если потребуется admin-tooling на pgxpool напрямую —
 	// раскомментируйте: peRepo := repo.NewPrivateEndpointRepo(pool)
-	addressPoolRepo := repo.NewAddressPoolRepo(pool)
-	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
-	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
 	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	// Wave 5 batch 36 (KAC-94, skill `evgeniy` §2 B.1): AddressPool — use-case-
-	// структура (см. `internal/apps/kacho/api/addresspool/`). Composition root
-	// собирает 13 use-case'ов + ResolverService под единый Handler. Узкий
-	// adapter `addressPoolNetworkRepo` оборачивает legacy `*repo.NetworkRepo`
-	// под порт `addresspool.NetworkRepo` (Get → *kacho.NetworkRecord).
-	addressPoolResolver := addresspoolapp.NewResolverService(
-		addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo,
-		addressRepo, subnetRepo, folderClient,
-	)
-	addressPoolHandler := addresspoolapp.NewHandler(
-		addresspoolapp.NewCreateAddressPoolUseCase(addressPoolRepo, addressRepo, geoClient),
-		addresspoolapp.NewUpdateAddressPoolUseCase(addressPoolRepo, addressRepo),
-		addresspoolapp.NewDeleteAddressPoolUseCase(addressPoolRepo),
-		addresspoolapp.NewGetAddressPoolUseCase(addressPoolRepo),
-		addresspoolapp.NewListAddressPoolsUseCase(addressPoolRepo),
-		addresspoolapp.NewCheckUseCase(addressPoolRepo),
-		addresspoolapp.NewExplainResolutionUseCase(addressRepo, addressPoolResolver),
-		addresspoolapp.NewBindAsNetworkDefaultUseCase(addressPoolRepo, addressPoolBindingRepo, networkRepo),
-		addresspoolapp.NewUnbindNetworkDefaultUseCase(addressPoolBindingRepo),
-		addresspoolapp.NewBindAsAddressOverrideUseCase(addressPoolRepo, addressPoolBindingRepo, addressRepo),
-		addresspoolapp.NewUnbindAddressOverrideUseCase(addressPoolBindingRepo),
-		addresspoolapp.NewGetPoolUtilizationUseCase(addressPoolRepo),
-		addresspoolapp.NewListPoolAddressesUseCase(addressPoolRepo),
-	)
-	cloudSelSet := addresspoolapp.NewSetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
-	cloudSelUnset := addresspoolapp.NewUnsetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
-	cloudSelGet := addresspoolapp.NewGetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
-
-	addressRefSvc := addressref.NewService(addressRepo)
-
 	// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network use-case'ы
 	// работают через CQRS-Repository (Reader / Writer split). pgxpool-impl —
-	// `internal/repo/kacho/pg`. Остальные 7 ресурсов продолжают работать
-	// через legacy `*repo.NetworkRepo` etc. — replicate-фаза (отдельный
-	// эпик-subtask).
+	// `internal/repo/kacho/pg`. Wave 5 A.7 sub-PR 1/6: AddressPool / Binding /
+	// CloudPoolSelector тоже переехали на kachoRepo (см. ниже).
 	kachoRepo := kachopg.New(pool, slavePool)
+
+	// Wave 5 A.7 sub-PR 1/6 (KAC-94): AddressPool — admin-only use-case-
+	// структура (см. `internal/apps/kacho/api/addresspool/`). Composition root
+	// собирает 13 use-case'ов + ResolverService под единый Handler. Все use-
+	// case'ы работают через `kachoRepo` (CQRS-Repository) — каждый mutate
+	// открывает писатель, делает DML + outbox emit в одной TX. Legacy узкие
+	// port'ы `addresspool.AddressPoolRepo` / `AddressPoolBindingRepo` /
+	// `CloudPoolSelectorRepo` удалены — duck-typing'ом подходят только
+	// concrete `*repo.NetworkRepo` / `*repo.AddressRepo` / `*repo.SubnetRepo`
+	// под узкие read-port'ы (NetworkRepo / AddressRepo / SubnetReader).
+	addressPoolResolver := addresspoolapp.NewResolverService(
+		kachoRepo, addressRepo, subnetRepo, folderClient,
+	)
+	addressPoolHandler := addresspoolapp.NewHandler(
+		addresspoolapp.NewCreateAddressPoolUseCase(kachoRepo, geoClient),
+		addresspoolapp.NewUpdateAddressPoolUseCase(kachoRepo),
+		addresspoolapp.NewDeleteAddressPoolUseCase(kachoRepo),
+		addresspoolapp.NewGetAddressPoolUseCase(kachoRepo),
+		addresspoolapp.NewListAddressPoolsUseCase(kachoRepo),
+		addresspoolapp.NewCheckUseCase(kachoRepo),
+		addresspoolapp.NewExplainResolutionUseCase(addressRepo, addressPoolResolver),
+		addresspoolapp.NewBindAsNetworkDefaultUseCase(kachoRepo, networkRepo),
+		addresspoolapp.NewUnbindNetworkDefaultUseCase(kachoRepo),
+		addresspoolapp.NewBindAsAddressOverrideUseCase(kachoRepo, addressRepo),
+		addresspoolapp.NewUnbindAddressOverrideUseCase(kachoRepo),
+		addresspoolapp.NewGetPoolUtilizationUseCase(kachoRepo),
+		addresspoolapp.NewListPoolAddressesUseCase(kachoRepo),
+	)
+	cloudSelSet := addresspoolapp.NewSetCloudPoolSelectorUseCase(kachoRepo)
+	cloudSelUnset := addresspoolapp.NewUnsetCloudPoolSelectorUseCase(kachoRepo)
+	cloudSelGet := addresspoolapp.NewGetCloudPoolSelectorUseCase(kachoRepo)
+
+	addressRefSvc := addressref.NewService(addressRepo)
 
 	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
 	// kachoRepo используется Network'ом + SG (Wave 5 batch 33/34, KAC-94: SG

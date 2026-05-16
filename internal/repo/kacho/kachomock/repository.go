@@ -28,6 +28,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -57,7 +58,14 @@ type Repository struct {
 	networkInterfaces map[string]*kacho.NetworkInterfaceRecord
 	addresses         map[string]*kacho.AddressRecord
 	gateways          map[string]*kacho.GatewayRecord
-	outbox            []OutboxEvent
+	// addressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-only ресурс.
+	addressPools map[string]*kacho.AddressPoolRecord
+	// netDefBinds / addrOverrideBinds — explicit-биндинги pool ↔ network/address.
+	netDefBinds       map[string]string // network_id → pool_id
+	addrOverrideBinds map[string]string // address_id → pool_id
+	// cloudSelectors — admin-controlled routing-labels per Cloud.
+	cloudSelectors map[string]*domain.CloudPoolSelector
+	outbox         []OutboxEvent
 }
 
 // NewRepository создаёт пустой mock-Repository.
@@ -71,6 +79,10 @@ func NewRepository() *Repository {
 		networkInterfaces: make(map[string]*kacho.NetworkInterfaceRecord),
 		addresses:         make(map[string]*kacho.AddressRecord),
 		gateways:          make(map[string]*kacho.GatewayRecord),
+		addressPools:      make(map[string]*kacho.AddressPoolRecord),
+		netDefBinds:       make(map[string]string),
+		addrOverrideBinds: make(map[string]string),
+		cloudSelectors:    make(map[string]*domain.CloudPoolSelector),
 	}
 }
 
@@ -164,6 +176,48 @@ func (r *Repository) NetworkInterfaces() []*kacho.NetworkInterfaceRecord {
 	return res
 }
 
+// AddressPools возвращает копию state'а (для assertions в тестах).
+// Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (r *Repository) AddressPools() []*kacho.AddressPoolRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	res := make([]*kacho.AddressPoolRecord, 0, len(r.addressPools))
+	for _, p := range r.addressPools {
+		res = append(res, p)
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].CreatedAt.Before(res[j].CreatedAt) })
+	return res
+}
+
+// SeedAddressPool — direct insert AddressPoolRecord (тестовый fixture). Wave 5
+// replicate (KAC-94 A.7 sub-PR 1/6).
+func (r *Repository) SeedAddressPool(rec *kacho.AddressPoolRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.addressPools[rec.ID] = rec
+}
+
+// SeedNetworkDefaultBinding — direct insert binding.
+func (r *Repository) SeedNetworkDefaultBinding(networkID, poolID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.netDefBinds[networkID] = poolID
+}
+
+// SeedAddressOverrideBinding — direct insert binding.
+func (r *Repository) SeedAddressOverrideBinding(addressID, poolID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.addrOverrideBinds[addressID] = poolID
+}
+
+// SeedCloudPoolSelector — direct insert selector.
+func (r *Repository) SeedCloudPoolSelector(s *domain.CloudPoolSelector) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cloudSelectors[s.CloudID] = s
+}
+
 // Gateways возвращает копию state'а (для assertions в тестах).
 func (r *Repository) Gateways() []*kacho.GatewayRecord {
 	r.mu.Lock()
@@ -222,6 +276,24 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		cp := *g
 		gwSnap[id] = &cp
 	}
+	apSnap := make(map[string]*kacho.AddressPoolRecord, len(r.addressPools))
+	for id, p := range r.addressPools {
+		cp := *p
+		apSnap[id] = &cp
+	}
+	ndSnap := make(map[string]string, len(r.netDefBinds))
+	for k, v := range r.netDefBinds {
+		ndSnap[k] = v
+	}
+	aoSnap := make(map[string]string, len(r.addrOverrideBinds))
+	for k, v := range r.addrOverrideBinds {
+		aoSnap[k] = v
+	}
+	csSnap := make(map[string]*domain.CloudPoolSelector, len(r.cloudSelectors))
+	for id, s := range r.cloudSelectors {
+		cp := *s
+		csSnap[id] = &cp
+	}
 	return &readerImpl{
 		netSnap:  netSnap,
 		sgSnap:   sgSnap,
@@ -231,6 +303,10 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		niSnap:   niSnap,
 		addrSnap: addrSnap,
 		gwSnap:   gwSnap,
+		apSnap:   apSnap,
+		ndSnap:   ndSnap,
+		aoSnap:   aoSnap,
+		csSnap:   csSnap,
 	}, nil
 }
 
@@ -281,16 +357,38 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 		cp := *g
 		localGWs[id] = &cp
 	}
+	localAPs := make(map[string]*kacho.AddressPoolRecord, len(r.addressPools))
+	for id, p := range r.addressPools {
+		cp := *p
+		localAPs[id] = &cp
+	}
+	localNDs := make(map[string]string, len(r.netDefBinds))
+	for k, v := range r.netDefBinds {
+		localNDs[k] = v
+	}
+	localAOs := make(map[string]string, len(r.addrOverrideBinds))
+	for k, v := range r.addrOverrideBinds {
+		localAOs[k] = v
+	}
+	localCloudSels := make(map[string]*domain.CloudPoolSelector, len(r.cloudSelectors))
+	for id, s := range r.cloudSelectors {
+		cp := *s
+		localCloudSels[id] = &cp
+	}
 	return &writerImpl{
-		parent:     r,
-		local:      localNets,
-		localSGs:   localSGs,
-		localSubs:  localSubs,
-		localRTs:   localRTs,
-		localPEs:   localPEs,
-		localNIs:   localNIs,
-		localAddrs: localAddrs,
-		localGWs:   localGWs,
+		parent:         r,
+		local:          localNets,
+		localSGs:       localSGs,
+		localSubs:      localSubs,
+		localRTs:       localRTs,
+		localPEs:       localPEs,
+		localNIs:       localNIs,
+		localAddrs:     localAddrs,
+		localGWs:       localGWs,
+		localAPs:       localAPs,
+		localNDs:       localNDs,
+		localAOs:       localAOs,
+		localCloudSels: localCloudSels,
 	}, nil
 }
 
@@ -309,6 +407,10 @@ type readerImpl struct {
 	niSnap   map[string]*kacho.NetworkInterfaceRecord
 	addrSnap map[string]*kacho.AddressRecord
 	gwSnap   map[string]*kacho.GatewayRecord
+	apSnap   map[string]*kacho.AddressPoolRecord
+	ndSnap   map[string]string
+	aoSnap   map[string]string
+	csSnap   map[string]*domain.CloudPoolSelector
 }
 
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
@@ -343,6 +445,21 @@ func (rd *readerImpl) Gateways() kacho.GatewayReaderIface {
 	return &gatewayReader{snap: rd.gwSnap}
 }
 
+// AddressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (rd *readerImpl) AddressPools() kacho.AddressPoolReaderIface {
+	return &addressPoolReader{snap: rd.apSnap}
+}
+
+// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (rd *readerImpl) AddressPoolBindings() kacho.AddressPoolBindingReaderIface {
+	return &addressPoolBindingReader{netDef: rd.ndSnap, addrOver: rd.aoSnap}
+}
+
+// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (rd *readerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorReaderIface {
+	return &cloudPoolSelectorReader{snap: rd.csSnap}
+}
+
 func (rd *readerImpl) Close() error { return nil }
 
 // writerImpl — write-«TX». local-* — working set'ы, окончательно мерж'атся в
@@ -358,6 +475,10 @@ type writerImpl struct {
 	localNIs       map[string]*kacho.NetworkInterfaceRecord
 	localAddrs     map[string]*kacho.AddressRecord
 	localGWs       map[string]*kacho.GatewayRecord
+	localAPs       map[string]*kacho.AddressPoolRecord
+	localNDs       map[string]string
+	localAOs       map[string]string
+	localCloudSels map[string]*domain.CloudPoolSelector
 	localOutbox    []OutboxEvent
 	deletedIDs     map[string]struct{} // Network deletions
 	deletedSGIDs   map[string]struct{} // SG deletions
@@ -367,6 +488,10 @@ type writerImpl struct {
 	deletedNIIDs   map[string]struct{} // NIC deletions
 	deletedAddrIDs map[string]struct{} // Address deletions
 	deletedGWIDs   map[string]struct{} // Gateway deletions
+	deletedAPIDs   map[string]struct{} // AddressPool deletions
+	deletedNDIDs   map[string]struct{} // NetworkDefault binding deletions
+	deletedAOIDs   map[string]struct{} // AddressOverride binding deletions
+	deletedCSIDs   map[string]struct{} // CloudSelector deletions
 	finalised      bool
 }
 
@@ -403,6 +528,21 @@ func (w *writerImpl) Addresses() kacho.AddressWriterIface {
 
 func (w *writerImpl) Gateways() kacho.GatewayWriterIface {
 	return &gatewayWriter{w: w}
+}
+
+// AddressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (w *writerImpl) AddressPools() kacho.AddressPoolWriterIface {
+	return &addressPoolWriter{w: w}
+}
+
+// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (w *writerImpl) AddressPoolBindings() kacho.AddressPoolBindingWriterIface {
+	return &addressPoolBindingWriter{w: w}
+}
+
+// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (w *writerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorWriterIface {
+	return &cloudPoolSelectorWriter{w: w}
 }
 
 func (w *writerImpl) Outbox() kacho.OutboxEmitter {
@@ -481,6 +621,35 @@ func (w *writerImpl) Commit() error {
 	// Применить writes (Gateway).
 	for id, g := range w.localGWs {
 		w.parent.gateways[id] = g
+	}
+	// Удалить помеченные на delete (AddressPool).
+	for id := range w.deletedAPIDs {
+		delete(w.parent.addressPools, id)
+	}
+	// Применить writes (AddressPool).
+	for id, p := range w.localAPs {
+		w.parent.addressPools[id] = p
+	}
+	// Удалить + apply NetworkDefault bindings.
+	for id := range w.deletedNDIDs {
+		delete(w.parent.netDefBinds, id)
+	}
+	for k, v := range w.localNDs {
+		w.parent.netDefBinds[k] = v
+	}
+	// Удалить + apply AddressOverride bindings.
+	for id := range w.deletedAOIDs {
+		delete(w.parent.addrOverrideBinds, id)
+	}
+	for k, v := range w.localAOs {
+		w.parent.addrOverrideBinds[k] = v
+	}
+	// Удалить + apply CloudPoolSelector.
+	for id := range w.deletedCSIDs {
+		delete(w.parent.cloudSelectors, id)
+	}
+	for id, s := range w.localCloudSels {
+		w.parent.cloudSelectors[id] = s
 	}
 	// Перенести outbox-events в общий state.
 	w.parent.outbox = append(w.parent.outbox, w.localOutbox...)

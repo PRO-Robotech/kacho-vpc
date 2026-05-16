@@ -140,6 +140,22 @@ func (r *readerImpl) Gateways() kacho.GatewayReaderIface {
 	return &gatewayReader{tx: r.tx}
 }
 
+// AddressPools возвращает AddressPool-reader, привязанный к этой read-TX.
+// Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7).
+func (r *readerImpl) AddressPools() kacho.AddressPoolReaderIface {
+	return &addressPoolReader{tx: r.tx}
+}
+
+// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (r *readerImpl) AddressPoolBindings() kacho.AddressPoolBindingReaderIface {
+	return &addressPoolBindingReader{tx: r.tx}
+}
+
+// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (r *readerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorReaderIface {
+	return &cloudPoolSelectorReader{tx: r.tx}
+}
+
 // Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
 // Идемпотентно. Игнорирует pgx.ErrTxClosed.
 func (r *readerImpl) Close() error {
@@ -237,6 +253,32 @@ func (w *writerImpl) Gateways() kacho.GatewayWriterIface {
 	return &gatewayWriter{
 		gatewayReader: gatewayReader{tx: w.tx},
 		emitter:       &outboxEmitter{tx: w.tx},
+	}
+}
+
+// AddressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7).
+// G.2: writer видит свои writes. AddressPool — admin-only, Create+
+// PopulateFreelistForPool + outbox-emit идут атомарно в одной writer-TX.
+func (w *writerImpl) AddressPools() kacho.AddressPoolWriterIface {
+	return &addressPoolWriter{
+		addressPoolReader: addressPoolReader{tx: w.tx},
+		emitter:           &outboxEmitter{tx: w.tx},
+	}
+}
+
+// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (w *writerImpl) AddressPoolBindings() kacho.AddressPoolBindingWriterIface {
+	return &addressPoolBindingWriter{
+		addressPoolBindingReader: addressPoolBindingReader{tx: w.tx},
+		emitter:                  &outboxEmitter{tx: w.tx},
+	}
+}
+
+// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+func (w *writerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorWriterIface {
+	return &cloudPoolSelectorWriter{
+		cloudPoolSelectorReader: cloudPoolSelectorReader{tx: w.tx},
+		emitter:                 &outboxEmitter{tx: w.tx},
 	}
 }
 

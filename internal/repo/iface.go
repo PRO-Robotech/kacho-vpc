@@ -94,10 +94,12 @@ type PrivateEndpointFilter = kachorepo.PrivateEndpointFilter
 
 // AddressPoolFilter — фильтр для списка пулов. AddressPool — глобальный
 // infrastructure-ресурс, поэтому folder/cloud/org здесь нет.
-type AddressPoolFilter struct {
-	Kind   domain.AddressPoolKind // 0 = any
-	ZoneID string                 // "" = any
-}
+//
+// Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7): переехал
+// в leaf-пакет `kacho` вместе с остальными filter-типами. Здесь — type-alias
+// для всех существующих callers (`internal/repo/address_pool_repo.go`,
+// `internal/apps/kacho/api/addresspool/*`).
+type AddressPoolFilter = kachorepo.AddressPoolFilter
 
 // NetworkInterfaceFilter — фильтр для List NIC. Используется repo-уровнем;
 // use-case-пакет `internal/apps/kacho/api/networkinterface` экспортирует

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdatePoolReq — частичное обновление; nil-пойнтеры/false-flags = no-op.
@@ -38,25 +39,33 @@ type UpdatePoolReq struct {
 	SelectorPriority       int32
 }
 
-// UpdateAddressPoolUseCase — admin-only частичный Update. Sync flow:
-// repo.Get → mutate → CIDR-family-validate (если replace-флаг) → repo.Update.
-// Если v6 появилась впервые на pool — init cursor (idempotent).
+// UpdateAddressPoolUseCase — admin-only частичный Update.
+//
+// Wave 5 A.7 sub-PR 1/6 (skill evgeniy §6 G.5): Get + mutate + Update +
+// InitIPv6PoolCursor (если v6 появилась впервые) + outbox-emit идут в одной
+// writer-TX `kacho.Repository.Writer(ctx)` — атомарность гарантирована.
 type UpdateAddressPoolUseCase struct {
-	pools    AddressPoolRepo
-	addrRepo AddressRepo
+	repo Repo
 }
 
 // NewUpdateAddressPoolUseCase собирает use-case.
-func NewUpdateAddressPoolUseCase(pools AddressPoolRepo, addrRepo AddressRepo) *UpdateAddressPoolUseCase {
-	return &UpdateAddressPoolUseCase{pools: pools, addrRepo: addrRepo}
+func NewUpdateAddressPoolUseCase(r Repo) *UpdateAddressPoolUseCase {
+	return &UpdateAddressPoolUseCase{repo: r}
 }
 
 // Execute применяет частичное обновление. Verbatim семантика legacy-сервиса.
 func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolReq) (*domain.AddressPool, error) {
-	cur, err := u.pools.Get(ctx, req.ID)
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer w.Abort()
+
+	curRec, err := w.AddressPools().Get(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	cur := curRec.AddressPool
 	if req.Name != nil {
 		cur.Name = *req.Name
 	}
@@ -66,11 +75,7 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 	if req.ReplaceLabels {
 		cur.Labels = req.Labels
 	}
-	// REQ-IPL-UPD-01 / B7 + REQ-IPL-UPD-02 / B8: replace выполняется ТОЛЬКО при
-	// явном bool-флаге; пустой массив в запросе без флага игнорируется
-	// (REQ-IPL-UPD-06 / B12). При флаге true — body-array становится новым
-	// содержимым, включая пустой массив (REQ-IPL-UPD-05 / B11 — очистить один
-	// family на dual-stack pool).
+	// REQ-IPL-UPD-01/02 + REQ-IPL-UPD-05/06: replace ТОЛЬКО при флаге.
 	newV4 := cur.V4CIDRBlocks
 	newV6 := cur.V6CIDRBlocks
 	if req.ReplaceV4CIDR {
@@ -86,8 +91,6 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 		newV6 = req.V6CIDRBlocks
 	}
 	// REQ-IPL-UPD-03 / B10: post-update invariant — хотя бы один family непуст.
-	// Проверяем только если хотя бы один replace-флаг выставлен (без них state
-	// не меняется и проверка не нужна).
 	if req.ReplaceV4CIDR || req.ReplaceV6CIDR {
 		if len(newV4) == 0 && len(newV6) == 0 {
 			return nil, status.Error(codes.InvalidArgument,
@@ -97,15 +100,6 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 	v6Added := req.ReplaceV6CIDR && len(newV6) > 0 && len(cur.V6CIDRBlocks) == 0
 	cur.V4CIDRBlocks = newV4
 	cur.V6CIDRBlocks = newV6
-	// KAC-58: если v6-family появилась на этом pool впервые (был v4-only,
-	// стал dual-stack) — инициализируем cursor. InitIPv6PoolCursor идемпотентен,
-	// поэтому повторная инициализация безопасна; но защищаем себя от
-	// no-op-вызовов когда v6 не менялся.
-	if v6Added {
-		if err := u.addrRepo.InitIPv6PoolCursor(ctx, cur.ID); err != nil {
-			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
-		}
-	}
 	if req.UpdateIsDefault {
 		cur.IsDefault = req.IsDefault
 	}
@@ -116,5 +110,25 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 		cur.SelectorPriority = req.SelectorPriority
 	}
 	cur.ModifiedAt = time.Now().UTC()
-	return u.pools.Update(ctx, cur)
+
+	updated, err := w.AddressPools().Update(ctx, &cur)
+	if err != nil {
+		return nil, err
+	}
+	// KAC-58: если v6-family появилась на этом pool впервые (был v4-only,
+	// стал dual-stack) — инициализируем cursor (идемпотентно).
+	if v6Added {
+		if err := w.Addresses().InitIPv6PoolCursor(ctx, updated.ID); err != nil {
+			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
+		}
+	}
+	if err := w.Outbox().Emit(ctx, "AddressPool", updated.ID, "UPDATED",
+		repo.AddressPoolDomainPayload(&updated.AddressPool)); err != nil {
+		return nil, status.Errorf(codes.Internal, "outbox emit: %v", err)
+	}
+	if err := w.Commit(); err != nil {
+		return nil, err
+	}
+	out := updated.AddressPool
+	return &out, nil
 }
