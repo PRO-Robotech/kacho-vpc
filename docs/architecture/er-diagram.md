@@ -1,14 +1,18 @@
 # ER-diagram — `kacho_vpc` schema (KAC-98)
 
 > **Источник**: `internal/migrations/0001_initial.sql` (squashed baseline) + delta-migrations
-> `0002…0023`. Делается под Skill `evgeniy §5 E.6` (ER-диаграмма обязательна для каждого
+> `0002…0034`. Делается под Skill `evgeniy §5 E.6` (ER-диаграмма обязательна для каждого
 > сервиса). Парная документация — `within-service-refs-audit.md` (KAC-84), которая аудитит,
 > что каждая ссылка / инвариант покрыты DB-уровнем (FK / UNIQUE / EXCLUDE / CHECK / CAS).
 >
-> Схема живёт в `public` (schema-naming compromise: workspace §E.4 предполагает
-> `kacho_<svc>`, но historically baseline pg_dump-нут из `public` — оставлено как есть,
-> отдельный refactor-тикет на rename). Все id-колонки — `TEXT` (3-char crockford-base32
-> prefix + 17 chars; см. workspace `CLAUDE.md §E.7` + `kacho-vpc/CLAUDE.md §3`).
+> Схема — `kacho_vpc` (skill `evgeniy §5 E.4`, миграция `0034_schema_rename_to_kacho_vpc.sql`
+> — KAC-94, PR #80): все 20 user-таблиц + `goose_db_version` + 5 user-функций
+> (`kacho_labels_valid` + 4 trigger-функции) живут в `kacho_vpc.*`. До PR #80 schema была
+> `public` — этот документ ссылается на новые qualified-имена. Extension `btree_gist`
+> остаётся в `public` (extension-owned). Search_path: `kacho_vpc, public` —
+> устанавливается через libpq-параметр `options=-c search_path=kacho_vpc,public` в
+> `config.baseDSN()`. Все id-колонки — `TEXT` (3-char crockford-base32 prefix + 17 chars;
+> см. workspace `CLAUDE.md §E.7` + `kacho-vpc/CLAUDE.md §3`).
 >
 > См. также: `kacho-vpc/CLAUDE.md §2` (Доменная модель и связи), `01-resources.md`
 > (poле-by-поле описание ресурсов), `03-ipam.md` (IPAM cascade), `05-database.md`
@@ -133,13 +137,13 @@ erDiagram
     text name "partial UNIQUE (folder_id, name) WHERE name<>''"
     text description
     jsonb labels
-    text network_id "soft-ref (no FK)"
-    text subnet_id "soft-ref (no FK)"
-    text address_id "soft-ref (no FK)"
+    text network_id "FK → networks.id ON DELETE RESTRICT (mig 0024, KAC-89)"
+    text subnet_id "FK → subnets.id ON DELETE RESTRICT, NULL if unset (mig 0024)"
+    text address_id "FK → addresses.id ON DELETE RESTRICT, NULL if unset (mig 0024)"
     text ip_address
-    text service_type
+    text service_type "CHECK enum {object_storage}|NULL (mig 0031)"
     jsonb dns_options
-    text status
+    text status "CHECK enum {PENDING,AVAILABLE,DELETING}|NULL (mig 0031)"
     timestamptz created_at
   }
 
@@ -252,6 +256,9 @@ erDiagram
   NETWORK_INTERFACES }o..o{ ADDRESSES : "v4_address_ids[] / v6_address_ids[] (soft-ref, no FK)"
   NETWORK_INTERFACES }o..o{ SECURITY_GROUPS : "security_group_ids[] (soft-ref, no FK)"
   SECURITY_GROUPS }o..o| NETWORKS : "default_security_group_id (soft-ref, no FK)"
+  NETWORKS  ||--o{ PRIVATE_ENDPOINTS : "private_endpoints.network_id (RESTRICT, mig 0024)"
+  SUBNETS   ||--o{ PRIVATE_ENDPOINTS : "private_endpoints.subnet_id (RESTRICT, mig 0024)"
+  ADDRESSES ||--o{ PRIVATE_ENDPOINTS : "private_endpoints.address_id (RESTRICT, mig 0024)"
 ```
 
 ---
@@ -308,7 +315,9 @@ RouteTable folder-level. UNIQUE `(folder_id, name) WHERE name<>''`. FK `network_
 SG folder-level. UNIQUE `(folder_id, name) WHERE name<>''`. FK `network_id → networks(id) ON DELETE RESTRICT` — **колонка nullable с миграции 0010** (kacho-proto#8: SG без привязки к сети — global / folder-level / unbound; пустая строка в домене хранится как NULL чтобы FK не срабатывал). `rules` — jsonb-массив (service-level validation).
 
 #### `gateways`, `private_endpoints`
-Folder-level, без cross-resource FK (PrivateEndpoint держит soft-ссылки на Network/Subnet/Address без FK — это контракт verbatim YC).
+Folder-level. `gateways` — без cross-resource FK (`gateway_type` пока единственное domain-поле; будущие attachment'ы — отдельные таблицы).
+
+`private_endpoints` (миграция 0024, KAC-89): within-service refs `network_id`/`subnet_id`/`address_id` теперь FK ON DELETE RESTRICT (раньше — software-only soft-ref, нарушало запрет workspace #10). `subnet_id`/`address_id` nullable (PG MATCH SIMPLE пропускает NULL; миграция нормализует `''` → NULL). Default-SG-style cascade не используется — Network/Subnet/Address с PE удалить нельзя без явного удаления PE. CHECK constraints (миграция 0031): `service_type ∈ {object_storage}` либо NULL; `status ∈ {PENDING, AVAILABLE, DELETING}` либо NULL.
 
 ---
 
@@ -369,6 +378,38 @@ Per-subscriber cursor для LISTEN/NOTIFY restart-сценария. PK `subscri
 
 ---
 
+## DB-level CHECK-constraints (Wave 2, миграции 0025–0033)
+
+Все 8 публичных VPC-ресурсов (`networks`, `subnets`, `addresses`, `route_tables`, `security_groups`, `gateways`, `private_endpoints`, `network_interfaces`) имеют DB-level CHECK constraints поверх `domain.Validate` (skill `evgeniy §5 E.1/E.2` — «БД — последний рубеж от внешних writers / bugs в app-коде»):
+
+- **name** (миграции 0025–0032): regex `^([a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)?$` (verbatim YC permissive, 0–63 байт, allowed empty/uppercase/underscore).
+- **description** (миграции 0025–0032): `length(description) ≤ 256` (UTF-8 character count).
+- **status** (миграции 0029/0031/0032): enum-проверка — SG `{ACTIVE,CREATING,UPDATING,DELETING}`; PE `{PENDING,AVAILABLE,DELETING}|NULL`; NIC `{PROVISIONING,ACTIVE,AVAILABLE,FAILED,DELETING,STATUS_UNSPECIFIED}|NULL`.
+- **service_type** (миграция 0031, PE): `{object_storage}|NULL`.
+- **mac_address** (миграция 0032, NIC): regex `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$` (lowercase, colon-separated; legacy md5-backfill отбивается, см. 0014).
+- **labels** (миграция 0033, все 8 ресурсов): `CHECK (kacho_labels_valid(labels))` — helper-функция `kacho_vpc.kacho_labels_valid(jsonb) IMMUTABLE` проверяет cardinality ≤ 64, key regex `^[a-z][-_./\\@a-z0-9]{0,62}$`, value length ≤ 63.
+
+Все эти constraint'ы маппятся через `wrapPgErr` (SQLSTATE `23514`) в `service.ErrInvalidArg` → gRPC `INVALID_ARGUMENT`. Defensive RAISE EXCEPTION P0001 в каждой миграции — диагностика legacy invalid rows до ALTER (см. headers в `0025_*.sql` … `0033_*.sql`).
+
+---
+
+## Schema location: `kacho_vpc` (PR #80 — KAC-94 / E.4)
+
+До PR #80 (миграция `0034_schema_rename_to_kacho_vpc.sql`) все таблицы жили в схеме `public`. После PR #80 — в `kacho_vpc.*`:
+
+| Объект                                        | Schema      |
+|-----------------------------------------------|-------------|
+| 20 user-таблиц (по списку выше)               | `kacho_vpc` |
+| `goose_db_version` (migration tracker)        | `kacho_vpc` |
+| Owned sequences (`vpc_outbox_sequence_no_seq`, `goose_db_version_id_seq`) | `kacho_vpc` (auto-moved с таблицей) |
+| `kacho_labels_valid(jsonb)` (миграция 0033)   | `kacho_vpc` |
+| 4 trigger-функции (auto_assoc / outbox-emit)  | `kacho_vpc` |
+| Extension `btree_gist`                        | `public` (extension-owned, остаётся) |
+
+Application-сторона устанавливает `search_path TO kacho_vpc, public` через libpq-параметр `options=-c search_path=kacho_vpc,public` в `config.baseDSN()` (применяется к `cfg.DSN()` / `cfg.MigrateDSN()` / `cfg.SlaveDSN()`). Триггерные функции и `kacho_labels_valid(labels)` вызываются по unqualified-имени — резолвятся через тот же search_path. Тесты, которые строят DSN из testcontainers напрямую, используют helper `appendSearchPathOptions` (см. `internal/repo/integration_test.go`).
+
+---
+
 ## Ссылки
 
 - `within-service-refs-audit.md` (KAC-84) — построчный аудит ссылок против запрета workspace #10 и парные миграционные рекомендации.
@@ -376,7 +417,7 @@ Per-subscriber cursor для LISTEN/NOTIFY restart-сценария. PK `subscri
 - `03-ipam.md` — IPAM cascade resolve + family-aware filter.
 - `05-database.md` — миграционная история, индексы, generated-columns по таблицам.
 - `06-conventions.md` — соглашения по error-mapping, timestamp, name-policy.
-- `07-known-divergences.md` — by-design расхождения (включая schema-в-`public` vs §E.4).
-- `internal/migrations/0001_initial.sql` … `0023_drop_network_vpn_id_and_ni_dataplane.sql` — источник истины.
+- `07-known-divergences.md` — by-design расхождения (структурные отличия от verbatim YC).
+- `internal/migrations/0001_initial.sql` … `0034_schema_rename_to_kacho_vpc.sql` — источник истины (миграции 0025–0033 — DB-уровневые CHECK constraints для name/description/status/mac_address/labels по всем 8 ресурсам, KAC-99 / Wave 2; миграция 0034 — schema rename `public` → `kacho_vpc`, KAC-94 / E.4).
 - `kacho-vpc/CLAUDE.md §2` (Доменная модель и связи), §16 (IPAM), §12 (Migrations).
 - Workspace `CLAUDE.md` — §«Within-service refs — DB-уровень обязателен» (запрет #10), §«Инфра-чувствительные данные», §«Кросс-доменные ссылки на ресурсы», §E.6 (skill `evgeniy`).
