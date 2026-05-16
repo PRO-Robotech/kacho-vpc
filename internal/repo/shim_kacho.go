@@ -8,272 +8,238 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
-// Shim для пакета `internal/repo/kacho/pg`: экспортирует helper'ы, которые
-// раньше были unexported в `repo` (scanNetwork / wrapPgErr / marshal/unmarshal
-// JSONB / page-token / FK-detection / emitVPC / networkCols).
+// KAC-94 A.7 sub-PR 4/6 — переведено на тонкие aliases на `internal/repo/helpers`.
 //
-// Wave 5 (KAC-94, skill evgeniy §6 G.1-G.7): CQRS-impl `kacho/pg` живёт в
-// отдельном пакете и не может видеть unexported-имена `repo`. Чтобы не
-// дублировать ~200 строк помощников — экспортируем нужный subset наружу
-// через camelCase→PascalCase-aliases. Legacy-код в этом же пакете продолжает
-// пользоваться оригинальными unexported-именами.
+// Этот файл больше не дублирует логику helpers'ов (`scanX` / `wrapXErr` /
+// `payloadX` / column-list константы) — реальная реализация переехала в
+// `internal/repo/helpers/`. Здесь оставлены только PascalCase-aliases для
+// `internal/repo/kacho/pg/*.go` (CQRS-impl), который импортирует `repo` для
+// shim'ов исторически.
 //
-// Альтернатива (отдельный shared-helper-package) — крупный рефакторинг,
-// выходит за scope pilot'а. Эти shim'ы — узкий surface; при replicate-фазе
-// на 7 ресурсов добавим экспорты для их scan-функций / payload-helper'ов.
+// После Sub-PR 5/6 (переписывание integration-тестов и удаление 11 legacy
+// `*_repo.go`) пакет `repo` будет удалён вместе с этим файлом; `kacho/pg`
+// импортирует `helpers` напрямую.
 
-// EmitVPC — exported alias of emitVPC; used by kacho/pg/repository.go.
+// EmitVPC — alias на helpers.EmitVPC.
 func EmitVPC(ctx context.Context, tx pgx.Tx, kind, id, eventType string, payload map[string]any) error {
-	return emitVPC(ctx, tx, kind, id, eventType, payload)
+	return helpers.EmitVPC(ctx, tx, kind, id, eventType, payload)
 }
 
-// WrapPgErr — exported alias of wrapPgErr; used by kacho/pg/network.go.
+// WrapPgErr — alias на helpers.WrapPgErr.
 func WrapPgErr(err error, kind, id string) error {
-	return wrapPgErr(err, kind, id)
+	return helpers.WrapPgErr(err, kind, id)
 }
 
-// IsFKViolation — exported alias of isFKViolation; used by kacho/pg/network.go.
+// IsFKViolation — alias на helpers.IsFKViolation.
 func IsFKViolation(err error) bool {
-	return isFKViolation(err)
+	return helpers.IsFKViolation(err)
 }
 
-// MarshalJSONB — exported alias of marshalJSONB; used by kacho/pg/network.go.
+// MarshalJSONB — alias на helpers.MarshalJSONB.
 func MarshalJSONB(v any, field string) ([]byte, error) {
-	return marshalJSONB(v, field)
+	return helpers.MarshalJSONB(v, field)
 }
 
-// UnmarshalJSONB — exported alias of unmarshalJSONB; used by kacho/pg/network.go.
+// UnmarshalJSONB — alias на helpers.UnmarshalJSONB.
 func UnmarshalJSONB(raw []byte, target any, field string) error {
-	return unmarshalJSONB(raw, target, field)
+	return helpers.UnmarshalJSONB(raw, target, field)
 }
 
-// EncodePageToken — exported alias of encodePageToken; used by kacho/pg/network.go.
+// EncodePageToken — alias на helpers.EncodePageToken.
 func EncodePageToken(createdAt time.Time, id string) string {
-	return encodePageToken(createdAt, id)
+	return helpers.EncodePageToken(createdAt, id)
 }
 
-// DecodePageToken — exported alias of decodePageToken; used by kacho/pg/network.go.
+// DecodePageToken — alias на helpers.DecodePageToken.
 func DecodePageToken(token string) (time.Time, string, error) {
-	return decodePageToken(token)
+	return helpers.DecodePageToken(token)
 }
 
-// InvalidPageTokenErr — exported alias; used by kacho/pg/network.go.
+// InvalidPageTokenErr — alias на helpers.InvalidPageTokenErr.
 func InvalidPageTokenErr(err error) error {
-	return invalidPageTokenErr(err)
+	return helpers.InvalidPageTokenErr(err)
 }
 
-// InvalidFilterErr — exported alias; used by kacho/pg/network.go.
+// InvalidFilterErr — alias на helpers.InvalidFilterErr.
 func InvalidFilterErr(err error) error {
-	return invalidFilterErr(err)
+	return helpers.InvalidFilterErr(err)
 }
 
-// NetworkPayload — exported alias of networkPayload (для outbox-snapshot).
+// NetworkPayload — alias на helpers.NetworkPayload.
 func NetworkPayload(n *kachorepo.NetworkRecord) map[string]any {
-	return networkPayload(n)
+	return helpers.NetworkPayload(n)
 }
 
-// NetworkCols — exported network column list; используется kacho/pg/network.go
-// в SQL-запросах.
-const NetworkCols = networkCols
+// NetworkCols — alias на helpers.NetworkCols.
+const NetworkCols = helpers.NetworkCols
 
-// Scannable — alias for scannable, чтобы kacho/pg мог типизировать row.
-type Scannable = scannable
+// Scannable — alias for helpers.Scannable, чтобы kacho/pg мог типизировать row.
+type Scannable = helpers.Scannable
 
-// ScanNetwork — exported alias of scanNetwork.
+// ScanNetwork — alias на helpers.ScanNetwork.
 func ScanNetwork(row Scannable) (*kachorepo.NetworkRecord, error) {
-	return scanNetwork(row)
+	return helpers.ScanNetwork(row)
 }
 
-// ---- SecurityGroup shims (Wave 5 batch 33/34, KAC-94: SG → CQRS-репо) ----
+// ---- SecurityGroup shims ----
 
-// SGCols — exported security_groups column list; used by kacho/pg/security_group.go.
-const SGCols = sgCols
+// SGCols — alias на helpers.SGCols.
+const SGCols = helpers.SGCols
 
-// ScanSG — exported alias of scanSG; used by kacho/pg/security_group.go.
+// ScanSG — alias на helpers.ScanSG.
 func ScanSG(row Scannable) (*kachorepo.SecurityGroupRecord, error) {
-	return scanSG(row)
+	return helpers.ScanSG(row)
 }
 
-// WrapSGErr — exported alias of wrapSGErr (verbatim-YC SG not-found text);
-// used by kacho/pg/security_group.go.
+// WrapSGErr — alias на helpers.WrapSGErr (verbatim-YC SG not-found text).
 func WrapSGErr(err error, id string) error {
-	return wrapSGErr(err, id)
+	return helpers.WrapSGErr(err, id)
 }
 
-// SecurityGroupPayload — exported alias of securityGroupPayload (outbox snapshot).
+// SecurityGroupPayload — alias на helpers.SecurityGroupPayload.
 func SecurityGroupPayload(sg *kachorepo.SecurityGroupRecord) map[string]any {
-	return securityGroupPayload(sg)
+	return helpers.SecurityGroupPayload(sg)
 }
 
-// NullableStr — exported alias of nullableStr ("" → SQL NULL). Used by SG-pg-impl
-// to keep network_id NULL-able (SG can be unbound / folder-level).
+// NullableStr — alias на helpers.NullableStr.
 func NullableStr(s string) *string {
-	return nullableStr(s)
+	return helpers.NullableStr(s)
 }
 
-// ---- RouteTable shims (Wave 5 replicate, KAC-94: RT → CQRS-репо) ----
+// ---- RouteTable shims ----
 
-// RouteTableCols — exported route_tables column list; used by kacho/pg/route_table.go.
-const RouteTableCols = routeTableCols
+// RouteTableCols — alias на helpers.RouteTableCols.
+const RouteTableCols = helpers.RouteTableCols
 
-// ScanRouteTable — exported alias of scanRouteTable; used by kacho/pg/route_table.go.
+// ScanRouteTable — alias на helpers.ScanRouteTable.
 func ScanRouteTable(row Scannable) (*kachorepo.RouteTableRecord, error) {
-	return scanRouteTable(row)
+	return helpers.ScanRouteTable(row)
 }
 
-// MarshalStaticRoutes — exported alias of marshalStaticRoutes; used by
-// kacho/pg/route_table.go для подготовки jsonb-payload `static_routes`.
+// MarshalStaticRoutes — alias на helpers.MarshalStaticRoutes.
 func MarshalStaticRoutes(routes []domain.StaticRoute) ([]byte, error) {
-	return marshalStaticRoutes(routes)
+	return helpers.MarshalStaticRoutes(routes)
 }
 
-// RouteTablePayload — exported alias of routeTablePayload (outbox snapshot).
-// Используется apps/kacho/api/routetable/helpers.go при emit'е outbox-событий из
-// use-case-кода.
+// RouteTablePayload — alias на helpers.RouteTablePayload.
 func RouteTablePayload(rt *kachorepo.RouteTableRecord) map[string]any {
-	return routeTablePayload(rt)
+	return helpers.RouteTablePayload(rt)
 }
 
-// ---- PrivateEndpoint shims (Wave 5 replicate, KAC-94: PE → CQRS-репо) ----
+// ---- PrivateEndpoint shims ----
 
-// PECols — exported private_endpoints column list; used by kacho/pg/private_endpoint.go.
-const PECols = peCols
+// PECols — alias на helpers.PECols.
+const PECols = helpers.PECols
 
-// ScanPrivateEndpoint — exported alias of scanPrivateEndpoint; used by
-// kacho/pg/private_endpoint.go.
+// ScanPrivateEndpoint — alias на helpers.ScanPrivateEndpoint.
 func ScanPrivateEndpoint(row Scannable) (*kachorepo.PrivateEndpointRecord, error) {
-	return scanPrivateEndpoint(row)
+	return helpers.ScanPrivateEndpoint(row)
 }
 
-// PrivateEndpointPayload — exported alias of privateEndpointPayload (outbox
-// snapshot). Используется apps/kacho/api/privateendpoint/helpers.go при emit'е
-// outbox-событий из use-case-кода.
+// PrivateEndpointPayload — alias на helpers.PrivateEndpointPayload.
 func PrivateEndpointPayload(pe *kachorepo.PrivateEndpointRecord) map[string]any {
-	return privateEndpointPayload(pe)
+	return helpers.PrivateEndpointPayload(pe)
 }
 
-// ---- Address shims (Wave 5 replicate, KAC-94: Address → CQRS-репо) ----
+// ---- Address shims ----
 
-// AddressCols — exported addresses column list; used by kacho/pg/address.go и
-// kacho/pg/subnet.go (последний — для AddressesBySubnet JOIN-less filter по
-// internal_ipv4/v6 JSONB). Parity с NetworkCols / SGCols / RouteTableCols.
-const AddressCols = addressCols
+// AddressCols — alias на helpers.AddressCols.
+const AddressCols = helpers.AddressCols
 
-// ScanAddress — exported alias of scanAddress; used by kacho/pg/address.go и
-// kacho/pg/subnet.go. Возвращает *kachorepo.AddressRecord (после миграции
-// Address в repo-leaf — §4 D.1).
+// ScanAddress — alias на helpers.ScanAddress.
 func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
-	return scanAddress(row)
+	return helpers.ScanAddress(row)
 }
 
-// AddressPayload — exported alias of addressPayload (outbox snapshot).
-// Используется apps/kacho/api/address/helpers.go при emit'е outbox-событий из
-// use-case-кода.
+// AddressPayload — alias на helpers.AddressPayload.
 func AddressPayload(a *kachorepo.AddressRecord) map[string]any {
-	return addressPayload(a)
+	return helpers.AddressPayload(a)
 }
 
-// AllocateFromFreelistSQL — exported SQL для PG-native v4 freelist allocator;
-// используется kacho/pg/address.go::AllocateIPFromFreelist (атомарный pop из
-// address_pool_free_ips FOR UPDATE SKIP LOCKED + UPDATE addresses.external_ipv4
-// — один SQL-statement, нулевая contention между параллельными аллокаторами).
-const AllocateFromFreelistSQL = allocateFromFreelistSQL
+// AllocateFromFreelistSQL — alias на helpers.AllocateFromFreelistSQL.
+const AllocateFromFreelistSQL = helpers.AllocateFromFreelistSQL
 
-// ---- Subnet shims (Wave 5 replicate, KAC-94: Subnet → CQRS-репо) ----
+// ---- Subnet shims ----
 
-// SubnetCols — exported subnets column list; used by kacho/pg/subnet.go.
-const SubnetCols = subnetCols
+// SubnetCols — alias на helpers.SubnetCols.
+const SubnetCols = helpers.SubnetCols
 
-// ScanSubnet — exported alias of scanSubnet; used by kacho/pg/subnet.go.
+// ScanSubnet — alias на helpers.ScanSubnet.
 func ScanSubnet(row Scannable) (*kachorepo.SubnetRecord, error) {
-	return scanSubnet(row)
+	return helpers.ScanSubnet(row)
 }
 
-// SubnetPayload — exported alias of subnetPayload (outbox snapshot).
+// SubnetPayload — alias на helpers.SubnetPayload.
 func SubnetPayload(s *kachorepo.SubnetRecord) map[string]any {
-	return subnetPayload(s)
+	return helpers.SubnetPayload(s)
 }
 
-// IsExclusionViolation — exported alias of isExclusionViolation; used by
-// kacho/pg/subnet.go для распознавания CIDR-overlap (SQLSTATE 23P01).
+// IsExclusionViolation — alias на helpers.IsExclusionViolation.
 func IsExclusionViolation(err error) bool {
-	return isExclusionViolation(err)
+	return helpers.IsExclusionViolation(err)
 }
 
-// MarshalDhcp — exported alias of marshalDhcp; used by kacho/pg/subnet.go.
-// nil → nil (NULL in SQL); non-nil → JSONB bytes.
+// MarshalDhcp — alias на helpers.MarshalDhcp.
 func MarshalDhcp(d *domain.DhcpOptions) ([]byte, error) {
-	return marshalDhcp(d)
+	return helpers.MarshalDhcp(d)
 }
 
-// ---- Gateway shims (Wave 5 replicate, KAC-94: Gateway → CQRS-репо) ----
+// ---- Gateway shims ----
 
-// GatewayCols — exported gateways column list; used by kacho/pg/gateway.go.
-const GatewayCols = gatewayCols
+// GatewayCols — alias на helpers.GatewayCols.
+const GatewayCols = helpers.GatewayCols
 
-// ScanGateway — exported alias of scanGateway; used by kacho/pg/gateway.go.
+// ScanGateway — alias на helpers.ScanGateway.
 func ScanGateway(row Scannable) (*kachorepo.GatewayRecord, error) {
-	return scanGateway(row)
+	return helpers.ScanGateway(row)
 }
 
-// WrapGatewayErr — exported alias of wrapPgErr со значением kind="Gateway"
-// (parity с WrapPgErr; helper для kacho/pg/gateway.go).
+// WrapGatewayErr — alias на helpers.WrapGatewayErr.
 func WrapGatewayErr(err error, id string) error {
-	return wrapPgErr(err, "Gateway", id)
+	return helpers.WrapGatewayErr(err, id)
 }
 
-// GatewayPayload — exported alias of gatewayPayload (для outbox-snapshot).
-// Используется apps/kacho/api/gateway/helpers.go при emit'е outbox-событий из
-// use-case-кода.
+// GatewayPayload — alias на helpers.GatewayPayload.
 func GatewayPayload(g *kachorepo.GatewayRecord) map[string]any {
-	return gatewayPayload(g)
+	return helpers.GatewayPayload(g)
 }
 
-// ---- AddressPool shims (Wave 5 replicate, KAC-94 A.7 sub-PR 1/6: AddressPool → CQRS-репо) ----
+// ---- AddressPool shims ----
 
-// AddressPoolCols — exported address_pools column list; used by kacho/pg/address_pool.go.
-const AddressPoolCols = addressPoolCols
+// AddressPoolCols — alias на helpers.AddressPoolCols.
+const AddressPoolCols = helpers.AddressPoolCols
 
-// ScanAddressPool — exported alias of scanAddressPool; used by
-// kacho/pg/address_pool.go. Возвращает *kachorepo.AddressPoolRecord
-// (после миграции AddressPool в repo-leaf — §4 D.1 sub-PR 1/6).
-func ScanAddressPool(row Scannable) (*kachorepo.AddressPoolRecord, error) {
-	dom, err := scanAddressPool(row)
+// ScanAddressPool — alias на helpers.ScanAddressPool.
+// Принимает pgx.Row (а не Scannable interface — parity с pgxpool Repo API).
+func ScanAddressPool(row pgx.Row) (*kachorepo.AddressPoolRecord, error) {
+	dom, err := helpers.ScanAddressPool(row)
 	if err != nil {
 		return nil, err
 	}
 	return &kachorepo.AddressPoolRecord{AddressPool: *dom}, nil
 }
 
-// AddressPoolDomainPayload — domain-snapshot для outbox-event.
+// AddressPoolDomainPayload — alias на helpers.AddressPoolDomainPayload.
 func AddressPoolDomainPayload(p *domain.AddressPool) map[string]any {
-	return domainToMap(p)
+	return helpers.AddressPoolDomainPayload(p)
 }
 
-// AddressPoolPayload — outbox snapshot для Record-payload (parity с
-// NetworkPayload / AddressPayload). Делегирует на domain-payload через embed.
+// AddressPoolPayload — alias на helpers.AddressPoolPayload.
 func AddressPoolPayload(rec *kachorepo.AddressPoolRecord) map[string]any {
-	if rec == nil {
-		return nil
-	}
-	return domainToMap(&rec.AddressPool)
+	return helpers.AddressPoolPayload(rec)
 }
 
-// ---- AddressPoolBinding / CloudPoolSelector — shims не нужны: SQL inline в pg-impl
-// (parity с гавайки simple-table-state). Узкие операции (Set/Unset network_default,
-// SetAddressOverride, Set CloudPoolSelector) — переписаны прямо в kacho/pg/.
-// ----
-//
-// JoinAnd — exported alias of joinAnd; used by kacho/pg для composable
-// WHERE-conds. Parity с EncodePageToken / WrapPgErr.
+// ---- AddressPoolBinding / CloudPoolSelector — нет shim'ов: SQL inline в pg-impl.
+
+// JoinAnd — alias на helpers.JoinAnd.
 func JoinAnd(conds []string) string {
-	return joinAnd(conds)
+	return helpers.JoinAnd(conds)
 }
 
-// NormalizeMap — exported alias for normalizeMap; used by kacho/pg/cloud_pool_selector.go.
-// nil → empty map (deterministic JSONB).
+// NormalizeMap — alias на helpers.NormalizeMap.
 func NormalizeMap(m map[string]string) map[string]string {
-	return normalizeMap(m)
+	return helpers.NormalizeMap(m)
 }

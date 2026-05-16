@@ -1,40 +1,17 @@
 package repo
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 
-// marshalJSONB сериализует v в JSONB-байты для записи в БД. Возвращает обёрнутую
-// ErrInternal при ошибке (json.Marshal failure).
-//
-// Для domain-типов VPC (map[string]string labels, []domain.SecurityGroupRule,
-// *domain.DhcpOptions, []domain.StaticRoute, ExternalIpv4Spec, InternalIpv4Spec,
-// *domain.DnsOptions) json.Marshal на практике не возвращает ошибку — типы
-// содержат только stdlib-типы без channel/func/cyclic-ref. Но мы всё равно
-// пробрасываем ошибку наверх (а не паникуем, см. TODO #24): если в будущем
-// добавится тип, который теоретически может marshal-fail (например *anypb.Any с
-// cyclic proto), сбой превращается в обычную INTERNAL-ошибку repo-метода, а не
-// в panic. Это парная форма к unmarshalJSONB.
+// KAC-94 A.7 sub-PR 4/6: реальная реализация — в `internal/repo/helpers/jsonb.go`.
+// Тонкие unexported алиасы оставлены для legacy `*_repo.go`, которые будут
+// удалены в Sub-PR 6.
+
+// marshalJSONB — alias на helpers.MarshalJSONB.
 func marshalJSONB(v any, field string) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: marshal JSONB %s: %v", ErrInternal, field, err)
-	}
-	return b, nil
+	return helpers.MarshalJSONB(v, field)
 }
 
-// unmarshalJSONB десериализует JSONB-байты из БД в target. Возвращает обёрнутую
-// ErrInternal при ошибке (повреждённый payload, schema mismatch).
-//
-// Заменяет ранее использованный silent `_ = json.Unmarshal(...)` (TODO #23).
-// nil/empty raw — no-op (target остаётся zero-value).
+// unmarshalJSONB — alias на helpers.UnmarshalJSONB.
 func unmarshalJSONB(raw []byte, target any, field string) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("%w: corrupted JSONB %s: %v", ErrInternal, field, err)
-	}
-	return nil
+	return helpers.UnmarshalJSONB(raw, target, field)
 }

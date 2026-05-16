@@ -3,52 +3,41 @@ package repo
 import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
-// Shim для пакета `internal/repo/kacho/pg`: экспортирует NIC-specific helper'ы.
-// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): NIC переезжает на CQRS;
-// CQRS-impl `kacho/pg/network_interface.go` живёт в отдельном пакете и не
-// может видеть unexported-имена `repo` (`niCols`, `scanNI`, `isNICMacCollision`,
-// `niStatusName`, `niStatusFromName`, `orEmptyStrSlice`, `networkInterfacePayload`).
-//
-// Экспортируем только нужный subset, остальное остаётся unexported (live-копия
-// SQL-семантики — пока legacy NICRepo не удалён). Альтернатива (отдельный
-// shared-helper-package) — крупный рефакторинг, выходит за scope replicate-фазы.
+// KAC-94 A.7 sub-PR 4/6 — переведено на тонкие aliases на `internal/repo/helpers`.
+// NIC-specific shim'ы для `internal/repo/kacho/pg/network_interface.go`.
 
-// NICCols — exported network_interfaces column list; используется
-// kacho/pg/network_interface.go в SQL-запросах.
-const NICCols = niCols
+// NICCols — alias на helpers.NICCols.
+const NICCols = helpers.NICCols
 
-// ScanNIRec — exported alias of scanNI; возвращает *kacho.NetworkInterfaceRecord
-// (= `repo.NetworkInterface` после Wave 5 replicate type-alias-смены).
+// ScanNIRec — alias на helpers.ScanNI.
 func ScanNIRec(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
-	return scanNI(row)
+	return helpers.ScanNI(row)
 }
 
-// IsNICMacCollision — exported alias of isNICMacCollision; used by
-// kacho/pg/network_interface.go для retry-on-collision MAC-allocation.
+// IsNICMacCollision — alias на helpers.IsNICMacCollision.
 func IsNICMacCollision(err error) bool {
-	return isNICMacCollision(err)
+	return helpers.IsNICMacCollision(err)
 }
 
-// NIStatusName — exported alias of niStatusName (domain enum → DB column text).
+// NIStatusName — alias на helpers.NIStatusName.
 func NIStatusName(s domain.NetworkInterfaceStatus) string {
-	return niStatusName(s)
+	return helpers.NIStatusName(s)
 }
 
-// NIStatusFromName — exported alias of niStatusFromName (DB column text → domain enum).
+// NIStatusFromName — alias на helpers.NIStatusFromName.
 func NIStatusFromName(s string) domain.NetworkInterfaceStatus {
-	return niStatusFromName(s)
+	return helpers.NIStatusFromName(s)
 }
 
-// OrEmptyStrSlice — exported alias of orEmptyStrSlice (nil-slice → empty slice
-// для JSONB-сериализации; иначе `null` вместо `[]` в БД-колонке).
+// OrEmptyStrSlice — alias на helpers.OrEmptyStrSlice.
 func OrEmptyStrSlice(s []string) []string {
-	return orEmptyStrSlice(s)
+	return helpers.OrEmptyStrSlice(s)
 }
 
-// NetworkInterfacePayload — exported alias of networkInterfacePayload (snapshot
-// для outbox-payload в use-case'е).
+// NetworkInterfacePayload — alias на helpers.NetworkInterfacePayload.
 func NetworkInterfacePayload(rec *kachorepo.NetworkInterfaceRecord) map[string]any {
-	return networkInterfacePayload(rec)
+	return helpers.NetworkInterfacePayload(rec)
 }
