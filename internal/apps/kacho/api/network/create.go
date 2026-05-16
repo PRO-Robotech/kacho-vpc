@@ -67,9 +67,10 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
-	if err := checkFolderExists(ctx, u.folderClient, n.FolderID); err != nil {
-		return nil, err
-	}
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
 	name := string(n.Name)
 	if name != "" {
 		rd, err := u.repo.Reader(ctx)

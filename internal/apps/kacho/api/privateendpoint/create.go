@@ -73,11 +73,12 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInp
 		return nil, err
 	}
 
-	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
-	// Operation. The async copies in doCreate stay as defensive backstops.
-	if err := checkFolderExists(ctx, u.folderClient, p.FolderID); err != nil {
-		return nil, err
-	}
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
+	// Sync network/subnet/uniqueness-проверки (через DB-state в той же сервис-БД)
+	// остаются — они race-free относительно peer-сервисов.
 	if _, err := u.networkRead.Get(ctx, p.NetworkID); err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", p.NetworkID)

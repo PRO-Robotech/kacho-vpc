@@ -89,12 +89,12 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput
 		}
 	}
 
-	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
-	// Operation. Async-копии в worker'е остаются как defensive backstops. См.
-	// kacho-vpc#8.
-	if err := checkFolderExists(ctx, u.folderClient, sg.FolderID); err != nil {
-		return nil, err
-	}
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
+	// Sync network-existence/uniqueness-проверки (через DB-state в той же сервис-БД)
+	// остаются — они race-free относительно peer-сервисов.
 	if sg.NetworkID != "" && u.networkReader != nil {
 		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
 			if errors.Is(err, repo.ErrNotFound) {

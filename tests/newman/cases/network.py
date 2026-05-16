@@ -105,7 +105,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-NEG-FOLDER-NOT-FOUND",
-    title="Create с garbage folderId → sync 404 NOT_FOUND (kacho-vpc#8)",
+    title="Create с garbage folderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -114,10 +114,26 @@ CASES.append(Case(
             method="POST",
             path="/vpc/v1/networks",
             body={"folderId": "{{garbageId}}", "name": "net-bf-{{runId}}"},
+            # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
+            # (race-prone). Operation создаётся (200), затем worker падает с
+            # NotFound — проверяем через poll-operation.
             test_script=[
-                *assert_status(404),
-                *assert_grpc_code(5, "NOT_FOUND"),
-                "pm.test('mentions folder not found', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('folder'));",
+                *assert_status(200),
+                *save_from_response("j.id", "opId"),
+            ],
+        ),
+        poll_operation_until_done(),
+        Step(
+            name="assert-op-error",
+            method="GET",
+            path="/operations/{{opId}}",
+            test_script=[
+                *assert_status(200),
+                "const j = pm.response.json();",
+                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
+                "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
+                "pm.test('mentions folder not found', () => pm.expect((j.error.message || '').toLowerCase()).to.include('folder'));",
             ],
         ),
     ],
@@ -496,7 +512,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-MV-NEG-DEST-FOLDER-NF",
-    title="Move в несуществующий destinationFolderId → sync 404 'Folder with id ... not found' (kacho-vpc#8)",
+    title="Move в несуществующий destinationFolderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["NEG"],
     priority="P1",
     steps=[
@@ -517,12 +533,26 @@ CASES.append(Case(
             method="POST",
             path="/vpc/v1/networks/{{netId}}:move",
             body={"destinationFolderId": "{{garbageId}}"},
-            # verbatim-YC (probe 2026-05-11, kacho-vpc#8): Move в несуществующий folder отдаёт sync
-            # 404 NOT_FOUND "Folder with id ... not found" (folder-existence проверяется синхронно).
+            # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
+            # (race-prone). Operation создаётся (200), затем worker падает с
+            # NotFound — проверяем через poll-operation.
             test_script=[
-                *assert_status(404),
-                *assert_grpc_code(5, "NOT_FOUND"),
-                "pm.test('folder not found', () => pm.expect(pm.response.json().message).to.match(/^Folder with id .* not found$/));",
+                *assert_status(200),
+                *save_from_response("j.id", "opId"),
+            ],
+        ),
+        poll_operation_until_done(),
+        Step(
+            name="assert-op-error",
+            method="GET",
+            path="/operations/{{opId}}",
+            test_script=[
+                *assert_status(200),
+                "const j = pm.response.json();",
+                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
+                "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
+                "pm.test('folder not found', () => pm.expect(j.error.message || '').to.match(/^Folder with id .* not found$/));",
             ],
         ),
         Step(
@@ -700,14 +730,26 @@ CASES.append(list_pagesize_1_bva("NET", "/vpc/v1/networks"))
 
 CASES.append(Case(
     id="NET-CR-CONF-FOLDER-NF-TEXT",
-    title="Create network в garbage folder → sync verbatim 'Folder with id ... not found' (kacho-vpc#8)",
+    title="Create network в garbage folder → operation.error verbatim 'Folder with id ... not found' (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
              body={"folderId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
+             # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
+             # (race-prone). Verbatim text проверяется через operation.error.
              test_script=[
-                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.match(/^Folder with id .* not found$/));",
+                 *assert_status(200),
+                 *save_from_response("j.id", "opId"),
+             ]),
+        poll_operation_until_done(),
+        Step(name="assert-op-error", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
+                 "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
+                 "pm.test('verbatim text', () => pm.expect(j.error.message || '').to.match(/^Folder with id .* not found$/));",
              ]),
     ],
 ))

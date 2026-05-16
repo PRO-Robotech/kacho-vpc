@@ -82,26 +82,18 @@ func stripSentinel(err, sentinel error) string {
 	return msg
 }
 
-// checkFolderExists — verbatim YC sync precondition: destination folder must
-// exist. См. kacho-vpc#8.
-func checkFolderExists(ctx context.Context, fc FolderClient, folderID string) error {
-	exists, err := fc.Exists(ctx, folderID)
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "folder check: %v", err)
-	}
-	if !exists {
-		return status.Errorf(codes.NotFound, "Folder with id %s not found", folderID)
-	}
-	return nil
-}
-
 // checkMoveDestination — sync precondition для Move: dest должен отличаться от
-// source и существовать. См. kacho-vpc#10.
-func checkMoveDestination(ctx context.Context, fc FolderClient, currentFolderID, destFolderID string) error {
+// source. См. kacho-vpc#10.
+//
+// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+// race-prone: между sync-проверкой и async-частью folder может быть удалён
+// peer-сервисом. Verbatim-YC NotFound теперь возвращается через
+// `operation.error` из async-части `doMove`.
+func checkMoveDestination(_ context.Context, _ FolderClient, currentFolderID, destFolderID string) error {
 	if destFolderID == currentFolderID {
 		return status.Error(codes.InvalidArgument, "Illegal argument Destination folder is the same as the source")
 	}
-	return checkFolderExists(ctx, fc, destFolderID)
+	return nil
 }
 
 // invalidArg — InvalidArgument с BadRequest-details (verbatim YC parity).

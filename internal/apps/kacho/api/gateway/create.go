@@ -66,12 +66,12 @@ func (u *CreateGatewayUseCase) Execute(ctx context.Context, in CreateInput) (*op
 		return nil, status.Error(codes.InvalidArgument, "Illegal argument gateway")
 	}
 
-	// Verbatim YC: folder existence — sync precondition до Operation (async-проверка
-	// в doCreate остаётся backstop'ом). NB: имена Gateway в YC НЕ уникальны (probe
-	// 2026-05-11) — name-uniqueness тут НЕ проверяем (в отличие от Network/Subnet/RT/SG).
-	if err := checkFolderExists(ctx, u.folderClient, g.FolderID); err != nil {
-		return nil, err
-	}
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
+	// NB: имена Gateway в YC НЕ уникальны (probe 2026-05-11) — name-uniqueness тут
+	// НЕ проверяем (в отличие от Network/Subnet/RT/SG).
 
 	gwID := ids.NewID(ids.PrefixGateway)
 	op, err := operations.New(
