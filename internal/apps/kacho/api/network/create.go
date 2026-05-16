@@ -38,22 +38,30 @@ type CreateInput struct {
 // `if sgRepo != nil`-shim; теперь явный bool, видный в композиции). При
 // `defaultSGInline=false` worker создаёт только Network — admin может
 // досоздать default SG через public API.
+//
+// Inline default-SG creation вынесена в отдельный `CreateDefaultSGUseCase`
+// (см. `default_sg.go`) — skill evgeniy §7 I.9 (residual): explicit
+// composition use-case'ов, а не fat inline. Atomic-семантика сохранена:
+// composing use-case вызывается ВНУТРИ writer-TX `doCreate`, перед `Commit()`.
 type CreateNetworkUseCase struct {
 	repo            Repo
 	folderClient    FolderClient
 	opsRepo         operations.Repo
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
+	createDefaultSG *CreateDefaultSGUseCase
 }
 
 // NewCreateNetworkUseCase создаёт CreateNetworkUseCase. defaultSGInline берётся
 // из конфига (`cfg.Network.DefaultSGInline`) — при true в одной writer-TX
-// создаётся default SG и Network.default_security_group_id заполняется.
+// создаётся default SG (через композицию с `CreateDefaultSGUseCase`) и
+// `Network.default_security_group_id` заполняется атомарно с Insert(Network).
 func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
 		repo:            r,
 		folderClient:    folderClient,
 		opsRepo:         opsRepo,
 		defaultSGInline: defaultSGInline,
+		createDefaultSG: NewCreateDefaultSGUseCase(),
 	}
 }
 
@@ -117,9 +125,14 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 //
 //	w := u.repo.Writer(ctx)            // открыли единую TX
 //	created := w.Networks().Insert     // Network.CREATED outbox
-//	(if inline) sgRec := w.SGs().Insert + w.Networks().SetDefaultSGID
-//	            + SG.CREATED outbox + Network.UPDATED outbox
+//	(if inline) u.createDefaultSG.Execute(ctx, w, created.Network)
+//	            // → w.SGs().Insert + SG.CREATED outbox
+//	            //   + w.Networks().SetDefaultSGID + Network.UPDATED outbox
 //	w.Commit()                         // либо всё, либо ничего (Abort/crash)
+//
+// Default-SG composition вынесена в `CreateDefaultSGUseCase.Execute` (skill
+// evgeniy I.9-residual) — атомарность сохранена тем, что use-case работает
+// в УЖЕ открытой нами `Writer`-TX (`w`), сам её не открывает и не commit'ит.
 //
 // FK Network.default_security_group_id → security_groups(id) `ON DELETE SET NULL`
 // (см. squashed initial migration). SG-FK на network_id — RESTRICT, но в одной
@@ -153,20 +166,11 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 
 	finalRec := created
 	if u.defaultSGInline {
-		sg := domain.NewDefaultSecurityGroup(created.Network)
-		sgRec, sgErr := w.SecurityGroups().Insert(ctx, &sg)
+		// Композиция use-case'ов в одной writer-TX (skill evgeniy I.9-residual):
+		// CreateDefaultSGUseCase работает в нашей `w` — Abort/Commit делает caller.
+		upd, sgErr := u.createDefaultSG.Execute(ctx, w, created.Network)
 		if sgErr != nil {
-			return nil, mapRepoErr(sgErr)
-		}
-		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", sgRec.ID, "CREATED", securityGroupPayloadMap(sgRec)); oerr != nil {
-			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
-		}
-		upd, uerr := w.Networks().SetDefaultSGID(ctx, created.ID, sgRec.ID)
-		if uerr != nil {
-			return nil, mapRepoErr(uerr)
-		}
-		if oerr := w.Outbox().Emit(ctx, "Network", upd.ID, "UPDATED", networkPayloadMap(upd)); oerr != nil {
-			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+			return nil, sgErr
 		}
 		finalRec = upd
 	}
