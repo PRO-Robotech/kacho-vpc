@@ -5,32 +5,22 @@ import (
 )
 
 // KAC-94 A.7 sub-PR 4/6: реальная реализация — в `internal/repo/helpers/unique.go`.
-// Тонкие unexported алиасы оставлены для legacy `*_repo.go`, которые будут
-// удалены в Sub-PR 6 (после чего этот файл удаляется вместе с пакетом repo).
+// Тонкие unexported алиасы оставлены для legacy `*_repo.go` (только те, что
+// реально используются — остальные удалены как unused; после Sub-PR 6 этот
+// файл уйдёт целиком вместе с пакетом repo).
 
-// isUniqueViolation — alias на helpers.IsUniqueViolation.
-func isUniqueViolation(err error) bool { return helpers.IsUniqueViolation(err) }
-
-// nicMacUniqueConstraint — имя UNIQUE-индекса на network_interfaces.mac_address.
-const nicMacUniqueConstraint = helpers.NICMacUniqueConstraint
-
-// isNICMacCollision — alias на helpers.IsNICMacCollision.
+// isNICMacCollision — alias на helpers.IsNICMacCollision. Используется
+// network_interface_repo.go для retry-on-collision MAC-allocation.
 func isNICMacCollision(err error) bool { return helpers.IsNICMacCollision(err) }
 
-// isFKViolation — alias на helpers.IsFKViolation.
+// isFKViolation — alias на helpers.IsFKViolation. Используется
+// security_group_repo.go / route_table_repo.go для FK-detection.
 func isFKViolation(err error) bool { return helpers.IsFKViolation(err) }
 
-// isExclusionViolation — alias на helpers.IsExclusionViolation.
+// isExclusionViolation — alias на helpers.IsExclusionViolation. Используется
+// subnet_repo.go для распознавания CIDR-overlap (SQLSTATE 23P01).
 func isExclusionViolation(err error) bool { return helpers.IsExclusionViolation(err) }
 
-// isCheckViolation — alias на helpers.IsCheckViolation.
-func isCheckViolation(err error) bool { return helpers.IsCheckViolation(err) }
-
-// ycKindText — alias на helpers.YCKindText.
-func ycKindText(kind string) string { return helpers.YCKindText(kind) }
-
-// isInvalidUUID — alias на helpers.IsInvalidUUID.
-func isInvalidUUID(err error) bool { return helpers.IsInvalidUUID(err) }
-
-// wrapPgErr — alias на helpers.WrapPgErr.
+// wrapPgErr — alias на helpers.WrapPgErr. Используется всеми *_repo.go для
+// классификации pgx-ошибок в repo-sentinel'ы.
 func wrapPgErr(err error, kind, id string) error { return helpers.WrapPgErr(err, kind, id) }

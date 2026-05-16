@@ -5,27 +5,28 @@
 // Wave 5 finale (KAC-94 A.7 sub-PR 4/6): вынесены сюда из `internal/repo/`
 // (где раньше были unexported + re-exported через `shim_kacho.go`), чтобы:
 //
-//  - убрать дублирование (shim_kacho был ~280 строк ручных camelCase→PascalCase
-//    re-export'ов);
-//  - дать CQRS-impl `internal/repo/kacho/pg/` чистый import-path без зависимости
-//    от `internal/repo` (тот пакет временный — будет удалён в Sub-PR 6 вместе с
-//    11 legacy `*_repo.go`).
+//   - убрать дублирование (shim_kacho был ~280 строк ручных camelCase→PascalCase
+//     re-export'ов);
+//   - дать CQRS-impl `internal/repo/kacho/pg/` чистый import-path без зависимости
+//     от `internal/repo` (тот пакет временный — будет удалён в Sub-PR 6 вместе с
+//     11 legacy `*_repo.go`).
 //
 // Legacy `*_repo.go` продолжают использовать unexported алиасы внутри `internal/repo`
 // (см. `internal/repo/errors.go` и др.), которые делегируют сюда — это позволяет
 // собрать оба пакета (legacy + CQRS-pg) без duplication логики.
 //
 // Содержимое:
-//
-//  - `errors.go`     — sentinel-ошибки слоя repo (NotFound / AlreadyExists / ...);
-//  - `jsonb.go`      — marshal/unmarshal JSONB helpers;
-//  - `outbox.go`     — emitVPC + domainToMap для outbox-payload снимков;
-//  - `paging.go`     — encode/decodePageToken + invalidPageTokenErr / invalidFilterErr;
-//  - `unique.go`     — SQLSTATE-классификаторы (23505/23503/23514/23P01/22P02)
-//                      + wrapPgErr (главный mapper PG-ошибок в sentinel'ы);
-//  - `sql.go`        — joinAnd / nullableStr / normalizeMap;
-//  - `scans/cols.go` — column-list-константы и scan-функции по 10 ресурсам;
-//  - `payloads.go`   — payload-функции для outbox-snapshots.
+//   - errors.go — sentinel-ошибки слоя repo (NotFound / AlreadyExists / ...).
+//   - jsonb.go — marshal/unmarshal JSONB helpers.
+//   - outbox.go — EmitVPC + DomainToMap для outbox-payload снимков.
+//   - paging.go — Encode/DecodePageToken + InvalidPageTokenErr / InvalidFilterErr.
+//   - unique.go — SQLSTATE-классификаторы + WrapPgErr.
+//   - sql.go — JoinAnd / NullableStr / NormalizeMap / MarshalDhcp / MarshalStaticRoutes.
+//   - scans.go — column-list-константы и scan-функции по 10 ресурсам.
+//   - payloads.go — payload-функции для outbox-snapshots.
+//   - nic.go — NIC-specific (NIStatusName / NIStatusFromName / OrEmptyStrSlice).
+//   - sg.go — WrapSGErr / WrapGatewayErr (verbatim-YC error-text per kind).
+//   - freelist_sql.go — AllocateFromFreelistSQL (PG-native v4 freelist allocator).
 package helpers
 
 import "errors"

@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // KAC-94 A.7 sub-PR 4/6 — переведено на тонкие aliases на `internal/repo/helpers`.
