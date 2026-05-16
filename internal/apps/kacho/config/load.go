@@ -196,9 +196,7 @@ func listenAddress(endpoint string) string {
 	if endpoint == "" {
 		return ""
 	}
-	if strings.HasPrefix(endpoint, "tcp://") {
-		endpoint = strings.TrimPrefix(endpoint, "tcp://")
-	}
+	endpoint = strings.TrimPrefix(endpoint, "tcp://")
 	if strings.HasPrefix(endpoint, "unix://") {
 		// unix-сокет поддерживаем по pass-through.
 		return endpoint

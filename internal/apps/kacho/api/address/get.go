@@ -4,9 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -97,16 +94,4 @@ func loadUsedBy(ctx context.Context, repo AddressRepo, addrs []*kachorepo.Addres
 			a.UsedBy = []*domain.AddressReference{ref}
 		}
 	}
-}
-
-// ensureNotFoundCode — defensive: when callers want NotFound for a NotFound err.
-// Used by helper to keep this file usable for handler post-fetch AuthZ-mask.
-func ensureNotFoundCode(err error) error {
-	if err == nil {
-		return nil
-	}
-	if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
-		return err
-	}
-	return err
 }
