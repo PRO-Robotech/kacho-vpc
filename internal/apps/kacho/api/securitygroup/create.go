@@ -17,16 +17,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreateSecurityGroupUseCase.Execute.
-//
-// Skill evgeniy §2 B.3: вместо параллельной `CreateSecurityGroupReq` (зеркало
-// domain.SecurityGroup) принимаем domain.SecurityGroup напрямую — нужные поля
-// (FolderID/NetworkID/Name/Description/Labels/Rules) уже там. ID на входе пустой,
-// назначается use-case'ом через `ids.NewID(ids.PrefixSecurityGroup)`.
-type CreateInput struct {
-	SecurityGroup domain.SecurityGroup
-}
-
 // CreateSecurityGroupUseCase инициирует создание SG. Sync-проверки (folder
 // exists, name unique, network exists) выполняются ДО создания Operation —
 // клиент получает fast-fail gRPC-status, а не «200 + операция, упавшая через
@@ -57,8 +47,12 @@ func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, folderCl
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
-func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	sg := in.SecurityGroup
+//
+// Принимает `domain.SecurityGroup` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{SecurityGroup: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `sg.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixSecurityGroup)`.
+func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.SecurityGroup) (*operations.Operation, error) {
 	if sg.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}

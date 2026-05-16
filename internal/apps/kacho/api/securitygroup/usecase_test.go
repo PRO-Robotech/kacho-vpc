@@ -148,16 +148,16 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
 
 	// folder_id required.
-	_, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{Name: "test"}})
+	_, err := uc.Execute(context.Background(), domain.SecurityGroup{Name: "test"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// invalid name (digit start, NameVPC permissive но цифра в начале — нет).
-	_, err = uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{
+	_, err = uc.Execute(context.Background(), domain.SecurityGroup{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("1bad"),
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -173,10 +173,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: false}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{
+	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("sg1"),
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -192,11 +192,11 @@ func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{
+	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("sg1"),
 		Description: domain.RcDescription("desc"),
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 

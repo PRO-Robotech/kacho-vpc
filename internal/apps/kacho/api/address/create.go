@@ -45,10 +45,16 @@ type InternalAddrSpec struct {
 	SubnetID string
 }
 
-// CreateInput — параметры для CreateAddressUseCase.Execute. Передаём proto-
-// derived spec'и явно (нельзя смержить в domain.Address — там oneof выражен
-// через указатели, и валидация семейств через nil-проверки сложнее, чем плоский
-// CreateInput).
+// CreateInput — параметры для CreateAddressUseCase.Execute.
+//
+// Orthogonal: композирует поля Address-запроса + четыре family-specific spec'а
+// (External v4/v6, Internal v4/v6) — это **не** тривиальная обёртка вокруг
+// domain.Address. Skill evgeniy §2 B.3 / §7 I.1 разрешают композицию domain.X +
+// orthogonal extra fields; запрет — на parallel-структуры `struct{X domain.X}`
+// без других полей. Здесь spec'и не могут быть смержены в domain.Address —
+// там oneof выражен через указатели, и валидация семейств через nil-проверки
+// плоского CreateInput чище. См. также KAC-94: тривиальные обёртки удалены в
+// Network/Subnet/Gateway/RouteTable/SecurityGroup/PrivateEndpoint.
 type CreateInput struct {
 	FolderID           string
 	Name               string

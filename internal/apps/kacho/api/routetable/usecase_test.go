@@ -126,7 +126,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
 	// network_id required.
-	_, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{FolderID: "f1", Name: "rt1"}})
+	_, err := uc.Execute(context.Background(), domain.RouteTable{FolderID: "f1", Name: "rt1"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -138,14 +138,14 @@ func TestCreateUseCase_OK(t *testing.T) {
 	net := makeNetwork(t, kr)
 	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
+	op, err := uc.Execute(context.Background(), domain.RouteTable{
 		FolderID:  "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt1"),
 		StaticRoutes: []domain.StaticRoute{
 			{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},
 		},
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -170,14 +170,14 @@ func TestCreateUseCase_BadStaticRoute(t *testing.T) {
 	net := makeNetwork(t, kr)
 	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
-	_, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
+	_, err := uc.Execute(context.Background(), domain.RouteTable{
 		FolderID:  "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt-bad"),
 		StaticRoutes: []domain.StaticRoute{
 			{DestinationPrefix: "10.0.0.5/24", NextHopAddress: "192.168.0.1"}, // host-bits set
 		},
-	}})
+	})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -192,9 +192,9 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 	getUC := NewGetRouteTableUseCase(kr)
 	listUC := NewListRouteTablesUseCase(kr)
 
-	createOp, _ := createUC.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
+	createOp, _ := createUC.Execute(context.Background(), domain.RouteTable{
 		FolderID: "f1", NetworkID: net.ID, Name: domain.RcNameVPC("rt1"),
-	}})
+	})
 	repomock.AwaitOpDone(t, or, createOp.ID)
 
 	rts, _, _ := listUC.Execute(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})

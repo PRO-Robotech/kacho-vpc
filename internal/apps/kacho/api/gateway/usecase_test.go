@@ -114,26 +114,26 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
 	// folder_id required.
-	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{Name: "gw1", GatewayType: domain.GatewayTypeSharedEgress}})
+	_, err := uc.Execute(context.Background(), domain.Gateway{Name: "gw1", GatewayType: domain.GatewayTypeSharedEgress})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// Bad name (strict NameGateway rejects uppercase).
-	_, err = uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
+	_, err = uc.Execute(context.Background(), domain.Gateway{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("BadCaps"),
 		GatewayType: domain.GatewayTypeSharedEgress,
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// Missing gateway_type.
-	_, err = uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
+	_, err = uc.Execute(context.Background(), domain.Gateway{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("gw1"),
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -149,11 +149,11 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: false}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
+	op, err := uc.Execute(context.Background(), domain.Gateway{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		GatewayType: domain.GatewayTypeSharedEgress,
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -168,12 +168,12 @@ func TestCreateUseCase_OK(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
+	op, err := uc.Execute(context.Background(), domain.Gateway{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		Description: domain.RcDescription("desc"),
 		GatewayType: domain.GatewayTypeSharedEgress,
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 

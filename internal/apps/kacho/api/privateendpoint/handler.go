@@ -128,7 +128,7 @@ func (h *Handler) Create(ctx context.Context, req *pepb.CreatePrivateEndpointReq
 			"private_dns_records_enabled": req.DnsOptions.PrivateDnsRecordsEnabled,
 		}
 	}
-	op, err := h.create.Execute(ctx, CreateInput{PrivateEndpoint: p})
+	op, err := h.create.Execute(ctx, p)
 	if err != nil {
 		return nil, err
 	}

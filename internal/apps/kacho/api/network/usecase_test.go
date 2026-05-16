@@ -119,16 +119,16 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
 
 	// folder_id required.
-	_, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{Name: "test"}})
+	_, err := uc.Execute(context.Background(), domain.Network{Name: "test"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// invalid name (starts with digit, NameVPC permissive но цифра в начале запрещена).
-	_, err = uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+	_, err = uc.Execute(context.Background(), domain.Network{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("1bad"),
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -144,10 +144,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: false}, or, false)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+	op, err := uc.Execute(context.Background(), domain.Network{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("net1"),
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -162,11 +162,11 @@ func TestCreateUseCase_OK(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+	op, err := uc.Execute(context.Background(), domain.Network{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("net1"),
 		Description: domain.RcDescription("desc"),
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -184,10 +184,10 @@ func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, true)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+	op, err := uc.Execute(context.Background(), domain.Network{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("net-with-sg"),
-	}})
+	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.True(t, saved.Done)
@@ -284,10 +284,10 @@ func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+	op, err := uc.Execute(context.Background(), domain.Network{
 		FolderID: "f1",
 		Name:     domain.RcNameVPC("net-no-sg"),
-	}})
+	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.True(t, saved.Done)

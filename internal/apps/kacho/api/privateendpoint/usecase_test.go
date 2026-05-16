@@ -126,7 +126,7 @@ func TestCreateUseCase_NetworkIDRequired(t *testing.T) {
 	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.FolderClient{OK: true}, or)
 
 	// network_id required.
-	_, err := uc.Execute(context.Background(), CreateInput{PrivateEndpoint: domain.PrivateEndpoint{FolderID: "f1", Name: "pe1"}})
+	_, err := uc.Execute(context.Background(), domain.PrivateEndpoint{FolderID: "f1", Name: "pe1"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -140,12 +140,12 @@ func TestCreateUseCase_OK(t *testing.T) {
 	net := makeNetworkRecord(t, nr)
 	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.FolderClient{OK: true}, or)
 
-	op, err := uc.Execute(context.Background(), CreateInput{PrivateEndpoint: domain.PrivateEndpoint{
+	op, err := uc.Execute(context.Background(), domain.PrivateEndpoint{
 		FolderID:    "f1",
 		NetworkID:   net.ID,
 		Name:        domain.RcNameVPC("pe1"),
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 

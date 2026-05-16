@@ -17,11 +17,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreateRouteTableUseCase.Execute.
-type CreateInput struct {
-	RouteTable domain.RouteTable // несёт FolderID/NetworkID/Name/Description/Labels/StaticRoutes
-}
-
 // CreateRouteTableUseCase инициирует создание RouteTable. Sync-проверки (folder
 // exists, parent network exists, name unique, static_routes валидны)
 // выполняются ДО создания Operation — клиент получает fast-fail gRPC-status,
@@ -48,8 +43,12 @@ func NewCreateRouteTableUseCase(r Repo, folderClient FolderClient, opsRepo opera
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
-func (u *CreateRouteTableUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	rt := in.RouteTable
+//
+// Принимает `domain.RouteTable` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{RouteTable: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `rt.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixRouteTable)`.
+func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTable) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, rt.NetworkID); err != nil {
 		return nil, err
 	}
