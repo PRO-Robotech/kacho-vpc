@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,12 +13,46 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+
 	// Blank-import регистрирует трансферы Network/time через init() (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
+
+// networkPayloadMap — snapshot Network для outbox payload. Wave 5 (KAC-94)
+// CQRS: writer.Outbox().Emit принимает map[string]any (а legacy repo делал
+// snapshot внутри Insert). Здесь — JSON round-trip как networkPayload в
+// `internal/repo/outbox.go` (legacy).
+func networkPayloadMap(n *kachorepo.NetworkRecord) map[string]any {
+	b, err := json.Marshal(n)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
+}
+
+// securityGroupPayloadMap — snapshot SecurityGroup для outbox payload.
+// Wave 5 batch 33/34 (KAC-94): atomic default-SG-creation в Network.Create
+// эмитит SecurityGroup.CREATED событие из use-case-кода (а не из legacy
+// SG-репо), поэтому payload-snapshot нужен здесь. Семантика — JSON
+// round-trip, parity с `securityGroupPayload` в `internal/repo/outbox.go`.
+func securityGroupPayloadMap(sg *kachorepo.SecurityGroupRecord) map[string]any {
+	b, err := json.Marshal(sg)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
+}
 
 // mapRepoErr — переводит repo-sentinel в gRPC status. Логика идентична
 // `service.mapRepoErr`; live-копия здесь нужна, потому что та функция лежит в
@@ -32,15 +67,15 @@ func mapRepoErr(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, stripSentinel(err, ports.ErrNotFound))
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ports.ErrAlreadyExists))
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ports.ErrFailedPrecondition))
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ports.ErrInvalidArg))
-	case errors.Is(err, ports.ErrInternal):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, stripSentinel(err, repo.ErrNotFound))
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, stripSentinel(err, repo.ErrAlreadyExists))
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, repo.ErrFailedPrecondition))
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, stripSentinel(err, repo.ErrInvalidArg))
+	case errors.Is(err, repo.ErrInternal):
 		return status.Error(codes.Internal, "internal database error")
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
@@ -99,7 +134,7 @@ func invalidArg(field, desc string) error {
 // marshalNetworkRecord конвертирует repo-entity Network в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/Move для запихивания результата в Operation.response.
-func marshalNetworkRecord(rec *domain.NetworkRecord) (*anypb.Any, error) {
+func marshalNetworkRecord(rec *kachorepo.NetworkRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Network
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Network: %w", err)

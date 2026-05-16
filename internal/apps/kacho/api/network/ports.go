@@ -1,71 +1,69 @@
 // Package network — use-case-структура ресурса Network (skill evgeniy §2 B.1-B.4).
 //
-// Wave 3a pilot (KAC-94): здесь живёт «бизнес-логика» Network — CreateNetworkUseCase,
+// Wave 3a (KAC-94): здесь живёт «бизнес-логика» Network — CreateNetworkUseCase,
 // UpdateNetworkUseCase, DeleteNetworkUseCase, MoveNetworkUseCase плюс тонкий
-// gRPC-handler. Раньше монолитный `internal/service/network.go` (NetworkService)
-// был fat-service со всеми методами в одном файле; теперь use-case'ы локализованы
-// рядом с handler'ом (B.4 — локальность), repo-операции делегируются через
-// **локальные** port-интерфейсы (ниже).
+// gRPC-handler.
 //
-// Локальные интерфейсы (а не type-alias на `internal/ports.NetworkRepo`) — это
-// сознательный выбор по skill §6 G.2-G.3: каждый use-case-пакет описывает только
-// то, что РЕАЛЬНО использует. Network-use-case'ы не работают со всеми методами
-// NetworkRepo (например, SetFolderID нужен только Move), но публиковать здесь
-// узкий контракт всё равно полезно — Wave 3b (другие 7 ресурсов) реплицирует
-// тот же шаблон. Адаптерами выступают существующие `internal/repo/network_repo.go`
-// и `internal/ports/portmock` — они уже реализуют `internal/ports.NetworkRepo`,
-// который ⊇ локальному интерфейсу, поэтому Go-типизация работает без shim'ов.
+// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network — pilot для
+// CQRS-Repository pattern. Use-case'ы Network теперь работают через
+// `kacho.Repository` (Reader / Writer), а не напрямую через узкий `NetworkRepo`.
+// Каждый use-case открывает TX явно (`u.repo.Writer(ctx)` или `Reader(ctx)`),
+// и outbox-emit лежит в той же tx writer'а — атомарность DML + outbox
+// гарантирована (G.5).
+//
+// Остальные 7 ресурсов (Subnet/Address/RouteTable/SG/Gateway/PE/NIC) пока
+// работают через legacy `*repo.NetworkRepo` etc. — это replicate-фаза эпика
+// KAC-94, идёт отдельно после merge'а pilot'а.
 package network
 
 import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Pagination, *Filter — пере-используем единые value-объекты `internal/ports`
+// Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
 // (alias'ы, не копии). Иначе пришлось бы дублировать структуры или гонять между
 // пакетами через двойную конверсию.
 type (
-	Pagination          = ports.Pagination
-	NetworkFilter       = ports.NetworkFilter
-	SubnetFilter        = ports.SubnetFilter
-	RouteTableFilter    = ports.RouteTableFilter
-	SecurityGroupFilter = ports.SecurityGroupFilter
+	Pagination          = repo.Pagination
+	NetworkFilter       = repo.NetworkFilter
+	SubnetFilter        = repo.SubnetFilter
+	RouteTableFilter    = repo.RouteTableFilter
+	SecurityGroupFilter = repo.SecurityGroupFilter
 )
 
-// NetworkRepo — то, что use-case'ам Network нужно от репозитория сетей.
-//
-// Все методы возвращают `*domain.NetworkRecord` (skill evgeniy §4 D.1 / §7 H.1 —
-// repo-entity несёт DB-managed CreatedAt). Insert/Update принимают `*domain.Network`
-// (без CreatedAt).
-type NetworkRepo interface {
-	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
-	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error)
-	Insert(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
-	Update(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
-	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.NetworkRecord, error)
-}
+// Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
+// работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias
+// (не type wrap) — тип взаимозаменяем с источником, никаких shim'ов.
+type (
+	Repo               = kacho.Repository
+	Reader             = kacho.RepositoryReader
+	Writer             = kacho.RepositoryWriter
+	NetworkReaderIface = kacho.NetworkReaderIface
+	NetworkWriterIface = kacho.NetworkWriterIface
+	OutboxEmitter      = kacho.OutboxEmitter
+)
 
 // SubnetReader — узкое чтение Subnet, нужное для ListSubnets / checkNetworkEmpty.
 type SubnetReader interface {
-	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error)
+	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*kacho.SubnetRecord, string, error)
 }
 
 // RouteTableReader — узкое чтение RouteTable, нужное для ListRouteTables /
 // checkNetworkEmpty.
 type RouteTableReader interface {
-	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error)
+	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error)
 }
 
 // SecurityGroupRepo — то, что use-case'ам Network нужно от репозитория SG: List
 // (для checkNetworkEmpty / ListSecurityGroups), Insert (для inline default-SG),
 // Delete (для cleanup default-SG при Network.Delete).
 type SecurityGroupRepo interface {
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kacho.SecurityGroupRecord, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
 }
 

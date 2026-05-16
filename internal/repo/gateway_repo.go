@@ -11,14 +11,14 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Gateway — type-alias на domain.GatewayRecord (repo-entity с DB-managed CreatedAt).
+// Gateway — type-alias на kacho.GatewayRecord (repo-entity с DB-managed CreatedAt).
 // Wave 2 batch B (KAC-94), parity с repo.Network.
-type Gateway = domain.GatewayRecord
+type Gateway = kacho.GatewayRecord
 
-// GatewayRepo — реализация service.GatewayRepo поверх pgxpool.
+// GatewayRepo — реализация GatewayRepoIface поверх pgxpool.
 type GatewayRepo struct {
 	pool *pgxpool.Pool
 }
@@ -40,7 +40,7 @@ func (r *GatewayRepo) Get(ctx context.Context, id string) (*Gateway, error) {
 	return g, nil
 }
 
-func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p service.Pagination) ([]*Gateway, string, error) {
+func (r *GatewayRepo) List(ctx context.Context, f GatewayFilter, p Pagination) ([]*Gateway, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -118,7 +118,7 @@ func (r *GatewayRepo) List(ctx context.Context, f service.GatewayFilter, p servi
 
 // Insert вставляет Gateway. Принимает domain.Gateway (без CreatedAt — repo сам
 // выставит `now()`; source of truth — БД-колонка). Возвращает *Gateway
-// (= *domain.GatewayRecord) с заполненным CreatedAt.
+// (= *kacho.GatewayRecord) с заполненным CreatedAt.
 func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*Gateway, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {
@@ -127,7 +127,7 @@ func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*Gateway, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -145,7 +145,7 @@ func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*Gateway, 
 		return nil, wrapPgErr(err, "Gateway", string(g.Name))
 	}
 	if err := emitVPC(ctx, tx, "Gateway", result.ID, "CREATED", gatewayPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Gateway", string(g.Name))
@@ -162,7 +162,7 @@ func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*Gateway, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -179,7 +179,7 @@ func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*Gateway, 
 		return nil, wrapPgErr(err, "Gateway", g.ID)
 	}
 	if err := emitVPC(ctx, tx, "Gateway", result.ID, "UPDATED", gatewayPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Gateway", g.ID)
@@ -191,7 +191,7 @@ func (r *GatewayRepo) Update(ctx context.Context, g *domain.Gateway) (*Gateway, 
 func (r *GatewayRepo) SetFolderID(ctx context.Context, id, folderID string) (*Gateway, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -202,7 +202,7 @@ func (r *GatewayRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ga
 		return nil, wrapPgErr(err, "Gateway", id)
 	}
 	if err := emitVPC(ctx, tx, "Gateway", g.ID, "UPDATED", gatewayPayload(g)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Gateway", id)
@@ -213,22 +213,22 @@ func (r *GatewayRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ga
 func (r *GatewayRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	tag, err := tx.Exec(ctx, `DELETE FROM gateways WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
-			return fmt.Errorf("%w: gateway is in use", service.ErrFailedPrecondition)
+			return fmt.Errorf("%w: gateway is in use", ErrFailedPrecondition)
 		}
 		return wrapPgErr(err, "Gateway", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Gateway %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Gateway %s not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "Gateway", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Gateway", id)

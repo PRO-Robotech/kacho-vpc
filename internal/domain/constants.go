@@ -94,7 +94,7 @@ const (
 
 // String-значения NetworkInterfaceStatus для DB-CHECK constraint и DB-маппинга
 // (network_interfaces.status TEXT). Используется в repo.niStatusName /
-// niStatusFromName, в DTO type2pb/network_interface.go и в миграции CHECK
+// niStatusFromName, в DTO toproto/network_interface.go и в миграции CHECK
 // constraint (0032_network_interface_check_constraints.sql).
 const (
 	NIStatusStrProvisioning = "PROVISIONING"

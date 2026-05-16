@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateRouteTableUseCase.Execute.
@@ -24,14 +25,16 @@ type UpdateInput struct {
 
 // UpdateRouteTableUseCase — sync-валидация update_mask + значений, затем создание
 // Operation + async update в worker'е.
+//
+// Wave 5 replicate (KAC-94): writer-TX явный, DML + outbox atomic.
 type UpdateRouteTableUseCase struct {
-	repo    RouteTableRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateRouteTableUseCase создаёт UpdateRouteTableUseCase.
-func NewUpdateRouteTableUseCase(repo RouteTableRepo, opsRepo operations.Repo) *UpdateRouteTableUseCase {
-	return &UpdateRouteTableUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateRouteTableUseCase(r Repo, opsRepo operations.Repo) *UpdateRouteTableUseCase {
+	return &UpdateRouteTableUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -66,13 +69,26 @@ func (u *UpdateRouteTableUseCase) Execute(ctx context.Context, in UpdateInput) (
 }
 
 func (u *UpdateRouteTableUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.RouteTableID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	// Get + Update внутри одной writer-TX: race-free read-modify-write.
+	rec, err := w.RouteTables().Get(ctx, in.RouteTableID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 	applyRouteTableMask(&rec.RouteTable, in)
-	updated, err := u.repo.Update(ctx, &rec.RouteTable)
+	updated, err := w.RouteTables().Update(ctx, &rec.RouteTable)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", repo.RouteTablePayload(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalRouteTableRecord(updated)

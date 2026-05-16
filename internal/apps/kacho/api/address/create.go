@@ -20,9 +20,10 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -152,7 +153,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	if in.InternalSpec != nil && in.InternalSpec.SubnetID != "" {
 		if _, err := u.subnetReader.Get(ctx, in.InternalSpec.SubnetID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalSpec.SubnetID)
 			}
 			return nil, mapRepoErr(err)
@@ -160,7 +161,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	if in.InternalIpv6Spec != nil && in.InternalIpv6Spec.SubnetID != "" {
 		if _, err := u.subnetReader.Get(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalIpv6Spec.SubnetID)
 			}
 			return nil, mapRepoErr(err)
@@ -213,7 +214,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 func (u *CreateAddressUseCase) validateInternalIPInSubnet(ctx context.Context, subnetID, address string) error {
 	sub, err := u.subnetReader.Get(ctx, subnetID)
 	if err != nil {
-		if errors.Is(err, ports.ErrNotFound) {
+		if errors.Is(err, repo.ErrNotFound) {
 			// Subnet 404 — async; не нарушаем YC-DIFF-INVALID-PARENT-CODE.
 			return nil
 		}
@@ -402,13 +403,13 @@ func (u *CreateAddressUseCase) compensatingDelete(ctx context.Context, addressID
 
 // --- Allocation helpers ------------------------------------------------------
 //
-// These mirror service.AddressService.AllocateInternalIP / AllocateInternalIPv6 /
+// These mirror addressref → addresspool path / AllocateInternalIPv6 /
 // AllocateExternalIP / AllocateExternalIPv6 — kept inside the create.go use-case
 // for now (Wave 3 scope is moving the user-facing CRUD; internal-only allocate
 // RPC continues to live in `internal/service/address.go::AddressService` until
 // the internal handler migrates to its own UC package).
 //
-// The use-case versions receive already-fetched `*domain.AddressRecord` to
+// The use-case versions receive already-fetched `*kachorepo.AddressRecord` to
 // avoid the second `repo.Get` round-trip — they operate on the just-Inserted
 // row directly.
 
@@ -429,13 +430,13 @@ const allocateRandomPhase = 8
 // небольшого числа попыток достаточно.
 const v6AllocateMaxAttempts = 16
 
-// allocResult — local copy of service.AllocateResult.
+// allocResult — local copy of allocResult.
 type allocResult struct {
 	IP     string
 	PoolID string // только для external; "" для internal
 }
 
-func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no internal_ipv4 spec", addr.ID)
@@ -536,7 +537,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *d
 		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
 }
 
-func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s has no internal_ipv6 spec", addr.ID)
 	}
@@ -589,7 +590,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *d
 		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
 }
 
-func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no external_ipv4 spec", addr.ID)
@@ -600,7 +601,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *d
 			PoolID: addr.ExternalIpv4.AddressPoolID,
 		}, nil
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV4)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV4)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -612,7 +613,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *d
 
 	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addr.ID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted", pool.ID)
 		}
@@ -623,7 +624,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *d
 	return &allocResult{IP: ip, PoolID: pool.ID}, nil
 }
 
-func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *domain.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no external_ipv6 spec", addr.ID)
@@ -634,7 +635,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *d
 			PoolID: addr.ExternalIpv6.AddressPoolID,
 		}, nil
 	}
-	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, service.FamilyV6)
+	resolved, err := u.pools.ResolvePoolForAddressObjFamily(ctx, addr, addresspool.FamilyV6)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "resolve address pool: %v", err)
 	}
@@ -646,13 +647,13 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *d
 
 	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addr.ID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted (ipv6)", pool.ID)
 		}
-		if errors.Is(err, ports.ErrFailedPrecondition) {
+		if errors.Is(err, repo.ErrFailedPrecondition) {
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"%s", strings.TrimPrefix(err.Error(), ports.ErrFailedPrecondition.Error()+": "))
+				"%s", strings.TrimPrefix(err.Error(), repo.ErrFailedPrecondition.Error()+": "))
 		}
 		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
 			"pool_id", pool.ID, "address_id", addr.ID, "err", err)
@@ -707,7 +708,7 @@ func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
 //     offset в [1, maxHosts].
 func pickRandomIPv4(cidr netip.Prefix) (string, error) {
 	if !cidr.Addr().Is4() {
-		return "", ports.ErrInvalidIPv4
+		return "", repo.ErrInvalidIPv4
 	}
 	bits := cidr.Bits()
 	hostBits := 32 - bits

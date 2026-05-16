@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "e5b59378-5f05-4d82-aa6a-821cdba9c3ff",
+    "_postman_id": "f4e53ae6-25b2-45f7-90fe-96f6ecc49601",
     "name": "kacho-vpc / newman / internal-cloud",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -95,7 +95,7 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "pm.test('present false', () => pm.expect(j.present).to.eql(false));",
+                  "pm.test('present false', () => pm.expect(j.present || false).to.eql(false));",
                   "pm.test('selector empty/absent', () => pm.expect(Object.keys(j.selector || {}).length).to.eql(0));"
                 ]
               }
@@ -342,7 +342,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('present false again', () => pm.expect(pm.response.json().present).to.eql(false));"
+                  "pm.test('present false again', () => pm.expect(pm.response.json().present || false).to.eql(false));"
                 ]
               }
             }
@@ -457,7 +457,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('present false for unknown cloud', () => pm.expect(pm.response.json().present).to.eql(false));"
+                  "pm.test('present false for unknown cloud', () => pm.expect(pm.response.json().present || false).to.eql(false));"
                 ]
               }
             }

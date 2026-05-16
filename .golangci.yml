@@ -54,7 +54,7 @@ linters:
       # SetDefaultSecurityGroupId — точные копии proto. Service/handler/domain
       # слои зеркалят это naming, не переименовать без breaking changes
       # proto-API.
-      - path: 'internal/(domain|handler|service)/'
+      - path: 'internal/(domain|handler|service|apps/kacho/api|apps/kacho/services)/'
         linters: [revive]
         text: 'var-naming'
 

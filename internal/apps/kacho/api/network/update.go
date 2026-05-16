@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateNetworkUseCase.Execute. Конкретно для Update
@@ -27,14 +28,16 @@ type UpdateInput struct {
 
 // UpdateNetworkUseCase — sync-валидация update_mask + значений, затем создание
 // Operation + async update в worker'е.
+//
+// Wave 5 pilot (KAC-94): writer-TX явный, DML + outbox atomic.
 type UpdateNetworkUseCase struct {
-	repo    NetworkRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateNetworkUseCase создаёт UpdateNetworkUseCase.
-func NewUpdateNetworkUseCase(repo NetworkRepo, opsRepo operations.Repo) *UpdateNetworkUseCase {
-	return &UpdateNetworkUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateNetworkUseCase(r Repo, opsRepo operations.Repo) *UpdateNetworkUseCase {
+	return &UpdateNetworkUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -69,13 +72,26 @@ func (u *UpdateNetworkUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 }
 
 func (u *UpdateNetworkUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.NetworkID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	// Get + Update внутри одной writer-TX: race-free read-modify-write.
+	rec, err := w.Networks().Get(ctx, in.NetworkID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 	applyNetworkMask(&rec.Network, in)
-	updated, err := u.repo.Update(ctx, &rec.Network)
+	updated, err := w.Networks().Update(ctx, &rec.Network)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Network", updated.ID, "UPDATED", networkPayloadMap(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalNetworkRecord(updated)

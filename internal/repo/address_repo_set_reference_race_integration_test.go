@@ -14,7 +14,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-88 / G1 of KAC-84 audit — address_references.SetReference race.
@@ -33,14 +32,14 @@ import (
 // Защита (parity c NIC SetUsedBy): repo.SetReference (и MarkEphemeralInUse)
 // делают атомарный single-statement CAS — `INSERT … ON CONFLICT (address_id)
 // DO UPDATE … WHERE address_references.referrer_id = EXCLUDED.referrer_id`.
-// 0 rows из RETURNING (через pgx.ErrNoRows) → service.ErrFailedPrecondition.
+// 0 rows из RETURNING (через pgx.ErrNoRows) → repo.ErrFailedPrecondition.
 // Single-statement upsert на одной row защищён row-level lock-ом Postgres:
 // конкурентный writer ждёт commit-а первого, видит уже заполнённую row,
 // CAS не matches → 0 rows.
 //
 // Этот тест запускает N goroutines, каждая пытается SetReference на один и тот
 // же address со своим referrer_id. Инвариант: **ровно одна** транзакция
-// успешна, остальные получают ErrFailedPrecondition. В БД referrer_id равен
+// успешна, остальные получают repo.ErrFailedPrecondition. В БД referrer_id равен
 // победителю.
 func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 	if testing.Short() {
@@ -103,7 +102,7 @@ func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 				winner = rid
 				muWin.Unlock()
 				ok.Add(1)
-			case errors.Is(err, service.ErrFailedPrecondition):
+			case errors.Is(err, repo.ErrFailedPrecondition):
 				conflict.Add(1)
 			default:
 				require.Failf(t, "unexpected error", "referrer=%s err=%v", rid, err)
@@ -116,7 +115,7 @@ func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 	require.Equal(t, int32(1), ok.Load(),
 		"ровно один SetReference должен выиграть гонку (got %d successes)", ok.Load())
 	require.Equal(t, int32(N-1), conflict.Load(),
-		"остальные N-1 SetReference должны получить ErrFailedPrecondition (got %d conflicts)", conflict.Load())
+		"остальные N-1 SetReference должны получить repo.ErrFailedPrecondition (got %d conflicts)", conflict.Load())
 
 	// В БД referrer_id принадлежит победителю + address.used = true.
 	require.NotEmpty(t, winner, "должен быть зафиксирован победитель")
@@ -193,8 +192,8 @@ func TestIntegration_AddressRepo_SetReferenceIdempotent(t *testing.T) {
 		ReferrerName: "nic-other",
 	})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, service.ErrFailedPrecondition),
-		"SetReference к занятому address от чужого referrer-а → ErrFailedPrecondition, got %v", err)
+	require.True(t, errors.Is(err, repo.ErrFailedPrecondition),
+		"SetReference к занятому address от чужого referrer-а → repo.ErrFailedPrecondition, got %v", err)
 
 	// После ClearReference адрес снова свободен — новый referrer проходит.
 	require.NoError(t, ar.ClearReference(ctx, addr.ID))

@@ -9,28 +9,37 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListRouteTablesUseCase — list RTs с пагинацией. folder_id обязателен.
+//
+// Wave 5 replicate (KAC-94): использует CQRS Reader.
 type ListRouteTablesUseCase struct {
-	repo RouteTableRepo
+	repo Repo
 }
 
 // NewListRouteTablesUseCase создаёт ListRouteTablesUseCase.
-func NewListRouteTablesUseCase(repo RouteTableRepo) *ListRouteTablesUseCase {
-	return &ListRouteTablesUseCase{repo: repo}
+func NewListRouteTablesUseCase(r Repo) *ListRouteTablesUseCase {
+	return &ListRouteTablesUseCase{repo: r}
 }
 
 // Execute — folder_id required.
-func (u *ListRouteTablesUseCase) Execute(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error) {
+func (u *ListRouteTablesUseCase) Execute(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return u.repo.List(ctx, f, p)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	return rd.RouteTables().List(ctx, f, p)
 }
 
 // ListOperationsUseCase — операции, относящиеся к конкретному route-table id.
+// NB: без repo.Get-precondition — операции должны быть доступны и после Delete
+// (история).
 type ListOperationsUseCase struct {
 	opsRepo operations.Repo
 }

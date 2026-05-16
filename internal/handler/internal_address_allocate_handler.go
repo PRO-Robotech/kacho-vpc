@@ -9,7 +9,7 @@
 // Wave 3 (KAC-94): AddressService разобран на use-case-структуру в
 // `internal/apps/kacho/api/address/`. Allocate-методы теперь — отдельный
 // `address.AllocateUseCase`; Reference-методы — отдельный
-// `service.AddressReferenceService`. Handler инжектирует оба и проксирует
+// `addressref.Service`. Handler инжектирует оба и проксирует
 // proto-запросы в их методы.
 //
 // Composition root (cmd/vpc/main.go) обновляется в той же ветке, что и
@@ -22,8 +22,8 @@
 // `internal/apps/kacho/api/address` напрямую — вместо этого определена
 // узкая port-абстракция `AddressAllocator`, которой удовлетворяет
 // `*address.AllocateUseCase`. Та же стратегия применена к
-// `AddressReferenceService` (этот, наоборот, в `internal/service` —
-// нет цикла, но единый стиль).
+// `AddressReferenceService` (этот в `internal/apps/kacho/services/addressref` —
+// нет цикла).
 //
 // Legacy SetInternalIP RPC удалён.
 package handler
@@ -38,8 +38,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // AddressAllocator — port для allocate-методов; реализуется
@@ -55,10 +56,10 @@ type AddressAllocator interface {
 }
 
 // AddressReferenceManager — port для referrer-tracking; реализуется
-// `*service.AddressReferenceService`.
+// `*addressref.Service`.
 type AddressReferenceManager interface {
-	SetAddressReference(ctx context.Context, req service.SetAddressReferenceReq) (*domain.AddressReference, error)
-	MarkAddressEphemeralInUse(ctx context.Context, req service.SetAddressReferenceReq) (*domain.AddressReference, error)
+	SetAddressReference(ctx context.Context, req addressref.SetAddressReferenceReq) (*domain.AddressReference, error)
+	MarkAddressEphemeralInUse(ctx context.Context, req addressref.SetAddressReferenceReq) (*domain.AddressReference, error)
 	ClearAddressReference(ctx context.Context, addressID string) error
 	GetAddressReference(ctx context.Context, addressID string) (*domain.AddressReference, error)
 }
@@ -72,7 +73,7 @@ type InternalAddressAllocateHandler struct {
 
 // NewInternalAddressAllocateHandler собирает handler из двух port'ов —
 // composition root (cmd/vpc/main.go) передаёт `*addressapp.AllocateUseCase`
-// и `*service.AddressReferenceService`.
+// и `*addressref.Service`.
 func NewInternalAddressAllocateHandler(allocate AddressAllocator, refs AddressReferenceManager) *InternalAddressAllocateHandler {
 	return &InternalAddressAllocateHandler{allocate: allocate, refs: refs}
 }
@@ -124,7 +125,7 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	ref, err := h.refs.SetAddressReference(ctx, service.SetAddressReferenceReq{
+	ref, err := h.refs.SetAddressReference(ctx, addressref.SetAddressReferenceReq{
 		AddressID:    req.GetAddressId(),
 		ReferrerType: req.GetReferrerType(),
 		ReferrerID:   req.GetReferrerId(),
@@ -161,7 +162,7 @@ func (h *InternalAddressAllocateHandler) MarkAddressEphemeralInUse(ctx context.C
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	if _, err := h.refs.MarkAddressEphemeralInUse(ctx, service.SetAddressReferenceReq{
+	if _, err := h.refs.MarkAddressEphemeralInUse(ctx, addressref.SetAddressReferenceReq{
 		AddressID:    req.GetAddressId(),
 		ReferrerType: req.GetReferrerType(),
 		ReferrerID:   req.GetReferrerId(),
@@ -189,7 +190,7 @@ func mapAllocErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, service.ErrNotFound) {
+	if errors.Is(err, repo.ErrNotFound) {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {

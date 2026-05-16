@@ -14,54 +14,66 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
-// Тесты Subnet use-case'ов и handler'а. Wave 3 (KAC-94): сюда переехали прежние
-// тесты `internal/handler/subnet_handler*_test.go` и
-// `internal/service/subnet_test.go`.
+// Тесты Subnet use-case'ов и handler'а. Wave 5 replicate (KAC-94): Subnet
+// переехал на CQRS-Repository. Mock — `kachomock.NewRepository()` (in-memory
+// CQRS-impl с TX-семантикой Subnet/Network/SG state и outbox-буфером).
 
 // testZone — фиктивная зона, которую mock-zoneReg считает существующей.
 const testZone = "ru-central1-a"
 
 func makeHandler(t *testing.T,
-	sr *portmock.SubnetRepo,
-	nr *portmock.NetworkRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
-	zr *portmock.ZoneRegistry,
+	kr *kachomock.Repository,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
+	zr *repomock.ZoneRegistry,
 ) *Handler {
 	t.Helper()
-	create := NewCreateSubnetUseCase(sr, nr, fc, zr, or)
-	update := NewUpdateSubnetUseCase(sr, or)
-	deleteUC := NewDeleteSubnetUseCase(sr, nil, or)
-	move := NewMoveSubnetUseCase(sr, fc, or)
-	get := NewGetSubnetUseCase(sr)
-	list := NewListSubnetsUseCase(sr)
-	addCidr := NewAddCidrBlocksUseCase(sr, or)
-	removeCidr := NewRemoveCidrBlocksUseCase(sr, or)
-	relocate := NewRelocateUseCase(sr, zr)
-	listUsedAddrs := NewListUsedAddressesUseCase(sr, nil)
+	create := NewCreateSubnetUseCase(kr, fc, zr, or)
+	update := NewUpdateSubnetUseCase(kr, or)
+	deleteUC := NewDeleteSubnetUseCase(kr, nil, or)
+	move := NewMoveSubnetUseCase(kr, fc, or)
+	get := NewGetSubnetUseCase(kr)
+	list := NewListSubnetsUseCase(kr)
+	addCidr := NewAddCidrBlocksUseCase(kr, or)
+	removeCidr := NewRemoveCidrBlocksUseCase(kr, or)
+	relocate := NewRelocateUseCase(kr, zr)
+	listUsedAddrs := NewListUsedAddressesUseCase(kr, nil)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, list,
 		addCidr, removeCidr, relocate, listUsedAddrs, listOps)
 }
 
-// minimalHandler собирает Handler с in-memory mock'ами и одной seed-Network в
-// folder "f1". Возвращает Handler, OpsRepo (для AwaitOpDone), SubnetRepo (для
-// прямого доступа к стейту) и id seed-network'а.
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *portmock.SubnetRepo, string) {
+// minimalHandler собирает Handler с in-memory kachomock.Repository и одной
+// seed-Network в folder "f1". Возвращает Handler, OpsRepo (для AwaitOpDone),
+// Repository (для прямого доступа к стейту) и id seed-network'а.
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, string) {
 	t.Helper()
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
-	zr := portmock.NewZoneRegistry(testZone)
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
+	zr := repomock.NewZoneRegistry(testZone)
 
+	// Seed Network через kachomock writer (committed state, видим Reader'ом).
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net1")})
+	seedNetwork(t, kr, "f1", netID)
 
-	return makeHandler(t, sr, nr, or, fc, zr), or, sr, netID
+	return makeHandler(t, kr, or, fc, zr), or, kr, netID
+}
+
+// seedNetwork helper — committed Network через writer-TX.
+func seedNetwork(t *testing.T, kr *kachomock.Repository, folderID, networkID string) {
+	t.Helper()
+	ctx := context.Background()
+	w, err := kr.Writer(ctx)
+	require.NoError(t, err)
+	_, err = w.Networks().Insert(ctx, &domain.Network{ID: networkID, FolderID: folderID, Name: domain.RcNameVPC("net-for-test")})
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
 }
 
 // ---- Handler — sync paths ----
@@ -164,11 +176,10 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level (Create) ----
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(sr, nr, &portmock.FolderClient{OK: true},
-		portmock.NewZoneRegistry(testZone), or)
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: true},
+		repomock.NewZoneRegistry(testZone), or)
 
 	// folder_id required.
 	netID := ids.NewID(ids.PrefixNetwork)
@@ -219,14 +230,13 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 }
 
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(sr, nr, &portmock.FolderClient{OK: false},
-		portmock.NewZoneRegistry(testZone), or)
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: false},
+		repomock.NewZoneRegistry(testZone), or)
 
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net1")})
+	seedNetwork(t, kr, "f1", netID)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
@@ -238,11 +248,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 }
 
 func TestCreateUseCase_NetworkNotFound(t *testing.T) {
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(sr, nr, &portmock.FolderClient{OK: true},
-		portmock.NewZoneRegistry(testZone), or)
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: true},
+		repomock.NewZoneRegistry(testZone), or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
 		FolderID: "f1", NetworkID: ids.NewID(ids.PrefixNetwork), ZoneID: testZone,
@@ -253,7 +262,7 @@ func TestCreateUseCase_NetworkNotFound(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	h, or, sr, netID := minimalHandler(t, true)
+	h, or, kr, netID := minimalHandler(t, true)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
 		FolderId:     "f1",
@@ -265,14 +274,25 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.Id)
 
-	saved := portmock.AwaitOpDone(t, or, op.Id)
+	saved := repomock.AwaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 
-	// Verify SubnetRepo получил запись.
-	subs, _, _ := sr.List(context.Background(), SubnetFilter{FolderID: "f1"}, Pagination{})
+	// Verify Subnet committed в kachomock state.
+	subs := kr.Subnets()
 	require.Len(t, subs, 1)
 	assert.Equal(t, "sub1", string(subs[0].Name))
+
+	// Outbox: Subnet.CREATED event.
+	events := kr.Outbox()
+	require.GreaterOrEqual(t, len(events), 1)
+	hasSubCreate := false
+	for _, e := range events {
+		if e.Resource == "Subnet" && e.Action == "CREATED" {
+			hasSubCreate = true
+		}
+	}
+	assert.True(t, hasSubCreate, "Subnet.CREATED outbox event expected")
 }
 
 func TestCreateUseCase_DuplicateName(t *testing.T) {
@@ -284,7 +304,7 @@ func TestCreateUseCase_DuplicateName(t *testing.T) {
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, op1.Id)
+	repomock.AwaitOpDone(t, or, op1.Id)
 
 	// Второй Create с тем же name — sync AlreadyExists.
 	_, err = h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
@@ -299,7 +319,7 @@ func TestCreateUseCase_DuplicateName(t *testing.T) {
 // ---- use-case-level (Update) ----
 
 func TestUpdateUseCase_ImmutableNetworkID(t *testing.T) {
-	uc := NewUpdateSubnetUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateSubnetUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		SubnetID:   ids.NewID(ids.PrefixSubnet),
 		UpdateMask: []string{"network_id"},
@@ -310,7 +330,7 @@ func TestUpdateUseCase_ImmutableNetworkID(t *testing.T) {
 }
 
 func TestUpdateUseCase_ImmutableZoneID(t *testing.T) {
-	uc := NewUpdateSubnetUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateSubnetUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		SubnetID:   ids.NewID(ids.PrefixSubnet),
 		UpdateMask: []string{"zone_id"},
@@ -321,7 +341,7 @@ func TestUpdateUseCase_ImmutableZoneID(t *testing.T) {
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	uc := NewUpdateSubnetUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateSubnetUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		SubnetID:   ids.NewID(ids.PrefixSubnet),
 		UpdateMask: []string{"unknown_field"},
@@ -332,7 +352,7 @@ func TestUpdateUseCase_UnknownMask(t *testing.T) {
 // ---- use-case-level (Delete) ----
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteSubnetUseCase(portmock.NewSubnetRepo(), nil, portmock.NewOpsRepo())
+	uc := NewDeleteSubnetUseCase(kachomock.NewRepository(), nil, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -342,7 +362,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 // ---- use-case-level (Move) ----
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveSubnetUseCase(portmock.NewSubnetRepo(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveSubnetUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -355,7 +375,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 // ---- use-case-level (List) ----
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListSubnetsUseCase(portmock.NewSubnetRepo())
+	uc := NewListSubnetsUseCase(kachomock.NewRepository())
 	_, _, err := uc.Execute(context.Background(), SubnetFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -364,7 +384,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 
 func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
 	// История операций должна оставаться доступной после Delete.
-	uc := NewListOperationsUseCase(portmock.NewOpsRepo())
+	uc := NewListOperationsUseCase(repomock.NewOpsRepo())
 	ops, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	assert.NoError(t, err)
 	assert.Empty(t, ops)
@@ -373,7 +393,7 @@ func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
 // ---- use-case-level (AddCidrBlocks) ----
 
 func TestAddCidrBlocksUseCase_RequiresAny(t *testing.T) {
-	uc := NewAddCidrBlocksUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewAddCidrBlocksUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), nil, nil)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -381,7 +401,7 @@ func TestAddCidrBlocksUseCase_RequiresAny(t *testing.T) {
 }
 
 func TestAddCidrBlocksUseCase_BadV4(t *testing.T) {
-	uc := NewAddCidrBlocksUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewAddCidrBlocksUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), []string{"10.0.0.5/24"}, nil)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -391,7 +411,7 @@ func TestAddCidrBlocksUseCase_BadV4(t *testing.T) {
 // ---- use-case-level (RemoveCidrBlocks) ----
 
 func TestRemoveCidrBlocksUseCase_RequiresAny(t *testing.T) {
-	uc := NewRemoveCidrBlocksUseCase(portmock.NewSubnetRepo(), portmock.NewOpsRepo())
+	uc := NewRemoveCidrBlocksUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), nil, nil)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -403,16 +423,22 @@ func TestRemoveCidrBlocksUseCase_RequiresAny(t *testing.T) {
 func TestRelocateUseCase_AlwaysFailedPrecondition(t *testing.T) {
 	// Verbatim YC: Relocate ВСЕГДА отвергается с FAILED_PRECONDITION "Invalid
 	// subnet state" — даже для свежей подсети.
-	sr := portmock.NewSubnetRepo()
-	zr := portmock.NewZoneRegistry(testZone)
+	kr := kachomock.NewRepository()
+	zr := repomock.NewZoneRegistry(testZone)
 
 	netID := ids.NewID(ids.PrefixNetwork)
 	subID := ids.NewID(ids.PrefixSubnet)
-	_, _ = sr.Insert(context.Background(), &domain.Subnet{
+	// Seed Subnet через committed writer.
+	ctx := context.Background()
+	w, err := kr.Writer(ctx)
+	require.NoError(t, err)
+	_, err = w.Subnets().Insert(ctx, &domain.Subnet{
 		ID: subID, FolderID: "f1", NetworkID: netID, ZoneID: testZone,
 	})
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
 
-	uc := NewRelocateUseCase(sr, zr)
+	uc := NewRelocateUseCase(kr, zr)
 	op, err := uc.Execute(context.Background(), subID, testZone)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -423,7 +449,7 @@ func TestRelocateUseCase_AlwaysFailedPrecondition(t *testing.T) {
 // ---- use-case-level (ListUsedAddresses) ----
 
 func TestListUsedAddressesUseCase_RequiresExistence(t *testing.T) {
-	uc := NewListUsedAddressesUseCase(portmock.NewSubnetRepo(), nil)
+	uc := NewListUsedAddressesUseCase(kachomock.NewRepository(), nil)
 	// Несуществующий id → NotFound (через repo.Get).
 	_, _, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	require.Error(t, err)
@@ -442,7 +468,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	// List
 	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
@@ -461,7 +487,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, updOp.Id)
+	repomock.AwaitOpDone(t, or, updOp.Id)
 
 	got, _ = h.Get(context.Background(), &vpcv1.GetSubnetRequest{SubnetId: subID})
 	assert.Equal(t, "sub-upd", got.Name)
@@ -472,7 +498,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		V4CidrBlocks: []string{"10.1.0.0/24"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, addOp.Id)
+	repomock.AwaitOpDone(t, or, addOp.Id)
 
 	// RemoveCidrBlocks
 	rmOp, err := h.RemoveCidrBlocks(context.Background(), &vpcv1.RemoveSubnetCidrBlocksRequest{
@@ -480,7 +506,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		V4CidrBlocks: []string{"10.1.0.0/24"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, rmOp.Id)
+	repomock.AwaitOpDone(t, or, rmOp.Id)
 
 	// ListOperations
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListSubnetOperationsRequest{SubnetId: subID})
@@ -493,7 +519,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	// Move
 	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, moveOp.Id)
+	repomock.AwaitOpDone(t, or, moveOp.Id)
 
 	// Relocate — всегда FailedPrecondition
 	_, err = h.Relocate(context.Background(), &vpcv1.RelocateSubnetRequest{SubnetId: subID, DestinationZoneId: testZone})
@@ -503,7 +529,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	// AssertFolderOwnership не запрещает: см. minimalHandler — context без tenant).
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteSubnetRequest{SubnetId: subID})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, delOp.Id)
+	repomock.AwaitOpDone(t, or, delOp.Id)
 }
 
 func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
@@ -516,14 +542,14 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
 	require.Len(t, resp.Subnets, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteSubnetRequest{SubnetId: resp.Subnets[0].Id})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 
@@ -533,7 +559,7 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 }
 
 func TestSubnetToPb_RoundTrip(t *testing.T) {
-	rec := &domain.SubnetRecord{
+	rec := &kachorepo.SubnetRecord{
 		Subnet: domain.Subnet{
 			ID:           "s-1",
 			FolderID:     "f1",

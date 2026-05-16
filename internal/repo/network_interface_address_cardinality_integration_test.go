@@ -11,7 +11,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-55 — DB-level CHECK инвариант: network_interfaces.v4_address_ids /
@@ -75,15 +74,15 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 	_, err = nicRepo.Insert(ctx, mkNIC("04", []string{"e9bv4dual"}, []string{"e9bv6dual"}))
 	require.NoError(t, err, "по одному v4 + v6 разрешено")
 
-	// 5. v4=[2] — должен сработать DB-level CHECK; wrapPgErr маппит 23514 в ErrInvalidArg.
+	// 5. v4=[2] — должен сработать DB-level CHECK; wrapPgErr маппит 23514 в repo.ErrInvalidArg.
 	_, err = nicRepo.Insert(ctx, mkNIC("05", []string{"e9bv4a", "e9bv4b"}, nil))
 	require.Error(t, err, "два v4 на одном NIC должны быть отклонены DB-level CHECK")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
-		"expected ErrInvalidArg from CHECK violation, got: %v", err)
+	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
+		"expected repo.ErrInvalidArg from CHECK violation, got: %v", err)
 
 	// 6. v6=[2] — аналогично.
 	_, err = nicRepo.Insert(ctx, mkNIC("06", nil, []string{"e9bv6a", "e9bv6b"}))
 	require.Error(t, err, "два v6 на одном NIC должны быть отклонены DB-level CHECK")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
-		"expected ErrInvalidArg from CHECK violation, got: %v", err)
+	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
+		"expected repo.ErrInvalidArg from CHECK violation, got: %v", err)
 }

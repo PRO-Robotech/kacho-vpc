@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "726b1c6d-6b0d-4c91-ba2b-6ad9a40ba3cc",
+    "_postman_id": "5c1b93be-ee6c-48cc-a6ab-be3c8b650b66",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -69,7 +69,7 @@
                   "pm.test('id has apl prefix', () => pm.expect(j.id).to.match(/^apl/));",
                   "pm.test('name matches', () => pm.expect(j.name).to.eql('ipl-crud-' + pm.environment.get('runId')));",
                   "pm.test('kind echoed', () => pm.expect(j.kind).to.eql('EXTERNAL_PUBLIC'));",
-                  "pm.test('isDefault false', () => pm.expect(j.isDefault).to.eql(false));",
+                  "pm.test('isDefault false', () => pm.expect(j.isDefault || false).to.eql(false));",
                   "pm.test('v4CidrBlocks echoed', () => pm.expect(j.v4CidrBlocks).to.eql(['203.0.113.0/24']));",
                   "pm.test('v6CidrBlocks empty', () => pm.expect(j.v6CidrBlocks || []).to.eql([]));",
                   "try {",
@@ -1727,7 +1727,7 @@
       ]
     },
     {
-      "name": "IPL-EXPLAIN-UNRESOLVABLE — ExplainResolution?networkId=<garbage> (нет global default) → FailedPrecondition (FINDING-008 fixed)",
+      "name": "IPL-EXPLAIN-UNRESOLVABLE — ExplainResolution?networkId=<garbage> (нет global default) → 200 matched_via=none (REQ-RESOLVE-04/D4)",
       "description": "class:NEG | class:CONF | priority:P2",
       "item": [
         {
@@ -1758,9 +1758,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "pm.test('grpc error code in {9, 5} (не 13 INTERNAL)', () => pm.expect(j.code).to.be.oneOf([9, 5]));"
+                  "pm.test('matched_via=none', () => pm.expect(j.matchedVia).to.eql('none'));",
+                  "pm.test('selected_pool absent', () => pm.expect(j.selectedPool).to.be.oneOf([undefined, null]));"
                 ]
               }
             }

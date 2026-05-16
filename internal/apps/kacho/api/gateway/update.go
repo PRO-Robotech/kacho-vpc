@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateGatewayUseCase.Execute. Конкретно для Update
@@ -26,14 +27,17 @@ type UpdateInput struct {
 
 // UpdateGatewayUseCase — sync-валидация update_mask + значений, затем создание
 // Operation + async update в worker'е.
+//
+// Wave 5 replicate (KAC-94): doUpdate открывает Writer-TX, делает Get + apply
+// mask + Update + outbox emit в одной транзакции.
 type UpdateGatewayUseCase struct {
-	repo    GatewayRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateGatewayUseCase создаёт UpdateGatewayUseCase.
-func NewUpdateGatewayUseCase(repo GatewayRepo, opsRepo operations.Repo) *UpdateGatewayUseCase {
-	return &UpdateGatewayUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateGatewayUseCase(r Repo, opsRepo operations.Repo) *UpdateGatewayUseCase {
+	return &UpdateGatewayUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -68,13 +72,25 @@ func (u *UpdateGatewayUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 }
 
 func (u *UpdateGatewayUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.GatewayID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	rec, err := w.Gateways().Get(ctx, in.GatewayID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 	applyGatewayMask(&rec.Gateway, in)
-	updated, err := u.repo.Update(ctx, &rec.Gateway)
+	updated, err := w.Gateways().Update(ctx, &rec.Gateway)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if oerr := w.Outbox().Emit(ctx, "Gateway", updated.ID, "UPDATED", gatewayPayloadMap(updated)); oerr != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalGatewayRecord(updated)

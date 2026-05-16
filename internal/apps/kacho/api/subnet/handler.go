@@ -14,8 +14,10 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
 	// Blank-import регистрирует Subnet/Address/time DTO трансферы (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 )
 
@@ -354,7 +356,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListSubnetOpera
 
 // subnetToPb — repo-entity Subnet → proto Subnet через DTO-реестр (skill
 // evgeniy §3 C.3).
-func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
+func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	var dst *vpcv1.Subnet
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Subnet failed")

@@ -14,7 +14,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreateSecurityGroupUseCase.Execute.
@@ -33,20 +33,23 @@ type CreateInput struct {
 // секунду» (см. kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop
 // через FK/UNIQUE.
 //
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5 / §7 I.9 / I.10): worker
+// открывает ОДНУ Writer-TX, делает Insert(SG) + outbox-emit в ней, Commit.
+//
 // Default-SG creation для Network — НЕ здесь: она inline в
 // `CreateNetworkUseCase` через `domain.NewDefaultSecurityGroup`. Этот use-case —
 // обычный явный Create от клиента.
 type CreateSecurityGroupUseCase struct {
-	repo          SecurityGroupRepo
+	repo          Repo
 	networkReader NetworkReader
 	folderClient  FolderClient
 	opsRepo       operations.Repo
 }
 
 // NewCreateSecurityGroupUseCase создаёт CreateSecurityGroupUseCase.
-func NewCreateSecurityGroupUseCase(repo SecurityGroupRepo, networkReader NetworkReader, folderClient FolderClient, opsRepo operations.Repo) *CreateSecurityGroupUseCase {
+func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, folderClient FolderClient, opsRepo operations.Repo) *CreateSecurityGroupUseCase {
 	return &CreateSecurityGroupUseCase{
-		repo:          repo,
+		repo:          r,
 		networkReader: networkReader,
 		folderClient:  folderClient,
 		opsRepo:       opsRepo,
@@ -94,7 +97,7 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput
 	}
 	if sg.NetworkID != "" && u.networkReader != nil {
 		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 			}
 			return nil, mapRepoErr(err)
@@ -102,7 +105,12 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput
 	}
 	name := string(sg.Name)
 	if name != "" {
-		existing, _, lerr := u.repo.List(ctx, SecurityGroupFilter{FolderID: sg.FolderID, Name: name}, Pagination{})
+		rd, err := u.repo.Reader(ctx)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		existing, _, lerr := rd.SecurityGroups().List(ctx, SecurityGroupFilter{FolderID: sg.FolderID, Name: name}, Pagination{})
+		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
 		}
@@ -132,8 +140,8 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput
 }
 
 // doCreate — async-часть Create (внутри Operation worker'а). Folder-exists +
-// network-exists повторяются как defensive backstop; затем Insert (FK / UNIQUE
-// constraints — атомарный последний рубеж).
+// network-exists повторяются как defensive backstop; затем Insert через CQRS
+// writer-TX + outbox-emit в той же TX (skill evgeniy §6 G.5).
 func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, sg domain.SecurityGroup) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, sg.FolderID)
 	if err != nil {
@@ -150,8 +158,21 @@ func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, 
 
 	sg.ID = sgID
 	sg.Rules = assignRuleIDs(sg.Rules)
-	created, err := u.repo.Insert(ctx, &sg)
+
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	created, err := w.SecurityGroups().Insert(ctx, &sg)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "SecurityGroup", created.ID, "CREATED", securityGroupPayloadMap(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalSecurityGroupRecord(created)

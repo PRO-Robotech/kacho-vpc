@@ -5,25 +5,32 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// GetPrivateEndpointUseCase — простой read.
+// GetPrivateEndpointUseCase — простой read через CQRS-Reader.
 type GetPrivateEndpointUseCase struct {
-	repo PrivateEndpointRepo
+	repo Repo
 }
 
 // NewGetPrivateEndpointUseCase создаёт GetPrivateEndpointUseCase.
-func NewGetPrivateEndpointUseCase(repo PrivateEndpointRepo) *GetPrivateEndpointUseCase {
-	return &GetPrivateEndpointUseCase{repo: repo}
+func NewGetPrivateEndpointUseCase(r Repo) *GetPrivateEndpointUseCase {
+	return &GetPrivateEndpointUseCase{repo: r}
 }
 
-// Execute возвращает repo-entity PrivateEndpoint.
-func (u *GetPrivateEndpointUseCase) Execute(ctx context.Context, id string) (*domain.PrivateEndpointRecord, error) {
+// Execute возвращает repo-entity PrivateEndpoint. Wave 5 replicate (KAC-94):
+// открывает read-only TX через `repo.Reader(ctx)` и закрывает её через
+// `rd.Close()` (rollback read-only TX). Parity с Network/RT/SG.
+func (u *GetPrivateEndpointUseCase) Execute(ctx context.Context, id string) (*kacho.PrivateEndpointRecord, error) {
 	if err := corevalidate.ResourceID("private endpoint", ids.PrefixPrivateEndpoint, id); err != nil {
 		return nil, err
 	}
-	got, err := u.repo.Get(ctx, id)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	got, err := rd.PrivateEndpoints().Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}

@@ -19,15 +19,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 )
 
 type InternalNetworkHandler struct {
 	vpcv1.UnimplementedInternalNetworkServiceServer
-	netInternal *service.NetworkInternal
+	netInternal *networkinternal.Service
 }
 
-func NewInternalNetworkHandler(ni *service.NetworkInternal) *InternalNetworkHandler {
+func NewInternalNetworkHandler(ni *networkinternal.Service) *InternalNetworkHandler {
 	return &InternalNetworkHandler{netInternal: ni}
 }
 
@@ -39,7 +39,11 @@ func (h *InternalNetworkHandler) SetDefaultSecurityGroupId(ctx context.Context, 
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
 	if err := h.netInternal.SetDefaultSecurityGroupId(ctx, req.GetNetworkId(), req.GetSecurityGroupId()); err != nil {
-		return nil, mapPoolErr(err) // reuse mapping
+		// Wave 5 batch 36 (KAC-94): после удаления internal_address_pool_handler.go
+		// (миграция AP на use-case-структуру) reuse-mapping в виде `mapPoolErr`
+		// больше нет — переключаемся на общий `internalMapErr` (та же no-leak
+		// семантика, см. internal_maperr.go).
+		return nil, internalMapErr("set default security group", err)
 	}
 	return &vpcv1.SetDefaultSecurityGroupIdResponse{}, nil
 }

@@ -14,14 +14,16 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// SecurityGroup — type-alias на domain.SecurityGroupRecord (repo-entity с
-// DB-managed CreatedAt). Wave 2 batch B (KAC-94), parity с repo.Network.
-type SecurityGroup = domain.SecurityGroupRecord
+// SecurityGroup — type-alias на kachorepo.SecurityGroupRecord (repo-entity с
+// DB-managed CreatedAt). Wave 5 D.1 (KAC-94): переехало в repo-leaf
+// `internal/repo/kacho/entity_security_group.go`; этот alias остался для
+// обратной совместимости с legacy `*repo.SecurityGroupRepo`-консьюмерами.
+type SecurityGroup = kachorepo.SecurityGroupRecord
 
-// SecurityGroupRepo — реализация service.SecurityGroupRepo поверх pgxpool.
+// SecurityGroupRepo — реализация SecurityGroupRepoIface поверх pgxpool.
 type SecurityGroupRepo struct {
 	pool *pgxpool.Pool
 }
@@ -36,7 +38,7 @@ func NewSecurityGroupRepo(pool *pgxpool.Pool) *SecurityGroupRepo {
 // kacho-vpc#10). Остальные классы ошибок — через wrapPgErr.
 func wrapSGErr(err error, id string) error {
 	if errors.Is(err, pgx.ErrNoRows) && id != "" {
-		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", ErrNotFound, id)
 	}
 	return wrapPgErr(err, "SecurityGroup", id)
 }
@@ -53,7 +55,7 @@ func (r *SecurityGroupRepo) Get(ctx context.Context, id string) (*SecurityGroup,
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFilter, p service.Pagination) ([]*SecurityGroup, string, error) {
+func (r *SecurityGroupRepo) List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*SecurityGroup, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -140,7 +142,7 @@ func (r *SecurityGroupRepo) List(ctx context.Context, f service.SecurityGroupFil
 
 // Insert вставляет SG. Принимает domain.SecurityGroup (без CreatedAt — repo сам
 // выставит `now()` для детерминированности тестов; source of truth — БД-колонка).
-// Возвращает *SecurityGroup (= *domain.SecurityGroupRecord).
+// Возвращает *SecurityGroup (= *kachorepo.SecurityGroupRecord).
 func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroup, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
@@ -153,7 +155,7 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -172,7 +174,7 @@ func (r *SecurityGroupRepo) Insert(ctx context.Context, sg *domain.SecurityGroup
 		return nil, wrapSGErr(err, string(sg.Name))
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "CREATED", securityGroupPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapSGErr(err, string(sg.Name))
@@ -193,7 +195,7 @@ func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -207,7 +209,7 @@ func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup
 		return nil, wrapSGErr(err, sg.ID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", result.ID, "UPDATED", securityGroupPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapSGErr(err, sg.ID)
@@ -218,7 +220,7 @@ func (r *SecurityGroupRepo) Update(ctx context.Context, sg *domain.SecurityGroup
 func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -227,10 +229,10 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 		return wrapSGErr(err, id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapSGErr(err, id)
@@ -248,7 +250,7 @@ func (r *SecurityGroupRepo) Delete(ctx context.Context, id string) error {
 func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -264,7 +266,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
 		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
-			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", service.ErrInternal, sgID, err)
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", ErrInternal, sgID, err)
 		}
 	}
 	// фильтруем удаляемые
@@ -296,12 +298,12 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 		// pgx.ErrNoRows → concurrent modification (xmin не совпал).
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
-				service.ErrFailedPrecondition, sgID)
+				ErrFailedPrecondition, sgID)
 		}
 		return nil, wrapSGErr(err, sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapSGErr(err, sgID)
@@ -317,7 +319,7 @@ func (r *SecurityGroupRepo) UpdateRules(ctx context.Context, sgID string, delete
 func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -330,7 +332,7 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
 		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
-			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", service.ErrInternal, sgID, err)
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", ErrInternal, sgID, err)
 		}
 	}
 	found := false
@@ -359,7 +361,7 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	}
 	if !found {
 		return nil, fmt.Errorf("%w: SecurityGroupRule %s not found in SecurityGroup %s",
-			service.ErrNotFound, ruleID, sgID)
+			ErrNotFound, ruleID, sgID)
 	}
 	newRulesJSON, err := marshalJSONB(rules, "SecurityGroup.rules")
 	if err != nil {
@@ -372,12 +374,12 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
-				service.ErrFailedPrecondition, sgID)
+				ErrFailedPrecondition, sgID)
 		}
 		return nil, wrapSGErr(err, sgID)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapSGErr(err, sgID)
@@ -388,7 +390,7 @@ func (r *SecurityGroupRepo) UpdateRule(ctx context.Context, sgID, ruleID, descri
 func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string) (*SecurityGroup, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -399,7 +401,7 @@ func (r *SecurityGroupRepo) SetFolderID(ctx context.Context, id, folderID string
 		return nil, wrapSGErr(err, id)
 	}
 	if err := emitVPC(ctx, tx, "SecurityGroup", sg.ID, "UPDATED", securityGroupPayload(sg)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapSGErr(err, id)

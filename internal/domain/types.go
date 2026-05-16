@@ -174,7 +174,7 @@ func LabelsFromMap(m map[string]string) RcLabels {
 	return d
 }
 
-// LabelsToMap — обратное преобразование, для DTO (protoconv / dto/type2pb).
+// LabelsToMap — обратное преобразование, для DTO (dto/toproto).
 // Возвращает nil если RcLabels пуст — это match старому поведению
 // `Labels: nil` в proto (verbatim YC: пустой ресурс без labels — labels отсутствует
 // в JSON).

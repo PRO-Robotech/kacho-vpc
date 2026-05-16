@@ -7,25 +7,33 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/operations"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListNetworkInterfacesUseCase — list NICs. folder_id обязателен.
+//
+// Wave 5 replicate (KAC-94, NIC batch): открывает reader-TX через CQRS-iface.
 type ListNetworkInterfacesUseCase struct {
-	repo NetworkInterfaceRepo
+	repo Repo
 }
 
 // NewListNetworkInterfacesUseCase создаёт ListNetworkInterfacesUseCase.
-func NewListNetworkInterfacesUseCase(repo NetworkInterfaceRepo) *ListNetworkInterfacesUseCase {
-	return &ListNetworkInterfacesUseCase{repo: repo}
+func NewListNetworkInterfacesUseCase(r Repo) *ListNetworkInterfacesUseCase {
+	return &ListNetworkInterfacesUseCase{repo: r}
 }
 
 // Execute — folder_id required.
-func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterfaceRecord, string, error) {
+func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*kachorepo.NetworkInterfaceRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	out, next, err := u.repo.List(ctx, f, p)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	out, next, err := rd.NetworkInterfaces().List(ctx, f, p)
 	if err != nil {
 		return nil, "", mapRepoErr(err)
 	}

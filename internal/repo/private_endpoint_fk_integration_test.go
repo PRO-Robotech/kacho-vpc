@@ -13,7 +13,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // TestIntegration_PrivateEndpoint_FK_RESTRICT (KAC-89): миграция 0024 добавила
@@ -131,10 +130,10 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	}
 	_, err = per.Insert(ctx, bad)
 	require.Error(t, err, "INSERT PE с несуществующим network_id должен упасть на FK")
-	// Repo маппит FK через wrapPgErr → ErrFailedPrecondition (или Repo
+	// Repo маппит FK через wrapPgErr → repo.ErrFailedPrecondition (или Repo
 	// возвращает sentinel — здесь нам важно, что Insert НЕ прошёл).
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || errors.Is(err, service.ErrInternal) || errors.Is(err, service.ErrAlreadyExists) || isPgFKErr(err),
+		errors.Is(err, repo.ErrFailedPrecondition) || errors.Is(err, repo.ErrInternal) || errors.Is(err, repo.ErrAlreadyExists) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 5. INSERT PE с несуществующим subnet_id → 23503 ---
@@ -150,7 +149,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	_, err = per.Insert(ctx, bad2)
 	require.Error(t, err, "INSERT PE с несуществующим subnet_id должен упасть на FK")
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || isPgFKErr(err),
+		errors.Is(err, repo.ErrFailedPrecondition) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 6. INSERT PE с несуществующим address_id → 23503 ---
@@ -166,7 +165,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	_, err = per.Insert(ctx, bad3)
 	require.Error(t, err, "INSERT PE с несуществующим address_id должен упасть на FK")
 	assert.True(t,
-		errors.Is(err, service.ErrFailedPrecondition) || isPgFKErr(err),
+		errors.Is(err, repo.ErrFailedPrecondition) || isPgFKErr(err),
 		"expected FK-related error, got %v", err)
 
 	// --- 7. Корректное удаление снизу вверх — PE → Address → Subnet → Network ---
@@ -233,7 +232,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 }
 
 // isPgFKErr — true если err оборачивает pgconn.PgError с кодом 23503.
-// Repo маппит FK через wrapPgErr → ErrFailedPrecondition, но в тесте
+// Repo маппит FK через wrapPgErr → repo.ErrFailedPrecondition, но в тесте
 // допускаем и raw pgErr (на случай если оборачивающая обёртка изменится).
 func isPgFKErr(err error) bool {
 	var pgErr *pgconn.PgError

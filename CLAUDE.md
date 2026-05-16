@@ -501,9 +501,10 @@ tests/newman/scripts/run-incremental.sh        # ПО ОДНОМУ кейсу з
 
 ### 14.1 Unit (`internal/service/*_test.go`, `internal/handler/*_test.go`)
 
-Моки port-интерфейсов — из общего пакета `internal/ports/portmock` (раньше
-каждый test-файл держал свою копию). Worker-горутины `operations.Run`
-дожидаются детерминированно через `portmock.AwaitOpDone` / `AwaitAllOpsDone`
+Моки port-интерфейсов — из общего пакета `internal/repo/repomock` (раньше
+`internal/ports/portmock`; переименовано в Wave 5 G.1 / KAC-94 — port-
+интерфейсы и mock'и теперь живут рядом с pgxpool-репо). Worker-горутины
+`operations.Run` дожидаются детерминированно через `repomock.AwaitOpDone` / `AwaitAllOpsDone`
 (poll до `Operation.Done` с дедлайном 2s — не фиксированный `time.Sleep`).
 Запуск: `make test-short` (или `go test ./... -short`).
 

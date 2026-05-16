@@ -12,11 +12,12 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
 	// Blank-import регистрирует трансферы Gateway/time через init() (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // mapRepoErr — переводит repo-sentinel в gRPC status. Параллельный к
@@ -28,15 +29,15 @@ func mapRepoErr(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, stripSentinel(err, ports.ErrNotFound))
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ports.ErrAlreadyExists))
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ports.ErrFailedPrecondition))
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ports.ErrInvalidArg))
-	case errors.Is(err, ports.ErrInternal):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, stripSentinel(err, repo.ErrNotFound))
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, stripSentinel(err, repo.ErrAlreadyExists))
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, repo.ErrFailedPrecondition))
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, stripSentinel(err, repo.ErrInvalidArg))
+	case errors.Is(err, repo.ErrInternal):
 		return status.Error(codes.Internal, "internal database error")
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
@@ -95,10 +96,17 @@ func invalidArg(field, desc string) error {
 // marshalGatewayRecord конвертирует repo-entity Gateway в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами для запихивания
 // результата в Operation.response.
-func marshalGatewayRecord(rec *domain.GatewayRecord) (*anypb.Any, error) {
+func marshalGatewayRecord(rec *kacho.GatewayRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Gateway
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Gateway: %w", err)
 	}
 	return anypb.New(dst)
+}
+
+// gatewayPayloadMap — payload snapshot для outbox-event (parity с legacy
+// `repo.gatewayPayload`). Использует exported shim `repo.GatewayPayload` —
+// иначе пришлось бы дублировать map-encoding здесь.
+func gatewayPayloadMap(g *kacho.GatewayRecord) map[string]any {
+	return repo.GatewayPayload(g)
 }

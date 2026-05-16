@@ -13,9 +13,11 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+
 	// Blank-import регистрирует PrivateEndpoint/time DTO трансферы.
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация pepb.PrivateEndpointServiceServer на основе use-case'ов.
@@ -216,7 +218,8 @@ func (h *Handler) ListOperations(ctx context.Context, req *pepb.ListPrivateEndpo
 }
 
 // privateEndpointToPb — repo-entity → proto через DTO-реестр.
-func privateEndpointToPb(rec *domain.PrivateEndpointRecord) (*pepb.PrivateEndpoint, error) {
+// Wave 5 replicate (KAC-94): принимает kacho.PrivateEndpointRecord (repo-leaf).
+func privateEndpointToPb(rec *kacho.PrivateEndpointRecord) (*pepb.PrivateEndpoint, error) {
 	var dst *pepb.PrivateEndpoint
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer PrivateEndpoint failed")

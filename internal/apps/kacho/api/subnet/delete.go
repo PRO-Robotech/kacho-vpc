@@ -14,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // DeleteSubnetUseCase — Delete с двойной precondition-проверкой:
@@ -30,16 +31,18 @@ import (
 // `nicRepo == nil` → проверка пропускается (для тестов без NIC-wiring; FK
 // RESTRICT всё равно подберёт address-bearing NIC через цепочку NIC → Address →
 // Subnet).
+//
+// Wave 5 replicate (KAC-94): Delete + outbox-emit DELETED атомарны в writer-TX.
 type DeleteSubnetUseCase struct {
-	repo    SubnetRepo
+	repo    Repo
 	nicRepo NetworkInterfaceRepo // optional
 	opsRepo operations.Repo
 }
 
 // NewDeleteSubnetUseCase создаёт DeleteSubnetUseCase. `nicRepo` опционален
 // (nil → NIC-precondition пропускается).
-func NewDeleteSubnetUseCase(repo SubnetRepo, nicRepo NetworkInterfaceRepo, opsRepo operations.Repo) *DeleteSubnetUseCase {
-	return &DeleteSubnetUseCase{repo: repo, nicRepo: nicRepo, opsRepo: opsRepo}
+func NewDeleteSubnetUseCase(r Repo, nicRepo NetworkInterfaceRepo, opsRepo operations.Repo) *DeleteSubnetUseCase {
+	return &DeleteSubnetUseCase{repo: r, nicRepo: nicRepo, opsRepo: opsRepo}
 }
 
 // Execute — sync precondition checks → Operation → worker.
@@ -53,7 +56,12 @@ func (u *DeleteSubnetUseCase) Execute(ctx context.Context, id string) (*operatio
 	// Verbatim YC: a Subnet with internal Address children can not be deleted —
 	// sync FAILED_PRECONDITION. The async FK RESTRICT path stays as the atomic
 	// backstop in the worker. См. kacho-vpc#8.
-	addrs, _, aerr := u.repo.AddressesBySubnet(ctx, id, Pagination{})
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	addrs, _, aerr := rd.Subnets().AddressesBySubnet(ctx, id, Pagination{})
+	_ = rd.Close()
 	if aerr != nil {
 		return nil, mapRepoErr(aerr)
 	}
@@ -91,11 +99,28 @@ func (u *DeleteSubnetUseCase) Execute(ctx context.Context, id string) (*operatio
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if err := u.repo.Delete(ctx, id); err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return anypb.New(&emptypb.Empty{})
+		return u.doDelete(ctx, id)
 	})
 
 	return &op, nil
+}
+
+// doDelete — Subnet.Delete + outbox-emit DELETED атомарны в одной CQRS-TX.
+func (u *DeleteSubnetUseCase) doDelete(ctx context.Context, id string) (*anypb.Any, error) {
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	if err := w.Subnets().Delete(ctx, id); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Subnet", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return anypb.New(&emptypb.Empty{})
 }

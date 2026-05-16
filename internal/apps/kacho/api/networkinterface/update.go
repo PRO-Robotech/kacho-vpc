@@ -14,6 +14,8 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // UpdateInput — параметры для UpdateNetworkInterfaceUseCase.Execute. Использует
@@ -29,16 +31,17 @@ type UpdateInput struct {
 
 // UpdateNetworkInterfaceUseCase инициирует обновление NIC. Sync-валидация
 // update_mask + значений (Name/Description/Labels). Async — diff address-refs +
-// applyMask + repo.UpdateMeta.
+// applyMask + writer.UpdateMeta + outbox-emit в одной writer-TX (skill evgeniy
+// §6 G.5).
 type UpdateNetworkInterfaceUseCase struct {
-	repo        NetworkInterfaceRepo
+	repo        Repo
 	addressRepo AddressRepo
 	opsRepo     operations.Repo
 }
 
 // NewUpdateNetworkInterfaceUseCase создаёт UpdateNetworkInterfaceUseCase.
-func NewUpdateNetworkInterfaceUseCase(repo NetworkInterfaceRepo, addressRepo AddressRepo, opsRepo operations.Repo) *UpdateNetworkInterfaceUseCase {
-	return &UpdateNetworkInterfaceUseCase{repo: repo, addressRepo: addressRepo, opsRepo: opsRepo}
+func NewUpdateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, opsRepo operations.Repo) *UpdateNetworkInterfaceUseCase {
+	return &UpdateNetworkInterfaceUseCase{repo: r, addressRepo: addressRepo, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и запуск Update в worker'е.
@@ -78,51 +81,72 @@ func (u *UpdateNetworkInterfaceUseCase) Execute(ctx context.Context, in UpdateIn
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		rec, err := u.repo.Get(ctx, in.NetworkInterfaceID)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		// Если изменились address-refs — пересчитываем diff: detach убранные,
-		// attach добавленные (с валидацией). Best-effort v1 (без единой tx).
-		newV4 := nicMaskV4(rec, in)
-		newV6 := nicMaskV6(rec, in)
-		if !strSetEqual(rec.V4AddressIDs, newV4) || !strSetEqual(rec.V6AddressIDs, newV6) {
-			oldAll := append(append([]string{}, rec.V4AddressIDs...), rec.V6AddressIDs...)
-			newAll := strSet(append(append([]string{}, newV4...), newV6...))
-			// detach убранные
-			var removed []string
-			for _, id := range oldAll {
-				if !newAll[id] {
-					removed = append(removed, id)
-				}
-			}
-			u.detachAddresses(ctx, removed)
-			// validate+attach добавленные
-			oldAllSet := strSet(oldAll)
-			var addedV4, addedV6 []string
-			for _, id := range newV4 {
-				if !oldAllSet[id] {
-					addedV4 = append(addedV4, id)
-				}
-			}
-			for _, id := range newV6 {
-				if !oldAllSet[id] {
-					addedV6 = append(addedV6, id)
-				}
-			}
-			if err := u.validateAndAttachAddresses(ctx, rec.ID, derefName(in, rec), rec.SubnetID, addedV4, addedV6); err != nil {
-				return nil, err
-			}
-		}
-		nic := &rec.NetworkInterface
-		applyNICMask(nic, in)
-		updated, err := u.repo.UpdateMeta(ctx, nic)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return marshalNetworkInterfaceRecord(updated)
+		return u.doUpdate(ctx, in)
 	})
 	return &op, nil
+}
+
+// doUpdate — worker-loop Update. Открывает писатель-TX, применяет mask, делает
+// UpdateMeta + outbox-emit атомарно. Address-attach diff — legacy SetReference
+// best-effort (до перехода Address writer-iface на единую TX).
+func (u *UpdateNetworkInterfaceUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
+	// Reader-TX для precondition Get (writer открываем только когда есть
+	// что писать) — но проще сразу открыть writer (G.2 — writer видит свои
+	// writes; Get идёт через writer).
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	rec, err := w.NetworkInterfaces().Get(ctx, in.NetworkInterfaceID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	// Если изменились address-refs — пересчитываем diff: detach убранные,
+	// attach добавленные (с валидацией). Best-effort v1 (address-attach не в
+	// той же writer-TX; см. doc-комментарий на ports.go).
+	newV4 := nicMaskV4(rec, in)
+	newV6 := nicMaskV6(rec, in)
+	if !strSetEqual(rec.V4AddressIDs, newV4) || !strSetEqual(rec.V6AddressIDs, newV6) {
+		oldAll := append(append([]string{}, rec.V4AddressIDs...), rec.V6AddressIDs...)
+		newAll := strSet(append(append([]string{}, newV4...), newV6...))
+		var removed []string
+		for _, id := range oldAll {
+			if !newAll[id] {
+				removed = append(removed, id)
+			}
+		}
+		u.detachAddresses(ctx, removed)
+		oldAllSet := strSet(oldAll)
+		var addedV4, addedV6 []string
+		for _, id := range newV4 {
+			if !oldAllSet[id] {
+				addedV4 = append(addedV4, id)
+			}
+		}
+		for _, id := range newV6 {
+			if !oldAllSet[id] {
+				addedV6 = append(addedV6, id)
+			}
+		}
+		if err := u.validateAndAttachAddresses(ctx, rec.ID, derefName(in, rec), rec.SubnetID, addedV4, addedV6); err != nil {
+			return nil, err
+		}
+	}
+	nic := &rec.NetworkInterface
+	applyNICMask(nic, in)
+	updated, err := w.NetworkInterfaces().UpdateMeta(ctx, nic)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if oerr := w.Outbox().Emit(ctx, "NetworkInterface", updated.ID, "UPDATED", networkInterfacePayloadMap(updated)); oerr != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+	}
+	if cerr := w.Commit(); cerr != nil {
+		return nil, mapRepoErr(cerr)
+	}
+	return marshalNetworkInterfaceRecord(updated)
 }
 
 // validateAndAttachAddresses / validateAddressRef / detachAddresses — повторно
@@ -164,7 +188,7 @@ func (u *UpdateNetworkInterfaceUseCase) detachAddresses(ctx context.Context, ids
 }
 
 // derefName — name to apply: либо из mask (если включён), либо текущее имя.
-func derefName(in UpdateInput, rec *domain.NetworkInterfaceRecord) string {
+func derefName(in UpdateInput, rec *kachorepo.NetworkInterfaceRecord) string {
 	if len(in.UpdateMask) == 0 {
 		return string(in.NetworkInterface.Name)
 	}
@@ -177,7 +201,7 @@ func derefName(in UpdateInput, rec *domain.NetworkInterfaceRecord) string {
 }
 
 // nicMaskV4 — какой набор v4_address_ids применять (новый или текущий).
-func nicMaskV4(rec *domain.NetworkInterfaceRecord, in UpdateInput) []string {
+func nicMaskV4(rec *kachorepo.NetworkInterfaceRecord, in UpdateInput) []string {
 	if len(in.UpdateMask) == 0 {
 		return in.NetworkInterface.V4AddressIDs
 	}
@@ -190,7 +214,7 @@ func nicMaskV4(rec *domain.NetworkInterfaceRecord, in UpdateInput) []string {
 }
 
 // nicMaskV6 — какой набор v6_address_ids применять.
-func nicMaskV6(rec *domain.NetworkInterfaceRecord, in UpdateInput) []string {
+func nicMaskV6(rec *kachorepo.NetworkInterfaceRecord, in UpdateInput) []string {
 	if len(in.UpdateMask) == 0 {
 		return in.NetworkInterface.V6AddressIDs
 	}

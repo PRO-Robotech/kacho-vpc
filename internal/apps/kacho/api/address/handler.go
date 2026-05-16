@@ -11,10 +11,11 @@ import (
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
 	// Blank-import регистрирует Address/time DTO трансферы (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 )
 
@@ -24,7 +25,7 @@ import (
 // nil (skip AuthZ — R10 fail-fast hardening; production composition root
 // в cmd/vpc/main.go обязан передать non-nil).
 type SubnetAuthZGetter interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // Handler — реализация vpcv1.AddressServiceServer на основе use-case'ов
@@ -325,7 +326,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (
 
 // addressToPb — repo-entity Address → proto Address через DTO-реестр (skill
 // evgeniy §3 C.3).
-func addressToPb(rec *domain.AddressRecord) (*vpcv1.Address, error) {
+func addressToPb(rec *kachorepo.AddressRecord) (*vpcv1.Address, error) {
 	var dst *vpcv1.Address
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Address failed")

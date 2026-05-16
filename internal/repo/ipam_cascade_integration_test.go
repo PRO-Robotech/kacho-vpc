@@ -11,9 +11,9 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // stubFolderClient maps folder_id -> cloud_id for the IPAM cascade step-3
@@ -29,7 +29,7 @@ func (s stubFolderClient) GetCloudID(_ context.Context, folderID string) (string
 }
 
 // TestIntegration_IPAM_Cascade_FiveSteps wires real pgxpool + real repos against
-// the testcontainers Postgres and a stub FolderClient, then drives the 5-step
+// the testcontainers Postgres and a stub repo.FolderClient, then drives the 5-step
 // AddressPool resolve cascade end-to-end:
 //
 //	step 1 address_override -> step 2 network_default -> step 3 cloud-label-selector
@@ -119,9 +119,12 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-step3", map[string]string{"tier": "premium"}, "admin@test"))
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
 
-	apSvc := service.NewAddressPoolService(poolRepo, bindRepo, cloudSelRepo, addrRepo, netRepo, subnetRepo, folderClient, nil) // zoneReg=nil → zone-existence-check пропускается (тест не про неё)
+	// Wave 5 batch 36 (KAC-94): AddressPool — use-case-структура; cascade-resolve
+	// движок выделен в `*addresspool.ResolverService`. Здесь нужен только
+	// resolver (Bind/Create/Update не вызываются), поэтому собираем напрямую.
+	apResolver := addresspool.NewResolverService(poolRepo, bindRepo, cloudSelRepo, addrRepo, subnetRepo, folderClient)
 	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
-	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apSvc)
+	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apResolver)
 
 	// --- address fixtures ---
 
@@ -200,7 +203,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, rerr := apSvc.ResolvePoolForAddress(ctx, tc.addressID)
+			res, rerr := apResolver.ResolvePoolForAddress(ctx, tc.addressID)
 			require.NoError(t, rerr)
 			require.NotNil(t, res)
 			assert.Equal(t, tc.wantPoolID, res.Pool.ID, "wrong pool resolved")

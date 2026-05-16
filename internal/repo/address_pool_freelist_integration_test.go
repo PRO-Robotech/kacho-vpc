@@ -69,7 +69,7 @@ func TestFreelist_BackfillPopulatesIPs(t *testing.T) {
 
 // TestFreelist_ConcurrentAllocateUnique — N concurrent allocators against a
 // pool with N free IPs each get a distinct IP; the (N+1)-th call returns
-// ErrPoolExhausted.
+// repo.ErrPoolExhausted.
 func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -121,11 +121,11 @@ func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 	}
 	require.Equal(t, N, len(ips), "expected %d unique IPs", N)
 
-	// 15-я попытка — пул пуст → ErrPoolExhausted.
+	// 15-я попытка — пул пуст → repo.ErrPoolExhausted.
 	addr15 := insertTestAddressFreelist(t, ctx, pgPool)
 	_, err = addrRepo.AllocateIPFromFreelist(ctx, poolID, addr15)
 	require.Truef(t, errors.Is(err, repo.ErrPoolExhausted),
-		"expected ErrPoolExhausted, got %v", err)
+		"expected repo.ErrPoolExhausted, got %v", err)
 }
 
 // TestFreelist_DeleteReturnsIP — ReturnIPToFreelist puts an IP back; calling

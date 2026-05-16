@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreateNetworkUseCase.Execute. Использует
@@ -27,27 +28,32 @@ type CreateInput struct {
 // fast-fail gRPC-status, а не «200 + операция, упавшая через секунду» (см.
 // kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop через FK/UNIQUE.
 //
-// Wave 3a pilot (skill evgeniy §2 B.1): бывший `NetworkService.Create` +
-// `NetworkService.doCreate` переехал сюда. Default-SG creation остаётся inline
-// в worker'е через явный builder `domain.NewDefaultSecurityGroup` (§4 D.7, §7
-// I.9 — отдельная builder-функция, а не magic-литерал «default-sg-» + hardcoded
-// status «ACTIVE»).
+// Wave 5 pilot (KAC-94, skill evgeniy §6 G.5 / §7 I.9 / I.10): worker открывает
+// ОДНУ Writer-TX и делает в ней Insert(Network) → Insert(SG, default) →
+// SetDefaultSGID(Network, sg.ID) с тремя outbox-emit'ами. Либо все три DML
+// видны (Commit), либо ни один (Abort/crash) — orphan-SG window прежней
+// three-TX-схемы закрыт.
+//
+// Default-SG creation управляется флагом `defaultSGInline` (раньше — через
+// `if sgRepo != nil`-shim; теперь явный bool, видный в композиции). При
+// `defaultSGInline=false` worker создаёт только Network — admin может
+// досоздать default SG через public API.
 type CreateNetworkUseCase struct {
-	repo         NetworkRepo
-	folderClient FolderClient
-	opsRepo      operations.Repo
-	// sgRepo: nil → default-SG inline creation отключена (флаг
-	// `KACHO_VPC_DEFAULT_SG_INLINE=false`). См. composition root в cmd/vpc/main.go.
-	sgRepo SecurityGroupRepo
+	repo            Repo
+	folderClient    FolderClient
+	opsRepo         operations.Repo
+	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 }
 
-// NewCreateNetworkUseCase создаёт CreateNetworkUseCase.
-func NewCreateNetworkUseCase(repo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *CreateNetworkUseCase {
+// NewCreateNetworkUseCase создаёт CreateNetworkUseCase. defaultSGInline берётся
+// из конфига (`cfg.Network.DefaultSGInline`) — при true в одной writer-TX
+// создаётся default SG и Network.default_security_group_id заполняется.
+func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
-		repo:         repo,
-		folderClient: folderClient,
-		opsRepo:      opsRepo,
-		sgRepo:       sgRepo,
+		repo:            r,
+		folderClient:    folderClient,
+		opsRepo:         opsRepo,
+		defaultSGInline: defaultSGInline,
 	}
 }
 
@@ -58,8 +64,6 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	if n.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	// Domain-self-validation (skill evgeniy §4 D.5 / AP-1): NameVPC / Description /
-	// Labels валидируются через newtypes — service-слой больше НЕ зовёт corevalidate.*.
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
@@ -68,7 +72,12 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	name := string(n.Name)
 	if name != "" {
-		existing, _, lerr := u.repo.List(ctx, NetworkFilter{FolderID: n.FolderID, Name: name}, Pagination{})
+		rd, err := u.repo.Reader(ctx)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		existing, _, lerr := rd.Networks().List(ctx, NetworkFilter{FolderID: n.FolderID, Name: name}, Pagination{})
+		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
 		}
@@ -99,7 +108,24 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
 // folder-exists + Insert (FK ограничения / UNIQUE-нарушения); inline default-SG
-// creation (builder из domain), затем link через UPDATE networks.default_sg_id.
+// creation (builder из domain), затем link через SetDefaultSGID(Network, sg.ID).
+//
+// Wave 5 batch 33/34 (KAC-94, skill evgeniy I.9 / I.10): ВСЁ в одной writer-TX.
+// Liver предыдущая three-TX-схема (Network commit → SG commit → Network UPDATE
+// commit) ломалась на crash между шагами: либо orphan SG, либо Network без
+// default_sg_id, либо забытый outbox-event. Теперь:
+//
+//	w := u.repo.Writer(ctx)            // открыли единую TX
+//	created := w.Networks().Insert     // Network.CREATED outbox
+//	(if inline) sgRec := w.SGs().Insert + w.Networks().SetDefaultSGID
+//	            + SG.CREATED outbox + Network.UPDATED outbox
+//	w.Commit()                         // либо всё, либо ничего (Abort/crash)
+//
+// FK Network.default_security_group_id → security_groups(id) `ON DELETE SET NULL`
+// (см. squashed initial migration). SG-FK на network_id — RESTRICT, но в одной
+// TX это нормально: Insert(SG) ссылается на только что вставленный Network в
+// той же tx (видимость G.2 + Postgres deferred constraint check на коммите для
+// non-deferrable — INSERT(child) после INSERT(parent) в одной TX проходит).
 func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, n.FolderID)
 	if err != nil {
@@ -110,29 +136,43 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	}
 
 	n.ID = netID
-	created, err := u.repo.Insert(ctx, &n)
+
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	defer w.Abort()
 
-	// Inline default-SG. Skill evgeniy §4 D.7 / AP-2 — domain-builder вместо
-	// magic-литерала с hardcoded status «ACTIVE» / name «default-sg-{id[:8]}».
-	if u.sgRepo != nil {
-		sg := domain.NewDefaultSecurityGroup(created.Network)
-		createdSG, sgErr := u.sgRepo.Insert(ctx, &sg)
-		if sgErr != nil {
-			// SG creation failed — Network уже создан. Log warn, не падаем
-			// (admin может создать default SG руками через public API).
-			return marshalNetworkRecord(created)
-		}
-		// Bind SG как default через NetworkRepo.Update.
-		created.DefaultSecurityGroupID = createdSG.ID
-		updated, uerr := u.repo.Update(ctx, &created.Network)
-		if uerr == nil {
-			return marshalNetworkRecord(updated)
-		}
-		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
-		return marshalNetworkRecord(created)
+	created, err := w.Networks().Insert(ctx, &n)
+	if err != nil {
+		return nil, mapRepoErr(err)
 	}
-	return marshalNetworkRecord(created)
+	if err := w.Outbox().Emit(ctx, "Network", created.ID, "CREATED", networkPayloadMap(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+
+	finalRec := created
+	if u.defaultSGInline {
+		sg := domain.NewDefaultSecurityGroup(created.Network)
+		sgRec, sgErr := w.SecurityGroups().Insert(ctx, &sg)
+		if sgErr != nil {
+			return nil, mapRepoErr(sgErr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", sgRec.ID, "CREATED", securityGroupPayloadMap(sgRec)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		upd, uerr := w.Networks().SetDefaultSGID(ctx, created.ID, sgRec.ID)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "Network", upd.ID, "UPDATED", networkPayloadMap(upd)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		finalRec = upd
+	}
+
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalNetworkRecord(finalRec)
 }

@@ -12,11 +12,12 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
 	// Blank-import регистрирует трансферы Address/time через init() (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // niReferrerType — ReferrerType в address_references для адресов, привязанных
@@ -37,15 +38,15 @@ func mapRepoErr(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, stripSentinel(err, ports.ErrNotFound))
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ports.ErrAlreadyExists))
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ports.ErrFailedPrecondition))
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ports.ErrInvalidArg))
-	case errors.Is(err, ports.ErrInternal):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, stripSentinel(err, repo.ErrNotFound))
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, stripSentinel(err, repo.ErrAlreadyExists))
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, repo.ErrFailedPrecondition))
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, stripSentinel(err, repo.ErrInvalidArg))
+	case errors.Is(err, repo.ErrInternal):
 		return status.Error(codes.Internal, "internal database error")
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
@@ -112,7 +113,7 @@ func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ports.ErrAlreadyExists) {
+	if errors.Is(err, repo.ErrAlreadyExists) {
 		return true
 	}
 	// Defensive fallback: общие признаки UNIQUE-violation без leak'а
@@ -125,7 +126,7 @@ func isUniqueViolation(err error) bool {
 // marshalAddressRecord конвертирует repo-entity Address в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/Move для запихивания результата в Operation.response.
-func marshalAddressRecord(rec *domain.AddressRecord) (*anypb.Any, error) {
+func marshalAddressRecord(rec *kachorepo.AddressRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Address
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Address: %w", err)

@@ -13,7 +13,7 @@ import (
 	computev1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/compute/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // zoneExistsTTL — TTL кеша «зона существует». Geography (Region/Zone) — домен
@@ -46,7 +46,7 @@ func NewComputeGeographyClient(conn grpc.ClientConnInterface) *ComputeGeographyC
 	}
 }
 
-// Get возвращает зону по id (ports.ErrNotFound для несуществующей; gRPC-ошибку,
+// Get возвращает зону по id (repo.ErrNotFound для несуществующей; gRPC-ошибку,
 // напр. Unavailable, если compute недоступен — пробрасывается как есть).
 func (c *ComputeGeographyClient) Get(ctx context.Context, id string) (*domain.Zone, error) {
 	c.mu.RLock()
@@ -61,7 +61,7 @@ func (c *ComputeGeographyClient) Get(ctx context.Context, id string) (*domain.Zo
 		resp, rerr := c.zones.Get(ctx, &computev1.GetZoneRequest{ZoneId: id})
 		if rerr != nil {
 			if st, ok := status.FromError(rerr); ok && st.Code() == codes.NotFound {
-				return ports.ErrNotFound
+				return repo.ErrNotFound
 			}
 			return rerr
 		}

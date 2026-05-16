@@ -9,11 +9,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CachedFolderClient — TTL+LRU декоратор поверх любого
-// ports.FolderClient (port-интерфейс). Цель — убрать gRPC RTT к
+// repo.FolderClient (port-интерфейс). Цель — убрать gRPC RTT к
 // resource-manager из hot-path Network.Create/Subnet.Create/... при
 // burst-нагрузке (на ~10k RPS Network.Create без кеша каждый запрос
 // делал hop в RM → потолок ~3K Create/sec).
@@ -44,7 +44,7 @@ import (
 // binding); CachedFolderClient проксирует GetCloudID к upstream без
 // доп. кеша.
 type CachedFolderClient struct {
-	upstream ports.FolderClient
+	upstream repo.FolderClient
 	posTTL   time.Duration
 	negTTL   time.Duration
 	maxSize  int
@@ -63,7 +63,7 @@ type folderCacheEntry struct {
 }
 
 // Compile-time проверка: CachedFolderClient реализует port-интерфейс.
-var _ ports.FolderClient = (*CachedFolderClient)(nil)
+var _ repo.FolderClient = (*CachedFolderClient)(nil)
 
 // FolderCacheConfig — параметры кеша. Все поля опциональны; нулевые
 // значения заменяются на дефолты (positiveTTL=30s, negativeTTL=5s,
@@ -89,7 +89,7 @@ type FolderCacheConfig struct {
 //	    NegativeTTL: cfg.FolderCacheNegativeTTL,
 //	    MaxSize:     cfg.FolderCacheSize,
 //	})
-func NewCachedFolderClient(upstream ports.FolderClient, cfg FolderCacheConfig) *CachedFolderClient {
+func NewCachedFolderClient(upstream repo.FolderClient, cfg FolderCacheConfig) *CachedFolderClient {
 	if cfg.PositiveTTL <= 0 {
 		cfg.PositiveTTL = 30 * time.Second
 	}

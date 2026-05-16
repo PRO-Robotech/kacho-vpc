@@ -13,9 +13,11 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+
 	// Blank-import регистрирует RouteTable/time DTO трансферы (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация vpcv1.RouteTableServiceServer на основе use-case'ов.
@@ -237,7 +239,9 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListRouteTableO
 }
 
 // routeTableToPb — repo-entity RouteTable → proto RouteTable через DTO-реестр.
-func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
+// Wave 5 replicate (KAC-94): принимает `*kachorepo.RouteTableRecord` вместо
+// `*domain.RouteTableRecord` (запись переехала в repo-leaf, §4 D.1).
+func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	var dst *vpcv1.RouteTable
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer RouteTable failed")

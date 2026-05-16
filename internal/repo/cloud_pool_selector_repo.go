@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // CloudPoolSelectorRepo — admin-controlled routing-labels for Cloud.
@@ -30,7 +29,7 @@ func (r *CloudPoolSelectorRepo) Set(ctx context.Context, cloudID string, selecto
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `
@@ -61,7 +60,7 @@ func (r *CloudPoolSelectorRepo) Get(ctx context.Context, cloudID string) (*domai
 	`, cloudID).Scan(&js, &setAt, &setBy)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, service.ErrNotFound
+			return nil, ErrNotFound
 		}
 		return nil, wrapPgErr(err, "CloudPoolSelector", cloudID)
 	}
@@ -77,7 +76,7 @@ func (r *CloudPoolSelectorRepo) Get(ctx context.Context, cloudID string) (*domai
 func (r *CloudPoolSelectorRepo) Unset(ctx context.Context, cloudID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `DELETE FROM cloud_pool_selector WHERE cloud_id = $1`, cloudID)

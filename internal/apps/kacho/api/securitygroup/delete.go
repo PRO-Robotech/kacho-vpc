@@ -13,18 +13,22 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // DeleteSecurityGroupUseCase — удаление SG. Default SG (DefaultForNetwork=true)
 // нельзя удалить — sync FAILED_PRECONDITION.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX,
+// делает Delete + outbox-DELETED в одной TX, Commit.
 type DeleteSecurityGroupUseCase struct {
-	repo    SecurityGroupRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewDeleteSecurityGroupUseCase создаёт DeleteSecurityGroupUseCase.
-func NewDeleteSecurityGroupUseCase(repo SecurityGroupRepo, opsRepo operations.Repo) *DeleteSecurityGroupUseCase {
-	return &DeleteSecurityGroupUseCase{repo: repo, opsRepo: opsRepo}
+func NewDeleteSecurityGroupUseCase(r Repo, opsRepo operations.Repo) *DeleteSecurityGroupUseCase {
+	return &DeleteSecurityGroupUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute инициирует Delete: sync-проверки → Operation → worker.
@@ -36,7 +40,12 @@ func (u *DeleteSecurityGroupUseCase) Execute(ctx context.Context, id string) (*o
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
 	// pre-flight check: default SG защищён.
-	existing, err := u.repo.Get(ctx, id)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	existing, err := rd.SecurityGroups().Get(ctx, id)
+	_ = rd.Close()
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
@@ -56,8 +65,19 @@ func (u *DeleteSecurityGroupUseCase) Execute(ctx context.Context, id string) (*o
 		return nil, err
 	}
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		if err := u.repo.Delete(ctx, id); err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+		if derr := w.SecurityGroups().Delete(ctx, id); derr != nil {
+			return nil, mapRepoErr(derr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", id, "DELETED", map[string]any{"id": id}); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			return nil, mapRepoErr(cerr)
 		}
 		return anypb.New(&emptypb.Empty{})
 	})

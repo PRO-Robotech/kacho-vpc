@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreateGatewayUseCase.Execute. Использует
@@ -24,21 +25,22 @@ type CreateInput struct {
 }
 
 // CreateGatewayUseCase инициирует создание Gateway. Sync-проверки (folder
-// exists, name validation) выполняются ДО создания Operation — клиент получает
-// fast-fail gRPC-status, а не «200 + операция, упавшая через секунду» (см.
-// kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop через FK.
+// exists) выполняются ДО создания Operation — клиент получает fast-fail
+// gRPC-status, а не «200 + операция, упавшая через секунду» (см. kacho-vpc#8).
+// Async-часть (`doCreate`) — атомарный backstop через FK.
 //
-// Wave 3b (skill evgeniy §2 B.1): бывший `GatewayService.Create` +
-// `GatewayService.doCreate` переехал сюда.
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5 / §2 B.1): worker открывает
+// одну Writer-TX, делает Insert(Gateway) + outbox emit и Commit. Либо всё
+// видно, либо ничего — orphan-Gateway / forgotten outbox-event window закрыт.
 type CreateGatewayUseCase struct {
-	repo         GatewayRepo
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateGatewayUseCase создаёт CreateGatewayUseCase.
-func NewCreateGatewayUseCase(repo GatewayRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateGatewayUseCase {
-	return &CreateGatewayUseCase{repo: repo, folderClient: folderClient, opsRepo: opsRepo}
+func NewCreateGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *CreateGatewayUseCase {
+	return &CreateGatewayUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
@@ -92,7 +94,11 @@ func (u *CreateGatewayUseCase) Execute(ctx context.Context, in CreateInput) (*op
 }
 
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
-// folder-exists + Insert.
+// folder-exists + Insert (FK / UNIQUE-нарушения).
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): ВСЁ в одной writer-TX.
+// Insert(Gateway) + outbox emit Gateway.CREATED — оба ходят через ту же pgx.Tx
+// writer'а, поэтому либо оба видны (Commit), либо ни один (Abort/crash).
 func (u *CreateGatewayUseCase) doCreate(ctx context.Context, gwID string, g domain.Gateway) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, g.FolderID)
 	if err != nil {
@@ -108,8 +114,21 @@ func (u *CreateGatewayUseCase) doCreate(ctx context.Context, gwID string, g doma
 	}
 	g.ID = gwID
 	g.GatewayType = gtype
-	created, err := u.repo.Insert(ctx, &g)
+
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	created, err := w.Gateways().Insert(ctx, &g)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if oerr := w.Outbox().Emit(ctx, "Gateway", created.ID, "CREATED", gatewayPayloadMap(created)); oerr != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalGatewayRecord(created)

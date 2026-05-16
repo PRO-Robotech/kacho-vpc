@@ -13,9 +13,10 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// UpdateInput — параметры для UpdateSubnetUseCase.Execute. Conkretно для Update
+// UpdateInput — параметры для UpdateSubnetUseCase.Execute. Конкретно для Update
 // нам нужен и domain.Subnet (с заявленными полями), и UpdateMask. Поэтому
 // небольшой собственный input-тип допустим (skill evgeniy §7 I.1).
 type UpdateInput struct {
@@ -35,14 +36,17 @@ type UpdateInput struct {
 // принимает запрос (200). Мы тоже принимаем — но репозиторный Update не
 // перезаписывает CIDR-колонки (defensive depth), т.е. изменение CIDR через
 // Update — no-op (документировано в 07-known-divergences.md).
+//
+// Wave 5 replicate (KAC-94): worker открывает Writer-TX, делает Get+Update+outbox
+// атомарно.
 type UpdateSubnetUseCase struct {
-	repo    SubnetRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateSubnetUseCase создаёт UpdateSubnetUseCase.
-func NewUpdateSubnetUseCase(repo SubnetRepo, opsRepo operations.Repo) *UpdateSubnetUseCase {
-	return &UpdateSubnetUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateSubnetUseCase(r Repo, opsRepo operations.Repo) *UpdateSubnetUseCase {
+	return &UpdateSubnetUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -83,15 +87,26 @@ func (u *UpdateSubnetUseCase) Execute(ctx context.Context, in UpdateInput) (*ope
 }
 
 func (u *UpdateSubnetUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.SubnetID)
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	defer w.Abort()
 
-	applySubnetMask(&rec.Subnet, in)
-
-	updated, err := u.repo.Update(ctx, &rec.Subnet)
+	// Get + Update внутри одной writer-TX: race-free read-modify-write.
+	rec, err := w.Subnets().Get(ctx, in.SubnetID)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	applySubnetMask(&rec.Subnet, in)
+	updated, err := w.Subnets().Update(ctx, &rec.Subnet)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Subnet", updated.ID, "UPDATED", subnetPayloadMap(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalSubnetRecord(updated)

@@ -13,9 +13,11 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+
 	// Blank-import регистрирует Network/time DTO трансферы (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация vpcv1.NetworkServiceServer на основе use-case'ов
@@ -320,7 +322,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (
 
 // networkToPb — repo-entity Network → proto Network через DTO-реестр (skill
 // evgeniy §3 C.3).
-func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
+func networkToPb(rec *kachorepo.NetworkRecord) (*vpcv1.Network, error) {
 	var dst *vpcv1.Network
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Network failed")
@@ -329,9 +331,9 @@ func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
 }
 
 // subnetToPb / routeTableToPb / securityGroupToPb — repo-entity child-resource
-// → proto. Reuse уже зарегистрированных DTO-трансферов из `internal/dto/type2pb`
+// → proto. Reuse уже зарегистрированных DTO-трансферов из `internal/dto/toproto`
 // (blank-import выше).
-func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
+func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	var dst *vpcv1.Subnet
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Subnet failed")
@@ -339,7 +341,7 @@ func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
 	return dst, nil
 }
 
-func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
+func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	var dst *vpcv1.RouteTable
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer RouteTable failed")
@@ -347,7 +349,7 @@ func routeTableToPb(rec *domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	return dst, nil
 }
 
-func securityGroupToPb(rec *domain.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
+func securityGroupToPb(rec *kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
 	var dst *vpcv1.SecurityGroup
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer SecurityGroup failed")

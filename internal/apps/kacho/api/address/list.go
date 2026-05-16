@@ -9,7 +9,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListAddressesUseCase — list addresses with pagination. folder_id обязателен
@@ -24,7 +24,7 @@ func NewListAddressesUseCase(repo AddressRepo) *ListAddressesUseCase {
 }
 
 // Execute — folder_id required + load UsedBy для каждого адреса.
-func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error) {
+func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
@@ -50,7 +50,7 @@ func NewListBySubnetUseCase(repo AddressRepo, subnetReader SubnetReader) *ListBy
 }
 
 // Execute — id-валидация → existence-check (Subnet) → AddressesBySubnet → UsedBy.
-func (u *ListBySubnetUseCase) Execute(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error) {
+func (u *ListBySubnetUseCase) Execute(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
 		return nil, "", err
 	}

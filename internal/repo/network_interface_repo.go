@@ -12,15 +12,21 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// NetworkInterface — type-alias на domain.NetworkInterfaceRecord (repo-entity
-// с DB-managed CreatedAt). Wave 2 batch C (KAC-94), parity с repo.SecurityGroup /
-// repo.PrivateEndpoint.
-type NetworkInterface = domain.NetworkInterfaceRecord
+// NetworkInterface — type-alias на kacho.NetworkInterfaceRecord (repo-entity
+// с DB-managed CreatedAt).
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §4 D.1 / §7 H.1): NIC-Record уехал
+// из `domain` в repo-leaf `internal/repo/kacho/entity_network_interface.go`.
+// Тип не изменился (поля идентичны: `domain.NetworkInterface` + `CreatedAt`);
+// сместился из domain в repo-пакет, чтобы DB-managed CreatedAt не жил в
+// domain. Legacy NICRepo продолжает использовать alias под коротким именем
+// `repo.NetworkInterface`.
+type NetworkInterface = kachorepo.NetworkInterfaceRecord
 
-// NetworkInterfaceRepo — реализация service.NetworkInterfaceRepo поверх pgxpool.
+// NetworkInterfaceRepo — реализация NetworkInterfaceRepo поверх pgxpool.
 type NetworkInterfaceRepo struct {
 	pool *pgxpool.Pool
 }
@@ -77,7 +83,7 @@ func (r *NetworkInterfaceRepo) Get(ctx context.Context, id string) (*NetworkInte
 }
 
 // List возвращает NIC фолдера (опц. фильтр по instance/subnet/network) с cursor-пагинацией.
-func (r *NetworkInterfaceRepo) List(ctx context.Context, f service.NetworkInterfaceFilter, p service.Pagination) ([]*NetworkInterface, string, error) {
+func (r *NetworkInterfaceRepo) List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*NetworkInterface, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -179,7 +185,7 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	const q = `
@@ -193,12 +199,12 @@ func (r *NetworkInterfaceRepo) Insert(ctx context.Context, n *domain.NetworkInte
 		// MAC-collision — отдельная sentinel, чтобы service-слой мог retry'ить
 		// с новым MAC, не путая её с (folder_id,name) UNIQUE → AlreadyExists.
 		if isNICMacCollision(err) {
-			return nil, service.ErrMacCollision
+			return nil, ErrMacCollision
 		}
 		return nil, wrapPgErr(err, "Network interface", string(n.Name))
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "CREATED", networkInterfacePayload(res)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network interface", string(n.Name))
@@ -226,7 +232,7 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	res, err := scanNI(tx.QueryRow(ctx,
@@ -236,7 +242,7 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 		return nil, wrapPgErr(err, "Network interface", n.ID)
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", networkInterfacePayload(res)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network interface", n.ID)
@@ -255,7 +261,7 @@ func (r *NetworkInterfaceRepo) UpdateMeta(ctx context.Context, n *domain.Network
 // обе прошли software-guard, second UPDATE безусловно перезаписал ownership →
 // два pod-а на одной NIC → Kube-OVN IP-allocation conflict).
 //
-// 0 rows из RETURNING → service.ErrFailedPrecondition. Single-statement UPDATE
+// 0 rows из RETURNING → ErrFailedPrecondition. Single-statement UPDATE
 // на одной row защищён row-level lock-ом Postgres: параллельный writer ждёт
 // commit-а первого, видит обновлённый row, CAS не matches → 0 rows. Никакого
 // дополнительного UNIQUE-индекса не нужно — миграция 0016 пыталась добавить
@@ -276,7 +282,7 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -303,12 +309,12 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 	if err != nil {
 		if refID != "" && errors.Is(err, pgx.ErrNoRows) {
 			// CAS failed — someone else owns it (UPDATE matched 0 rows from RETURNING).
-			return nil, service.ErrFailedPrecondition
+			return nil, ErrFailedPrecondition
 		}
 		return nil, wrapPgErr(err, "Network interface", id)
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", res.ID, "UPDATED", networkInterfacePayload(res)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Network interface", id)
@@ -324,7 +330,7 @@ func (r *NetworkInterfaceRepo) SetUsedBy(ctx context.Context, id, refType, refID
 func (r *NetworkInterfaceRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	tag, err := tx.Exec(ctx, `DELETE FROM network_interfaces WHERE id = $1`, id)
@@ -332,10 +338,10 @@ func (r *NetworkInterfaceRepo) Delete(ctx context.Context, id string) error {
 		return wrapPgErr(err, "Network interface", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Network interface %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Network interface %s not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "NetworkInterface", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Network interface", id)

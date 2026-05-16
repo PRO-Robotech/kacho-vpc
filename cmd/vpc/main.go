@@ -9,9 +9,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/H-BF/corlib/pkg/parallel"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
@@ -26,6 +28,7 @@ import (
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
+	addresspoolapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
@@ -34,10 +37,12 @@ import (
 	sgapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup"
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // configPathEnv — путь к YAML-конфигу. Пустое значение допустимо (defaults +
@@ -86,13 +91,16 @@ type services struct {
 	subnetHandler           *subnetapp.Handler
 	addressHandler          *addressapp.Handler
 	addressAllocate         *addressapp.AllocateUseCase
-	addressRefService       *service.AddressReferenceService
+	addressRefService       *addressref.Service
 	routeTableHandler       *routetableapp.Handler
 	securityGroupHandler    *sgapp.Handler
 	gatewayHandler          *gatewayapp.Handler
 	privateEndpointHandler  *peapp.Handler
-	addressPool             *service.AddressPoolService
-	networkInternal         *service.NetworkInternal
+	addressPoolHandler      *addresspoolapp.Handler
+	cloudSelSet             *addresspoolapp.SetCloudPoolSelectorUseCase
+	cloudSelUnset           *addresspoolapp.UnsetCloudPoolSelectorUseCase
+	cloudSelGet             *addresspoolapp.GetCloudPoolSelectorUseCase
+	networkInternal         *networkinternal.Service
 	networkInterfaceHandler *niapp.Handler
 }
 
@@ -190,35 +198,75 @@ func runServe(cfg config.Config) error {
 		"public_endpoint", publicAddr,
 		"internal_endpoint", internalAddr)
 
-	// shutdownDone закрывается после полного дрейна (GracefulStop + LRO worker'ов).
-	shutdownDone := make(chan struct{})
 	gracefulTimeout := cfg.APIServer.GracefulShutdown
 	if gracefulTimeout <= 0 {
 		gracefulTimeout = 10 * time.Second
 	}
-	go func() {
-		defer close(shutdownDone)
-		<-ctx.Done()
-		internalSrv.GracefulStop()
-		grpcSrv.GracefulStop()
-		drainCtx, cancelDrain := context.WithTimeout(context.Background(), 3*gracefulTimeout)
-		defer cancelDrain()
-		if err := operations.Wait(drainCtx); err != nil {
-			logger.Warn("operations workers did not finish in time",
-				"err", err, "active", operations.Active())
-		}
-	}()
 
-	go func() {
-		if err := internalSrv.Serve(internalListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			logger.Error("internal grpc server stopped", "err", err)
-		}
-	}()
+	// K.4 + K.5 + AP-7 (skill evgeniy §9, §11): параллельный запуск
+	// public-сервера + internal-сервера + shutdown-waiter через
+	// `parallel.ExecAbstract` (`github.com/H-BF/corlib/pkg/parallel`).
+	// Failure-isolation: первая ошибка / SIGTERM / SIGINT триггерит
+	// graceful-stop ОБОИХ серверов (раньше — bare `go func() { Serve }()`
+	// без error-prop: умерший internal оставлял public крутиться).
+	//
+	// `grpc.Server.Serve` не реагирует на ctx-cancel сам — поэтому
+	// `triggerShutdown` явно вызывает `GracefulStop` на обоих, после чего
+	// `Serve` возвращает `nil`/`grpc.ErrServerStopped` (трактуется как
+	// штатное завершение). `sync.Once` гарантирует, что параллельные
+	// триггеры (SIGTERM пришёл одновременно с crash internal'а) не
+	// сделают двойной GracefulStop.
+	var shutdownOnce sync.Once
+	triggerShutdown := func() {
+		shutdownOnce.Do(func() {
+			internalSrv.GracefulStop()
+			grpcSrv.GracefulStop()
+		})
+	}
 
-	serveErr := grpcSrv.Serve(listener)
+	tasks := []func() error{
+		// public gRPC server
+		func() error {
+			err := grpcSrv.Serve(listener)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				triggerShutdown()
+				return fmt.Errorf("public grpc server: %w", err)
+			}
+			return nil
+		},
+		// internal gRPC server (admin / kacho-only)
+		func() error {
+			err := internalSrv.Serve(internalListener)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				logger.Error("internal grpc server stopped", "err", err)
+				triggerShutdown()
+				return fmt.Errorf("internal grpc server: %w", err)
+			}
+			return nil
+		},
+		// shutdown waiter: SIGTERM/SIGINT → graceful-stop обоих + дрейн LRO worker'ов.
+		func() error {
+			<-ctx.Done()
+			triggerShutdown()
+			drainCtx, cancelDrain := context.WithTimeout(context.Background(), 3*gracefulTimeout)
+			defer cancelDrain()
+			if err := operations.Wait(drainCtx); err != nil {
+				logger.Warn("operations workers did not finish in time",
+					"err", err, "active", operations.Active())
+			}
+			return nil
+		},
+	}
+
+	// ExecAbstract(taskCount, maxConcurrency, fn): запускает все задачи
+	// параллельно; собирает первую ошибку. maxConcurrency=len(tasks)-1 даёт
+	// схему «1 + (N-1)» — основная горутина + N-1 дополнительных, все
+	// задачи реально параллельны (см. corlib/pkg/parallel/exec-in-parallel.go).
+	err = parallel.ExecAbstract(len(tasks), int32(len(tasks)-1), func(i int) error {
+		return tasks[i]()
+	})
 	cancel()
-	<-shutdownDone
-	return serveErr
+	return err
 }
 
 // KAC-97: dialResourceManager / dialCompute / peerCreds удалены — заменены на
@@ -228,101 +276,157 @@ func runServe(cfg config.Config) error {
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
 // inline default SG.
-func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoClient service.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
 	routeTableRepo := repo.NewRouteTableRepo(pool)
 	sgRepo := repo.NewSecurityGroupRepo(pool)
 	gatewayRepo := repo.NewGatewayRepo(pool)
-	peRepo := repo.NewPrivateEndpointRepo(pool)
+	_ = gatewayRepo // Wave 5 replicate (KAC-94): Gateway use-case'ы переехали на
+	// CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo оставлен умышленно —
+	// его консьюмеров в текущем main.go больше нет, но удаление откладывается до
+	// общей чистки legacy-репо после миграции всех 7 не-pilot ресурсов.
+	// Wave 5 replicate (KAC-94): PrivateEndpoint use-case'ы работают через
+	// CQRS-Repository (kachoRepo); legacy *PrivateEndpointRepo больше не
+	// инжектируется. Если потребуется admin-tooling на pgxpool напрямую —
+	// раскомментируйте: peRepo := repo.NewPrivateEndpointRepo(pool)
 	addressPoolRepo := repo.NewAddressPoolRepo(pool)
 	addressPoolBindingRepo := repo.NewAddressPoolBindingRepo(pool)
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	var defaultSGRepo service.SecurityGroupRepo
-	if cfg.Network.DefaultSGInline {
-		defaultSGRepo = sgRepo
-	} else {
+	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	addressPoolSvc := service.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
-	addressRefSvc := service.NewAddressReferenceService(addressRepo)
+	// Wave 5 batch 36 (KAC-94, skill `evgeniy` §2 B.1): AddressPool — use-case-
+	// структура (см. `internal/apps/kacho/api/addresspool/`). Composition root
+	// собирает 13 use-case'ов + ResolverService под единый Handler. Узкий
+	// adapter `addressPoolNetworkRepo` оборачивает legacy `*repo.NetworkRepo`
+	// под порт `addresspool.NetworkRepo` (Get → *kacho.NetworkRecord).
+	addressPoolResolver := addresspoolapp.NewResolverService(
+		addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo,
+		addressRepo, subnetRepo, folderClient,
+	)
+	addressPoolHandler := addresspoolapp.NewHandler(
+		addresspoolapp.NewCreateAddressPoolUseCase(addressPoolRepo, addressRepo, geoClient),
+		addresspoolapp.NewUpdateAddressPoolUseCase(addressPoolRepo, addressRepo),
+		addresspoolapp.NewDeleteAddressPoolUseCase(addressPoolRepo),
+		addresspoolapp.NewGetAddressPoolUseCase(addressPoolRepo),
+		addresspoolapp.NewListAddressPoolsUseCase(addressPoolRepo),
+		addresspoolapp.NewCheckUseCase(addressPoolRepo),
+		addresspoolapp.NewExplainResolutionUseCase(addressRepo, addressPoolResolver),
+		addresspoolapp.NewBindAsNetworkDefaultUseCase(addressPoolRepo, addressPoolBindingRepo, networkRepo),
+		addresspoolapp.NewUnbindNetworkDefaultUseCase(addressPoolBindingRepo),
+		addresspoolapp.NewBindAsAddressOverrideUseCase(addressPoolRepo, addressPoolBindingRepo, addressRepo),
+		addresspoolapp.NewUnbindAddressOverrideUseCase(addressPoolBindingRepo),
+		addresspoolapp.NewGetPoolUtilizationUseCase(addressPoolRepo),
+		addresspoolapp.NewListPoolAddressesUseCase(addressPoolRepo),
+	)
+	cloudSelSet := addresspoolapp.NewSetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
+	cloudSelUnset := addresspoolapp.NewUnsetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
+	cloudSelGet := addresspoolapp.NewGetCloudPoolSelectorUseCase(cloudPoolSelectorRepo)
 
-	// Wave 3a pilot (skill evgeniy §2): Network — use-case-структура.
-	// Каждый use-case инжектируется в Handler. Все use-case'ы делят repo
-	// (networkRepo / sgRepo / ...) — composition-root решает, какой sgRepo
-	// проинжектировать (defaultSGRepo может быть nil при выключенном
-	// `network.default-sg-inline`).
-	netCreateUC := networkapp.NewCreateNetworkUseCase(networkRepo, folderClient, opsRepo, defaultSGRepo)
-	netUpdateUC := networkapp.NewUpdateNetworkUseCase(networkRepo, opsRepo)
-	netDeleteUC := networkapp.NewDeleteNetworkUseCase(networkRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
-	netMoveUC := networkapp.NewMoveNetworkUseCase(networkRepo, folderClient, opsRepo)
-	netGetUC := networkapp.NewGetNetworkUseCase(networkRepo)
-	netListUC := networkapp.NewListNetworksUseCase(networkRepo)
-	netListSubUC := networkapp.NewListSubnetsUseCase(networkRepo, subnetRepo)
-	netListSGUC := networkapp.NewListSecurityGroupsUseCase(networkRepo, sgRepo)
-	netListRTUC := networkapp.NewListRouteTablesUseCase(networkRepo, routeTableRepo)
+	addressRefSvc := addressref.NewService(addressRepo)
+
+	// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network use-case'ы
+	// работают через CQRS-Repository (Reader / Writer split). pgxpool-impl —
+	// `internal/repo/kacho/pg`. Остальные 7 ресурсов продолжают работать
+	// через legacy `*repo.NetworkRepo` etc. — replicate-фаза (отдельный
+	// эпик-subtask).
+	kachoRepo := kachopg.New(pool)
+
+	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
+	// kachoRepo используется Network'ом + SG (Wave 5 batch 33/34, KAC-94: SG
+	// переехал на CQRS). Subnet/RT — пока legacy.
+	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
+	// создаётся inline default SG и Network.default_security_group_id
+	// заполняется атомарно.
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, cfg.Network.DefaultSGInline)
+	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
+	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
+	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, folderClient, opsRepo)
+	netGetUC := networkapp.NewGetNetworkUseCase(kachoRepo)
+	netListUC := networkapp.NewListNetworksUseCase(kachoRepo)
+	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetRepo)
+	netListSGUC := networkapp.NewListSecurityGroupsUseCase(kachoRepo, sgRepo)
+	netListRTUC := networkapp.NewListRouteTablesUseCase(kachoRepo, routeTableRepo)
 	netListOpsUC := networkapp.NewListOperationsUseCase(opsRepo)
 	netHandler := networkapp.NewHandler(
 		netCreateUC, netUpdateUC, netDeleteUC, netMoveUC,
 		netGetUC, netListUC, netListSubUC, netListSGUC, netListRTUC, netListOpsUC,
 	)
 
-	// Wave 3b (skill evgeniy §2): Gateway / PrivateEndpoint / RouteTable —
-	// use-case-структура. Replicate Wave 3a pilot шаблона.
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): Gateway use-case'ы
+	// работают через CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo
+	// продолжает существовать (наследие admin/handler-кода, internal services) —
+	// он не удаляется в этой миграции; replicate-фаза заменила только
+	// use-case-слой Gateway.
+	//
+	// Wave 3b ранее жил на узком port'е `gatewayapp.GatewayRepo`, теперь на
+	// `gatewayapp.Repo = kacho.Repository`. Wiring остался идентичен по сигнатуре
+	// (use-case-конструктор принимает Repository, открывает Reader/Writer внутри).
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(gatewayRepo, folderClient, opsRepo),
-		gatewayapp.NewUpdateGatewayUseCase(gatewayRepo, opsRepo),
-		gatewayapp.NewDeleteGatewayUseCase(gatewayRepo, opsRepo),
-		gatewayapp.NewMoveGatewayUseCase(gatewayRepo, folderClient, opsRepo),
-		gatewayapp.NewGetGatewayUseCase(gatewayRepo),
-		gatewayapp.NewListGatewaysUseCase(gatewayRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
+		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
+		gatewayapp.NewMoveGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewGetGatewayUseCase(kachoRepo),
+		gatewayapp.NewListGatewaysUseCase(kachoRepo),
 		gatewayapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): PrivateEndpoint
+	// use-case'ы работают через CQRS-Repository (kachoRepo) вместо legacy
+	// *PrivateEndpointRepo. NetworkReader/SubnetReader для request-path-precheck
+	// — пока legacy repos (network/subnet ещё не на CQRS pilot'е, переедут
+	// отдельной replicate-волной).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(peRepo, networkRepo, subnetRepo, folderClient, opsRepo),
-		peapp.NewUpdatePrivateEndpointUseCase(peRepo, opsRepo),
-		peapp.NewDeletePrivateEndpointUseCase(peRepo, opsRepo),
-		peapp.NewGetPrivateEndpointUseCase(peRepo),
-		peapp.NewListPrivateEndpointsUseCase(peRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkRepo, subnetRepo, folderClient, opsRepo),
+		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
+		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
+		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
+		peapp.NewListPrivateEndpointsUseCase(kachoRepo),
 		peapp.NewListOperationsUseCase(opsRepo),
 	)
 
+	// Wave 5 replicate (KAC-94, skill evgeniy §6): RouteTable use-case'ы
+	// переехали на CQRS-Repository (parity с pilot Network). Legacy
+	// `routeTableRepo` оставлен — его всё ещё использует Network.Delete
+	// (subnet/rt children check) и integration-тесты `route_table_*test.go`.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(routeTableRepo, networkRepo, folderClient, opsRepo),
-		routetableapp.NewUpdateRouteTableUseCase(routeTableRepo, opsRepo),
-		routetableapp.NewDeleteRouteTableUseCase(routeTableRepo, opsRepo),
-		routetableapp.NewMoveRouteTableUseCase(routeTableRepo, folderClient, opsRepo),
-		routetableapp.NewGetRouteTableUseCase(routeTableRepo),
-		routetableapp.NewListRouteTablesUseCase(routeTableRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
+		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
+		routetableapp.NewMoveRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewGetRouteTableUseCase(kachoRepo),
+		routetableapp.NewListRouteTablesUseCase(kachoRepo),
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): Subnet — use-case-структура с 11 use-case'ами
-	// включая специфические AddCidrBlocks / RemoveCidrBlocks / Relocate /
-	// ListUsedAddresses.
+	// Wave 5 replicate (KAC-94): Subnet переехал на CQRS-Repository вслед за
+	// Network/SG. Use-case'ы Subnet принимают kachoRepo (которое уже сконструировано
+	// для Network/SG); legacy `subnetRepo` остаётся для admin/peer-сервисов
+	// (`addressPoolSvc`, `peapp.NewCreatePrivateEndpointUseCase` etc.).
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(subnetRepo, networkRepo, folderClient, geoClient, opsRepo),
-		subnetapp.NewUpdateSubnetUseCase(subnetRepo, opsRepo),
-		subnetapp.NewDeleteSubnetUseCase(subnetRepo, niRepo, opsRepo),
-		subnetapp.NewMoveSubnetUseCase(subnetRepo, folderClient, opsRepo),
-		subnetapp.NewGetSubnetUseCase(subnetRepo),
-		subnetapp.NewListSubnetsUseCase(subnetRepo),
-		subnetapp.NewAddCidrBlocksUseCase(subnetRepo, opsRepo),
-		subnetapp.NewRemoveCidrBlocksUseCase(subnetRepo, opsRepo),
-		subnetapp.NewRelocateUseCase(subnetRepo, geoClient),
-		subnetapp.NewListUsedAddressesUseCase(subnetRepo, addressRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, folderClient, geoClient, opsRepo),
+		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
+		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niRepo, opsRepo),
+		subnetapp.NewMoveSubnetUseCase(kachoRepo, folderClient, opsRepo),
+		subnetapp.NewGetSubnetUseCase(kachoRepo),
+		subnetapp.NewListSubnetsUseCase(kachoRepo),
+		subnetapp.NewAddCidrBlocksUseCase(kachoRepo, opsRepo),
+		subnetapp.NewRemoveCidrBlocksUseCase(kachoRepo, opsRepo),
+		subnetapp.NewRelocateUseCase(kachoRepo, geoClient),
+		subnetapp.NewListUsedAddressesUseCase(kachoRepo, addressRepo),
 		subnetapp.NewListOperationsUseCase(opsRepo),
 	)
 
 	// Wave 3 (skill evgeniy §2): Address — use-case-структура. Composition с
 	// AddressPoolService для IPAM cascade resolve. Internal Allocate UC отделён —
 	// принимается InternalAddressAllocateHandler через узкий port.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolSvc)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolResolver)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(addressRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(addressRepo, opsRepo)
 	addressMoveUC := addressapp.NewMoveAddressUseCase(addressRepo, folderClient, opsRepo)
@@ -331,7 +435,7 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 	addressListUC := addressapp.NewListAddressesUseCase(addressRepo)
 	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(addressRepo, subnetRepo)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
-	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolSvc)
+	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolResolver)
 	addressHandler := addressapp.NewHandler(
 		addressCreateUC, addressUpdateUC, addressDeleteUC, addressMoveUC,
 		addressGetUC, addressGetByValueUC, addressListUC, addressListBySubnetUC, addressListOpsUC,
@@ -340,29 +444,40 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 
 	// Wave 3 (skill evgeniy §2): SecurityGroup — use-case-структура. Split-endpoint
 	// Update / UpdateRules / UpdateRule (OCC через xmin в repo).
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): use-case'ы SG переехали
+	// на CQRS-Repository (`kachoRepo`). Все DML + outbox-emit идут в одной
+	// writer-TX (G.5). Legacy `sgRepo` остаётся в композиции — он передаётся
+	// в Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
+	// Network.Delete (там CQRS-SG-writer не доступен из Network reader-TX
+	// после Close).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(sgRepo, networkRepo, folderClient, opsRepo),
-		sgapp.NewUpdateSecurityGroupUseCase(sgRepo, opsRepo),
-		sgapp.NewUpdateRulesUseCase(sgRepo, opsRepo),
-		sgapp.NewUpdateRuleUseCase(sgRepo, opsRepo),
-		sgapp.NewDeleteSecurityGroupUseCase(sgRepo, opsRepo),
-		sgapp.NewMoveSecurityGroupUseCase(sgRepo, folderClient, opsRepo),
-		sgapp.NewGetSecurityGroupUseCase(sgRepo),
-		sgapp.NewListSecurityGroupsUseCase(sgRepo),
-		sgapp.NewListOperationsUseCase(sgRepo, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkRepo, folderClient, opsRepo),
+		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
+		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
+		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
+		sgapp.NewDeleteSecurityGroupUseCase(kachoRepo, opsRepo),
+		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, folderClient, opsRepo),
+		sgapp.NewGetSecurityGroupUseCase(kachoRepo),
+		sgapp.NewListSecurityGroupsUseCase(kachoRepo),
+		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура. Replicate
-	// Wave 3a pilot шаблона. У NIC нет Move RPC (NIC привязан к Subnet), но есть
-	// специфические AttachToInstance / DetachFromInstance с atomic CAS (KAC-52).
+	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура.
+	// Wave 5 replicate (KAC-94, NIC batch): use-case'ы NIC переехали на
+	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к Subnet),
+	// но есть специфические AttachToInstance / DetachFromInstance с atomic CAS
+	// (KAC-52); CAS теперь живёт на DB-уровне через
+	// `writer.NetworkInterfaces().AttachToInstance`. Legacy `niRepo` остаётся
+	// (используется internal admin-сервисами + legacy integration-тестами
+	// `network_interface_attach_race_integration_test.go`).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(niRepo, subnetRepo, addressRepo, folderClient, opsRepo),
-		niapp.NewUpdateNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
-		niapp.NewDeleteNetworkInterfaceUseCase(niRepo, addressRepo, opsRepo),
-		niapp.NewGetNetworkInterfaceUseCase(niRepo),
-		niapp.NewListNetworkInterfacesUseCase(niRepo),
-		niapp.NewAttachToInstanceUseCase(niRepo, opsRepo),
-		niapp.NewDetachFromInstanceUseCase(niRepo, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
+		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
+		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),
+		niapp.NewListNetworkInterfacesUseCase(kachoRepo),
+		niapp.NewAttachToInstanceUseCase(kachoRepo, opsRepo),
+		niapp.NewDetachFromInstanceUseCase(kachoRepo, opsRepo),
 		niapp.NewListOperationsUseCase(opsRepo),
 	)
 
@@ -376,8 +491,11 @@ func buildServices(pool *pgxpool.Pool, folderClient service.FolderClient, geoCli
 		securityGroupHandler:    sgHandler,
 		gatewayHandler:          gwHandler,
 		privateEndpointHandler:  peHandler,
-		addressPool:             addressPoolSvc,
-		networkInternal:         service.NewNetworkInternal(networkRepo, sgRepo),
+		addressPoolHandler:      addressPoolHandler,
+		cloudSelSet:             cloudSelSet,
+		cloudSelUnset:           cloudSelUnset,
+		cloudSelGet:             cloudSelGet,
+		networkInternal:         networkinternal.NewService(networkRepo, sgRepo),
 		networkInterfaceHandler: niHandler,
 	}
 }
@@ -399,7 +517,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Pool, dsn string, logger *slog.Logger, watchMaxStreams int) {
 	vpcv1.RegisterInternalWatchServiceServer(srv, handler.NewInternalWatchHandler(pool, dsn, logger.With("component", "internal-watch"), watchMaxStreams))
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.addressAllocate, svcs.addressRefService))
-	vpcv1.RegisterInternalAddressPoolServiceServer(srv, handler.NewInternalAddressPoolHandler(svcs.addressPool))
+	vpcv1.RegisterInternalAddressPoolServiceServer(srv, svcs.addressPoolHandler)
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
-	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.addressPool))
+	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.cloudSelSet, svcs.cloudSelUnset, svcs.cloudSelGet))
 }

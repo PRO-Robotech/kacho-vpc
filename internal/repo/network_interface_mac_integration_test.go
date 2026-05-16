@@ -11,12 +11,11 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-48 — UNIQUE-constraint на network_interfaces.mac_address. Два NIC с
-// одинаковым MAC внутри облака → repo.Insert возвращает service.ErrMacCollision
-// (не ErrAlreadyExists), чтобы NetworkInterfaceService.doCreate мог отличить
+// одинаковым MAC внутри облака → repo.Insert возвращает ErrMacCollision
+// (не repo.ErrAlreadyExists), чтобы NetworkInterfaceService.doCreate мог отличить
 // retry-able MAC-коллизию от nominal duplicate-name UNIQUE-нарушения.
 func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 	if testing.Short() {
@@ -57,11 +56,11 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 	require.Equal(t, "0e:aa:aa:aa:aa:aa", first.MAC, "Insert возвращает сохранённый MAC")
 
 	// 2. Второй NIC с тем же MAC, но другим именем (имя не должно triger'ить
-	//    name-UNIQUE и подменять причину ошибки) — ErrMacCollision.
+	//    name-UNIQUE и подменять причину ошибки) — repo.ErrMacCollision.
 	_, err = nicRepo.Insert(ctx, mkNIC(ids.NewID(ids.PrefixSubnet), "nic-mac-2", "0e:aa:aa:aa:aa:aa"))
 	require.Error(t, err)
-	require.True(t, errors.Is(err, service.ErrMacCollision),
-		"при дубле MAC ожидаем service.ErrMacCollision, получили: %v", err)
+	require.True(t, errors.Is(err, repo.ErrMacCollision),
+		"при дубле MAC ожидаем repo.ErrMacCollision, получили: %v", err)
 
 	// 3. Третий NIC с другим MAC — OK (constraint бьёт только по дублям).
 	_, err = nicRepo.Insert(ctx, mkNIC(ids.NewID(ids.PrefixSubnet), "nic-mac-3", "0e:aa:aa:aa:aa:bb"))

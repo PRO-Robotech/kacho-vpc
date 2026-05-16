@@ -3,12 +3,10 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // marshalJSONB сериализует v в JSONB-байты для записи в БД. Возвращает обёрнутую
-// service.ErrInternal при ошибке (json.Marshal failure).
+// ErrInternal при ошибке (json.Marshal failure).
 //
 // Для domain-типов VPC (map[string]string labels, []domain.SecurityGroupRule,
 // *domain.DhcpOptions, []domain.StaticRoute, ExternalIpv4Spec, InternalIpv4Spec,
@@ -21,13 +19,13 @@ import (
 func marshalJSONB(v any, field string) ([]byte, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("%w: marshal JSONB %s: %v", service.ErrInternal, field, err)
+		return nil, fmt.Errorf("%w: marshal JSONB %s: %v", ErrInternal, field, err)
 	}
 	return b, nil
 }
 
 // unmarshalJSONB десериализует JSONB-байты из БД в target. Возвращает обёрнутую
-// service.ErrInternal при ошибке (повреждённый payload, schema mismatch).
+// ErrInternal при ошибке (повреждённый payload, schema mismatch).
 //
 // Заменяет ранее использованный silent `_ = json.Unmarshal(...)` (TODO #23).
 // nil/empty raw — no-op (target остаётся zero-value).
@@ -36,7 +34,7 @@ func unmarshalJSONB(raw []byte, target any, field string) error {
 		return nil
 	}
 	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("%w: corrupted JSONB %s: %v", service.ErrInternal, field, err)
+		return fmt.Errorf("%w: corrupted JSONB %s: %v", ErrInternal, field, err)
 	}
 	return nil
 }

@@ -9,44 +9,57 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListNetworksUseCase — list networks с пагинацией. folder_id обязателен.
+//
+// Wave 5 pilot (KAC-94): использует CQRS Reader.
 type ListNetworksUseCase struct {
-	repo NetworkRepo
+	repo Repo
 }
 
 // NewListNetworksUseCase создаёт ListNetworksUseCase.
-func NewListNetworksUseCase(repo NetworkRepo) *ListNetworksUseCase {
-	return &ListNetworksUseCase{repo: repo}
+func NewListNetworksUseCase(r Repo) *ListNetworksUseCase {
+	return &ListNetworksUseCase{repo: r}
 }
 
 // Execute — folder_id required (закрыто cross-folder enumeration #C1).
-func (u *ListNetworksUseCase) Execute(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error) {
+func (u *ListNetworksUseCase) Execute(ctx context.Context, f NetworkFilter, p Pagination) ([]*kachorepo.NetworkRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return u.repo.List(ctx, f, p)
+	r, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = r.Close() }()
+	return r.Networks().List(ctx, f, p)
 }
 
-// ListSubnetsUseCase — список Subnets конкретной Network.
+// ListSubnetsUseCase — список Subnets конкретной Network. CQRS pilot: Network-
+// existence-check идёт через Reader; SubnetReader — пока legacy (replicate-фаза).
 type ListSubnetsUseCase struct {
-	repo         NetworkRepo
+	repo         Repo
 	subnetReader SubnetReader
 }
 
 // NewListSubnetsUseCase создаёт ListSubnetsUseCase.
-func NewListSubnetsUseCase(repo NetworkRepo, subnetReader SubnetReader) *ListSubnetsUseCase {
-	return &ListSubnetsUseCase{repo: repo, subnetReader: subnetReader}
+func NewListSubnetsUseCase(r Repo, subnetReader SubnetReader) *ListSubnetsUseCase {
+	return &ListSubnetsUseCase{repo: r, subnetReader: subnetReader}
 }
 
 // Execute — id validate → existence check → list subnets.
-func (u *ListSubnetsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.SubnetRecord, string, error) {
+func (u *ListSubnetsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.SubnetRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
-	if _, err := u.repo.Get(ctx, networkID); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	if _, err := rd.Networks().Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
 	if u.subnetReader == nil {
@@ -57,21 +70,26 @@ func (u *ListSubnetsUseCase) Execute(ctx context.Context, networkID string, p Pa
 
 // ListSecurityGroupsUseCase — список SG, привязанных к Network.
 type ListSecurityGroupsUseCase struct {
-	repo   NetworkRepo
+	repo   Repo
 	sgRepo SecurityGroupRepo
 }
 
 // NewListSecurityGroupsUseCase создаёт ListSecurityGroupsUseCase.
-func NewListSecurityGroupsUseCase(repo NetworkRepo, sgRepo SecurityGroupRepo) *ListSecurityGroupsUseCase {
-	return &ListSecurityGroupsUseCase{repo: repo, sgRepo: sgRepo}
+func NewListSecurityGroupsUseCase(r Repo, sgRepo SecurityGroupRepo) *ListSecurityGroupsUseCase {
+	return &ListSecurityGroupsUseCase{repo: r, sgRepo: sgRepo}
 }
 
 // Execute — id validate → existence check → list SG.
-func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.SecurityGroupRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
-	if _, err := u.repo.Get(ctx, networkID); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	if _, err := rd.Networks().Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
 	if u.sgRepo == nil {
@@ -82,21 +100,26 @@ func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, networkID strin
 
 // ListRouteTablesUseCase — список RT в Network.
 type ListRouteTablesUseCase struct {
-	repo           NetworkRepo
+	repo           Repo
 	routeTableRead RouteTableReader
 }
 
 // NewListRouteTablesUseCase создаёт ListRouteTablesUseCase.
-func NewListRouteTablesUseCase(repo NetworkRepo, routeTableRead RouteTableReader) *ListRouteTablesUseCase {
-	return &ListRouteTablesUseCase{repo: repo, routeTableRead: routeTableRead}
+func NewListRouteTablesUseCase(r Repo, routeTableRead RouteTableReader) *ListRouteTablesUseCase {
+	return &ListRouteTablesUseCase{repo: r, routeTableRead: routeTableRead}
 }
 
 // Execute — id validate → existence check → list RT.
-func (u *ListRouteTablesUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.RouteTableRecord, string, error) {
+func (u *ListRouteTablesUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.RouteTableRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}
-	if _, err := u.repo.Get(ctx, networkID); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	if _, err := rd.Networks().Get(ctx, networkID); err != nil {
 		return nil, "", mapRepoErr(err)
 	}
 	if u.routeTableRead == nil {

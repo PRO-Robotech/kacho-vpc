@@ -12,20 +12,23 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // MoveGatewayUseCase — перенос Gateway в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
-// SetFolderID.
+// SetFolderID + outbox emit в одной writer-TX.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5).
 type MoveGatewayUseCase struct {
-	repo         GatewayRepo
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveGatewayUseCase создаёт MoveGatewayUseCase.
-func NewMoveGatewayUseCase(repo GatewayRepo, folderClient FolderClient, opsRepo operations.Repo) *MoveGatewayUseCase {
-	return &MoveGatewayUseCase{repo: repo, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveGatewayUseCase {
+	return &MoveGatewayUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
@@ -39,9 +42,14 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID strin
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	cur, err := u.repo.Get(ctx, id)
+	rd, err := u.repo.Reader(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
+	}
+	cur, gerr := rd.Gateways().Get(ctx, id)
+	_ = rd.Close()
+	if gerr != nil {
+		return nil, mapRepoErr(gerr)
 	}
 	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
@@ -67,9 +75,21 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID strin
 		if !exists {
 			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
 		}
-		updated, err := u.repo.SetFolderID(ctx, id, destFolderID)
-		if err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+
+		updated, uerr := w.Gateways().SetFolderID(ctx, id, destFolderID)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "Gateway", updated.ID, "UPDATED", gatewayPayloadMap(updated)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			return nil, mapRepoErr(cerr)
 		}
 		return marshalGatewayRecord(updated)
 	})

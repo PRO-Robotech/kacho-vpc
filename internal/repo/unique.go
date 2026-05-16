@@ -7,8 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // isUniqueViolation возвращает true если err — Postgres unique-constraint violation (SQLSTATE 23505).
@@ -135,12 +133,12 @@ func wrapPgErr(err error, kind, id string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Verbatim YC text для well-formed-but-absent: "<Kind> <id> not found".
 		if id != "" {
-			return fmt.Errorf("%w: %s %s not found", service.ErrNotFound, kind, id)
+			return fmt.Errorf("%w: %s %s not found", ErrNotFound, kind, id)
 		}
-		return service.ErrNotFound
+		return ErrNotFound
 	}
 	if isUniqueViolation(err) {
-		return service.ErrAlreadyExists
+		return ErrAlreadyExists
 	}
 	if isInvalidUUID(err) {
 		// Verbatim YC text: "invalid <kind> id '<id>'", code:3 InvalidArgument.
@@ -148,10 +146,10 @@ func wrapPgErr(err error, kind, id string) error {
 		// через 22P02 и возвращает то же сообщение. Маппинг kind → YC text:
 		//   Network → "network", Subnet → "subnet", Address → "address",
 		//   RouteTable → "route_table" (snake_case как у YC).
-		return fmt.Errorf("%w: invalid %s id '%s'", service.ErrInvalidArg, ycKindText(kind), id)
+		return fmt.Errorf("%w: invalid %s id '%s'", ErrInvalidArg, ycKindText(kind), id)
 	}
 	if isFKViolation(err) {
-		return fmt.Errorf("%w: %s has dependent resources", service.ErrFailedPrecondition, kind)
+		return fmt.Errorf("%w: %s has dependent resources", ErrFailedPrecondition, kind)
 	}
 	if isCheckViolation(err) {
 		// 23514 CHECK violation → InvalidArgument. Сейчас единственные CHECK-
@@ -159,10 +157,10 @@ func wrapPgErr(err error, kind, id string) error {
 		// `_v6_addr_max1` (миграция 0018, KAC-55: ≤1 v4 + ≤1 v6 на NIC).
 		// Service-слой выдаёт более понятный sync InvalidArgument до Operation;
 		// DB-side — финальный backstop для прямого repo.Insert / race.
-		return fmt.Errorf("%w: %s violates check constraint", service.ErrInvalidArg, kind)
+		return fmt.Errorf("%w: %s violates check constraint", ErrInvalidArg, kind)
 	}
 	if isExclusionViolation(err) {
-		return fmt.Errorf("%w: value conflicts with existing %s", service.ErrInvalidArg, kind)
+		return fmt.Errorf("%w: value conflicts with existing %s", ErrInvalidArg, kind)
 	}
-	return service.ErrInternal
+	return ErrInternal
 }

@@ -11,14 +11,15 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// RouteTable — type-alias на domain.RouteTableRecord (repo-entity с DB-managed
-// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
-type RouteTable = domain.RouteTableRecord
+// RouteTable — type-alias на kacho.RouteTableRecord (repo-entity с DB-managed
+// CreatedAt). Wave 5 replicate (KAC-94): Record уехал из domain в repo-leaf,
+// parity с repo.Network.
+type RouteTable = kachorepo.RouteTableRecord
 
-// RouteTableRepo — реализация service.RouteTableRepo поверх pgxpool.
+// RouteTableRepo — реализация RouteTableRepoIface поверх pgxpool.
 type RouteTableRepo struct {
 	pool *pgxpool.Pool
 }
@@ -40,7 +41,7 @@ func (r *RouteTableRepo) Get(ctx context.Context, id string) (*RouteTable, error
 	return rt, nil
 }
 
-func (r *RouteTableRepo) List(ctx context.Context, f service.RouteTableFilter, p service.Pagination) ([]*RouteTable, string, error) {
+func (r *RouteTableRepo) List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*RouteTable, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -135,7 +136,7 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*Ro
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -154,7 +155,7 @@ func (r *RouteTableRepo) Insert(ctx context.Context, rt *domain.RouteTable) (*Ro
 		return nil, wrapPgErr(err, "Route table", string(rt.Name))
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "CREATED", routeTablePayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Route table", string(rt.Name))
@@ -175,7 +176,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*Ro
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -192,7 +193,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*Ro
 		return nil, wrapPgErr(err, "Route table", rt.ID)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", result.ID, "UPDATED", routeTablePayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Route table", rt.ID)
@@ -204,7 +205,7 @@ func (r *RouteTableRepo) Update(ctx context.Context, rt *domain.RouteTable) (*Ro
 func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (*RouteTable, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -215,7 +216,7 @@ func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (
 		return nil, wrapPgErr(err, "Route table", id)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", rt.ID, "UPDATED", routeTablePayload(rt)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Route table", id)
@@ -226,23 +227,23 @@ func (r *RouteTableRepo) SetFolderID(ctx context.Context, id, folderID string) (
 func (r *RouteTableRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	tag, err := tx.Exec(ctx, `DELETE FROM route_tables WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
-			return fmt.Errorf("%w: route table is in use", service.ErrFailedPrecondition)
+			return fmt.Errorf("%w: route table is in use", ErrFailedPrecondition)
 		}
 		// 22P02 → InvalidArgument "invalid routetable id 'X'" (verbatim YC).
 		return wrapPgErr(err, "Route table", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Route table %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Route table %s not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "RouteTable", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Route table", id)

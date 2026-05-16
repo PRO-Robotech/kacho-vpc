@@ -13,15 +13,16 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Address — type-alias на domain.AddressRecord (repo-entity с DB-managed
-// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
-type Address = domain.AddressRecord
+// Address — type-alias на kacho.AddressRecord (repo-entity с DB-managed
+// CreatedAt). Wave 5 replicate (KAC-94, skill evgeniy §4 D.1 / §6 G.2 / §7 H.1):
+// уехал из `domain.AddressRecord` в repo-leaf `internal/repo/kacho/entity_address.go`
+// — parity с repo.Network / repo.RouteTable.
+type Address = kachorepo.AddressRecord
 
-// AddressRepo — реализация service.AddressRepo поверх pgxpool.
+// AddressRepo — реализация AddressRepoIface поверх pgxpool.
 type AddressRepo struct {
 	pool *pgxpool.Pool
 }
@@ -43,7 +44,7 @@ func (r *AddressRepo) Get(ctx context.Context, id string) (*Address, error) {
 	return a, nil
 }
 
-func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p service.Pagination) ([]*Address, string, error) {
+func (r *AddressRepo) List(ctx context.Context, f AddressFilter, p Pagination) ([]*Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -125,7 +126,7 @@ func (r *AddressRepo) List(ctx context.Context, f service.AddressFilter, p servi
 }
 
 // Insert вставляет Address. Принимает domain.Address (без CreatedAt — DB-managed).
-// Возвращает *Address (= *domain.AddressRecord) с заполненным CreatedAt.
+// Возвращает *Address (= *kacho.AddressRecord) с заполненным CreatedAt.
 func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*Address, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {
@@ -150,7 +151,7 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*Address, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -170,7 +171,7 @@ func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*Address, 
 		return nil, wrapPgErr(err, "Address", string(a.Name))
 	}
 	if err := emitVPC(ctx, tx, "Address", result.ID, "CREATED", addressPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", string(a.Name))
@@ -187,7 +188,7 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*Address, 
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -204,7 +205,7 @@ func (r *AddressRepo) Update(ctx context.Context, a *domain.Address) (*Address, 
 		return nil, wrapPgErr(err, "Address", a.ID)
 	}
 	if err := emitVPC(ctx, tx, "Address", result.ID, "UPDATED", addressPayload(result)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", a.ID)
@@ -220,7 +221,7 @@ func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.Exte
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -261,7 +262,7 @@ func (r *AddressRepo) SetIPSpec(ctx context.Context, id string, ext *domain.Exte
 		return nil, wrapPgErr(err, "Address", id)
 	}
 	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", id)
@@ -282,7 +283,7 @@ func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *doma
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -292,7 +293,7 @@ func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *doma
 		return nil, wrapPgErr(err, "Address", id)
 	}
 	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", id)
@@ -304,7 +305,7 @@ func (r *AddressRepo) SetInternalIPv6(ctx context.Context, id string, spec *doma
 func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*Address, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -315,7 +316,7 @@ func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ad
 		return nil, wrapPgErr(err, "Address", id)
 	}
 	if err := emitVPC(ctx, tx, "Address", a.ID, "UPDATED", addressPayload(a)); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", id)
@@ -326,23 +327,23 @@ func (r *AddressRepo) SetFolderID(ctx context.Context, id, folderID string) (*Ad
 func (r *AddressRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	tag, err := tx.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
-			return fmt.Errorf("%w: address is in use", service.ErrFailedPrecondition)
+			return fmt.Errorf("%w: address is in use", ErrFailedPrecondition)
 		}
 		// 22P02 → InvalidArgument "invalid address id 'X'" (verbatim YC).
 		return wrapPgErr(err, "Address", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Address %s not found", service.ErrNotFound, id)
+		return fmt.Errorf("%w: Address %s not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "Address", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Address", id)
@@ -370,7 +371,7 @@ func (r *AddressRepo) GetByValue(ctx context.Context, externalIP, internalIP, su
 		argIdx++
 	}
 	if len(conds) == 0 {
-		return nil, service.ErrInvalidArg
+		return nil, ErrInvalidArg
 	}
 	where := "(" + strings.Join(conds, " OR ") + ")"
 	if subnetID != "" {
@@ -411,7 +412,7 @@ func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 // `ON CONFLICT (address_id) DO UPDATE … WHERE address_references.referrer_id
 // = EXCLUDED.referrer_id`. Конфликт по адресу с ЧУЖИМ referrer'ом ⇒ DO UPDATE
 // не применяется (предикат false), RETURNING отдаёт 0 строк, что pgx маппит в
-// pgx.ErrNoRows → service.ErrFailedPrecondition.
+// pgx.ErrNoRows → ErrFailedPrecondition.
 //
 // Это устраняет TOCTOU из service-слоя
 // (NetworkInterfaceService.validateAddressRef делал Get → check used=false →
@@ -427,7 +428,7 @@ func (r *AddressRepo) ExistsIP(ctx context.Context, ip string) (bool, error) {
 func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -436,7 +437,7 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: Address %s not found", service.ErrNotFound, ref.AddressID)
+		return nil, fmt.Errorf("%w: Address %s not found", ErrNotFound, ref.AddressID)
 	}
 
 	const q = `
@@ -454,12 +455,12 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// CAS failed — address already referenced by another resource.
-			return nil, fmt.Errorf("%w: address already referenced by another resource", service.ErrFailedPrecondition)
+			return nil, fmt.Errorf("%w: address already referenced by another resource", ErrFailedPrecondition)
 		}
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "used": true}); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
@@ -476,12 +477,12 @@ func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressRefer
 //
 // KAC-88 (G1 из audit KAC-84) — атомарный single-statement CAS на upsert
 // (parity с SetReference, см. её doc): попытка перепривязать адрес к ЧУЖОМУ
-// referrer'у → service.ErrFailedPrecondition. Idempotent re-mark к тому же
+// referrer'у → ErrFailedPrecondition. Idempotent re-mark к тому же
 // referrer проходит.
 func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -490,7 +491,7 @@ func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.Addres
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: Address %s not found", service.ErrNotFound, ref.AddressID)
+		return nil, fmt.Errorf("%w: Address %s not found", ErrNotFound, ref.AddressID)
 	}
 
 	const q = `
@@ -507,12 +508,12 @@ func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.Addres
 	if err := tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: address already referenced by another resource", service.ErrFailedPrecondition)
+			return nil, fmt.Errorf("%w: address already referenced by another resource", ErrFailedPrecondition)
 		}
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
 	}
 	if err := emitVPC(ctx, tx, "Address", ref.AddressID, "UPDATED", map[string]any{"id": ref.AddressID, "reserved": false, "used": true}); err != nil {
-		return nil, service.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Address", ref.AddressID)
@@ -525,7 +526,7 @@ func (r *AddressRepo) MarkEphemeralInUse(ctx context.Context, ref *domain.Addres
 func (r *AddressRepo) ClearReference(ctx context.Context, addressID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -534,13 +535,13 @@ func (r *AddressRepo) ClearReference(ctx context.Context, addressID string) erro
 		return wrapPgErr(err, "Address", addressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Address %s not found", service.ErrNotFound, addressID)
+		return fmt.Errorf("%w: Address %s not found", ErrNotFound, addressID)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM address_references WHERE address_id = $1`, addressID); err != nil {
 		return wrapPgErr(err, "Address", addressID)
 	}
 	if err := emitVPC(ctx, tx, "Address", addressID, "UPDATED", map[string]any{"id": addressID, "used": false}); err != nil {
-		return service.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Address", addressID)
@@ -674,11 +675,9 @@ func marshalExternalIPv6(e *domain.ExternalIpv6Spec) ([]byte, error) {
 	return marshalJSONB(e, "Address.external_ipv6")
 }
 
-// ErrPoolExhausted — address_pool_free_ips empty for the given pool.
-// Service-layer maps to gRPC FailedPrecondition. Re-exported from
-// `internal/ports` so service-side `errors.Is(err, service.ErrPoolExhausted)`
-// matches the same error-value the repo returns.
-var ErrPoolExhausted = ports.ErrPoolExhausted
+// ErrPoolExhausted — определён в `errors.go` того же пакета (раньше — re-export
+// из `internal/repo`; после Wave 5 G.1, KAC-94 — sentinel живёт прямо здесь).
+// Service-layer maps to gRPC FailedPrecondition.
 
 // allocateFromFreelistSQL — single-statement atomic IP allocation. SKIP LOCKED
 // lets parallel workers grab different freelist rows without contention.

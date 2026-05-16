@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdatePrivateEndpointUseCase.Execute.
@@ -24,14 +25,17 @@ type UpdateInput struct {
 
 // UpdatePrivateEndpointUseCase — sync-валидация update_mask + значений, затем
 // async update в worker'е.
+//
+// Wave 5 replicate (KAC-94): writer-TX явный, DML + outbox atomic (parity с
+// Network).
 type UpdatePrivateEndpointUseCase struct {
-	repo    PrivateEndpointRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdatePrivateEndpointUseCase создаёт UpdatePrivateEndpointUseCase.
-func NewUpdatePrivateEndpointUseCase(repo PrivateEndpointRepo, opsRepo operations.Repo) *UpdatePrivateEndpointUseCase {
-	return &UpdatePrivateEndpointUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdatePrivateEndpointUseCase(r Repo, opsRepo operations.Repo) *UpdatePrivateEndpointUseCase {
+	return &UpdatePrivateEndpointUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -59,19 +63,38 @@ func (u *UpdatePrivateEndpointUseCase) Execute(ctx context.Context, in UpdateInp
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		rec, err := u.repo.Get(ctx, in.PrivateEndpointID)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		applyPrivateEndpointMask(&rec.PrivateEndpoint, in)
-		updated, err := u.repo.Update(ctx, &rec.PrivateEndpoint)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return marshalPrivateEndpointRecord(updated)
+		return u.doUpdate(ctx, in)
 	})
 
 	return &op, nil
+}
+
+// doUpdate — async-часть Update. Get + Update в одной writer-TX (race-free
+// read-modify-write); outbox.Emit("PrivateEndpoint", …, "UPDATED") в той же TX
+// (skill evgeniy §6 G.5).
+func (u *UpdatePrivateEndpointUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	rec, err := w.PrivateEndpoints().Get(ctx, in.PrivateEndpointID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	applyPrivateEndpointMask(&rec.PrivateEndpoint, in)
+	updated, err := w.PrivateEndpoints().Update(ctx, &rec.PrivateEndpoint)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "PrivateEndpoint", updated.ID, "UPDATED", privateEndpointPayloadMap(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalPrivateEndpointRecord(updated)
 }
 
 // validatePrivateEndpointUpdate — sync-валидация update_mask.

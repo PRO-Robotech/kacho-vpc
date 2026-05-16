@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // Repo-entities — структуры, **физически живущие в `internal/repo/*`**, но
-// объявленные здесь, чтобы их мог типизировать ещё и `internal/ports` без
+// объявленные здесь, чтобы их мог типизировать ещё и `internal/repo` без
 // import-cycle `ports → repo`. Каждая repo-entity = domain-сущность + DB-managed
 // поля (`CreatedAt` ; в будущем — `UpdatedAt`, `Generation`, `Revision`).
 //
@@ -15,33 +15,22 @@ import "time"
 //
 // Импорт: домен сам ни от чего не зависит (skill §1 A.5), здесь только stdlib
 // `time` — это сохраняет принцип clean architecture.
-
-// NetworkRecord — repo-entity для Network. domain.Network + CreatedAt
-// (DB-managed). Service-слой получает *NetworkRecord из repo.NetworkRepo
-// (port-интерфейс) и пробрасывает в DTO/handler. Клиенту через proto уходит
-// CreatedAt из этой структуры (skill evgeniy §4 D.1 / §7 H.1).
 //
-// Имя `Record` (а не Entity / Persistence) — чтобы не пересечься с другими
-// доменными терминами; «row из таблицы networks» = `NetworkRecord`.
-type NetworkRecord struct {
-	Network
-	CreatedAt time.Time
-}
+// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord`, `SubnetRecord`,
+// `AddressRecord`, `PrivateEndpointRecord`, `NetworkInterfaceRecord` уехали из
+// domain в repo-leaf — теперь живут как `kacho.<X>Record` в
+// `internal/repo/kacho/entity_<x>.go`. Остаются здесь только
+// `RouteTableRecord`/`SecurityGroupRecord`/`GatewayRecord` — RouteTable и
+// Gateway уже частично мигрированы через separate `kacho.<X>Record` (см.
+// `entity_route_table.go` / `entity_gateway.go`), но domain-копии оставлены
+// до удаления последних `domain.<X>Record` referenсes по всему коду;
+// SecurityGroup — мигрируется в финальном subtask Wave 5 replicate (SG own
+// use-cases CQRS).
 
-// SubnetRecord — repo-entity для Subnet. domain.Subnet + CreatedAt (DB-managed).
-// Wave 2 batch A (KAC-94) — parity с NetworkRecord. См. doc-комментарий на
-// NetworkRecord выше.
-type SubnetRecord struct {
-	Subnet
-	CreatedAt time.Time
-}
-
-// AddressRecord — repo-entity для Address. domain.Address + CreatedAt (DB-managed).
-// Wave 2 batch A (KAC-94).
-type AddressRecord struct {
-	Address
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): AddressRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_address.go` как `kacho.AddressRecord` (parity
+// с NetworkRecord). Здесь его больше нет — все consumer'ы импортируют
+// `kacho.AddressRecord` напрямую.
 
 // RouteTableRecord — repo-entity для RouteTable. domain.RouteTable + CreatedAt
 // (DB-managed). Wave 2 batch A (KAC-94).
@@ -50,30 +39,22 @@ type RouteTableRecord struct {
 	CreatedAt time.Time
 }
 
-// SecurityGroupRecord — repo-entity для SecurityGroup. domain.SecurityGroup +
-// CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
-type SecurityGroupRecord struct {
-	SecurityGroup
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): SecurityGroupRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_security_group.go` как `kacho.SecurityGroupRecord`
+// (parity с NetworkRecord, §4 D.1). Здесь его больше нет — все consumer'ы
+// импортируют `kacho.SecurityGroupRecord` напрямую.
 
-// GatewayRecord — repo-entity для Gateway. domain.Gateway + CreatedAt
-// (DB-managed). Wave 2 batch B (KAC-94).
-type GatewayRecord struct {
-	Gateway
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): GatewayRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_gateway.go` как `kacho.GatewayRecord` (parity с
+// pilot NetworkRecord, §4 D.1 / §7 H.1). Здесь его больше нет — все consumer'ы
+// импортируют `kacho.GatewayRecord` напрямую.
 
-// PrivateEndpointRecord — repo-entity для PrivateEndpoint. domain.PrivateEndpoint
-// + CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
-type PrivateEndpointRecord struct {
-	PrivateEndpoint
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): PrivateEndpointRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_private_endpoint.go` как
+// `kacho.PrivateEndpointRecord` (parity с NetworkRecord). Здесь его больше нет
+// — все consumer'ы импортируют `kacho.PrivateEndpointRecord` напрямую.
 
-// NetworkInterfaceRecord — repo-entity для NetworkInterface. domain.NetworkInterface
-// + CreatedAt (DB-managed). Wave 2 batch C (KAC-94).
-type NetworkInterfaceRecord struct {
-	NetworkInterface
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaceRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_network_interface.go` как
+// `kacho.NetworkInterfaceRecord` (parity с NetworkRecord). Здесь его больше нет
+// — все consumer'ы импортируют `kacho.NetworkInterfaceRecord` напрямую.

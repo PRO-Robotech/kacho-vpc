@@ -16,9 +16,11 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
 	// Blank-import регистрирует трансферы SecurityGroup/time через init() (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // mapRepoErr — переводит repo-sentinel в gRPC status. Логика идентична
@@ -34,15 +36,15 @@ func mapRepoErr(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, stripSentinel(err, ports.ErrNotFound))
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ports.ErrAlreadyExists))
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ports.ErrFailedPrecondition))
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ports.ErrInvalidArg))
-	case errors.Is(err, ports.ErrInternal):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, stripSentinel(err, repo.ErrNotFound))
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, stripSentinel(err, repo.ErrAlreadyExists))
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, repo.ErrFailedPrecondition))
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, stripSentinel(err, repo.ErrInvalidArg))
+	case errors.Is(err, repo.ErrInternal):
 		return status.Error(codes.Internal, "internal database error")
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
@@ -145,10 +147,19 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 	return out
 }
 
+// securityGroupPayloadMap — snapshot SecurityGroup для outbox payload. Wave 5
+// replicate (KAC-94, skill evgeniy §6 G.5): use-case Create/Update/Delete/Move
+// формирует payload в той же writer-TX, что и DML, через `w.Outbox().Emit(...)`.
+// Делегирует exported shim `repo.SecurityGroupPayload`, чтобы держать
+// json.Marshal-схему единой со legacy `*repo.SecurityGroupRepo`-консьюмерами.
+func securityGroupPayloadMap(sg *kacho.SecurityGroupRecord) map[string]any {
+	return repo.SecurityGroupPayload(sg)
+}
+
 // marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/UpdateRules/UpdateRule/Move для запихивания результата в Operation.response.
-func marshalSecurityGroupRecord(rec *domain.SecurityGroupRecord) (*anypb.Any, error) {
+func marshalSecurityGroupRecord(rec *kacho.SecurityGroupRecord) (*anypb.Any, error) {
 	var dst *vpcv1.SecurityGroup
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer SecurityGroup: %w", err)
