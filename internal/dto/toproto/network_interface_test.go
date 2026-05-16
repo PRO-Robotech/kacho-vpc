@@ -1,4 +1,4 @@
-package type2pb_test
+package toproto_test
 
 import (
 	"testing"
@@ -11,11 +11,11 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// blank-import регистрирует трансферы (включая NetworkInterface).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 )
 
 // Wave 2 batch C (KAC-94): smoke-test трансфера NetworkInterfaceRecord →
-// *vpcv1.NetworkInterface. Регистрация — в init() пакета type2pb.
+// *vpcv1.NetworkInterface. Регистрация — в init() пакета toproto.
 
 func TestDTO_TransferNetworkInterfaceRecord(t *testing.T) {
 	at := time.Date(2026, 5, 15, 12, 34, 56, 789_000_000, time.UTC)

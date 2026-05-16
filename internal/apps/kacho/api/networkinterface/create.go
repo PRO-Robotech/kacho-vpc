@@ -15,7 +15,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/macutil"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // niReferrerType — ReferrerType в address_references для адресов, привязанных к NIC.
@@ -162,13 +162,13 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		if insertErr == nil {
 			return marshalNetworkInterfaceRecord(created)
 		}
-		if !errors.Is(insertErr, ports.ErrMacCollision) {
+		if !errors.Is(insertErr, repo.ErrMacCollision) {
 			break
 		}
 	}
 	// rollback маркировки адресов best-effort.
 	u.detachAddresses(ctx, append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...))
-	if errors.Is(insertErr, ports.ErrMacCollision) {
+	if errors.Is(insertErr, repo.ErrMacCollision) {
 		return nil, status.Errorf(codes.Internal, "could not allocate unique MAC after %d attempts", niMacRetryAttempts)
 	}
 	return nil, mapRepoErr(insertErr)
@@ -180,7 +180,7 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 func (u *CreateNetworkInterfaceUseCase) validateAddressRef(ctx context.Context, id, nicSubnet string, want domain.IpVersion) error {
 	a, err := u.addressRepo.Get(ctx, id)
 	if err != nil {
-		if errors.Is(err, ports.ErrNotFound) {
+		if errors.Is(err, repo.ErrNotFound) {
 			return status.Errorf(codes.InvalidArgument, "address %s not found", id)
 		}
 		return mapRepoErr(err)

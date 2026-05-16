@@ -11,7 +11,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
@@ -199,12 +198,12 @@ func (w *networkWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
 		if repo.IsFKViolation(err) {
-			return fmt.Errorf("%w: network is not empty", ports.ErrFailedPrecondition)
+			return fmt.Errorf("%w: network is not empty", repo.ErrFailedPrecondition)
 		}
 		return repo.WrapPgErr(err, "Network", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Network %s not found", ports.ErrNotFound, id)
+		return fmt.Errorf("%w: Network %s not found", repo.ErrNotFound, id)
 	}
 	return nil
 }

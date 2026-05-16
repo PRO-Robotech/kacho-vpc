@@ -14,7 +14,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreatePrivateEndpointUseCase.Execute.
@@ -73,14 +73,14 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInp
 		return nil, err
 	}
 	if _, err := u.networkRead.Get(ctx, p.NetworkID); err != nil {
-		if errors.Is(err, ports.ErrNotFound) {
+		if errors.Is(err, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", p.NetworkID)
 		}
 		return nil, mapRepoErr(err)
 	}
 	if p.SubnetID != "" {
 		if _, err := u.subnetRead.Get(ctx, p.SubnetID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", p.SubnetID)
 			}
 			return nil, mapRepoErr(err)

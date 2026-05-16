@@ -11,16 +11,16 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Wave 3 (KAC-94): AddressService переехал в `internal/apps/kacho/api/address/`,
 // SetAddressReference/Mark/Clear/Get вынесены в отдельный сервис (этот пакет
 // `addressref`). Эти тесты — те же что были в `internal/service/`, но используют
-// `portmock.AddressRepo` напрямую и конструктор `NewService(repo)`. Поведение
+// `repomock.AddressRepo` напрямую и конструктор `NewService(repo)`. Поведение
 // и контракт идентичны.
 
-func seedAddrForRef(ar *portmock.AddressRepo) *domain.AddressRecord {
+func seedAddrForRef(ar *repomock.AddressRepo) *domain.AddressRecord {
 	rec := &domain.AddressRecord{
 		Address: domain.Address{
 			ID:           ids.NewID(ids.PrefixAddress),
@@ -36,7 +36,7 @@ func seedAddrForRef(ar *portmock.AddressRepo) *domain.AddressRecord {
 }
 
 func TestAddressReferenceService_SetAddressReference_OK(t *testing.T) {
-	ar := portmock.NewAddressRepo()
+	ar := repomock.NewAddressRepo()
 	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
@@ -71,7 +71,7 @@ func TestAddressReferenceService_SetAddressReference_OK(t *testing.T) {
 }
 
 func TestAddressReferenceService_SetAddressReference_Validation(t *testing.T) {
-	ar := portmock.NewAddressRepo()
+	ar := repomock.NewAddressRepo()
 	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
@@ -97,7 +97,7 @@ func TestAddressReferenceService_SetAddressReference_Validation(t *testing.T) {
 }
 
 func TestAddressReferenceService_GetAddressReference(t *testing.T) {
-	ar := portmock.NewAddressRepo()
+	ar := repomock.NewAddressRepo()
 	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 
@@ -115,7 +115,7 @@ func TestAddressReferenceService_GetAddressReference(t *testing.T) {
 }
 
 func TestAddressReferenceService_ClearAddressReference(t *testing.T) {
-	ar := portmock.NewAddressRepo()
+	ar := repomock.NewAddressRepo()
 	svc := NewService(ar)
 	a := seedAddrForRef(ar)
 

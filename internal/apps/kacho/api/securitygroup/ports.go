@@ -14,11 +14,11 @@
 // Default-SG creation остаётся inline в `internal/apps/kacho/api/network/`
 // (CreateNetworkUseCase): здесь use-case'ы — обычный Create без авто-default.
 //
-// Локальные интерфейсы (а не type-alias на `internal/ports.SecurityGroupRepo`) —
+// Локальные интерфейсы (а не type-alias на `internal/repo.SecurityGroupRepoIface`) —
 // сознательный выбор по skill §6 G.2-G.3: каждый use-case-пакет описывает только
 // то, что РЕАЛЬНО использует. Адаптерами выступают существующие
-// `internal/repo/security_group_repo.go` и `internal/ports/portmock` — они уже
-// реализуют `internal/ports.SecurityGroupRepo`, который ⊇ локальному интерфейсу,
+// `internal/repo/security_group_repo.go` и `internal/repo/repomock` — они уже
+// реализуют `internal/repo.SecurityGroupRepoIface`, который ⊇ локальному интерфейсу,
 // поэтому Go-типизация работает без shim'ов.
 package securitygroup
 
@@ -26,14 +26,14 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination, *Filter — пере-используем единые value-объекты `internal/ports`
+// Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
 // (alias'ы, не копии).
 type (
-	Pagination          = ports.Pagination
-	SecurityGroupFilter = ports.SecurityGroupFilter
+	Pagination          = repo.Pagination
+	SecurityGroupFilter = repo.SecurityGroupFilter
 )
 
 // SecurityGroupRepo — то, что use-case'ам SG нужно от репозитория.

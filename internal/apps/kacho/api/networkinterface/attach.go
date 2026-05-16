@@ -14,7 +14,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // AttachToInstanceUseCase — приаттачить NIC к compute-инстансу.
@@ -83,7 +83,7 @@ func (u *AttachToInstanceUseCase) Execute(ctx context.Context, id, instanceID, i
 			// writer ждёт commit-а первого, видит уже обновлённый row, CAS не
 			// matches → 0 rows из RETURNING → ErrFailedPrecondition). Race-обогащённый
 			// message — догружаем actual owner для пользователя.
-			if errors.Is(err, ports.ErrFailedPrecondition) {
+			if errors.Is(err, repo.ErrFailedPrecondition) {
 				if actual, gerr := u.repo.Get(ctx, id); gerr == nil && actual.UsedByID != "" {
 					return nil, status.Errorf(codes.FailedPrecondition,
 						"network interface %s is already attached to %s %s", id, actual.UsedByType, actual.UsedByID)

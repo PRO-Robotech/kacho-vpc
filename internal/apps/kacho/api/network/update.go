@@ -13,7 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateNetworkUseCase.Execute. Конкретно для Update
@@ -89,7 +89,7 @@ func (u *UpdateNetworkUseCase) doUpdate(ctx context.Context, in UpdateInput) (*a
 		return nil, mapRepoErr(err)
 	}
 	if err := w.Outbox().Emit(ctx, "Network", updated.ID, "UPDATED", networkPayloadMap(updated)); err != nil {
-		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", ports.ErrInternal, err))
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)

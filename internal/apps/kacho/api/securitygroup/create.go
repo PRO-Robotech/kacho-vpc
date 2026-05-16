@@ -14,7 +14,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreateSecurityGroupUseCase.Execute.
@@ -94,7 +94,7 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, in CreateInput
 	}
 	if sg.NetworkID != "" && u.networkReader != nil {
 		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 			}
 			return nil, mapRepoErr(err)

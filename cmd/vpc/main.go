@@ -39,7 +39,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
@@ -232,7 +231,7 @@ func runServe(cfg config.Config) error {
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
 // inline default SG.
-func buildServices(pool *pgxpool.Pool, folderClient ports.FolderClient, geoClient ports.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
@@ -245,7 +244,7 @@ func buildServices(pool *pgxpool.Pool, folderClient ports.FolderClient, geoClien
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	var defaultSGRepo ports.SecurityGroupRepo
+	var defaultSGRepo repo.SecurityGroupRepoIface
 	if cfg.Network.DefaultSGInline {
 		defaultSGRepo = sgRepo
 	} else {

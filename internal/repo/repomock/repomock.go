@@ -1,12 +1,12 @@
-// Package portmock содержит in-memory fake-реализации port-интерфейсов из
-// `internal/ports` плюс helper'ы для ожидания async-Operation'ов. Используется
-// unit-тестами `internal/service` и `internal/handler` — раньше каждый
-// test-файл держал собственную копию mock'ов (см. TODO #12).
+// Package repomock содержит in-memory fake-реализации port-интерфейсов из
+// `internal/repo` (раньше — `internal/ports`; Wave 5 G.1 / KAC-94) плюс
+// helper'ы для ожидания async-Operation'ов. Используется unit-тестами
+// `internal/service`, `internal/handler` и use-case-пакетов `internal/apps/kacho/api/*`.
 //
-// Зависит только от `internal/ports`, `internal/domain` и `kacho-corelib/operations`
-// — НЕ от `internal/service`, поэтому white-box service-тесты (`package service`)
-// могут его импортировать без import-cycle.
-package portmock
+// Зависит только от `internal/repo`, `internal/domain` и `kacho-corelib/operations`
+// — НЕ от `internal/service`/use-case-пакетов, поэтому white-box service-тесты
+// (`package service`) могут импортировать repomock без import-cycle.
+package repomock
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // ---- NetworkRepo ----
@@ -42,12 +42,12 @@ func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.NetworkRecord, 
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return n, nil
 }
 
-func (r *NetworkRepo) List(_ context.Context, f ports.NetworkFilter, _ ports.Pagination) ([]*domain.NetworkRecord, string, error) {
+func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagination) ([]*domain.NetworkRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*domain.NetworkRecord
@@ -73,7 +73,7 @@ func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.Netw
 	defer r.mu.Unlock()
 	existing, ok := r.data[n.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	// keep existing CreatedAt; overwrite mutable domain-fields.
 	existing.Network = *n
@@ -84,7 +84,7 @@ func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.data, id)
 	return nil
@@ -95,7 +95,7 @@ func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	n.FolderID = folderID
 	return n, nil
@@ -119,12 +119,12 @@ func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.SubnetRecord, er
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return s, nil
 }
 
-func (r *SubnetRepo) List(_ context.Context, f ports.SubnetFilter, _ ports.Pagination) ([]*domain.SubnetRecord, string, error) {
+func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Pagination) ([]*domain.SubnetRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*domain.SubnetRecord
@@ -151,7 +151,7 @@ func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.Subnet
 	defer r.mu.Unlock()
 	existing, ok := r.data[s.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	// keep existing CreatedAt; overwrite mutable domain-fields.
 	existing.Subnet = *s
@@ -162,7 +162,7 @@ func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.data, id)
 	return nil
@@ -173,7 +173,7 @@ func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domai
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	s.FolderID = folderID
 	return s, nil
@@ -184,7 +184,7 @@ func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	s.V4CidrBlocks = v4
 	s.V6CidrBlocks = v6
@@ -196,13 +196,13 @@ func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.Su
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	s.ZoneID = zoneID
 	return s, nil
 }
 
-func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
@@ -247,12 +247,12 @@ func (r *AddressRepo) Get(_ context.Context, id string) (*domain.AddressRecord, 
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return a, nil
 }
 
-func (r *AddressRepo) List(_ context.Context, f ports.AddressFilter, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*domain.AddressRecord
@@ -278,7 +278,7 @@ func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*domain.Addr
 	defer r.mu.Unlock()
 	existing, ok := r.data[a.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.Address = *a
 	return existing, nil
@@ -288,7 +288,7 @@ func (r *AddressRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.data, id)
 	return nil
@@ -300,7 +300,7 @@ func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.Extern
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if ext != nil {
 		a.ExternalIpv4 = ext
@@ -317,7 +317,7 @@ func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if spec != nil {
 		a.InternalIpv6 = spec
@@ -330,7 +330,7 @@ func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	a.FolderID = folderID
 	return a, nil
@@ -361,7 +361,7 @@ func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domai
 			return a, nil
 		}
 	}
-	return nil, ports.ErrNotFound
+	return nil, repo.ErrNotFound
 }
 
 // SetReference upsert'ит referrer-row (если address существует) и выставляет used=true.
@@ -372,13 +372,13 @@ func (r *AddressRepo) SetReference(_ context.Context, ref *domain.AddressReferen
 	defer r.mu.Unlock()
 	a, ok := r.data[ref.AddressID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if r.refs == nil {
 		r.refs = make(map[string]*domain.AddressReference)
 	}
 	if existing, ok := r.refs[ref.AddressID]; ok && existing.ReferrerID != ref.ReferrerID {
-		return nil, ports.ErrFailedPrecondition
+		return nil, repo.ErrFailedPrecondition
 	}
 	a.Used = true
 	cp := *ref
@@ -394,13 +394,13 @@ func (r *AddressRepo) MarkEphemeralInUse(_ context.Context, ref *domain.AddressR
 	defer r.mu.Unlock()
 	a, ok := r.data[ref.AddressID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if r.refs == nil {
 		r.refs = make(map[string]*domain.AddressReference)
 	}
 	if existing, ok := r.refs[ref.AddressID]; ok && existing.ReferrerID != ref.ReferrerID {
-		return nil, ports.ErrFailedPrecondition
+		return nil, repo.ErrFailedPrecondition
 	}
 	a.Reserved = false
 	a.Used = true
@@ -416,7 +416,7 @@ func (r *AddressRepo) ClearReference(_ context.Context, addressID string) error 
 	defer r.mu.Unlock()
 	a, ok := r.data[addressID]
 	if !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	a.Used = false
 	delete(r.refs, addressID)
@@ -428,11 +428,11 @@ func (r *AddressRepo) GetReference(_ context.Context, addressID string) (*domain
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[addressID]; !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	ref, ok := r.refs[addressID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *ref
 	return &cp, nil
@@ -453,23 +453,23 @@ func (r *AddressRepo) ReferencesForAddresses(_ context.Context, addressIDs []str
 }
 
 // AllocateIPFromFreelist — mock-stub: pops first IP из freelist, проставляет
-// его в addresses.external_ipv4. Возвращает ports.ErrPoolExhausted если
+// его в addresses.external_ipv4. Возвращает repo.ErrPoolExhausted если
 // freelist для pool пуст или не засеян (см. SeedFreelist).
 func (r *AddressRepo) AllocateIPFromFreelist(_ context.Context, poolID, addressID string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.freelists == nil {
-		return "", ports.ErrPoolExhausted
+		return "", repo.ErrPoolExhausted
 	}
 	ips := r.freelists[poolID]
 	if len(ips) == 0 {
-		return "", ports.ErrPoolExhausted
+		return "", repo.ErrPoolExhausted
 	}
 	ip := ips[0]
 	r.freelists[poolID] = ips[1:]
 	a, ok := r.data[addressID]
 	if !ok {
-		return "", ports.ErrNotFound
+		return "", repo.ErrNotFound
 	}
 	if a.ExternalIpv4 == nil {
 		a.ExternalIpv4 = &domain.ExternalIpv4Spec{}
@@ -599,12 +599,12 @@ func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTableRe
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return rt, nil
 }
 
-func (r *RouteTableRepo) List(_ context.Context, f ports.RouteTableFilter, _ ports.Pagination) ([]*domain.RouteTableRecord, string, error) {
+func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo.Pagination) ([]*domain.RouteTableRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []*domain.RouteTableRecord
@@ -631,7 +631,7 @@ func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*doma
 	defer r.mu.Unlock()
 	existing, ok := r.data[rt.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.RouteTable = *rt
 	return existing, nil
@@ -641,7 +641,7 @@ func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.data, id)
 	return nil
@@ -652,7 +652,7 @@ func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*d
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	rt.FolderID = folderID
 	return rt, nil
@@ -677,12 +677,12 @@ func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityG
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) List(_ context.Context, f ports.SecurityGroupFilter, _ ports.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, _ repo.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []*domain.SecurityGroupRecord
@@ -714,7 +714,7 @@ func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) 
 	defer r.mu.Unlock()
 	existing, ok := r.data[sg.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.SecurityGroup = *sg
 	return existing, nil
@@ -732,7 +732,7 @@ func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []stri
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return sg, nil
 }
@@ -742,7 +742,7 @@ func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ stri
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return sg, nil
 }
@@ -752,7 +752,7 @@ func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) 
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	sg.FolderID = folderID
 	return sg, nil
@@ -776,12 +776,12 @@ func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.GatewayRecord, 
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return g, nil
 }
 
-func (r *GatewayRepo) List(_ context.Context, f ports.GatewayFilter, _ ports.Pagination) ([]*domain.GatewayRecord, string, error) {
+func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagination) ([]*domain.GatewayRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []*domain.GatewayRecord
@@ -810,7 +810,7 @@ func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*domain.Gate
 	defer r.mu.Unlock()
 	existing, ok := r.data[g.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.Gateway = *g
 	return existing, nil
@@ -828,7 +828,7 @@ func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	g.FolderID = folderID
 	return g, nil
@@ -852,12 +852,12 @@ func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.Private
 	defer r.mu.Unlock()
 	p, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	return p, nil
 }
 
-func (r *PrivateEndpointRepo) List(_ context.Context, f ports.PrivateEndpointFilter, _ ports.Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
+func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilter, _ repo.Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var out []*domain.PrivateEndpointRecord
@@ -886,7 +886,7 @@ func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoin
 	defer r.mu.Unlock()
 	existing, ok := r.data[p.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.PrivateEndpoint = *p
 	return existing, nil
@@ -926,7 +926,7 @@ func (m *ZoneRegistry) Get(_ context.Context, id string) (*domain.Zone, error) {
 			return &domain.Zone{ID: id}, nil
 		}
 	}
-	return nil, ports.ErrNotFound
+	return nil, repo.ErrNotFound
 }
 
 func (m *ZoneRegistry) ListIDs(_ context.Context) ([]string, error) {
@@ -1059,14 +1059,14 @@ func AwaitAllOpsDone(t TestingT, r *OpsRepo) {
 
 // Compile-time проверки соответствия port-интерфейсам.
 var (
-	_ ports.NetworkRepo         = (*NetworkRepo)(nil)
-	_ ports.SubnetRepo          = (*SubnetRepo)(nil)
-	_ ports.AddressRepo         = (*AddressRepo)(nil)
-	_ ports.RouteTableRepo      = (*RouteTableRepo)(nil)
-	_ ports.SecurityGroupRepo   = (*SecurityGroupRepo)(nil)
-	_ ports.GatewayRepo         = (*GatewayRepo)(nil)
-	_ ports.PrivateEndpointRepo = (*PrivateEndpointRepo)(nil)
-	_ ports.FolderClient        = (*FolderClient)(nil)
-	_ ports.ZoneRegistry        = (*ZoneRegistry)(nil)
-	_ operations.Repo           = (*OpsRepo)(nil)
+	_ repo.NetworkRepoIface         = (*NetworkRepo)(nil)
+	_ repo.SubnetRepoIface          = (*SubnetRepo)(nil)
+	_ repo.AddressRepoIface         = (*AddressRepo)(nil)
+	_ repo.RouteTableRepoIface      = (*RouteTableRepo)(nil)
+	_ repo.SecurityGroupRepoIface   = (*SecurityGroupRepo)(nil)
+	_ repo.GatewayRepoIface         = (*GatewayRepo)(nil)
+	_ repo.PrivateEndpointRepoIface = (*PrivateEndpointRepo)(nil)
+	_ repo.FolderClient             = (*FolderClient)(nil)
+	_ repo.ZoneRegistry             = (*ZoneRegistry)(nil)
+	_ operations.Repo               = (*OpsRepo)(nil)
 )

@@ -1,4 +1,4 @@
-package type2pb_test
+package toproto_test
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// blank-import регистрирует трансферы Network + time.
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 )
 
 // Wave 2 pilot (KAC-99/KAC-94): убеждаемся, что dto.Transfer работает для

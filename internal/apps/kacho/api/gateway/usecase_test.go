@@ -14,7 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты Gateway use-case'ов и handler'а. Wave 3b (KAC-94): сюда переехали
@@ -22,9 +22,9 @@ import (
 // GatewayToProto_*}` и `internal/service/coverage2_test.go::Test{GatewayService_*}`.
 
 func makeHandler(t *testing.T,
-	gr *portmock.GatewayRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	gr *repomock.GatewayRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateGatewayUseCase(gr, fc, or)
@@ -37,11 +37,11 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, move, get, list, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *portmock.GatewayRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.GatewayRepo) {
 	t.Helper()
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, gr, or, fc), or, gr
 }
 
@@ -101,9 +101,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level ----
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &portmock.FolderClient{OK: true}, or)
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: true}, or)
 
 	// folder_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{Name: "gw1", GatewayType: domain.GatewayTypeSharedEgress}})
@@ -132,9 +132,9 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 }
 
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &portmock.FolderClient{OK: false}, or)
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: false}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
 		FolderID:    "f1",
@@ -147,9 +147,9 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &portmock.FolderClient{OK: true}, or)
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
 		FolderID:    "f1",
@@ -160,13 +160,13 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteGatewayUseCase(portmock.NewGatewayRepo(), portmock.NewOpsRepo())
+	uc := NewDeleteGatewayUseCase(repomock.NewGatewayRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -174,7 +174,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveGatewayUseCase(portmock.NewGatewayRepo(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveGatewayUseCase(repomock.NewGatewayRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -184,7 +184,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListGatewaysUseCase(portmock.NewGatewayRepo())
+	uc := NewListGatewaysUseCase(repomock.NewGatewayRepo())
 	_, _, err := uc.Execute(context.Background(), GatewayFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -193,7 +193,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 
 func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
 	// История операций должна оставаться доступной после Delete.
-	uc := NewListOperationsUseCase(portmock.NewOpsRepo())
+	uc := NewListOperationsUseCase(repomock.NewOpsRepo())
 	ops, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixGateway), Pagination{})
 	assert.NoError(t, err)
 	assert.Empty(t, ops)
@@ -210,7 +210,7 @@ func TestHandler_Create_OK(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
-	saved := portmock.AwaitOpDone(t, or, op.Id)
+	saved := repomock.AwaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 }
 
@@ -224,14 +224,14 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 		Gateway: &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
 	require.Len(t, resp.Gateways, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: resp.Gateways[0].Id})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 
@@ -248,7 +248,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		Gateway: &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
 	require.NotEmpty(t, resp.Gateways)
@@ -259,7 +259,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, updOp.Id)
+	repomock.AwaitOpDone(t, or, updOp.Id)
 
 	got, _ := h.Get(context.Background(), &vpcv1.GetGatewayRequest{GatewayId: gwID})
 	assert.Equal(t, "gw-upd", got.Name)
@@ -269,16 +269,16 @@ func TestHandler_FullFlow(t *testing.T) {
 
 	moveOp, err := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, moveOp.Id)
+	repomock.AwaitOpDone(t, or, moveOp.Id)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: gwID})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, delOp.Id)
+	repomock.AwaitOpDone(t, or, delOp.Id)
 }
 
 func TestUpdateUseCase_BadName(t *testing.T) {
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
 	uc := NewUpdateGatewayUseCase(gr, or)
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		GatewayID:  ids.NewID(ids.PrefixGateway),
@@ -291,8 +291,8 @@ func TestUpdateUseCase_BadName(t *testing.T) {
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	gr := portmock.NewGatewayRepo()
-	or := portmock.NewOpsRepo()
+	gr := repomock.NewGatewayRepo()
+	or := repomock.NewOpsRepo()
 	uc := NewUpdateGatewayUseCase(gr, or)
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		GatewayID:  ids.NewID(ids.PrefixGateway),

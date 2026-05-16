@@ -12,17 +12,16 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // Subnet — type-alias на domain.SubnetRecord (repo-entity с DB-managed
 // CreatedAt). Имя `repo.Subnet` сохранено для читаемости call-site'ов
 // (`*repo.Subnet` в service/handler-коде), а сама структура объявлена в
-// `domain` чтобы её мог типизировать ещё и `internal/ports` без import-cycle.
+// `domain` чтобы её мог типизировать ещё и `internal/repo` без import-cycle.
 // Wave 2 batch A (KAC-94), parity с repo.Network.
 type Subnet = domain.SubnetRecord
 
-// SubnetRepo — реализация ports.SubnetRepo поверх pgxpool.
+// SubnetRepo — реализация SubnetRepoIface поверх pgxpool.
 type SubnetRepo struct {
 	pool *pgxpool.Pool
 }
@@ -44,7 +43,7 @@ func (r *SubnetRepo) Get(ctx context.Context, id string) (*Subnet, error) {
 	return s, nil
 }
 
-func (r *SubnetRepo) List(ctx context.Context, f ports.SubnetFilter, p ports.Pagination) ([]*Subnet, string, error) {
+func (r *SubnetRepo) List(ctx context.Context, f SubnetFilter, p Pagination) ([]*Subnet, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -140,7 +139,7 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*Subnet, err
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -165,13 +164,13 @@ func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*Subnet, err
 		// "Subnet CIDRs can not overlap"). См. YC-DIFF-CIDR-OVERLAP-CODE.md
 		// и YC-DIFF-CIDR-ERROR-SHAPE.md (text — verbatim YC).
 		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap",
-			ports.ErrFailedPrecondition)
+			ErrFailedPrecondition)
 	}
 	if err != nil {
 		return nil, wrapPgErr(err, "Subnet", string(s.Name))
 	}
 	if err := emitVPC(ctx, tx, "Subnet", result.ID, "CREATED", subnetPayload(result)); err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", string(s.Name))
@@ -192,7 +191,7 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*Subnet, err
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -214,7 +213,7 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*Subnet, err
 		return nil, wrapPgErr(err, "Subnet", s.ID)
 	}
 	if err := emitVPC(ctx, tx, "Subnet", result.ID, "UPDATED", subnetPayload(result)); err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", s.ID)
@@ -229,7 +228,7 @@ func (r *SubnetRepo) Update(ctx context.Context, s *domain.Subnet) (*Subnet, err
 func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*Subnet, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -240,13 +239,13 @@ func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4, v6 []stri
 	)
 	s, err := scanSubnet(row)
 	if isExclusionViolation(err) {
-		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", ports.ErrFailedPrecondition)
+		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", ErrFailedPrecondition)
 	}
 	if err != nil {
 		return nil, wrapPgErr(err, "Subnet", id)
 	}
 	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", id)
@@ -258,7 +257,7 @@ func (r *SubnetRepo) SetCidrBlocks(ctx context.Context, id string, v4, v6 []stri
 func (r *SubnetRepo) SetZoneID(ctx context.Context, id, zoneID string) (*Subnet, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -269,7 +268,7 @@ func (r *SubnetRepo) SetZoneID(ctx context.Context, id, zoneID string) (*Subnet,
 		return nil, wrapPgErr(err, "Subnet", id)
 	}
 	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", id)
@@ -283,7 +282,7 @@ func (r *SubnetRepo) SetZoneID(ctx context.Context, id, zoneID string) (*Subnet,
 // SubnetService.Delete ("Subnet has allocated internal addresses") — поэтому
 // предикат должен покрывать обе семьи (KAC-34: v6-only internal address тоже
 // блокирует удаление своей подсети, как и v4).
-func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p ports.Pagination) ([]*Address, string, error) {
+func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*Address, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -337,7 +336,7 @@ func (r *SubnetRepo) AddressesBySubnet(ctx context.Context, subnetID string, p p
 func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*Subnet, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -348,7 +347,7 @@ func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*Sub
 		return nil, wrapPgErr(err, "Subnet", id)
 	}
 	if err := emitVPC(ctx, tx, "Subnet", s.ID, "UPDATED", subnetPayload(s)); err != nil {
-		return nil, ports.ErrInternal
+		return nil, ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrapPgErr(err, "Subnet", id)
@@ -359,23 +358,23 @@ func (r *SubnetRepo) SetFolderID(ctx context.Context, id, folderID string) (*Sub
 func (r *SubnetRepo) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return ports.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	tag, err := tx.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {
 		if isFKViolation(err) {
-			return fmt.Errorf("%w: subnet has dependent resources", ports.ErrFailedPrecondition)
+			return fmt.Errorf("%w: subnet has dependent resources", ErrFailedPrecondition)
 		}
 		// 22P02 → InvalidArgument "invalid subnet id 'X'" (verbatim YC).
 		return wrapPgErr(err, "Subnet", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Subnet %s not found", ports.ErrNotFound, id)
+		return fmt.Errorf("%w: Subnet %s not found", ErrNotFound, id)
 	}
 	if err := emitVPC(ctx, tx, "Subnet", id, "DELETED", map[string]any{"id": id}); err != nil {
-		return ports.ErrInternal
+		return ErrInternal
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return wrapPgErr(err, "Subnet", id)

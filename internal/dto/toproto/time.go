@@ -1,12 +1,12 @@
-// Package type2pb — реализации DTO трансферов domain/repo → proto.
+// Package toproto — реализации DTO трансферов domain/repo → proto.
 // Skill evgeniy §3 C.4 (init-регистрация трансферов).
 //
 // Wave 2 (KAC-94): зарегистрированы все 8 VPC-ресурсов
 // (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
-// NetworkInterface) + time.Time → *timestamppb.Timestamp. Старый
-// `internal/protoconv/protoconv.go` сохранён только под Network legacy
-// helper, используемый одним handler_test (будет удалён в следующей фазе).
-package type2pb
+// NetworkInterface) + time.Time → *timestamppb.Timestamp. Wave 5 (KAC-94,
+// skill evgeniy §3 C.6): пакет `internal/protoconv` удалён, его последний
+// помощник `Network()` перенесён сюда (`network.go`).
+package toproto
 
 import (
 	"time"

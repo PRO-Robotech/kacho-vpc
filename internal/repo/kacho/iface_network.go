@@ -4,16 +4,16 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Type-aliases на value-объекты `internal/ports`. Каждый use-case-пакет уже
-// делает то же (`internal/apps/kacho/api/network/ports.go`) — мы повторяем
+// Type-aliases на value-объекты `internal/repo`. Каждый use-case-пакет уже
+// делает то же (`internal/apps/kacho/api/network/repo.go`) — мы повторяем
 // чтобы pilot-CQRS-interfaces не тянули зависимость от use-case-пакетов
 // (cycles). Иначе пришлось бы переносить Pagination / *Filter сюда.
 type (
-	Pagination    = ports.Pagination
-	NetworkFilter = ports.NetworkFilter
+	Pagination    = repo.Pagination
+	NetworkFilter = repo.NetworkFilter
 )
 
 // NetworkReaderIface — read-операции над Network в read-only TX-области.

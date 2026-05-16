@@ -11,7 +11,6 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
@@ -19,7 +18,7 @@ import (
 // UpdateRules calls against the same SecurityGroup row and asserts the
 // optimistic-concurrency guard (xmin::text WHERE-clause) holds: at most one
 // UPDATE lands per pair (never a silent lost-update), and any losing call gets
-// the conflict error contract (ports.ErrFailedPrecondition).
+// the conflict error contract (repo.ErrFailedPrecondition).
 //
 // Run for many iterations to make the race fire reliably; assert globally that
 // a conflict was observed at least once (otherwise the OCC path is dead code).
@@ -102,7 +101,7 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 			if errs[1] != nil {
 				loser = errs[1]
 			}
-			require.ErrorIs(t, loser, ports.ErrFailedPrecondition,
+			require.ErrorIs(t, loser, repo.ErrFailedPrecondition,
 				"the losing concurrent UpdateRules must return the OCC conflict error")
 		default:
 			t.Fatalf("iter %d: both UpdateRules failed (errA=%v, errB=%v) — at least one must always win", i, errs[0], errs[1])

@@ -1,12 +1,12 @@
-package ports
+package repo
 
 import "errors"
 
 // Sentinel-ошибки слоя service/repo. Живут здесь (в leaf-пакете ports), а не в
-// `internal/service`, чтобы общий test-helper `internal/ports/portmock` мог их
+// `internal/service`, чтобы общий test-helper `internal/repo/repomock` мог их
 // возвращать без зависимости от `internal/service` (иначе — import-cycle с
 // white-box service-тестами). `internal/service` ре-экспортирует их через
-// type-alias'ы (`var ErrNotFound = ports.ErrNotFound` — тот же error-value, так
+// type-alias'ы (`var ErrNotFound = ErrNotFound` — тот же error-value, так
 // что `errors.Is` работает прозрачно).
 
 // ErrNotFound возвращается, когда ресурс не найден.

@@ -14,8 +14,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты NetworkInterface use-case'ов и handler'а. Wave 3 (KAC-94).
@@ -46,7 +46,7 @@ func (r *niRepoFake) Get(_ context.Context, id string) (*domain.NetworkInterface
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *n
 	return &cp, nil
@@ -84,7 +84,7 @@ func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName st
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if refID == "" {
 		refType, refName = "", ""
@@ -92,7 +92,7 @@ func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName st
 	// CAS-семантика: если NIC уже attached к другому owner-у — FailedPrecondition
 	// (зеркало repo-уровня, миграция 0016 / KAC-52).
 	if refID != "" && n.UsedByID != "" && n.UsedByID != refID {
-		return nil, ports.ErrFailedPrecondition
+		return nil, repo.ErrFailedPrecondition
 	}
 	n.UsedByType, n.UsedByID, n.UsedByName, n.Status = refType, refID, refName, st
 	return n, nil
@@ -102,7 +102,7 @@ func (r *niRepoFake) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.data[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.data, id)
 	return nil
@@ -112,10 +112,10 @@ func (r *niRepoFake) Delete(_ context.Context, id string) error {
 
 func makeHandler(t *testing.T,
 	nr *niRepoFake,
-	sr *portmock.SubnetRepo,
-	ar *portmock.AddressRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	sr *repomock.SubnetRepo,
+	ar *repomock.AddressRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateNetworkInterfaceUseCase(nr, sr, ar, fc, or)
@@ -129,13 +129,13 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, get, list, attach, detach, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *niRepoFake, *portmock.SubnetRepo, *portmock.AddressRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *niRepoFake, *repomock.SubnetRepo, *repomock.AddressRepo) {
 	t.Helper()
 	nr := newNIRepoFake()
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, nr, sr, ar, or, fc), or, nr, sr, ar
 }
 
@@ -210,10 +210,10 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 
 func TestCreateUseCase_FolderRequired(t *testing.T) {
 	nr := newNIRepoFake()
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &portmock.FolderClient{OK: true}, or)
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{Name: "nic"}})
 	require.Error(t, err)
@@ -223,10 +223,10 @@ func TestCreateUseCase_FolderRequired(t *testing.T) {
 
 func TestCreateUseCase_SubnetRequired(t *testing.T) {
 	nr := newNIRepoFake()
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &portmock.FolderClient{OK: true}, or)
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{FolderID: "f1", Name: "nic"}})
 	require.Error(t, err)
@@ -236,10 +236,10 @@ func TestCreateUseCase_SubnetRequired(t *testing.T) {
 
 func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	nr := newNIRepoFake()
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &portmock.FolderClient{OK: true}, or)
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID:     "f1",
@@ -254,13 +254,13 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 
 func TestCreateUseCase_OK(t *testing.T) {
 	nr := newNIRepoFake()
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
 	// preset subnet
 	_, err := sr.Insert(context.Background(), &domain.Subnet{ID: "e9bsub1", FolderID: "f1", Name: "sn"})
 	require.NoError(t, err)
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &portmock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID: "f1",
@@ -270,13 +270,13 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestUpdateUseCase_RequiresID(t *testing.T) {
-	uc := NewUpdateNetworkInterfaceUseCase(newNIRepoFake(), portmock.NewAddressRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateNetworkInterfaceUseCase(newNIRepoFake(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{NetworkInterfaceID: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -284,7 +284,7 @@ func TestUpdateUseCase_RequiresID(t *testing.T) {
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteNetworkInterfaceUseCase(newNIRepoFake(), portmock.NewAddressRepo(), portmock.NewOpsRepo())
+	uc := NewDeleteNetworkInterfaceUseCase(newNIRepoFake(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -300,7 +300,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestAttachUseCase_RequiresInstance(t *testing.T) {
-	uc := NewAttachToInstanceUseCase(newNIRepoFake(), portmock.NewOpsRepo())
+	uc := NewAttachToInstanceUseCase(newNIRepoFake(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), "", "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -309,7 +309,7 @@ func TestAttachUseCase_RequiresInstance(t *testing.T) {
 
 func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 	nr := newNIRepoFake()
-	or := portmock.NewOpsRepo()
+	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
 	nr.data[nicID] = &domain.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
@@ -324,14 +324,14 @@ func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 	uc := NewAttachToInstanceUseCase(nr, or)
 	op, err := uc.Execute(context.Background(), nicID, "my-instance", "0")
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.NotNil(t, saved.Error, "should fail because NIC already attached to other-instance")
 	assert.Equal(t, int32(codes.FailedPrecondition), saved.Error.Code)
 }
 
 func TestAttachUseCase_OK(t *testing.T) {
 	nr := newNIRepoFake()
-	or := portmock.NewOpsRepo()
+	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
 	nr.data[nicID] = &domain.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
@@ -344,14 +344,14 @@ func TestAttachUseCase_OK(t *testing.T) {
 	uc := NewAttachToInstanceUseCase(nr, or)
 	op, err := uc.Execute(context.Background(), nicID, "my-instance", "0")
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 }
 
 func TestDetachUseCase_OK(t *testing.T) {
 	nr := newNIRepoFake()
-	or := portmock.NewOpsRepo()
+	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
 	nr.data[nicID] = &domain.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
@@ -366,7 +366,7 @@ func TestDetachUseCase_OK(t *testing.T) {
 	uc := NewDetachFromInstanceUseCase(nr, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.Nil(t, saved.Error)
 	// После detach NIC должен быть available и без owner.
 	got, err := nr.Get(context.Background(), nicID)
@@ -379,8 +379,8 @@ func TestDetachUseCase_OK(t *testing.T) {
 
 func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 	nr := newNIRepoFake()
-	or := portmock.NewOpsRepo()
-	ar := portmock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
 	nr.data[nicID] = &domain.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
@@ -395,15 +395,15 @@ func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 	uc := NewDeleteNetworkInterfaceUseCase(nr, ar, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.NotNil(t, saved.Error)
 	assert.Equal(t, int32(codes.FailedPrecondition), saved.Error.Code)
 }
 
 func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
 	nr := newNIRepoFake()
-	or := portmock.NewOpsRepo()
-	ar := portmock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
 	nr.data[nicID] = &domain.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
@@ -416,7 +416,7 @@ func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
 	uc := NewDeleteNetworkInterfaceUseCase(nr, ar, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 	var empty emptypb.Empty

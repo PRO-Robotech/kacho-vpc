@@ -14,7 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты RouteTable use-case'ов и handler'а. Wave 3b (KAC-94): сюда переехали
@@ -22,7 +22,7 @@ import (
 // RouteTableToProto_*}` и `internal/service/route_table_test.go`,
 // `internal/service/coverage2_test.go::TestRouteTableService_*`.
 
-func makeNetworkRecord(t *testing.T, nr *portmock.NetworkRepo) *domain.NetworkRecord {
+func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *domain.NetworkRecord {
 	t.Helper()
 	netID := ids.NewID(ids.PrefixNetwork)
 	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
@@ -31,10 +31,10 @@ func makeNetworkRecord(t *testing.T, nr *portmock.NetworkRepo) *domain.NetworkRe
 }
 
 func makeHandler(t *testing.T,
-	rtr *portmock.RouteTableRepo,
-	nr *portmock.NetworkRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	rtr *repomock.RouteTableRepo,
+	nr *repomock.NetworkRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateRouteTableUseCase(rtr, nr, fc, or)
@@ -47,12 +47,12 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, move, get, list, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *portmock.RouteTableRepo, *portmock.NetworkRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.RouteTableRepo, *repomock.NetworkRepo) {
 	t.Helper()
-	rtr := portmock.NewRouteTableRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	rtr := repomock.NewRouteTableRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, rtr, nr, or, fc), or, rtr, nr
 }
 
@@ -112,10 +112,10 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level ----
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
-	rtr := portmock.NewRouteTableRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateRouteTableUseCase(rtr, nr, &portmock.FolderClient{OK: true}, or)
+	rtr := repomock.NewRouteTableRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateRouteTableUseCase(rtr, nr, &repomock.FolderClient{OK: true}, or)
 
 	// network_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{FolderID: "f1", Name: "rt1"}})
@@ -125,11 +125,11 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	rtr := portmock.NewRouteTableRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
+	rtr := repomock.NewRouteTableRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
 	net := makeNetworkRecord(t, nr)
-	uc := NewCreateRouteTableUseCase(rtr, nr, &portmock.FolderClient{OK: true}, or)
+	uc := NewCreateRouteTableUseCase(rtr, nr, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
 		FolderID:  "f1",
@@ -142,17 +142,17 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestCreateUseCase_BadStaticRoute(t *testing.T) {
-	rtr := portmock.NewRouteTableRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
+	rtr := repomock.NewRouteTableRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
 	net := makeNetworkRecord(t, nr)
-	uc := NewCreateRouteTableUseCase(rtr, nr, &portmock.FolderClient{OK: true}, or)
+	uc := NewCreateRouteTableUseCase(rtr, nr, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
 		FolderID:  "f1",
@@ -168,11 +168,11 @@ func TestCreateUseCase_BadStaticRoute(t *testing.T) {
 }
 
 func TestUpdateUseCase_StaticRoutes(t *testing.T) {
-	rtr := portmock.NewRouteTableRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
+	rtr := repomock.NewRouteTableRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
 	net := makeNetworkRecord(t, nr)
-	createUC := NewCreateRouteTableUseCase(rtr, nr, &portmock.FolderClient{OK: true}, or)
+	createUC := NewCreateRouteTableUseCase(rtr, nr, &repomock.FolderClient{OK: true}, or)
 	updateUC := NewUpdateRouteTableUseCase(rtr, or)
 	getUC := NewGetRouteTableUseCase(rtr)
 	listUC := NewListRouteTablesUseCase(rtr)
@@ -180,7 +180,7 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 	createOp, _ := createUC.Execute(context.Background(), CreateInput{RouteTable: domain.RouteTable{
 		FolderID: "f1", NetworkID: net.ID, Name: domain.RcNameVPC("rt1"),
 	}})
-	portmock.AwaitOpDone(t, or, createOp.ID)
+	repomock.AwaitOpDone(t, or, createOp.ID)
 
 	rts, _, _ := listUC.Execute(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, rts, 1)
@@ -197,7 +197,7 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 		UpdateMask: []string{"static_routes"},
 	})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, updOp.ID)
+	saved := repomock.AwaitOpDone(t, or, updOp.ID)
 	assert.True(t, saved.Done)
 
 	rt, _ := getUC.Execute(context.Background(), rtID)
@@ -206,7 +206,7 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	uc := NewUpdateRouteTableUseCase(portmock.NewRouteTableRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateRouteTableUseCase(repomock.NewRouteTableRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		RouteTableID: ids.NewID(ids.PrefixRouteTable),
 		UpdateMask:   []string{"unknown_field"},
@@ -215,7 +215,7 @@ func TestUpdateUseCase_UnknownMask(t *testing.T) {
 }
 
 func TestUpdateUseCase_ImmutableNetworkID(t *testing.T) {
-	uc := NewUpdateRouteTableUseCase(portmock.NewRouteTableRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateRouteTableUseCase(repomock.NewRouteTableRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		RouteTableID: ids.NewID(ids.PrefixRouteTable),
 		UpdateMask:   []string{"network_id"},
@@ -226,7 +226,7 @@ func TestUpdateUseCase_ImmutableNetworkID(t *testing.T) {
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteRouteTableUseCase(portmock.NewRouteTableRepo(), portmock.NewOpsRepo())
+	uc := NewDeleteRouteTableUseCase(repomock.NewRouteTableRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -234,7 +234,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveRouteTableUseCase(portmock.NewRouteTableRepo(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveRouteTableUseCase(repomock.NewRouteTableRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -244,7 +244,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListRouteTablesUseCase(portmock.NewRouteTableRepo())
+	uc := NewListRouteTablesUseCase(repomock.NewRouteTableRepo())
 	_, _, err := uc.Execute(context.Background(), RouteTableFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -261,7 +261,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		FolderId: "f1", Name: "rt", NetworkId: net.ID,
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{FolderId: "f1"})
 	require.Len(t, resp.RouteTables, 1)
@@ -275,18 +275,18 @@ func TestHandler_FullFlow(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, updOp.Id)
+	repomock.AwaitOpDone(t, or, updOp.Id)
 
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: rtID})
 	require.NoError(t, err)
 
 	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, moveOp.Id)
+	repomock.AwaitOpDone(t, or, moveOp.Id)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteRouteTableRequest{RouteTableId: rtID})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 	var empty emptypb.Empty

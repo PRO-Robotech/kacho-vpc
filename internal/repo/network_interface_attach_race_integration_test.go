@@ -12,11 +12,10 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// KAC-52 — NIC attach race. До этой правки ports.AttachToInstance делал
+// KAC-52 — NIC attach race. До этой правки AttachToInstance делал
 // software TOCTOU (Get → check used_by_id=="" → unconditional UPDATE) и при
 // concurrent Attach к одному NIC второй writer молча перезаписывал ownership
 // (инцидент 2026-05-14: два Compute.Instance.Create указали один
@@ -25,7 +24,7 @@ import (
 //
 // Защита: repo.SetUsedBy в attach-режиме делает атомарный single-statement
 // CAS — `UPDATE … WHERE id=$1 AND (used_by_id = ” OR used_by_id = $new)`,
-// 0 rows из RETURNING → ports.ErrFailedPrecondition. Single-statement
+// 0 rows из RETURNING → repo.ErrFailedPrecondition. Single-statement
 // UPDATE на одной row защищён row-level lock-ом Postgres: параллельный
 // writer ждёт commit-а первого, видит обновлённый row, CAS не matches.
 // Никакого UNIQUE-индекса не нужно — миграция 0016 пыталась добавить такой
@@ -33,7 +32,7 @@ import (
 //
 // Этот тест запускает N goroutines, каждая пытается attach один и тот же NIC к
 // своему instance_id. Инвариант: **ровно одна** транзакция успешна, остальные
-// получают ErrFailedPrecondition (CAS не matches → 0 RETURNING-rows). В БД
+// получают repo.ErrFailedPrecondition (CAS не matches → 0 RETURNING-rows). В БД
 // used_by_id равен победителю.
 func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	if testing.Short() {
@@ -99,7 +98,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 				winnerOwner = owner
 				muWinner.Unlock()
 				successes.Add(1)
-			case errors.Is(err, ports.ErrFailedPrecondition):
+			case errors.Is(err, repo.ErrFailedPrecondition):
 				conflicts.Add(1)
 			default:
 				require.Fail(t, "unexpected error", "owner=%s err=%v", owner, err)
@@ -110,7 +109,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, int32(1), successes.Load(), "ровно один attach должен выиграть гонку")
-	require.Equal(t, int32(N-1), conflicts.Load(), "остальные attach получают ErrFailedPrecondition")
+	require.Equal(t, int32(N-1), conflicts.Load(), "остальные attach получают repo.ErrFailedPrecondition")
 
 	// В БД ownership принадлежит победителю.
 	got, err := nicRepo.Get(ctx, nic.ID)
@@ -167,8 +166,8 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 	// Другой owner должен fail-ить.
 	_, err = nicRepo.SetUsedBy(ctx, nic.ID, "compute_instance", "inst-other", "", domain.NIStatusActive)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ports.ErrFailedPrecondition),
-		"attach к занятому NIC чужим owner-ом → ErrFailedPrecondition, got %v", err)
+	require.True(t, errors.Is(err, repo.ErrFailedPrecondition),
+		"attach к занятому NIC чужим owner-ом → repo.ErrFailedPrecondition, got %v", err)
 }
 
 // KAC-52 — Detach идемпотент: повторный detach уже-свободного NIC — no-op

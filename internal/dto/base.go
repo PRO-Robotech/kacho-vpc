@@ -1,11 +1,11 @@
 // Package dto — table-driven generic-based DTO трансферы. Skill evgeniy §3
 // (C.1–C.6) и §11 AP-11: запрет на «прямые маппинг-функции» вроде
-// `protoconv.Network(d)` без регистрации в DTO-реестре.
+// `toproto.Network(d)` без регистрации в DTO-реестре.
 //
 // Структура:
 //   - dto/base.go (этот файл): generic Interface, RegTransfer / FindTransfer,
 //     FromTo helper, Transfer entry-point с type-set generic constraint.
-//   - dto/type2pb/*.go: реализации Interface[domain.X, *vpcv1.X] + init()-
+//   - dto/toproto/*.go: реализации Interface[domain.X, *vpcv1.X] + init()-
 //     регистрация в реестре.
 //
 // Use-case в caller-site:
@@ -16,9 +16,10 @@
 //
 // Wave 2 (KAC-94): trans-реестр содержит все 8 VPC-ресурсов
 // (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
-// NetworkInterface) + time.Time — см. dto/type2pb/. `protoconv.X(...)`
-// удалены, остался только legacy helper `protoconv.Network` для одного
-// handler_test (будет удалён в следующей фазе).
+// NetworkInterface) + time.Time — см. dto/toproto/. Wave 5 (KAC-94,
+// skill evgeniy §3 C.6): пакет `internal/protoconv` удалён, его последний
+// helper `Network()` перенесён в `dto/toproto/network.go` (используется
+// одним handler_test, будет удалён в следующей фазе).
 package dto
 
 import (
@@ -28,7 +29,7 @@ import (
 )
 
 // Interface — generic transfer-функтор F → T. Реализация живёт в подпакете
-// dto/type2pb/ (или dto/pb2type/) и регистрируется в реестре через
+// dto/toproto/ (или dto/pb2type/) и регистрируется в реестре через
 // RegTransfer.
 type Interface[F any, T any] interface {
 	Transfer(F) (T, error)
@@ -137,7 +138,7 @@ type Transferrable interface {
 // Skill evgeniy §3 C.5: `Transfer[v types2ProtoVariants]` — generic constraint
 // над type-set допустимых пар. На pilot мы оставляем constraint открытым
 // (`Transferrable`) ради экономии boilerplate; точный набор пар (sum-type)
-// будет зафиксирован в `dto/type2pb/dtos.go` когда мигрируют все 8 ресурсов.
+// будет зафиксирован в `dto/toproto/dtos.go` когда мигрируют все 8 ресурсов.
 func Transfer[V Transferrable](dto V) error {
 	return dto.Perform()
 }

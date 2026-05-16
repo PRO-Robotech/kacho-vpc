@@ -3,7 +3,7 @@ package domain
 import "time"
 
 // Repo-entities — структуры, **физически живущие в `internal/repo/*`**, но
-// объявленные здесь, чтобы их мог типизировать ещё и `internal/ports` без
+// объявленные здесь, чтобы их мог типизировать ещё и `internal/repo` без
 // import-cycle `ports → repo`. Каждая repo-entity = domain-сущность + DB-managed
 // поля (`CreatedAt` ; в будущем — `UpdatedAt`, `Generation`, `Revision`).
 //

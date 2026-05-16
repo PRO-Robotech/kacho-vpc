@@ -23,7 +23,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // AllocateUseCase — internal-only IPAM allocate (4 family-варианта).
@@ -246,7 +246,7 @@ func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID stri
 	}
 	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addressID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted", pool.ID)
 		}
@@ -291,13 +291,13 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 
 	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted (ipv6)", pool.ID)
 		}
-		if errors.Is(err, ports.ErrFailedPrecondition) {
+		if errors.Is(err, repo.ErrFailedPrecondition) {
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"%s", strings.TrimPrefix(err.Error(), ports.ErrFailedPrecondition.Error()+": "))
+				"%s", strings.TrimPrefix(err.Error(), repo.ErrFailedPrecondition.Error()+": "))
 		}
 		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
 			"pool_id", pool.ID, "address_id", addressID, "err", err)

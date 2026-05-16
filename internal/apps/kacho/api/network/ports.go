@@ -20,19 +20,19 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Pagination, *Filter — пере-используем единые value-объекты `internal/ports`
+// Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
 // (alias'ы, не копии). Иначе пришлось бы дублировать структуры или гонять между
 // пакетами через двойную конверсию.
 type (
-	Pagination          = ports.Pagination
-	NetworkFilter       = ports.NetworkFilter
-	SubnetFilter        = ports.SubnetFilter
-	RouteTableFilter    = ports.RouteTableFilter
-	SecurityGroupFilter = ports.SecurityGroupFilter
+	Pagination          = repo.Pagination
+	NetworkFilter       = repo.NetworkFilter
+	SubnetFilter        = repo.SubnetFilter
+	RouteTableFilter    = repo.RouteTableFilter
+	SecurityGroupFilter = repo.SecurityGroupFilter
 )
 
 // Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код

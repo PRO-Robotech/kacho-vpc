@@ -10,11 +10,11 @@
 // handler'ом (B.4 — локальность), repo-операции делегируются через **локальные**
 // port-интерфейсы (ниже).
 //
-// Локальные интерфейсы (а не type-alias на `internal/ports.SubnetRepo`) — это
+// Локальные интерфейсы (а не type-alias на `internal/repo.SubnetRepoIface`) — это
 // сознательный выбор по skill §6 G.2-G.3: каждый use-case-пакет описывает только
 // то, что РЕАЛЬНО использует. Адаптерами выступают существующие
-// `internal/repo/subnet_repo.go` и `internal/ports/portmock` — они уже реализуют
-// `internal/ports.SubnetRepo`, который ⊇ локальному интерфейсу, поэтому
+// `internal/repo/subnet_repo.go` и `internal/repo/repomock` — они уже реализуют
+// `internal/repo.SubnetRepoIface`, который ⊇ локальному интерфейсу, поэтому
 // Go-типизация работает без shim'ов.
 package subnet
 
@@ -22,14 +22,14 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination, *Filter — пере-используем единые value-объекты `internal/ports`
+// Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
 // (alias'ы, не копии).
 type (
-	Pagination   = ports.Pagination
-	SubnetFilter = ports.SubnetFilter
+	Pagination   = repo.Pagination
+	SubnetFilter = repo.SubnetFilter
 )
 
 // SubnetRepo — то, что use-case'ам Subnet нужно от репозитория подсетей.

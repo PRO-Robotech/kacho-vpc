@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты SecurityGroup use-case'ов и handler'а. Wave 3 (KAC-94): сюда переехали
@@ -20,18 +20,18 @@ import (
 // и `coverage2_test.go::TestSecurityGroupHandler_*` (теперь — против
 // `*securitygroup.Handler`).
 //
-// Mock-port'ы — переиспользуем `internal/ports/portmock` (уже реализует
-// `internal/ports.SecurityGroupRepo`, который ⊇ нашему локальному
+// Mock-port'ы — переиспользуем `internal/repo/repomock` (уже реализует
+// `internal/repo.SecurityGroupRepoIface`, который ⊇ нашему локальному
 // SecurityGroupRepo).
 
 // ---- builders ----
 
 func makeHandler(
 	t *testing.T,
-	sgr *portmock.SecurityGroupRepo,
-	nr *portmock.NetworkRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	sgr *repomock.SecurityGroupRepo,
+	nr *repomock.NetworkRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateSecurityGroupUseCase(sgr, nr, fc, or)
@@ -47,12 +47,12 @@ func makeHandler(
 }
 
 // minimalHandler — wiring с дефолтными mock'ами; folder=true.
-func minimalHandler(t *testing.T) (*Handler, *portmock.OpsRepo, *portmock.SecurityGroupRepo) {
+func minimalHandler(t *testing.T) (*Handler, *repomock.OpsRepo, *repomock.SecurityGroupRepo) {
 	t.Helper()
-	sgr := portmock.NewSecurityGroupRepo()
-	nr := portmock.NewNetworkRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: true}
+	sgr := repomock.NewSecurityGroupRepo()
+	nr := repomock.NewNetworkRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: true}
 	return makeHandler(t, sgr, nr, or, fc), or, sgr
 }
 
@@ -141,9 +141,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level (без handler'а) ----
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
-	sgr := portmock.NewSecurityGroupRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, portmock.NewNetworkRepo(), &portmock.FolderClient{OK: true}, or)
+	sgr := repomock.NewSecurityGroupRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
 
 	// folder_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{Name: "test"}})
@@ -162,9 +162,9 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 }
 
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
-	sgr := portmock.NewSecurityGroupRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, portmock.NewNetworkRepo(), &portmock.FolderClient{OK: false}, or)
+	sgr := repomock.NewSecurityGroupRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: false}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{
 		FolderID: "f1",
@@ -177,9 +177,9 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 
 func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
 	// network_id пустой → folder-level / unbound SG.
-	sgr := portmock.NewSecurityGroupRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, portmock.NewNetworkRepo(), &portmock.FolderClient{OK: true}, or)
+	sgr := repomock.NewSecurityGroupRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{SecurityGroup: domain.SecurityGroup{
 		FolderID:    "f1",
@@ -189,13 +189,13 @@ func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteSecurityGroupUseCase(portmock.NewSecurityGroupRepo(), portmock.NewOpsRepo())
+	uc := NewDeleteSecurityGroupUseCase(repomock.NewSecurityGroupRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -203,7 +203,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveSecurityGroupUseCase(portmock.NewSecurityGroupRepo(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveSecurityGroupUseCase(repomock.NewSecurityGroupRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -213,7 +213,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListSecurityGroupsUseCase(portmock.NewSecurityGroupRepo())
+	uc := NewListSecurityGroupsUseCase(repomock.NewSecurityGroupRepo())
 	_, _, err := uc.Execute(context.Background(), SecurityGroupFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -221,7 +221,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestUpdateRulesUseCase_InvalidArg(t *testing.T) {
-	uc := NewUpdateRulesUseCase(portmock.NewSecurityGroupRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateRulesUseCase(repomock.NewSecurityGroupRepo(), repomock.NewOpsRepo())
 	// security_group_id required (resource-id validation).
 	_, err := uc.Execute(context.Background(), UpdateRulesInput{SecurityGroupID: "bad"})
 	require.Error(t, err)
@@ -230,7 +230,7 @@ func TestUpdateRulesUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestUpdateRuleUseCase_InvalidArg(t *testing.T) {
-	uc := NewUpdateRuleUseCase(portmock.NewSecurityGroupRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateRuleUseCase(repomock.NewSecurityGroupRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateRuleInput{SecurityGroupID: "bad"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -244,7 +244,7 @@ func TestUpdateRuleUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestGetUseCase_InvalidArg(t *testing.T) {
-	uc := NewGetSecurityGroupUseCase(portmock.NewSecurityGroupRepo())
+	uc := NewGetSecurityGroupUseCase(repomock.NewSecurityGroupRepo())
 	_, err := uc.Execute(context.Background(), "bad-id")
 	require.Error(t, err)
 	st, _ := status.FromError(err)

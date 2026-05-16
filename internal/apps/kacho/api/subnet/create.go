@@ -14,7 +14,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreateInput — параметры для CreateSubnetUseCase.Execute. Использует
@@ -106,7 +106,7 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, in CreateInput) (*ope
 		return nil, err
 	}
 	if _, err := u.networkRead.Get(ctx, s.NetworkID); err != nil {
-		if errors.Is(err, ports.ErrNotFound) {
+		if errors.Is(err, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
 		}
 		return nil, mapRepoErr(err)

@@ -29,7 +29,7 @@ func (s stubFolderClient) GetCloudID(_ context.Context, folderID string) (string
 }
 
 // TestIntegration_IPAM_Cascade_FiveSteps wires real pgxpool + real repos against
-// the testcontainers Postgres and a stub FolderClient, then drives the 5-step
+// the testcontainers Postgres and a stub repo.FolderClient, then drives the 5-step
 // AddressPool resolve cascade end-to-end:
 //
 //	step 1 address_override -> step 2 network_default -> step 3 cloud-label-selector

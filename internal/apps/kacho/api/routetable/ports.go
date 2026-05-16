@@ -5,7 +5,7 @@
 // MoveRouteTableUseCase / GetRouteTableUseCase / ListRouteTablesUseCase / ListOperationsUseCase
 // плюс тонкий gRPC-handler.
 //
-// Локальные port-интерфейсы (а не type-alias на `internal/ports.RouteTableRepo`)
+// Локальные port-интерфейсы (а не type-alias на `internal/repo.RouteTableRepoIface`)
 // — skill §6 G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО
 // использует.
 package routetable
@@ -14,13 +14,13 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination, RouteTableFilter — пере-используем единые value-объекты `internal/ports`.
+// Pagination, RouteTableFilter — пере-используем единые value-объекты `internal/repo`.
 type (
-	Pagination       = ports.Pagination
-	RouteTableFilter = ports.RouteTableFilter
+	Pagination       = repo.Pagination
+	RouteTableFilter = repo.RouteTableFilter
 )
 
 // RouteTableRepo — то, что use-case'ам RouteTable нужно от репозитория RT.

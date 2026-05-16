@@ -22,7 +22,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -152,7 +152,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	if in.InternalSpec != nil && in.InternalSpec.SubnetID != "" {
 		if _, err := u.subnetReader.Get(ctx, in.InternalSpec.SubnetID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalSpec.SubnetID)
 			}
 			return nil, mapRepoErr(err)
@@ -160,7 +160,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	if in.InternalIpv6Spec != nil && in.InternalIpv6Spec.SubnetID != "" {
 		if _, err := u.subnetReader.Get(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
-			if errors.Is(err, ports.ErrNotFound) {
+			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalIpv6Spec.SubnetID)
 			}
 			return nil, mapRepoErr(err)
@@ -213,7 +213,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 func (u *CreateAddressUseCase) validateInternalIPInSubnet(ctx context.Context, subnetID, address string) error {
 	sub, err := u.subnetReader.Get(ctx, subnetID)
 	if err != nil {
-		if errors.Is(err, ports.ErrNotFound) {
+		if errors.Is(err, repo.ErrNotFound) {
 			// Subnet 404 — async; не нарушаем YC-DIFF-INVALID-PARENT-CODE.
 			return nil
 		}
@@ -612,7 +612,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *d
 
 	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addr.ID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted", pool.ID)
 		}
@@ -646,13 +646,13 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *d
 
 	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addr.ID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
-		if errors.Is(err, ports.ErrPoolExhausted) {
+		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
 				"address pool %s exhausted (ipv6)", pool.ID)
 		}
-		if errors.Is(err, ports.ErrFailedPrecondition) {
+		if errors.Is(err, repo.ErrFailedPrecondition) {
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"%s", strings.TrimPrefix(err.Error(), ports.ErrFailedPrecondition.Error()+": "))
+				"%s", strings.TrimPrefix(err.Error(), repo.ErrFailedPrecondition.Error()+": "))
 		}
 		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
 			"pool_id", pool.ID, "address_id", addr.ID, "err", err)
@@ -707,7 +707,7 @@ func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
 //     offset в [1, maxHosts].
 func pickRandomIPv4(cidr netip.Prefix) (string, error) {
 	if !cidr.Addr().Is4() {
-		return "", ports.ErrInvalidIPv4
+		return "", repo.ErrInvalidIPv4
 	}
 	bits := cidr.Bits()
 	hostBits := 32 - bits

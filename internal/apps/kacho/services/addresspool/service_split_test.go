@@ -37,8 +37,8 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // --------------------------------------------------------------------------
@@ -63,13 +63,13 @@ func (r *stubAddressPoolRepo) Get(_ context.Context, id string) (*domain.Address
 	defer r.mu.Unlock()
 	p, ok := r.pools[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *p
 	return &cp, nil
 }
 
-func (r *stubAddressPoolRepo) List(_ context.Context, _ ports.AddressPoolFilter, _ ports.Pagination) ([]*domain.AddressPool, string, error) {
+func (r *stubAddressPoolRepo) List(_ context.Context, _ repo.AddressPoolFilter, _ repo.Pagination) ([]*domain.AddressPool, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]*domain.AddressPool, 0, len(r.pools))
@@ -92,7 +92,7 @@ func (r *stubAddressPoolRepo) Update(_ context.Context, p *domain.AddressPool) (
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.pools[p.ID]; !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *p
 	r.pools[p.ID] = &cp
@@ -103,7 +103,7 @@ func (r *stubAddressPoolRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.pools[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	delete(r.pools, id)
 	return nil
@@ -118,7 +118,7 @@ func (r *stubAddressPoolRepo) GetDefaultForZone(_ context.Context, zoneID string
 			return &cp, nil
 		}
 	}
-	return nil, ports.ErrNotFound
+	return nil, repo.ErrNotFound
 }
 
 func (r *stubAddressPoolRepo) FindBySelectorMatch(_ context.Context, sel map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*domain.AddressPool, error) {
@@ -146,7 +146,7 @@ func (r *stubAddressPoolRepo) FindBySelectorMatch(_ context.Context, sel map[str
 		}
 	}
 	if len(out) == 0 {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -166,7 +166,7 @@ func (r *stubAddressPoolRepo) CountAddressesByPoolPerCIDR(_ context.Context, _ s
 	return nil, nil
 }
 
-func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ ports.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *stubAddressPoolRepo) ListAddressesByPool(_ context.Context, _ string, _ string, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
@@ -200,7 +200,7 @@ func (r *stubBindingRepo) GetNetworkDefault(_ context.Context, networkID string)
 	defer r.mu.Unlock()
 	p, ok := r.netDef[networkID]
 	if !ok {
-		return "", ports.ErrNotFound
+		return "", repo.ErrNotFound
 	}
 	return p, nil
 }
@@ -224,7 +224,7 @@ func (r *stubBindingRepo) GetAddressOverride(_ context.Context, addressID string
 	defer r.mu.Unlock()
 	p, ok := r.addrOver[addressID]
 	if !ok {
-		return "", ports.ErrNotFound
+		return "", repo.ErrNotFound
 	}
 	return p, nil
 }
@@ -260,7 +260,7 @@ func (r *stubCloudSelRepo) Get(_ context.Context, cloudID string) (*domain.Cloud
 	defer r.mu.Unlock()
 	c, ok := r.m[cloudID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *c
 	return &cp, nil
@@ -281,11 +281,11 @@ func makeAddressPoolService(
 	bindings *stubBindingRepo,
 	cloudSel *stubCloudSelRepo,
 ) *AddressPoolService {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	fc := &portmock.FolderClient{OK: true}
-	zr := portmock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	nr := repomock.NewNetworkRepo()
+	fc := &repomock.FolderClient{OK: true}
+	zr := repomock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
 	return NewAddressPoolService(poolRepo, bindings, cloudSel, ar, nr, sr, fc, zr)
 }
 
@@ -664,17 +664,17 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert network через netRepo (mock). Доступ — через wrapping helper:
-	// makeAddressPoolService использует portmock.NewNetworkRepo()-инстанс, но не
+	// makeAddressPoolService использует repomock.NewNetworkRepo()-инстанс, но не
 	// возвращает его наружу. Re-write — пересоберём service с явным netRepo.
-	nr := portmock.NewNetworkRepo()
+	nr := repomock.NewNetworkRepo()
 	netID := ids.NewID(ids.PrefixNetwork)
 	_, err = nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind")})
 	require.NoError(t, err)
 
-	sr := portmock.NewSubnetRepo()
-	ar := portmock.NewAddressRepo()
-	zr := portmock.NewZoneRegistry("ru-central1-c")
-	svc2 := NewAddressPoolService(r, br, cs, ar, nr, sr, &portmock.FolderClient{OK: true}, zr)
+	sr := repomock.NewSubnetRepo()
+	ar := repomock.NewAddressRepo()
+	zr := repomock.NewZoneRegistry("ru-central1-c")
+	svc2 := NewAddressPoolService(r, br, cs, ar, nr, sr, &repomock.FolderClient{OK: true}, zr)
 
 	// Bind — должно пройти НЕ смотря на то что pool v6-only, и Network может
 	// быть v4-предназначен.
@@ -693,11 +693,11 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 	r := newStubAddressPoolRepo()
 	br := newStubBindingRepo()
 	cs := newStubCloudSelRepo()
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	nr := portmock.NewNetworkRepo()
-	zr := portmock.NewZoneRegistry("ru-central1-c")
-	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, &portmock.FolderClient{OK: true}, zr)
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	nr := repomock.NewNetworkRepo()
+	zr := repomock.NewZoneRegistry("ru-central1-c")
+	svc := NewAddressPoolService(r, br, cs, ar, nr, sr, &repomock.FolderClient{OK: true}, zr)
 
 	// v4-only pool.
 	pool, err := svc.Create(context.Background(), CreatePoolReq{

@@ -18,8 +18,8 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// Blank-import регистрирует трансферы Subnet/Address/time через init() (skill
 	// evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // mapRepoErr — переводит repo-sentinel в gRPC status. Логика идентична
@@ -36,15 +36,15 @@ func mapRepoErr(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, stripSentinel(err, ports.ErrNotFound))
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, stripSentinel(err, ports.ErrAlreadyExists))
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, stripSentinel(err, ports.ErrFailedPrecondition))
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, stripSentinel(err, ports.ErrInvalidArg))
-	case errors.Is(err, ports.ErrInternal):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, stripSentinel(err, repo.ErrNotFound))
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, stripSentinel(err, repo.ErrAlreadyExists))
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, stripSentinel(err, repo.ErrFailedPrecondition))
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, stripSentinel(err, repo.ErrInvalidArg))
+	case errors.Is(err, repo.ErrInternal):
 		return status.Error(codes.Internal, "internal database error")
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
@@ -275,7 +275,7 @@ func validateZoneID(ctx context.Context, zr ZoneRegistry, field, zoneID string) 
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ports.ErrNotFound) {
+	if errors.Is(err, repo.ErrNotFound) {
 		return status.Errorf(codes.InvalidArgument, "unknown zone id '%s'", zoneID)
 	}
 	return mapRepoErr(err)

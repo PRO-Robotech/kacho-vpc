@@ -9,11 +9,11 @@
 // — с атомарным CAS-апдейтом `used_by_id` (миграция 0016, KAC-52; workspace
 // CLAUDE.md §«Within-service refs — DB-уровень обязателен», запрет #10).
 //
-// Локальные port-интерфейсы (а не type-alias на `internal/ports.*`) — skill §6
+// Локальные port-интерфейсы (а не type-alias на `internal/repo.*`) — skill §6
 // G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО использует.
 // Адаптерами выступают существующие `internal/repo/network_interface_repo.go`,
 // `internal/repo/subnet_repo.go`, `internal/repo/address_repo.go` — они уже
-// реализуют соответствующие port-интерфейсы из `internal/ports`/`internal/service`,
+// реализуют соответствующие port-интерфейсы из `internal/repo`/`internal/service`,
 // которые ⊇ локальным интерфейсам.
 package networkinterface
 
@@ -21,16 +21,16 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination — alias на единый value-объект `internal/ports`.
-type Pagination = ports.Pagination
+// Pagination — alias на единый value-объект `internal/repo`.
+type Pagination = repo.Pagination
 
-// NetworkInterfaceFilter — фильтр для List. Зеркалит `ports.NetworkInterfaceFilter`
+// NetworkInterfaceFilter — фильтр для List. Зеркалит `repo.NetworkInterfaceFilter`
 // (репо реализует ports-shape; локальный alias избавляет от прокидывания
 // ports-типа в use-case-package, но удерживает совместимость с repo-адаптером).
-type NetworkInterfaceFilter = ports.NetworkInterfaceFilter
+type NetworkInterfaceFilter = repo.NetworkInterfaceFilter
 
 // NetworkInterfaceRepo — то, что use-case'ам NIC нужно от репозитория NIC.
 //

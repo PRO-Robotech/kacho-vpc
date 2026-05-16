@@ -1,6 +1,6 @@
 // KAC-60: sparse counter-based IPAM для External IPv6 (миграция 0021).
 // Реализует методы InitIPv6PoolCursor / AllocateExternalIPv6 / FreeExternalIPv6
-// из ports.AddressRepo (см. docstrings там).
+// из AddressRepoIface (см. docstrings там).
 package repo
 
 import (
@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // InitIPv6PoolCursor — INSERT cursor row для pool. Идемпотентно через
@@ -30,7 +29,7 @@ func (r *AddressRepo) InitIPv6PoolCursor(ctx context.Context, poolID string) err
 	return nil
 }
 
-// AllocateExternalIPv6 — sparse counter-based allocator. См. ports.AddressRepo
+// AllocateExternalIPv6 — sparse counter-based allocator. См. AddressRepoIface
 // для семантики. Возвращает IP-литерал в canonical-форме (`netip.Addr.String()`).
 // ErrPoolExhausted если cursor превысил host-bits CIDR'а.
 //
@@ -39,7 +38,7 @@ func (r *AddressRepo) InitIPv6PoolCursor(ctx context.Context, poolID string) err
 func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressID, zoneID string) (string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return "", ports.ErrInternal
+		return "", ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -50,16 +49,16 @@ func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressI
 	if err := tx.QueryRow(ctx,
 		`SELECT v6_cidr_blocks FROM address_pools WHERE id = $1`, poolID).Scan(&v6Blocks); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ports.ErrNotFound
+			return "", ErrNotFound
 		}
 		return "", fmt.Errorf("pool op: %w", err)
 	}
 	if len(v6Blocks) == 0 {
-		return "", fmt.Errorf("%w: pool %s has no v6_cidr_blocks", ports.ErrFailedPrecondition, poolID)
+		return "", fmt.Errorf("%w: pool %s has no v6_cidr_blocks", ErrFailedPrecondition, poolID)
 	}
 	prefix, perr := netip.ParsePrefix(v6Blocks[0])
 	if perr != nil {
-		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", ports.ErrInternal, poolID, v6Blocks[0])
+		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", ErrInternal, poolID, v6Blocks[0])
 	}
 
 	// Step 1: пробуем переиспользовать освобождённый offset.
@@ -100,7 +99,7 @@ func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressI
 			RETURNING (next_offset - 1)::text`, poolID).Scan(&offStr)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return "", fmt.Errorf("%w: pool %s has no ipv6 cursor (InitIPv6PoolCursor not called?)", ports.ErrFailedPrecondition, poolID)
+				return "", fmt.Errorf("%w: pool %s has no ipv6 cursor (InitIPv6PoolCursor not called?)", ErrFailedPrecondition, poolID)
 			}
 			return "", fmt.Errorf("pool op: %w", err)
 		}
@@ -114,7 +113,7 @@ func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressI
 	// Step 3: compute IP = pool_base + offset, проверяем что не вышли за CIDR.
 	ip, err := addOffsetToAddr(prefix.Addr(), offset)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ports.ErrInternal, err)
+		return "", fmt.Errorf("%w: %v", ErrInternal, err)
 	}
 	if !prefix.Contains(ip) {
 		return "", ErrPoolExhausted
@@ -164,7 +163,7 @@ func (r *AddressRepo) AllocateExternalIPv6(ctx context.Context, poolID, addressI
 func (r *AddressRepo) FreeExternalIPv6(ctx context.Context, addressID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return ports.ErrInternal
+		return ErrInternal
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -201,7 +200,7 @@ func (r *AddressRepo) FreeExternalIPv6(ctx context.Context, addressID string) er
 	if err := emitVPC(ctx, tx, "Address", addressID, "UPDATED", map[string]any{
 		"id": addressID, "external_ipv6_released": true,
 	}); err != nil {
-		return ports.ErrInternal
+		return ErrInternal
 	}
 	return tx.Commit(ctx)
 }

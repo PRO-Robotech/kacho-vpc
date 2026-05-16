@@ -14,7 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты Address use-case'ов и handler'а. Wave 3 (KAC-94): сюда переехали
@@ -28,7 +28,7 @@ import (
 
 // ---- helpers ----------------------------------------------------------------
 
-func makeSubnet(sr *portmock.SubnetRepo, networkID string) *domain.Subnet {
+func makeSubnet(sr *repomock.SubnetRepo, networkID string) *domain.Subnet {
 	s := &domain.Subnet{
 		ID:           ids.NewID(ids.PrefixSubnet),
 		FolderID:     "f1",
@@ -41,10 +41,10 @@ func makeSubnet(sr *portmock.SubnetRepo, networkID string) *domain.Subnet {
 }
 
 func makeHandler(t *testing.T,
-	ar *portmock.AddressRepo,
-	sr *portmock.SubnetRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	ar *repomock.AddressRepo,
+	sr *repomock.SubnetRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateAddressUseCase(ar, sr, fc, or, nil)
@@ -59,12 +59,12 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, move, get, getByValue, list, listBySubnet, listOps, nil)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *portmock.AddressRepo, *portmock.SubnetRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.AddressRepo, *repomock.SubnetRepo) {
 	t.Helper()
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, ar, sr, or, fc), or, ar, sr
 }
 
@@ -140,10 +140,10 @@ func TestHandler_ListBySubnet_RequiresID(t *testing.T) {
 // ---- use-case-level ---------------------------------------------------------
 
 func TestCreateUseCase_NoSpec(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{FolderID: "f1"})
 	require.Error(t, err)
@@ -152,10 +152,10 @@ func TestCreateUseCase_NoSpec(t *testing.T) {
 }
 
 func TestCreateUseCase_RequiresFolder(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
@@ -166,10 +166,10 @@ func TestCreateUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestCreateUseCase_External_OK(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(ar)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
@@ -183,7 +183,7 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	savedOp := portmock.AwaitOpDone(t, or, op.ID)
+	savedOp := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
@@ -197,10 +197,10 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 // pools=nil → service stays pure (no auto-alloc); используется при load-test
 // конфигурациях / unit-тестах без IPAM.
 func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(ar)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
@@ -208,7 +208,7 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, op.ID)
+	repomock.AwaitOpDone(t, or, op.ID)
 
 	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
@@ -218,11 +218,11 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 }
 
 func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(ar)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
@@ -232,7 +232,7 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, op.ID)
+	repomock.AwaitOpDone(t, or, op.ID)
 
 	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
@@ -242,11 +242,11 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 
 // Sync-валидация: explicit IP вне CIDR subnet → InvalidArgument до Operation.
 func TestCreateUseCase_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -261,11 +261,11 @@ func TestCreateUseCase_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
 }
 
 func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(ar)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
@@ -276,18 +276,18 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, op.ID)
+	repomock.AwaitOpDone(t, or, op.ID)
 	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, "10.0.0.5", addrs[0].InternalIpv4.Address)
 }
 
 func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &portmock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -302,8 +302,8 @@ func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
 }
 
 func TestUpdateUseCase_DeletionProtection(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
 	rec := &domain.AddressRecord{Address: domain.Address{
 		ID:                 ids.NewID(ids.PrefixAddress),
 		FolderID:           "f1",
@@ -319,14 +319,14 @@ func TestUpdateUseCase_DeletionProtection(t *testing.T) {
 		UpdateMask:         []string{"deletion_protection"},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, op.ID)
+	repomock.AwaitOpDone(t, or, op.ID)
 
 	got, _ := ar.Get(context.Background(), rec.ID)
 	assert.True(t, got.DeletionProtection)
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	uc := NewUpdateAddressUseCase(portmock.NewAddressRepo(), portmock.NewOpsRepo())
+	uc := NewUpdateAddressUseCase(repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		AddressID:  ids.NewID(ids.PrefixAddress),
 		UpdateMask: []string{"unknown_field"},
@@ -337,7 +337,7 @@ func TestUpdateUseCase_UnknownMask(t *testing.T) {
 }
 
 func TestDeleteUseCase_NotFound(t *testing.T) {
-	uc := NewDeleteAddressUseCase(portmock.NewAddressRepo(), portmock.NewOpsRepo())
+	uc := NewDeleteAddressUseCase(repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixAddress))
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -345,8 +345,8 @@ func TestDeleteUseCase_NotFound(t *testing.T) {
 }
 
 func TestDeleteUseCase_DeletionProtection(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
 	rec := &domain.AddressRecord{Address: domain.Address{
 		ID:                 ids.NewID(ids.PrefixAddress),
 		FolderID:           "f1",
@@ -361,8 +361,8 @@ func TestDeleteUseCase_DeletionProtection(t *testing.T) {
 }
 
 func TestDeleteUseCase_InUseByNIC(t *testing.T) {
-	ar := portmock.NewAddressRepo()
-	or := portmock.NewOpsRepo()
+	ar := repomock.NewAddressRepo()
+	or := repomock.NewOpsRepo()
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &domain.AddressRecord{Address: domain.Address{
 		ID:       addrID,
@@ -382,7 +382,7 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveAddressUseCase(portmock.NewAddressRepo(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveAddressUseCase(repomock.NewAddressRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -392,7 +392,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListAddressesUseCase(portmock.NewAddressRepo())
+	uc := NewListAddressesUseCase(repomock.NewAddressRepo())
 	_, _, err := uc.Execute(context.Background(), AddressFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -400,7 +400,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestListBySubnetUseCase_NotFound(t *testing.T) {
-	uc := NewListBySubnetUseCase(portmock.NewAddressRepo(), portmock.NewSubnetRepo())
+	uc := NewListBySubnetUseCase(repomock.NewAddressRepo(), repomock.NewSubnetRepo())
 	_, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -408,7 +408,7 @@ func TestListBySubnetUseCase_NotFound(t *testing.T) {
 }
 
 func TestGetByValueUseCase_Empty(t *testing.T) {
-	uc := NewGetByValueUseCase(portmock.NewAddressRepo())
+	uc := NewGetByValueUseCase(repomock.NewAddressRepo())
 	_, err := uc.Execute(context.Background(), "", "", "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -416,7 +416,7 @@ func TestGetByValueUseCase_Empty(t *testing.T) {
 }
 
 func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
-	or := portmock.NewOpsRepo()
+	or := repomock.NewOpsRepo()
 	uc := NewListOperationsUseCase(or)
 	ops, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixAddress), Pagination{})
 	require.NoError(t, err)
@@ -438,7 +438,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListAddressesRequest{FolderId: "f1"})
 	require.Len(t, resp.Addresses, 1)
@@ -452,7 +452,7 @@ func TestHandler_FullFlow(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, updOp.Id)
+	repomock.AwaitOpDone(t, or, updOp.Id)
 
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListAddressOperationsRequest{AddressId: addrID})
 	require.NoError(t, err)
@@ -461,11 +461,11 @@ func TestHandler_FullFlow(t *testing.T) {
 		AddressId: addrID, DestinationFolderId: "f2",
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, moveOp.Id)
+	repomock.AwaitOpDone(t, or, moveOp.Id)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteAddressRequest{AddressId: addrID})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 	var empty emptypb.Empty

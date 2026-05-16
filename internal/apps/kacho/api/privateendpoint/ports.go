@@ -14,13 +14,13 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination, PrivateEndpointFilter — пере-используем единые value-объекты `internal/ports`.
+// Pagination, PrivateEndpointFilter — пере-используем единые value-объекты `internal/repo`.
 type (
-	Pagination            = ports.Pagination
-	PrivateEndpointFilter = ports.PrivateEndpointFilter
+	Pagination            = repo.Pagination
+	PrivateEndpointFilter = repo.PrivateEndpointFilter
 )
 
 // PrivateEndpointRepo — то, что use-case'ам PE нужно от репозитория PE.

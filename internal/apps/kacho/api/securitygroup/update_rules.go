@@ -30,7 +30,7 @@ type UpdateRulesInput struct {
 // OCC через `xmin::text` живёт в repo-слое (`security_group_repo.go`,
 // `security_group_occ_integration_test.go`) — use-case просто вызывает
 // repo.UpdateRules; concurrent UpdateRules с устаревшим snapshot отвергается
-// ports.ErrFailedPrecondition → FailedPrecondition.
+// repo.ErrFailedPrecondition → FailedPrecondition.
 //
 // Skill evgeniy §2 B.1: вынесено из SecurityGroupService в отдельный use-case
 // (SG-специфика: split-endpoint требует собственный input-тип, не масштабируется

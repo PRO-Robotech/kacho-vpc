@@ -40,7 +40,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // AddressAllocator — port для allocate-методов; реализуется
@@ -190,7 +190,7 @@ func mapAllocErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ports.ErrNotFound) {
+	if errors.Is(err, repo.ErrNotFound) {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {

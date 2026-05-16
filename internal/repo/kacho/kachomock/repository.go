@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -121,11 +121,11 @@ func (rd *readerImpl) Close() error { return nil }
 // parent.networks на Commit. local-outbox — буфер outbox-event'ов, на Commit
 // добавляется в parent.outbox.
 type writerImpl struct {
-	parent       *Repository
-	local        map[string]*domain.NetworkRecord
-	localOutbox  []OutboxEvent
-	deletedIDs   map[string]struct{}
-	finalised    bool
+	parent      *Repository
+	local       map[string]*domain.NetworkRecord
+	localOutbox []OutboxEvent
+	deletedIDs  map[string]struct{}
+	finalised   bool
 }
 
 func (w *writerImpl) Networks() kacho.NetworkWriterIface {
@@ -175,7 +175,7 @@ type networkReader struct {
 func (r *networkReader) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
 	n, ok := r.snap[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *n
 	return &cp, nil
@@ -203,11 +203,11 @@ type networkWriter struct {
 // Reader-методы writer'а — поверх local (writer видит свои writes, G.2).
 func (nw *networkWriter) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	n, ok := nw.w.local[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	cp := *n
 	return &cp, nil
@@ -238,11 +238,11 @@ func (nw *networkWriter) Insert(_ context.Context, n *domain.Network) (*domain.N
 
 func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[n.ID]; deleted {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing, ok := nw.w.local[n.ID]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	existing.Network = *n
 	cp := *existing
@@ -251,11 +251,11 @@ func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*domain.N
 
 func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*domain.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	n, ok := nw.w.local[id]
 	if !ok {
-		return nil, ports.ErrNotFound
+		return nil, repo.ErrNotFound
 	}
 	n.FolderID = folderID
 	cp := *n
@@ -264,7 +264,7 @@ func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*d
 
 func (nw *networkWriter) Delete(_ context.Context, id string) error {
 	if _, ok := nw.w.local[id]; !ok {
-		return ports.ErrNotFound
+		return repo.ErrNotFound
 	}
 	if nw.w.deletedIDs == nil {
 		nw.w.deletedIDs = make(map[string]struct{})

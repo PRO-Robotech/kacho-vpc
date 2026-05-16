@@ -6,10 +6,10 @@
 // плюс тонкий gRPC-handler. Раньше монолитный `internal/service/gateway.go`
 // (GatewayService) был fat-service со всеми методами в одном файле.
 //
-// Локальные port-интерфейсы (а не type-alias на `internal/ports.GatewayRepo`)
+// Локальные port-интерфейсы (а не type-alias на `internal/repo.GatewayRepoIface`)
 // — skill §6 G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО
 // использует. Адаптерами выступают существующие `internal/repo/gateway_repo.go`
-// и `internal/ports/portmock` — они уже реализуют `internal/ports.GatewayRepo`,
+// и `internal/repo/repomock` — они уже реализуют `internal/repo.GatewayRepoIface`,
 // который ⊇ локальному интерфейсу, поэтому Go-типизация работает без shim'ов.
 package gateway
 
@@ -17,14 +17,14 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Pagination, GatewayFilter — пере-используем единые value-объекты `internal/ports`
+// Pagination, GatewayFilter — пере-используем единые value-объекты `internal/repo`
 // (alias'ы, не копии).
 type (
-	Pagination    = ports.Pagination
-	GatewayFilter = ports.GatewayFilter
+	Pagination    = repo.Pagination
+	GatewayFilter = repo.GatewayFilter
 )
 
 // GatewayRepo — то, что use-case'ам Gateway нужно от репозитория шлюзов.

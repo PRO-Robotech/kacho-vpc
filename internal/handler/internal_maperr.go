@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // internalMapErr — admin/Internal-handler error mapper.
@@ -30,18 +30,18 @@ func internalMapErr(tag string, err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ports.ErrNotFound):
-		return status.Error(codes.NotFound, ports.ErrNotFound.Error())
-	case errors.Is(err, ports.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, ports.ErrAlreadyExists.Error())
-	case errors.Is(err, ports.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, ports.ErrFailedPrecondition.Error())
-	case errors.Is(err, ports.ErrPoolNotResolved):
+	case errors.Is(err, repo.ErrNotFound):
+		return status.Error(codes.NotFound, repo.ErrNotFound.Error())
+	case errors.Is(err, repo.ErrAlreadyExists):
+		return status.Error(codes.AlreadyExists, repo.ErrAlreadyExists.Error())
+	case errors.Is(err, repo.ErrFailedPrecondition):
+		return status.Error(codes.FailedPrecondition, repo.ErrFailedPrecondition.Error())
+	case errors.Is(err, repo.ErrPoolNotResolved):
 		// FINDING-008: ни один шаг IPAM cascade не дал pool — это FailedPrecondition
 		// (конфигурация пулов неполна), а не INTERNAL. Без leak'а raw-текста.
-		return status.Error(codes.FailedPrecondition, ports.ErrPoolNotResolved.Error())
-	case errors.Is(err, ports.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, ports.ErrInvalidArg.Error())
+		return status.Error(codes.FailedPrecondition, repo.ErrPoolNotResolved.Error())
+	case errors.Is(err, repo.ErrInvalidArg):
+		return status.Error(codes.InvalidArgument, repo.ErrInvalidArg.Error())
 	}
 	// Уже-сформированный gRPC status (не Unknown) пробрасываем — например
 	// status.Error из самого service-слоя.

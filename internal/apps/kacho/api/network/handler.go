@@ -14,7 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// Blank-import регистрирует Network/time DTO трансферы (skill evgeniy §3 C.4).
-	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 )
 
@@ -329,7 +329,7 @@ func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
 }
 
 // subnetToPb / routeTableToPb / securityGroupToPb — repo-entity child-resource
-// → proto. Reuse уже зарегистрированных DTO-трансферов из `internal/dto/type2pb`
+// → proto. Reuse уже зарегистрированных DTO-трансферов из `internal/dto/toproto`
 // (blank-import выше).
 func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
 	var dst *vpcv1.Subnet

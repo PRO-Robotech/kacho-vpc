@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/protoconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 )
 
-// Fake-реализации port-ов и await-helper'ы — в `internal/ports/portmock`
+// Fake-реализации port-ов и await-helper'ы — в `internal/repo/repomock`
 // (shim с прежними именами — в mock_test.go). См. TODO #12.
 //
 // Wave 3a pilot (KAC-94): Network-handler-тесты переехали в
@@ -30,7 +30,7 @@ func TestNetworkToProto_Fields(t *testing.T) {
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
 		},
 	}
-	p := protoconv.Network(rec)
+	p := toproto.Network(rec)
 	assert.Equal(t, "net-123", p.Id)
 	assert.Equal(t, "folder-1", p.FolderId)
 	assert.Equal(t, "my-net", p.Name)

@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // NetworkRepo — узкий port-интерфейс над repo.NetworkRepo: только методы,
@@ -85,4 +85,4 @@ func (s *Service) SetDefaultSecurityGroupId(ctx context.Context, networkID, sgID
 
 // ports-import-keeper: ports re-export'ит sentinel-ошибки (ErrNotFound и т.п.),
 // которые приходят от repo.Get/Update и пробрасываются вверх как есть.
-var _ = ports.ErrNotFound
+var _ = repo.ErrNotFound

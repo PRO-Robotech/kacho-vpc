@@ -1,17 +1,15 @@
-// Package ports содержит port-интерфейсы (Clean Architecture boundaries) и
-// связанные с ними value-объекты (Pagination, *Filter) для kacho-vpc.
+// iface.go — port-интерфейсы (Clean Architecture boundaries) и связанные с
+// ними value-объекты (Pagination, *Filter) для kacho-vpc. Раньше — отдельный
+// пакет `internal/repo`; Wave 5 (KAC-94, skill evgeniy §6 G.1): объединён с
+// `internal/repo`, чтобы интерфейс и его pgxpool-реализация жили рядом.
 //
-// Это leaf-пакет: импортирует только `internal/domain` и `kacho-corelib`-типы.
-// Импортируется `internal/service` (use-cases), `internal/repo` / `internal/clients`
-// (adapters реализуют эти интерфейсы) и `internal/ports/portmock` (общие fake'и
-// для unit-тестов). Так избегается дублирование mock-реализаций по test-файлам
-// и не создаётся import-cycle (service → ports ← portmock; portmock не зависит
-// от service). См. TODO #12.
-//
-// `internal/service` ре-экспортирует эти типы через type-alias'ы, поэтому
-// существующий код (`service.NetworkRepo`, `service.Pagination`, ...) работает
-// без изменений.
-package ports
+// Чтобы избежать имя-в-имя коллизии с уже существующими concrete-структурами
+// репо (`NetworkRepo struct`, `SubnetRepo struct`, …), интерфейсы переименованы
+// с суффиксом `Iface` (`NetworkRepoIface`, `SubnetRepoIface`, …). Семантика и
+// сигнатуры не изменились. Mock-реализации — в подпакете
+// `internal/repo/repomock/` (раньше — `internal/repo/repomock/`).
+
+package repo
 
 import (
 	"context"
@@ -109,7 +107,7 @@ type NetworkInterfaceFilter struct {
 // §4 D.1 / §6 G.2 / §7 H.1: CreatedAt живёт в repo-проекции, не в
 // domain.Network. Insert/Update принимают domain.Network (без CreatedAt) —
 // время выставляет репо.
-type NetworkRepo interface {
+type NetworkRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
 	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error)
 	Insert(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
@@ -125,7 +123,7 @@ type NetworkRepo interface {
 // DB-managed CreatedAt) вместо `*domain.Subnet`. Insert/Update принимают
 // `*domain.Subnet` (без CreatedAt — DB-managed). Skill evgeniy §4 D.1 / §6 G.2 /
 // §7 H.1. Parity с NetworkRepo (KAC-99).
-type SubnetRepo interface {
+type SubnetRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
 	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error)
 	Insert(ctx context.Context, s *domain.Subnet) (*domain.SubnetRecord, error)
@@ -150,7 +148,7 @@ type SubnetRepo interface {
 //
 // Wave 2 batch A (KAC-94): возвращает `*domain.AddressRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.Address` (без CreatedAt).
-type AddressRepo interface {
+type AddressRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.AddressRecord, error)
 	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error)
 	Insert(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
@@ -229,7 +227,7 @@ type AddressRepo interface {
 // Wave 2 batch B (KAC-94): возвращает `*domain.SecurityGroupRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.SecurityGroup` (без CreatedAt).
 // Skill evgeniy §4 D.1 / §6 G.2 / §7 H.1. Parity с NetworkRepo (KAC-99).
-type SecurityGroupRepo interface {
+type SecurityGroupRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
 	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
 	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
@@ -248,7 +246,7 @@ type SecurityGroupRepo interface {
 //
 // Wave 2 batch B (KAC-94): возвращает `*domain.GatewayRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.Gateway` (без CreatedAt).
-type GatewayRepo interface {
+type GatewayRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.GatewayRecord, error)
 	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.GatewayRecord, string, error)
 	Insert(ctx context.Context, g *domain.Gateway) (*domain.GatewayRecord, error)
@@ -261,7 +259,7 @@ type GatewayRepo interface {
 //
 // Wave 2 batch B (KAC-94): возвращает `*domain.PrivateEndpointRecord` (repo-entity
 // с DB-managed CreatedAt). Insert/Update принимают `*domain.PrivateEndpoint` (без CreatedAt).
-type PrivateEndpointRepo interface {
+type PrivateEndpointRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.PrivateEndpointRecord, error)
 	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpointRecord, string, error)
 	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error)
@@ -273,7 +271,7 @@ type PrivateEndpointRepo interface {
 //
 // Wave 2 batch A (KAC-94): возвращает `*domain.RouteTableRecord` (repo-entity
 // с DB-managed CreatedAt). Insert/Update принимают `*domain.RouteTable` (без CreatedAt).
-type RouteTableRepo interface {
+type RouteTableRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.RouteTableRecord, error)
 	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error)
 	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error)
@@ -315,7 +313,7 @@ type ZoneRegistry interface {
 }
 
 // AddressPoolRepo — port-интерфейс репозитория пулов адресов.
-type AddressPoolRepo interface {
+type AddressPoolRepoIface interface {
 	Get(ctx context.Context, id string) (*domain.AddressPool, error)
 	List(ctx context.Context, f AddressPoolFilter, p Pagination) ([]*domain.AddressPool, string, error)
 	Insert(ctx context.Context, p *domain.AddressPool) (*domain.AddressPool, error)
@@ -360,7 +358,7 @@ type AddressPoolRepo interface {
 }
 
 // AddressPoolBindingRepo — explicit биндинги pool ↔ network/address (per-resource pinning).
-type AddressPoolBindingRepo interface {
+type AddressPoolBindingRepoIface interface {
 	// SetNetworkDefault — атомарный upsert (network_id, pool_id).
 	SetNetworkDefault(ctx context.Context, networkID, poolID string) error
 	// GetNetworkDefault возвращает поль pool_id, привязанный к Network как default.
@@ -383,7 +381,7 @@ type AddressPoolBindingRepo interface {
 // Selector привязан к Cloud (а не Network), чтобы cascade-resolve мог
 // найти подходящий pool для external Address (у которых нет network_id).
 // folder_id → cloud_id резолвится через FolderClient.GetCloudID.
-type CloudPoolSelectorRepo interface {
+type CloudPoolSelectorRepoIface interface {
 	// Set — atomic upsert (cloud_id, selector, set_by).
 	// Empty selector допустим — это семантически равно отсутствию binding'а
 	// (в cascade-resolve skip'аем label-step).

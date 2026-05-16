@@ -13,12 +13,12 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты PrivateEndpoint use-case'ов и handler'а. Wave 3b (KAC-94).
 
-func makeNetworkRecord(t *testing.T, nr *portmock.NetworkRepo) *domain.NetworkRecord {
+func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *domain.NetworkRecord {
 	t.Helper()
 	netID := ids.NewID(ids.PrefixNetwork)
 	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
@@ -27,11 +27,11 @@ func makeNetworkRecord(t *testing.T, nr *portmock.NetworkRepo) *domain.NetworkRe
 }
 
 func makeHandler(t *testing.T,
-	pr *portmock.PrivateEndpointRepo,
-	nr *portmock.NetworkRepo,
-	sr *portmock.SubnetRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	pr *repomock.PrivateEndpointRepo,
+	nr *repomock.NetworkRepo,
+	sr *repomock.SubnetRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreatePrivateEndpointUseCase(pr, nr, sr, fc, or)
@@ -43,13 +43,13 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, get, list, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *portmock.PrivateEndpointRepo, *portmock.NetworkRepo, *portmock.SubnetRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.PrivateEndpointRepo, *repomock.NetworkRepo, *repomock.SubnetRepo) {
 	t.Helper()
-	pr := portmock.NewPrivateEndpointRepo()
-	nr := portmock.NewNetworkRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	pr := repomock.NewPrivateEndpointRepo()
+	nr := repomock.NewNetworkRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, pr, nr, sr, or, fc), or, pr, nr, sr
 }
 
@@ -111,11 +111,11 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level ----
 
 func TestCreateUseCase_NetworkIDRequired(t *testing.T) {
-	pr := portmock.NewPrivateEndpointRepo()
-	nr := portmock.NewNetworkRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
-	uc := NewCreatePrivateEndpointUseCase(pr, nr, sr, &portmock.FolderClient{OK: true}, or)
+	pr := repomock.NewPrivateEndpointRepo()
+	nr := repomock.NewNetworkRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	uc := NewCreatePrivateEndpointUseCase(pr, nr, sr, &repomock.FolderClient{OK: true}, or)
 
 	// network_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{PrivateEndpoint: domain.PrivateEndpoint{FolderID: "f1", Name: "pe1"}})
@@ -125,12 +125,12 @@ func TestCreateUseCase_NetworkIDRequired(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	pr := portmock.NewPrivateEndpointRepo()
-	nr := portmock.NewNetworkRepo()
-	sr := portmock.NewSubnetRepo()
-	or := portmock.NewOpsRepo()
+	pr := repomock.NewPrivateEndpointRepo()
+	nr := repomock.NewNetworkRepo()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
 	net := makeNetworkRecord(t, nr)
-	uc := NewCreatePrivateEndpointUseCase(pr, nr, sr, &portmock.FolderClient{OK: true}, or)
+	uc := NewCreatePrivateEndpointUseCase(pr, nr, sr, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{PrivateEndpoint: domain.PrivateEndpoint{
 		FolderID:    "f1",
@@ -141,13 +141,13 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestUpdateUseCase_RequiresID(t *testing.T) {
-	uc := NewUpdatePrivateEndpointUseCase(portmock.NewPrivateEndpointRepo(), portmock.NewOpsRepo())
+	uc := NewUpdatePrivateEndpointUseCase(repomock.NewPrivateEndpointRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{PrivateEndpointID: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -155,7 +155,7 @@ func TestUpdateUseCase_RequiresID(t *testing.T) {
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeletePrivateEndpointUseCase(portmock.NewPrivateEndpointRepo(), portmock.NewOpsRepo())
+	uc := NewDeletePrivateEndpointUseCase(repomock.NewPrivateEndpointRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -163,7 +163,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListPrivateEndpointsUseCase(portmock.NewPrivateEndpointRepo())
+	uc := NewListPrivateEndpointsUseCase(repomock.NewPrivateEndpointRepo())
 	_, _, err := uc.Execute(context.Background(), PrivateEndpointFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -186,7 +186,7 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 
 	delOp, err := h.Delete(context.Background(), &pepb.DeletePrivateEndpointRequest{PrivateEndpointId: peID})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 	var empty emptypb.Empty

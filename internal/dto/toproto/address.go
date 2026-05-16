@@ -1,4 +1,4 @@
-package type2pb
+package toproto
 
 import (
 	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"

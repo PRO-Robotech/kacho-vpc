@@ -14,8 +14,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports/portmock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты Network use-case'ов и handler'а. Wave 3a (KAC-94): сюда переехали
@@ -27,17 +27,17 @@ import (
 // Wave 5 pilot (KAC-94): Network use-case'ы переехали на CQRS-Repository.
 // Network-mock — `kachomock.NewRepository()` (in-memory CQRS-impl с TX-семантикой
 // и outbox-буфером). Остальные ресурсы (Subnet/RouteTable/SecurityGroup/...) —
-// пока legacy `portmock.*` (replicate-фаза).
+// пока legacy `repomock.*` (replicate-фаза).
 
 // ---- builders ----
 
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
-	sr *portmock.SubnetRepo,
-	rtr *portmock.RouteTableRepo,
-	sgr *portmock.SecurityGroupRepo,
-	or *portmock.OpsRepo,
-	fc *portmock.FolderClient,
+	sr *repomock.SubnetRepo,
+	rtr *repomock.RouteTableRepo,
+	sgr *repomock.SecurityGroupRepo,
+	or *repomock.OpsRepo,
+	fc *repomock.FolderClient,
 	defaultSG SecurityGroupRepo,
 ) *Handler {
 	t.Helper()
@@ -70,11 +70,11 @@ func makeHandler(t *testing.T,
 
 // folder ok / ops repo / network repo с минимальной wiring — для тестов где
 // child-reader'ы не требуются.
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *portmock.OpsRepo, *kachomock.Repository) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository) {
 	t.Helper()
 	kr := kachomock.NewRepository()
-	or := portmock.NewOpsRepo()
-	fc := &portmock.FolderClient{OK: folderOK}
+	or := repomock.NewOpsRepo()
+	fc := &repomock.FolderClient{OK: folderOK}
 	return makeHandler(t, kr, nil, nil, nil, or, fc, nil), or, kr
 }
 
@@ -115,8 +115,8 @@ func TestHandler_Delete_InvalidArg(t *testing.T) {
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &portmock.FolderClient{OK: true}, or, nil)
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, nil)
 
 	// folder_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{Name: "test"}})
@@ -136,8 +136,8 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &portmock.FolderClient{OK: false}, or, nil)
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: false}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
 		FolderID: "f1",
@@ -150,8 +150,8 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
-	or := portmock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &portmock.FolderClient{OK: true}, or, nil)
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, nil)
 
 	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
 		FolderID:    "f1",
@@ -161,13 +161,13 @@ func TestCreateUseCase_OK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
-	saved := portmock.AwaitOpDone(t, or, op.ID)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteNetworkUseCase(kachomock.NewRepository(), nil, nil, nil, portmock.NewOpsRepo())
+	uc := NewDeleteNetworkUseCase(kachomock.NewRepository(), nil, nil, nil, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -175,7 +175,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveNetworkUseCase(kachomock.NewRepository(), &portmock.FolderClient{OK: true}, portmock.NewOpsRepo())
+	uc := NewMoveNetworkUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -195,28 +195,28 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
 	// История операций должна оставаться доступной после Delete — unknown id
 	// ≠ NotFound, это пустой список.
-	uc := NewListOperationsUseCase(portmock.NewOpsRepo())
+	uc := NewListOperationsUseCase(repomock.NewOpsRepo())
 	ops, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	assert.NoError(t, err)
 	assert.Empty(t, ops)
 }
 
 func TestListSubnetsUseCase_NetworkNotFound(t *testing.T) {
-	uc := NewListSubnetsUseCase(kachomock.NewRepository(), portmock.NewSubnetRepo())
+	uc := NewListSubnetsUseCase(kachomock.NewRepository(), repomock.NewSubnetRepo())
 	_, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 func TestListSecurityGroupsUseCase_NetworkNotFound(t *testing.T) {
-	uc := NewListSecurityGroupsUseCase(kachomock.NewRepository(), portmock.NewSecurityGroupRepo())
+	uc := NewListSecurityGroupsUseCase(kachomock.NewRepository(), repomock.NewSecurityGroupRepo())
 	_, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 func TestListRouteTablesUseCase_NetworkNotFound(t *testing.T) {
-	uc := NewListRouteTablesUseCase(kachomock.NewRepository(), portmock.NewRouteTableRepo())
+	uc := NewListRouteTablesUseCase(kachomock.NewRepository(), repomock.NewRouteTableRepo())
 	_, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixNetwork), Pagination{})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
@@ -232,7 +232,7 @@ func TestHandler_Create_OK(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
-	saved := portmock.AwaitOpDone(t, or, op.Id)
+	saved := repomock.AwaitOpDone(t, or, op.Id)
 	assert.True(t, saved.Done)
 }
 
@@ -243,14 +243,14 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "del-resp-test"})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
 	require.Len(t, resp.Networks, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkRequest{NetworkId: resp.Networks[0].Id})
 	require.NoError(t, err)
-	saved := portmock.AwaitOpDone(t, or, delOp.Id)
+	saved := repomock.AwaitOpDone(t, or, delOp.Id)
 	require.Nil(t, saved.Error)
 	require.NotNil(t, saved.Response)
 
@@ -264,7 +264,7 @@ func TestHandler_Update_MaskApplication(t *testing.T) {
 	// Создаём сеть
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n1"})
 	require.NoError(t, err)
-	savedOp := portmock.AwaitOpDone(t, or, createOp.Id)
+	savedOp := repomock.AwaitOpDone(t, or, createOp.Id)
 	require.NotNil(t, savedOp.Metadata)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
@@ -279,7 +279,7 @@ func TestHandler_Update_MaskApplication(t *testing.T) {
 		UpdateMask:  &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	savedUpdOp := portmock.AwaitOpDone(t, or, updOp.Id)
+	savedUpdOp := repomock.AwaitOpDone(t, or, updOp.Id)
 	assert.True(t, savedUpdOp.Done)
 
 	got, _ := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: netID})
@@ -310,14 +310,14 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 
 func TestHandler_Update_Happy(t *testing.T) {
 	kr := kachomock.NewRepository()
-	or := portmock.NewOpsRepo()
-	sr := portmock.NewSubnetRepo()
-	rtr := portmock.NewRouteTableRepo()
-	h := makeHandler(t, kr, sr, rtr, nil, or, &portmock.FolderClient{OK: true}, nil)
+	or := repomock.NewOpsRepo()
+	sr := repomock.NewSubnetRepo()
+	rtr := repomock.NewRouteTableRepo()
+	h := makeHandler(t, kr, sr, rtr, nil, or, &repomock.FolderClient{OK: true}, nil)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, createOp.Id)
+	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
 	require.Len(t, resp.Networks, 1)
@@ -328,7 +328,7 @@ func TestHandler_Update_Happy(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, updOp.Id)
+	repomock.AwaitOpDone(t, or, updOp.Id)
 	got, _ := h.Get(context.Background(), &vpcv1.GetNetworkRequest{NetworkId: netID})
 	assert.Equal(t, "n-upd", got.Name)
 
@@ -345,10 +345,10 @@ func TestHandler_Update_Happy(t *testing.T) {
 		NetworkId: netID, DestinationFolderId: ids.NewID(ids.PrefixFolder),
 	})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, moveOp.Id)
+	repomock.AwaitOpDone(t, or, moveOp.Id)
 
 	// Delete (без child-resources)
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkRequest{NetworkId: netID})
 	require.NoError(t, err)
-	portmock.AwaitOpDone(t, or, delOp.Id)
+	repomock.AwaitOpDone(t, or, delOp.Id)
 }

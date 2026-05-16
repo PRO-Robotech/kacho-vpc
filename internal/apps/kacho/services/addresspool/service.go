@@ -24,31 +24,31 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// Type aliases на canonical-типы `internal/ports`. Это позволяет в одном
-// файле использовать привычные короткие имена без повторения `ports.` prefix.
+// Type aliases на canonical-типы `internal/repo`. Это позволяет в одном
+// файле использовать привычные короткие имена без повторения `repo.` prefix.
 type (
-	AddressPoolRepo        = ports.AddressPoolRepo
-	AddressPoolBindingRepo = ports.AddressPoolBindingRepo
-	CloudPoolSelectorRepo  = ports.CloudPoolSelectorRepo
-	AddressRepo            = ports.AddressRepo
-	NetworkRepo            = ports.NetworkRepo
-	SubnetRepo             = ports.SubnetRepo
-	FolderClient           = ports.FolderClient
-	ZoneRegistry           = ports.ZoneRegistry
-	AddressPoolFilter      = ports.AddressPoolFilter
-	Pagination             = ports.Pagination
+	AddressPoolRepo        = repo.AddressPoolRepoIface
+	AddressPoolBindingRepo = repo.AddressPoolBindingRepoIface
+	CloudPoolSelectorRepo  = repo.CloudPoolSelectorRepoIface
+	AddressRepo            = repo.AddressRepoIface
+	NetworkRepo            = repo.NetworkRepoIface
+	SubnetRepo             = repo.SubnetRepoIface
+	FolderClient           = repo.FolderClient
+	ZoneRegistry           = repo.ZoneRegistry
+	AddressPoolFilter      = repo.AddressPoolFilter
+	Pagination             = repo.Pagination
 )
 
-// Re-export sentinel-ошибок как `var` — те же error-value, что в `internal/ports`,
+// Re-export sentinel-ошибок как `var` — те же error-value, что в `internal/repo`,
 // поэтому `errors.Is(err, addresspool.ErrPoolNotResolved)` совпадает с
-// `errors.Is(err, ports.ErrPoolNotResolved)`. Нужны для совместимости с
+// `errors.Is(err, repo.ErrPoolNotResolved)`. Нужны для совместимости с
 // прежними call site'ами в handler'ах (`handler/internal_address_pool_handler.go`).
 var (
-	ErrNotFound        = ports.ErrNotFound
-	ErrPoolNotResolved = ports.ErrPoolNotResolved
+	ErrNotFound        = repo.ErrNotFound
+	ErrPoolNotResolved = repo.ErrPoolNotResolved
 )
 
 // AddressPoolService — use-cases для AddressPool + bindings + label-cascade resolve.

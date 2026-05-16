@@ -1,4 +1,4 @@
-package type2pb
+package toproto
 
 import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -36,4 +36,22 @@ func (network) toPb(rec domain.NetworkRecord) (*vpcv1.Network, error) {
 
 func init() {
 	dto.RegTransfer(dto.Fn2Face(network{}.toPb))
+}
+
+// Network — legacy direct converter `domain.NetworkRecord → *vpcv1.Network`,
+// перенесённый сюда из удалённого пакета `internal/protoconv` (Wave 5 / KAC-94,
+// skill evgeniy §3 C.6). Используется handler_test (`TestNetworkToProto_Fields`).
+// Новый production-call идёт через DTO-реестр (`dto.Transfer(dto.FromTo(...))`)
+// в use-case-слое; этот helper существует только ради unit-теста и будет удалён,
+// когда handler_test переедет на dto.Transfer.
+//
+// Контракт идентичен (network{}).toPb: CreatedAt truncate до секунд
+// (verbatim YC — `YC-DIFF-TIMESTAMP-PRECISION`). Ошибки от time-трансфера
+// игнорируются (timeObj{}.toPb на типичной time.Time не ошибается).
+func Network(rec *domain.NetworkRecord) *vpcv1.Network {
+	if rec == nil {
+		return nil
+	}
+	p, _ := (network{}).toPb(*rec)
+	return p
 }

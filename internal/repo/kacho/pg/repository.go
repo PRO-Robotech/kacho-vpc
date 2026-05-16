@@ -3,10 +3,10 @@
 // Wave 5 pilot (KAC-94): только Network. Структура спроектирована под replicate
 // на 7 оставшихся ресурсов (Subnet/Address/RouteTable/SecurityGroup/Gateway/
 // PrivateEndpoint/NetworkInterface) — добавление нового resource'а сводится к:
-//   1. Файл `<resource>.go` с *resourceReader{tx pgx.Tx} + *resourceWriter{tx, emitter}.
-//   2. Метод `Networks()` / `Subnets()` / ... в readerImpl и writerImpl ниже.
-//   3. Расширение интерфейсов RepositoryReader / RepositoryWriter в
-//      `internal/repo/kacho/iface.go` + новый iface_<resource>.go.
+//  1. Файл `<resource>.go` с *resourceReader{tx pgx.Tx} + *resourceWriter{tx, emitter}.
+//  2. Метод `Networks()` / `Subnets()` / ... в readerImpl и writerImpl ниже.
+//  3. Расширение интерфейсов RepositoryReader / RepositoryWriter в
+//     `internal/repo/kacho/iface.go` + новый iface_<resource>.go.
 package pg
 
 import (

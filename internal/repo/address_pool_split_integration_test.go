@@ -495,7 +495,7 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 	assert.Equal(t, int32(concurrency-1), errCount,
 		"остальные должны упасть на partial UNIQUE")
 	require.NotNil(t, seenError)
-	// repo.wrapPgErr маппит 23505 на ErrAlreadyExists или ErrFailedPrecondition
+	// repo.wrapPgErr маппит 23505 на repo.ErrAlreadyExists или ErrFailedPrecondition
 	// в зависимости от контекста; и то и другое допустимо для invariant'а.
 	t.Logf("seen error: %v", seenError)
 }

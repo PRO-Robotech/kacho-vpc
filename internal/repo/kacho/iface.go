@@ -12,9 +12,9 @@
 // Адаптеры:
 //   - `internal/repo/kacho/pg/` — pgxpool-impl (read-only TX vs RW TX).
 //   - `internal/repo/kacho/kachomock/` — in-memory implementation для unit-тестов
-//     use-case'ов (replaces portmock.NetworkRepo для Network-кода).
+//     use-case'ов (replaces repomock.NetworkRepo для Network-кода).
 //
-// Legacy `*repo.NetworkRepo` / `internal/ports/portmock.NetworkRepo` НЕ удаляются
+// Legacy `*repo.NetworkRepo` / `internal/repo/repomock.NetworkRepo` НЕ удаляются
 // — на них завязаны admin-сервисы (networkinternal/addresspool/...) и
 // существующие integration-тесты `internal/repo/network_repo_*test.go`,
 // которые проверяют именно legacy-репо.
