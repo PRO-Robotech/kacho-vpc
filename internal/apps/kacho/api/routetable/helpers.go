@@ -18,6 +18,7 @@ import (
 	// Blank-import регистрирует трансферы RouteTable/time через init().
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // mapRepoErr — переводит repo-sentinel в gRPC status.
@@ -86,9 +87,10 @@ func invalidArg(field, desc string) error {
 	return st.Err()
 }
 
-// marshalRouteTableRecord конвертирует repo-entity RouteTable в *anypb.Any через
-// DTO-реестр.
-func marshalRouteTableRecord(rec *domain.RouteTableRecord) (*anypb.Any, error) {
+// marshalRouteTableRecord конвертирует repo-entity RouteTable в *anypb.Any
+// через DTO-реестр. Wave 5 replicate (KAC-94): принимает `*kacho.RouteTableRecord`
+// (запись переехала в repo-leaf — §4 D.1).
+func marshalRouteTableRecord(rec *kacho.RouteTableRecord) (*anypb.Any, error) {
 	var dst *vpcv1.RouteTable
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer RouteTable: %w", err)

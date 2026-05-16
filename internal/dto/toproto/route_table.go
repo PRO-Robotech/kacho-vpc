@@ -4,15 +4,17 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// routeTable — receiver-объект под трансфер domain.RouteTableRecord →
-// *vpcv1.RouteTable. Wave 2 batch A (KAC-94).
+// routeTable — receiver-объект под трансфер kacho.RouteTableRecord →
+// *vpcv1.RouteTable. Wave 5 replicate (KAC-94): запись переехала из
+// `domain.RouteTableRecord` в repo-leaf `kacho.RouteTableRecord` — §4 D.1.
 type routeTable struct{}
 
 // toPb формирует *vpcv1.RouteTable из repo-entity. CreatedAt — truncate до
 // секунд через time-трансфер.
-func (routeTable) toPb(rec domain.RouteTableRecord) (*vpcv1.RouteTable, error) {
+func (routeTable) toPb(rec kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	ts, err := (timeObj{}).toPb(rec.CreatedAt)
 	if err != nil {
 		return nil, err

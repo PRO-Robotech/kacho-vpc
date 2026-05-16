@@ -24,19 +24,24 @@ type CreateInput struct {
 
 // CreateRouteTableUseCase инициирует создание RouteTable. Sync-проверки (folder
 // exists, parent network exists, name unique, static_routes валидны)
-// выполняются ДО создания Operation.
+// выполняются ДО создания Operation — клиент получает fast-fail gRPC-status,
+// а не «200 + операция, упавшая через секунду». Async-часть (`doCreate`) —
+// атомарный backstop через FK/UNIQUE.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX
+// и делает в ней Insert(RouteTable) + outbox-emit CREATED атомарно. Auto-association
+// DB-trigger (KAC-56) дополнительно эмитит `Subnet.UPDATED` события в той же
+// tx-области — это часть Commit'а единой writer-TX.
 type CreateRouteTableUseCase struct {
-	repo         RouteTableRepo
-	networkRead  NetworkReader
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateRouteTableUseCase создаёт CreateRouteTableUseCase.
-func NewCreateRouteTableUseCase(repo RouteTableRepo, networkRead NetworkReader, folderClient FolderClient, opsRepo operations.Repo) *CreateRouteTableUseCase {
+func NewCreateRouteTableUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *CreateRouteTableUseCase {
 	return &CreateRouteTableUseCase{
-		repo:         repo,
-		networkRead:  networkRead,
+		repo:         r,
 		folderClient: folderClient,
 		opsRepo:      opsRepo,
 	}
@@ -64,26 +69,37 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, in CreateInput) (
 	}
 
 	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
-	// Operation. The async copies in doCreate stay as defensive backstops.
+	// Operation. Async copies в doCreate стоят как defensive backstop.
 	if err := checkFolderExists(ctx, u.folderClient, rt.FolderID); err != nil {
 		return nil, err
 	}
-	if _, err := u.networkRead.Get(ctx, rt.NetworkID); err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
-		}
+	// Existence parent Network через CQRS Reader.
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	if _, gerr := rd.Networks().Get(ctx, rt.NetworkID); gerr != nil {
+		_ = rd.Close()
+		if errors.Is(gerr, repo.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
+		}
+		return nil, mapRepoErr(gerr)
+	}
+	// Uniqueness (folder_id, name) — partial UNIQUE WHERE name<>'' покрывает на
+	// DB-уровне (миграция 0002). Sync-precheck для fast-fail UX.
 	name := string(rt.Name)
 	if name != "" {
-		existing, _, lerr := u.repo.List(ctx, RouteTableFilter{FolderID: rt.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.RouteTables().List(ctx, RouteTableFilter{FolderID: rt.FolderID, Name: name}, Pagination{})
 		if lerr != nil {
+			_ = rd.Close()
 			return nil, mapRepoErr(lerr)
 		}
 		if len(existing) > 0 {
+			_ = rd.Close()
 			return nil, status.Errorf(codes.AlreadyExists, "RouteTable with name %s already exists", name)
 		}
 	}
+	_ = rd.Close()
 
 	rtID := ids.NewID(ids.PrefixRouteTable)
 	op, err := operations.New(
@@ -105,7 +121,15 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, in CreateInput) (
 	return &op, nil
 }
 
-// doCreate — async-часть Create.
+// doCreate — async-часть Create. Атомарный backstop:
+//   - folder-exists peer-API
+//   - Writer-TX: Insert(RouteTable) + outbox-emit RouteTable.CREATED
+//
+// Auto-association trigger (KAC-56, миграция 0019) внутри Postgres сразу
+// после INSERT route_tables перебирает `subnets WHERE network_id = NEW.network_id
+// AND route_table_id IS NULL` и проставляет им `route_table_id = NEW.id`;
+// сопутствующие `Subnet.UPDATED` события записываются в outbox триггером —
+// всё в одной БД-TX, commit'ится атомарно с нашим Insert + outbox-emit.
 func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt domain.RouteTable) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, rt.FolderID)
 	if err != nil {
@@ -114,12 +138,33 @@ func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt 
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", rt.FolderID)
 	}
-	if _, err := u.networkRead.Get(ctx, rt.NetworkID); err != nil {
-		return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
-	}
+
 	rt.ID = rtID
-	created, err := u.repo.Insert(ctx, &rt)
+
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	// Parent Network existence — повторная проверка внутри writer-TX (FK ниже —
+	// атомарный backstop). FK route_tables.network_id → networks(id) даёт
+	// 23503 если parent исчез между sync-check и Insert.
+	if _, gerr := w.Networks().Get(ctx, rt.NetworkID); gerr != nil {
+		if errors.Is(gerr, repo.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
+		}
+		return nil, mapRepoErr(gerr)
+	}
+
+	created, err := w.RouteTables().Insert(ctx, &rt)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "RouteTable", created.ID, "CREATED", repo.RouteTablePayload(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalRouteTableRecord(created)

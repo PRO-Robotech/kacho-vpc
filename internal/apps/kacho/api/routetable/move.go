@@ -12,18 +12,21 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // MoveRouteTableUseCase — перенос RouteTable в другой folder.
+//
+// Wave 5 replicate (KAC-94): writer-TX явный, SetFolderID + outbox UPDATED атомарны.
 type MoveRouteTableUseCase struct {
-	repo         RouteTableRepo
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveRouteTableUseCase создаёт MoveRouteTableUseCase.
-func NewMoveRouteTableUseCase(repo RouteTableRepo, folderClient FolderClient, opsRepo operations.Repo) *MoveRouteTableUseCase {
-	return &MoveRouteTableUseCase{repo: repo, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveRouteTableUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveRouteTableUseCase {
+	return &MoveRouteTableUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
@@ -37,9 +40,14 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	cur, err := u.repo.Get(ctx, id)
+	rd, err := u.repo.Reader(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
+	}
+	cur, gerr := rd.RouteTables().Get(ctx, id)
+	_ = rd.Close()
+	if gerr != nil {
+		return nil, mapRepoErr(gerr)
 	}
 	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
 		return nil, err
@@ -58,16 +66,29 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, err := u.folderClient.Exists(ctx, destFolderID)
-		if err != nil {
-			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+		exists, ferr := u.folderClient.Exists(ctx, destFolderID)
+		if ferr != nil {
+			return nil, status.Errorf(codes.Unavailable, "folder check: %v", ferr)
 		}
 		if !exists {
 			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
 		}
-		updated, err := u.repo.SetFolderID(ctx, id, destFolderID)
-		if err != nil {
-			return nil, mapRepoErr(err)
+
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+
+		updated, uerr := w.RouteTables().SetFolderID(ctx, id, destFolderID)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", repo.RouteTablePayload(updated)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			return nil, mapRepoErr(cerr)
 		}
 		return marshalRouteTableRecord(updated)
 	})

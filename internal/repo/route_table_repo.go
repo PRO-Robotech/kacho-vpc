@@ -11,11 +11,13 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// RouteTable — type-alias на domain.RouteTableRecord (repo-entity с DB-managed
-// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
-type RouteTable = domain.RouteTableRecord
+// RouteTable — type-alias на kacho.RouteTableRecord (repo-entity с DB-managed
+// CreatedAt). Wave 5 replicate (KAC-94): Record уехал из domain в repo-leaf,
+// parity с repo.Network.
+type RouteTable = kachorepo.RouteTableRecord
 
 // RouteTableRepo — реализация RouteTableRepoIface поверх pgxpool.
 type RouteTableRepo struct {
