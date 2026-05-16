@@ -71,11 +71,18 @@ type RepositoryConfig struct {
 
 // PostgresConfig — секция repository.postgres.
 //
-//	URL              — стандартный DSN postgres://user:pass@host:port/db.
-//	MaxConns         — pgxpool max conns; 0 = pgx default (max(4, NumCPU)).
+//	URL              — стандартный DSN postgres://user:pass@host:port/db (master).
+//	SlaveURL         — DSN read-replica (опционально, skill evgeniy §6 G.4).
+//	                   Пустая строка / совпадает с URL → Reader-TX идут на master
+//	                   (fallback). Когда настроен — Reader использует slave-pool,
+//	                   разгружая master от read-load (streaming replication,
+//	                   `hot_standby=on` на реплике). Пароль читается из того же
+//	                   `password-from-env` и подставляется в обе DSN.
+//	MaxConns         — pgxpool max conns (одинаково для master и slave-pool);
+//	                   0 = pgx default (max(4, NumCPU)).
 //	SSLMode          — disable|require|verify-ca|verify-full (валидируется в Validate).
 //	PasswordFromEnv  — имя ENV-переменной, из которой подтягивается пароль и
-//	                   подставляется в URL (legacy KACHO_VPC_DB_PASSWORD).
+//	                   подставляется в URL и SlaveURL (legacy KACHO_VPC_DB_PASSWORD).
 //	                   Пустая строка — пароль уже в URL (или sslmode=disable+no-password).
 //
 // Пароль в YAML/ConfigMap — нельзя (commit-able), поэтому он остаётся
@@ -83,6 +90,7 @@ type RepositoryConfig struct {
 // `KACHO_VPC_DB_PASSWORD` (backward-compat).
 type PostgresConfig struct {
 	URL             string `mapstructure:"url"`
+	SlaveURL        string `mapstructure:"slave-url"`
 	MaxConns        int    `mapstructure:"max-conns"`
 	SSLMode         string `mapstructure:"ssl-mode"`
 	PasswordFromEnv string `mapstructure:"password-from-env"`
@@ -154,24 +162,28 @@ type FolderCacheConfigStruct struct {
 }
 
 // baseDSN — стандартный postgres DSN без pgxpool-параметров; используется
-// и pgxpool, и database/sql.Open("pgx").
+// и pgxpool, и database/sql.Open("pgx"). Принимает явный raw-DSN (URL или
+// SlaveURL), а sslmode подтягивает из общей PostgresConfig.SSLMode.
 func (c Config) baseDSN() string {
-	dsn := c.Repository.Postgres.URL
-	if dsn == "" {
+	return c.composeDSN(c.Repository.Postgres.URL)
+}
+
+func (c Config) composeDSN(raw string) string {
+	if raw == "" {
 		return ""
 	}
 	mode := c.Repository.Postgres.SSLMode
 	if mode == "" {
 		mode = "disable"
 	}
-	if dsnHas(dsn, "sslmode=") {
-		return dsn
+	if dsnHas(raw, "sslmode=") {
+		return raw
 	}
 	sep := "?"
-	if dsnHas(dsn, "?") {
+	if dsnHas(raw, "?") {
 		sep = "&"
 	}
-	return dsn + sep + "sslmode=" + mode
+	return raw + sep + "sslmode=" + mode
 }
 
 // DSN — connection string для pgxpool (поддерживает pool_max_conns).
@@ -187,7 +199,29 @@ func (c Config) DSN() string {
 	return dsn
 }
 
+// SlaveDSN — connection string для slave-pool (read-replica, skill evgeniy
+// §6 G.4). Пустая строка → реплика не настроена, caller использует master
+// (Repository.New(master, nil) → Reader fallback на master).
+//
+// SlaveURL совпадает с URL — slave-pool тоже не создаётся (caller передаст
+// nil), чтобы не плодить второй pool к той же физической БД.
+func (c Config) SlaveDSN() string {
+	slaveRaw := c.Repository.Postgres.SlaveURL
+	if slaveRaw == "" || slaveRaw == c.Repository.Postgres.URL {
+		return ""
+	}
+	dsn := c.composeDSN(slaveRaw)
+	if dsn == "" {
+		return ""
+	}
+	if c.Repository.Postgres.MaxConns > 0 {
+		dsn += fmt.Sprintf("&pool_max_conns=%d", c.Repository.Postgres.MaxConns)
+	}
+	return dsn
+}
+
 // MigrateDSN — connection string для goose/database/sql (без pool_max_conns).
+// Всегда master — goose не должен писать в реплику.
 func (c Config) MigrateDSN() string { return c.baseDSN() }
 
 func dsnHas(dsn, frag string) bool {

@@ -62,7 +62,7 @@ func TestCQRS_NIC_InsertCommit_ReaderSees(t *testing.T) {
 	pool, err := coredb.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestCQRS_NIC_AttachToInstance_CAS_Race(t *testing.T) {
 	pool, err := coredb.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Setup: создать NIC в AVAILABLE state.
 	nicID := ids.NewID(ids.PrefixSubnet)
@@ -188,7 +188,7 @@ func TestCQRS_NIC_AttachToInstance_IdempotentReattach(t *testing.T) {
 	pool, err := coredb.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	nicID := ids.NewID(ids.PrefixSubnet)
 	instanceID := ids.NewID(ids.PrefixSubnet)

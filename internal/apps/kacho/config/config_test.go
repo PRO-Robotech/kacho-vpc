@@ -344,6 +344,85 @@ func TestInjectPasswordIntoDSN_Idempotent(t *testing.T) {
 	require.Equal(t, dsn, injectPasswordIntoDSN(dsn, "new-pwd"))
 }
 
+// TestSlaveDSN_EmptyWhenUnset — slave-url не задан → SlaveDSN возвращает "".
+// Composition root читает это как "slavePool=nil" → fallback к master.
+// Skill evgeniy §6 G.4.
+func TestSlaveDSN_EmptyWhenUnset(t *testing.T) {
+	clearLegacyEnv(t)
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.Equal(t, "", cfg.Repository.Postgres.SlaveURL)
+	require.Equal(t, "", cfg.SlaveDSN())
+}
+
+// TestSlaveDSN_EmptyWhenEqualToMaster — slave-url == url считаем как "не настроено".
+// Не плодим второй pool к той же физической БД.
+func TestSlaveDSN_EmptyWhenEqualToMaster(t *testing.T) {
+	clearLegacyEnv(t)
+	yaml := `
+repository:
+  postgres:
+    url: postgres://u@h:5432/db
+    slave-url: postgres://u@h:5432/db
+    ssl-mode: disable
+`
+	cfg, err := Load(writeTempYAML(t, yaml))
+	require.NoError(t, err)
+	require.Equal(t, "", cfg.SlaveDSN())
+}
+
+// TestSlaveDSN_PopulatedFromYAML — slave-url из YAML формирует валидный DSN
+// с подставленным sslmode и pool_max_conns.
+func TestSlaveDSN_PopulatedFromYAML(t *testing.T) {
+	clearLegacyEnv(t)
+	yaml := `
+repository:
+  postgres:
+    url: postgres://u@master:5432/db
+    slave-url: postgres://u@replica:5432/db
+    ssl-mode: require
+    max-conns: 25
+`
+	cfg, err := Load(writeTempYAML(t, yaml))
+	require.NoError(t, err)
+	dsn := cfg.SlaveDSN()
+	require.Contains(t, dsn, "@replica:5432/db")
+	require.Contains(t, dsn, "sslmode=require")
+	require.Contains(t, dsn, "pool_max_conns=25")
+}
+
+// TestSlaveDSN_PasswordFromEnvAppliedToBoth — пароль из password-from-env
+// подставляется и в master URL, и в slave URL.
+func TestSlaveDSN_PasswordFromEnvAppliedToBoth(t *testing.T) {
+	clearLegacyEnv(t)
+	t.Setenv("KACHO_VPC_DB_PASSWORD", "s3cret")
+	yaml := `
+repository:
+  postgres:
+    url: postgres://u@master:5432/db
+    slave-url: postgres://u@replica:5432/db
+    ssl-mode: disable
+    password-from-env: KACHO_VPC_DB_PASSWORD
+`
+	cfg, err := Load(writeTempYAML(t, yaml))
+	require.NoError(t, err)
+	require.Contains(t, cfg.Repository.Postgres.URL, "u:s3cret@master")
+	require.Contains(t, cfg.Repository.Postgres.SlaveURL, "u:s3cret@replica")
+	require.Contains(t, cfg.SlaveDSN(), "u:s3cret@replica")
+}
+
+// TestSlaveDSN_FromENV — KACHO_VPC_REPOSITORY__POSTGRES__SLAVE_URL пробрасывается
+// через ENV-binding viper'а.
+func TestSlaveDSN_FromENV(t *testing.T) {
+	clearLegacyEnv(t)
+	t.Setenv("KACHO_VPC_REPOSITORY__POSTGRES__URL", "postgres://u@master:5432/db")
+	t.Setenv("KACHO_VPC_REPOSITORY__POSTGRES__SLAVE_URL", "postgres://u@replica:5432/db")
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.Equal(t, "postgres://u@replica:5432/db", cfg.Repository.Postgres.SlaveURL)
+	require.Contains(t, cfg.SlaveDSN(), "@replica:5432/db")
+}
+
 // --- helpers ---
 
 func writeTempYAML(t *testing.T, content string) string {

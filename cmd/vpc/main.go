@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -128,6 +129,24 @@ func runServe(cfg config.Config) error {
 	}
 	defer pool.Close()
 
+	// Skill evgeniy §6 G.4 — slave-pool wiring (read-replica). Если slave-url
+	// настроен и отличается от master URL — отдельный pgxpool для read-TX'ов;
+	// иначе slavePool = nil и kachopg.New() сделает fallback на master.
+	// Это структурный задел: код во всех use-case'ах уже разделён на Reader/
+	// Writer, переключение на реальную реплику — wiring-only.
+	var slavePool *pgxpool.Pool
+	if slaveDSN := cfg.SlaveDSN(); slaveDSN != "" {
+		slavePool, err = coredb.NewPool(ctx, slaveDSN)
+		if err != nil {
+			return fmt.Errorf("new slave pool: %w", err)
+		}
+		defer slavePool.Close()
+		logger.Info("kacho-vpc CQRS slave-pool enabled (read-replica)",
+			"slave_url_masked", maskDSN(cfg.Repository.Postgres.SlaveURL))
+	} else {
+		logger.Info("kacho-vpc CQRS slave-pool disabled — Reader-TX fallback to master")
+	}
+
 	opsRepo := operations.NewRepo(pool, "public")
 
 	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
@@ -167,7 +186,7 @@ func runServe(cfg config.Config) error {
 	defer computeConn.Close()
 	geoClient := clients.NewComputeGeographyClient(computeConn)
 
-	svcs := buildServices(pool, folderClient, geoClient, opsRepo, cfg, logger)
+	svcs := buildServices(pool, slavePool, folderClient, geoClient, opsRepo, cfg, logger)
 
 	// gRPC servers + tenant-interceptor (scaffold под IAM/AuthZ): сейчас читает
 	// metadata, future — JWT claims; handler'ы делают AssertFolderOwnership.
@@ -276,7 +295,10 @@ func runServe(cfg config.Config) error {
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
 // inline default SG.
-func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+//
+// slavePool — опц. read-replica pool (skill evgeniy §6 G.4); nil → kachopg.New
+// делает fallback и Reader-TX идут на master.
+func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	networkRepo := repo.NewNetworkRepo(pool)
 	subnetRepo := repo.NewSubnetRepo(pool)
 	addressRepo := repo.NewAddressRepo(pool)
@@ -335,7 +357,7 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	// `internal/repo/kacho/pg`. Остальные 7 ресурсов продолжают работать
 	// через legacy `*repo.NetworkRepo` etc. — replicate-фаза (отдельный
 	// эпик-subtask).
-	kachoRepo := kachopg.New(pool)
+	kachoRepo := kachopg.New(pool, slavePool)
 
 	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
 	// kachoRepo используется Network'ом + SG (Wave 5 batch 33/34, KAC-94: SG
@@ -520,4 +542,23 @@ func registerInternalServices(srv *grpc.Server, svcs *services, pool *pgxpool.Po
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, svcs.addressPoolHandler)
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
 	vpcv1.RegisterInternalCloudServiceServer(srv, handler.NewInternalCloudHandler(svcs.cloudSelSet, svcs.cloudSelUnset, svcs.cloudSelGet))
+}
+
+// maskDSN отдаёт DSN с замаскированным паролем — для безопасного логирования
+// slave-URL. Возвращает оригинальную строку, если она не парсится как URL.
+// Если password не найден, ничего не меняет (DSN без пароля — нормальная
+// dev-конфигурация sslmode=disable).
+func maskDSN(dsn string) string {
+	if dsn == "" {
+		return ""
+	}
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return dsn
+	}
+	if _, hasPwd := u.User.Password(); !hasPwd {
+		return dsn
+	}
+	u.User = url.UserPassword(u.User.Username(), "***")
+	return u.String()
 }

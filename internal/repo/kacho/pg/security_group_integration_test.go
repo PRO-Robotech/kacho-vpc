@@ -45,7 +45,7 @@ func TestCQRS_SG_InsertCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Network + SG в одной writer-TX.
 	w, err := r.Writer(ctx)
@@ -83,7 +83,7 @@ func TestCQRS_SG_AbortRollback(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestCQRS_Network_AtomicDefaultSGCreate(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestCQRS_Network_AtomicDefaultSGCreate_AbortOnSG(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestCQRS_SG_UpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Insert Network + SG.
 	w1, err := r.Writer(ctx)

@@ -21,40 +21,68 @@ import (
 )
 
 // Repository — pgxpool-impl корневого CQRS-контракта.
-type Repository struct {
-	pool *pgxpool.Pool
-}
-
-// New собирает Repository поверх существующего pgxpool.Pool (pool создаётся в
-// composition root, обычно из `kacho-corelib/db.NewPool`).
-func New(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
-}
-
-// Reader открывает read-only TX (read-committed). Возвращённый reader обязан
-// быть закрыт через Close() — это rollback'ит TX и возвращает соединение в пул.
 //
-// Сейчас TX идёт на тот же мастер; когда появится slave-реплика — здесь нужно
-// будет роутить на неё (skill evgeniy §6 G.4).
+// Skill evgeniy §6 G.4: Reader идёт на slave-реплику, Writer — на master.
+// Два физических pgxpool.Pool — обычно одна и та же логическая БД, но
+// slavePool читает из streaming-replica (hot_standby=on). Failover handled
+// outside (PGBouncer / Patroni / etc.) — Repository только маршрутизирует.
+//
+// Если slavePool не настроен (nil или передан тот же master) — Reader
+// открывает read-only TX на master-pool. Это структурный задел: код во всех
+// use-case'ах уже разделён на Reader/Writer, и переключение на реальную
+// реплику — это только wiring-изменение в `cmd/vpc/main.go` (`slavePool != nil`).
+type Repository struct {
+	master *pgxpool.Pool
+	slave  *pgxpool.Pool
+}
+
+// New собирает Repository поверх master- и опц. slave-pool'ов (skill evgeniy
+// §6 G.4).
+//
+//   - masterPool — RW pgxpool на primary; используется Writer + Reader-fallback.
+//   - slavePool  — RO pgxpool на streaming-replica; если nil → Reader идёт на
+//     master (fallback, текущее dev/prod-поведение). Когда реальная реплика
+//     появляется — composition root передаёт второй pool, и Reader-TX уходят
+//     на неё без изменений в use-case-слое.
+//
+// Pools создаются в composition root (обычно из `kacho-corelib/db.NewPool`).
+func New(masterPool, slavePool *pgxpool.Pool) *Repository {
+	if slavePool == nil {
+		slavePool = masterPool
+	}
+	return &Repository{master: masterPool, slave: slavePool}
+}
+
+// Reader открывает read-only TX (read-committed) на **slave-pool'е**, если он
+// настроен; иначе на master (fallback). Возвращённый reader обязан быть закрыт
+// через Close() — это rollback'ит TX и возвращает соединение в пул.
+//
+// Skill evgeniy §6 G.4: разгружает master от read-нагрузки. На реплике —
+// read-committed TX гарантированно read-only (streaming replica не принимает
+// writes); на master fallback — `pgx.TxOptions{AccessMode: pgx.ReadOnly}`
+// добавляет ту же гарантию на уровне Postgres.
 func (r *Repository) Reader(ctx context.Context) (kacho.RepositoryReader, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := r.slave.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
 	return &readerImpl{tx: tx}, nil
 }
 
-// Writer открывает RW TX на мастере. Caller обязан вызвать Commit() либо Abort()
-// (Abort идемпотентен — безопасно через defer сразу после открытия).
+// Writer открывает RW TX на **master-pool'е**. Caller обязан вызвать Commit()
+// либо Abort() (Abort идемпотентен — безопасно через defer сразу после открытия).
+//
+// Skill evgeniy §6 G.4: writes всегда идут на primary; репликация на slave —
+// асинхронная Postgres streaming replication, прозрачно для use-case'а.
 func (r *Repository) Writer(ctx context.Context) (kacho.RepositoryWriter, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := r.master.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return &writerImpl{tx: tx}, nil
 }
 
-// Close — no-op (pool управляется composition root, не репозиторием). Метод
+// Close — no-op (pool'ы управляются composition root, не репозиторием). Метод
 // есть в Repository-интерфейсе чтобы тестовый код мог .Close() мокать без
 // reach'а в pool.
 func (r *Repository) Close() {}
