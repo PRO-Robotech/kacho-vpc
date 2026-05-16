@@ -37,7 +37,7 @@ func (cw *cloudPoolSelectorWriter) Get(_ context.Context, cloudID string) (*doma
 	if _, deleted := cw.w.deletedCSIDs[cloudID]; deleted {
 		return nil, repo.ErrNotFound
 	}
-	c, ok := cw.w.localCSs[cloudID]
+	c, ok := cw.w.localCloudSels[cloudID]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
@@ -49,7 +49,7 @@ func (cw *cloudPoolSelectorWriter) Set(_ context.Context, cloudID string, sel ma
 	if cw.w.deletedCSIDs != nil {
 		delete(cw.w.deletedCSIDs, cloudID)
 	}
-	cw.w.localCSs[cloudID] = &domain.CloudPoolSelector{
+	cw.w.localCloudSels[cloudID] = &domain.CloudPoolSelector{
 		CloudID:  cloudID,
 		Selector: sel,
 		SetAt:    time.Now().UTC(),
@@ -63,7 +63,7 @@ func (cw *cloudPoolSelectorWriter) Unset(_ context.Context, cloudID string) erro
 		cw.w.deletedCSIDs = make(map[string]struct{})
 	}
 	cw.w.deletedCSIDs[cloudID] = struct{}{}
-	delete(cw.w.localCSs, cloudID)
+	delete(cw.w.localCloudSels, cloudID)
 	return nil
 }
 

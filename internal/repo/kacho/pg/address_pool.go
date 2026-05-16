@@ -171,6 +171,13 @@ LIMIT $4
 
 // FindAmbiguousSelectorGroups — diagnostic для Check. Группы pool'ов с
 // identical (zone_id, kind, selector_labels, selector_priority).
+//
+// Wave 5 A.7 sub-PR 1/6: над **одной** pgx.Tx нельзя держать открытый rows-
+// курсор и параллельно гонять Get-запросы (pgx запретит — only one query per
+// connection at a time). Поэтому сначала вычитываем все group-id'ы во временный
+// слайс, закрываем rows, потом делаем Get-loop. Legacy *AddressPoolRepo
+// работал на pgxpool — каждый Get шёл по СВОЕМУ соединению из пула, что
+// маскировало этот anti-pattern.
 func (r *addressPoolReader) FindAmbiguousSelectorGroups(ctx context.Context, zoneID string) ([][]*kacho.AddressPoolRecord, error) {
 	args := []any{}
 	where := "selector_labels <> '{}'::jsonb"
@@ -189,16 +196,31 @@ HAVING count(*) > 1
 	if err != nil {
 		return nil, repo.WrapPgErr(err, "AddressPool", "")
 	}
-	defer rows.Close()
-	var groups [][]*kacho.AddressPoolRecord
+
+	// Сначала вычитываем все group-id'ы во временный слайс — нельзя гонять
+	// `r.Get` внутри rows-iterate'а (single-conn TX блокирует второй query).
+	type rawGroup struct{ ids []string }
+	var raw []rawGroup
 	for rows.Next() {
 		var ids []string
 		var cnt int
 		if scanErr := rows.Scan(&ids, &cnt); scanErr != nil {
+			rows.Close()
 			return nil, repo.WrapPgErr(scanErr, "AddressPool", "")
 		}
-		group := make([]*kacho.AddressPoolRecord, 0, len(ids))
-		for _, id := range ids {
+		raw = append(raw, rawGroup{ids: ids})
+	}
+	if rerr := rows.Err(); rerr != nil {
+		rows.Close()
+		return nil, repo.WrapPgErr(rerr, "AddressPool", "")
+	}
+	rows.Close()
+
+	// Теперь rows закрыт — можно делать Get по той же TX.
+	var groups [][]*kacho.AddressPoolRecord
+	for _, rg := range raw {
+		group := make([]*kacho.AddressPoolRecord, 0, len(rg.ids))
+		for _, id := range rg.ids {
 			rec, gerr := r.Get(ctx, id)
 			if gerr != nil {
 				continue
@@ -209,7 +231,7 @@ HAVING count(*) > 1
 			groups = append(groups, group)
 		}
 	}
-	return groups, rows.Err()
+	return groups, nil
 }
 
 // CountAddressesByPool — admin observability: сколько Address используют pool.

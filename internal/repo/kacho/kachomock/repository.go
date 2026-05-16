@@ -370,25 +370,25 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 	for k, v := range r.addrOverrideBinds {
 		localAOs[k] = v
 	}
-	localCSs := make(map[string]*domain.CloudPoolSelector, len(r.cloudSelectors))
+	localCloudSels := make(map[string]*domain.CloudPoolSelector, len(r.cloudSelectors))
 	for id, s := range r.cloudSelectors {
 		cp := *s
-		localCSs[id] = &cp
+		localCloudSels[id] = &cp
 	}
 	return &writerImpl{
-		parent:     r,
-		local:      localNets,
-		localSGs:   localSGs,
-		localSubs:  localSubs,
-		localRTs:   localRTs,
-		localPEs:   localPEs,
-		localNIs:   localNIs,
-		localAddrs: localAddrs,
-		localGWs:   localGWs,
-		localAPs:   localAPs,
-		localNDs:   localNDs,
-		localAOs:   localAOs,
-		localCSs:   localCSs,
+		parent:         r,
+		local:          localNets,
+		localSGs:       localSGs,
+		localSubs:      localSubs,
+		localRTs:       localRTs,
+		localPEs:       localPEs,
+		localNIs:       localNIs,
+		localAddrs:     localAddrs,
+		localGWs:       localGWs,
+		localAPs:       localAPs,
+		localNDs:       localNDs,
+		localAOs:       localAOs,
+		localCloudSels: localCloudSels,
 	}, nil
 }
 
@@ -478,7 +478,7 @@ type writerImpl struct {
 	localAPs       map[string]*kacho.AddressPoolRecord
 	localNDs       map[string]string
 	localAOs       map[string]string
-	localCSs       map[string]*domain.CloudPoolSelector
+	localCloudSels map[string]*domain.CloudPoolSelector
 	localOutbox    []OutboxEvent
 	deletedIDs     map[string]struct{} // Network deletions
 	deletedSGIDs   map[string]struct{} // SG deletions
@@ -648,7 +648,7 @@ func (w *writerImpl) Commit() error {
 	for id := range w.deletedCSIDs {
 		delete(w.parent.cloudSelectors, id)
 	}
-	for id, s := range w.localCSs {
+	for id, s := range w.localCloudSels {
 		w.parent.cloudSelectors[id] = s
 	}
 	// Перенести outbox-events в общий state.
