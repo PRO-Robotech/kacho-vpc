@@ -147,7 +147,11 @@ func runServe(cfg config.Config) error {
 		logger.Info("kacho-vpc CQRS slave-pool disabled — Reader-TX fallback to master")
 	}
 
-	opsRepo := operations.NewRepo(pool, "public")
+	// Schema = `kacho_vpc` после KAC-94 (миграция 0034 перенесла все VPC-таблицы
+	// из `public`). cfg.DSN() уже несёт `options=-c search_path=kacho_vpc,public`
+	// — unqualified-references из repo-кода резолвятся в kacho_vpc. operations-repo
+	// дополнительно передаёт схему явно для квалификации SQL-операций.
+	opsRepo := operations.NewRepo(pool, "kacho_vpc")
 
 	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
 	// retries=3 / dialTimeout=10s / keepalive=30s / TLS / опц. dns:///+round_robin (KAC-39).

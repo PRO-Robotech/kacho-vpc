@@ -161,13 +161,37 @@ type FolderCacheConfigStruct struct {
 	MaxSize     int           `mapstructure:"max-size"`
 }
 
+// schemaOptionsParam — URL-encoded libpq-параметр `options=-c search_path=…`.
+// Добавляется в baseDSN автоматически (если ещё не задано), чтобы каждое
+// соединение (pgxpool, dedicated pgx.Conn для LISTEN, goose-через-database/sql)
+// видело таблицы kacho-vpc по unqualified-имени.
+//
+// Значение search_path — «kacho_vpc, public»:
+//   - `kacho_vpc` впереди — наши таблицы (миграция 0034 переехала их из public);
+//   - `public` сзади — `btree_gist`-extension и built-in объекты Postgres,
+//     которые extension/CREATE-команды по умолчанию создают там.
+//
+// Пробел в `-c search_path=…` обязан быть `%20`; знак `=` внутри значения —
+// `%3D`; запятая — `%2C`. При смене схемы (ребрендинг / multi-tenant) — менять
+// здесь и в миграции 0034 одновременно.
+const schemaOptionsParam = "options=-c%20search_path%3Dkacho_vpc%2Cpublic"
+
 // baseDSN — стандартный postgres DSN без pgxpool-параметров; используется
-// и pgxpool, и database/sql.Open("pgx"). Принимает явный raw-DSN (URL или
-// SlaveURL), а sslmode подтягивает из общей PostgresConfig.SSLMode.
+// и pgxpool, и database/sql.Open("pgx"). Делегирует composeDSN(URL) — общему
+// формирователю для master- и slave-DSN.
 func (c Config) baseDSN() string {
 	return c.composeDSN(c.Repository.Postgres.URL)
 }
 
+// composeDSN добавляет к raw-DSN (master URL или slave URL) недостающие libpq-
+// параметры: `sslmode=<mode>` (из PostgresConfig.SSLMode, default `disable`)
+// и `options=-c search_path=kacho_vpc,public` (KAC-94: миграция 0034 переехала
+// все VPC-таблицы из схемы `public` в `kacho_vpc`, поэтому каждое соединение
+// должно установить корректный search_path).
+//
+// Если соответствующий параметр уже задан в raw-URL — не перетираем (упрощает
+// override через прямой ENV/yaml). Для пустого raw возвращаем пустую строку
+// — caller интерпретирует это как «slave не настроен».
 func (c Config) composeDSN(raw string) string {
 	if raw == "" {
 		return ""
@@ -176,14 +200,25 @@ func (c Config) composeDSN(raw string) string {
 	if mode == "" {
 		mode = "disable"
 	}
-	if dsnHas(raw, "sslmode=") {
-		return raw
+	if !dsnHas(raw, "sslmode=") {
+		sep := "?"
+		if dsnHas(raw, "?") {
+			sep = "&"
+		}
+		raw = raw + sep + "sslmode=" + mode
 	}
-	sep := "?"
-	if dsnHas(raw, "?") {
-		sep = "&"
+	// Append search_path via libpq `options` parameter, если ещё не задан.
+	// Распознаём как `options=`, так и URL-encoded `options%3D` (на всякий
+	// случай). Если пользователь сам прописал `options=...` в URL — оставляем
+	// его, не перетираем (упрощает override в dev/debug).
+	if !dsnHas(raw, "options=") && !dsnHas(raw, "options%3D") {
+		sep := "?"
+		if dsnHas(raw, "?") {
+			sep = "&"
+		}
+		raw = raw + sep + schemaOptionsParam
 	}
-	return raw + sep + "sslmode=" + mode
+	return raw
 }
 
 // DSN — connection string для pgxpool (поддерживает pool_max_conns).

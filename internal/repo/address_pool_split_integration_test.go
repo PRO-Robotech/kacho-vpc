@@ -70,7 +70,11 @@ func setupTestDBWithMigrationsUpto(t testing.TB, target int64) string {
 	require.NoError(t, goose.SetDialect("postgres"))
 	require.NoError(t, goose.UpTo(db, ".", target))
 
-	return dsn
+	// KAC-94 (миграция 0034): search_path задаётся даже если target<34 — тогда
+	// схема `kacho_vpc` ещё не существует, Postgres молча пропустит её в
+	// search_path и упадёт на `public` (стандартное поведение). После
+	// applyMigrationUp прыжка >=34 — search_path находит реальную схему.
+	return appendSearchPathOptions(dsn)
 }
 
 // applyMigration — применяет следующую миграцию (один шаг). Возвращает ошибку
