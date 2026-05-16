@@ -465,7 +465,6 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 	)
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
-		i := i
 		go func() {
 			defer wg.Done()
 			p := &domain.AddressPool{
