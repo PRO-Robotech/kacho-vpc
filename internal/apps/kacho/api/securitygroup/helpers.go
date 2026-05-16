@@ -16,6 +16,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 
 	// Blank-import регистрирует трансферы SecurityGroup/time через init() (skill evgeniy §3 C.4).
@@ -142,10 +143,10 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 // securityGroupPayloadMap — snapshot SecurityGroup для outbox payload. Wave 5
 // replicate (KAC-94, skill evgeniy §6 G.5): use-case Create/Update/Delete/Move
 // формирует payload в той же writer-TX, что и DML, через `w.Outbox().Emit(...)`.
-// Делегирует exported shim `repo.SecurityGroupPayload`, чтобы держать
+// Делегирует exported shim `helpers.SecurityGroupPayload`, чтобы держать
 // json.Marshal-схему единой со legacy `*repo.SecurityGroupRepo`-консьюмерами.
 func securityGroupPayloadMap(sg *kacho.SecurityGroupRecord) map[string]any {
-	return repo.SecurityGroupPayload(sg)
+	return helpers.SecurityGroupPayload(sg)
 }
 
 // marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через

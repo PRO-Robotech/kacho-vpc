@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
 // UpdatePoolReq — частичное обновление; nil-пойнтеры/false-flags = no-op.
@@ -123,7 +123,7 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 		}
 	}
 	if err := w.Outbox().Emit(ctx, "AddressPool", updated.ID, "UPDATED",
-		repo.AddressPoolDomainPayload(&updated.AddressPool)); err != nil {
+		helpers.AddressPoolDomainPayload(&updated.AddressPool)); err != nil {
 		return nil, status.Errorf(codes.Internal, "outbox emit: %v", err)
 	}
 	if err := w.Commit(); err != nil {

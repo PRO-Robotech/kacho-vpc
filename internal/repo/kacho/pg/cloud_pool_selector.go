@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -32,14 +32,14 @@ func (r *cloudPoolSelectorReader) Get(ctx context.Context, cloudID string) (*dom
 	`, cloudID).Scan(&js, &setAt, &setBy)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, repo.ErrNotFound
+			return nil, helpers.ErrNotFound
 		}
-		return nil, repo.WrapPgErr(err, "CloudPoolSelector", cloudID)
+		return nil, helpers.WrapPgErr(err, "CloudPoolSelector", cloudID)
 	}
 	out.CloudID = cloudID
 	out.SetAt = setAt
 	out.SetBy = setBy
-	if err := repo.UnmarshalJSONB(js, &out.Selector, "cloud_pool_selector.selector"); err != nil {
+	if err := helpers.UnmarshalJSONB(js, &out.Selector, "cloud_pool_selector.selector"); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -52,7 +52,7 @@ type cloudPoolSelectorWriter struct {
 }
 
 func (w *cloudPoolSelectorWriter) Set(ctx context.Context, cloudID string, selector map[string]string, setBy string) error {
-	js, err := json.Marshal(repo.NormalizeMap(selector))
+	js, err := json.Marshal(helpers.NormalizeMap(selector))
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (w *cloudPoolSelectorWriter) Set(ctx context.Context, cloudID string, selec
 		SET selector = EXCLUDED.selector, set_at = now(), set_by = EXCLUDED.set_by
 	`, cloudID, js, setBy)
 	if err != nil {
-		return repo.WrapPgErr(err, "CloudPoolSelector", cloudID)
+		return helpers.WrapPgErr(err, "CloudPoolSelector", cloudID)
 	}
 	return nil
 }
@@ -71,7 +71,7 @@ func (w *cloudPoolSelectorWriter) Set(ctx context.Context, cloudID string, selec
 func (w *cloudPoolSelectorWriter) Unset(ctx context.Context, cloudID string) error {
 	_, err := w.tx.Exec(ctx, `DELETE FROM cloud_pool_selector WHERE cloud_id = $1`, cloudID)
 	if err != nil {
-		return repo.WrapPgErr(err, "CloudPoolSelector", cloudID)
+		return helpers.WrapPgErr(err, "CloudPoolSelector", cloudID)
 	}
 	return nil
 }

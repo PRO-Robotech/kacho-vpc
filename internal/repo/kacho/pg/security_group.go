@@ -13,7 +13,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -27,8 +27,8 @@ import (
 //
 // SQL/scan-семантика — parity с legacy `*repo.SecurityGroupRepo`:
 // см. `internal/repo/security_group_repo.go` (helpers экспортированы как
-// shim'ы — `repo.SGCols` / `repo.ScanSG` / `repo.WrapSGErr` / `repo.NullableStr`
-// / `repo.SecurityGroupPayload`).
+// shim'ы — `helpers.SGCols` / `helpers.ScanSG` / `helpers.WrapSGErr` / `helpers.NullableStr`
+// / `helpers.SecurityGroupPayload`).
 type securityGroupReader struct {
 	tx pgx.Tx
 }
@@ -36,11 +36,11 @@ type securityGroupReader struct {
 // Get — verbatim YC: well-formed-but-absent → NotFound с
 // "Security group SecurityGroup.Id(value=<id>) not found" (через WrapSGErr).
 func (r *securityGroupReader) Get(ctx context.Context, id string) (*kacho.SecurityGroupRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM security_groups WHERE id = $1`, repo.SGCols)
+	q := fmt.Sprintf(`SELECT %s FROM security_groups WHERE id = $1`, helpers.SGCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	sg, err := repo.ScanSG(row)
+	sg, err := helpers.ScanSG(row)
 	if err != nil {
-		return nil, repo.WrapSGErr(err, id)
+		return nil, helpers.WrapSGErr(err, id)
 	}
 	return sg, nil
 }
@@ -75,7 +75,7 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name", "network_id"})
 		if perr != nil {
-			return nil, "", repo.InvalidFilterErr(perr)
+			return nil, "", helpers.InvalidFilterErr(perr)
 		}
 		if ast != nil {
 			frag, fargs := ast.ToSQL(argIdx)
@@ -85,9 +85,9 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 		}
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -98,31 +98,31 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	q := fmt.Sprintf(`SELECT %s FROM security_groups %s ORDER BY created_at ASC, id ASC LIMIT $%d`, repo.SGCols, where, argIdx)
+	q := fmt.Sprintf(`SELECT %s FROM security_groups %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.SGCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapSGErr(err, "")
+		return nil, "", helpers.WrapSGErr(err, "")
 	}
 	defer rows.Close()
 
 	var result []*kacho.SecurityGroupRecord
 	for rows.Next() {
-		sg, err := repo.ScanSG(rows)
+		sg, err := helpers.ScanSG(rows)
 		if err != nil {
-			return nil, "", repo.WrapSGErr(err, "")
+			return nil, "", helpers.WrapSGErr(err, "")
 		}
 		result = append(result, sg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapSGErr(err, "")
+		return nil, "", helpers.WrapSGErr(err, "")
 	}
 
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -147,11 +147,11 @@ type securityGroupWriter struct {
 //
 // outbox-write — в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
 	}
-	rulesJSON, err := repo.MarshalJSONB(sg.Rules, "SecurityGroup.rules")
+	rulesJSON, err := helpers.MarshalJSONB(sg.Rules, "SecurityGroup.rules")
 	if err != nil {
 		return nil, err
 	}
@@ -160,15 +160,15 @@ func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGro
 	q := fmt.Sprintf(`
 		INSERT INTO security_groups (id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING %s`, repo.SGCols)
+		RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q,
-		sg.ID, sg.FolderID, repo.NullableStr(sg.NetworkID), now,
+		sg.ID, sg.FolderID, helpers.NullableStr(sg.NetworkID), now,
 		string(sg.Name), string(sg.Description), labelsJSON,
 		string(sg.Status), sg.DefaultForNetwork, rulesJSON,
 	)
-	result, err := repo.ScanSG(row)
+	result, err := helpers.ScanSG(row)
 	if err != nil {
-		return nil, repo.WrapSGErr(err, string(sg.Name))
+		return nil, helpers.WrapSGErr(err, string(sg.Name))
 	}
 	return result, nil
 }
@@ -176,11 +176,11 @@ func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGro
 // Update — UPDATE security_groups RETURNING name/description/labels/rules/status.
 // outbox-write — в use-case'е.
 func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(sg.Labels), "SecurityGroup.labels")
 	if err != nil {
 		return nil, err
 	}
-	rulesJSON, err := repo.MarshalJSONB(sg.Rules, "SecurityGroup.rules")
+	rulesJSON, err := helpers.MarshalJSONB(sg.Rules, "SecurityGroup.rules")
 	if err != nil {
 		return nil, err
 	}
@@ -188,24 +188,24 @@ func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGro
 	q := fmt.Sprintf(`
 		UPDATE security_groups SET name=$2, description=$3, labels=$4, rules=$5, status=$6
 		WHERE id=$1
-		RETURNING %s`, repo.SGCols)
+		RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q,
 		sg.ID, string(sg.Name), string(sg.Description), labelsJSON, rulesJSON, string(sg.Status),
 	)
-	result, err := repo.ScanSG(row)
+	result, err := helpers.ScanSG(row)
 	if err != nil {
-		return nil, repo.WrapSGErr(err, sg.ID)
+		return nil, helpers.WrapSGErr(err, sg.ID)
 	}
 	return result, nil
 }
 
 // SetFolderID меняет folder_id у SG (для :move). outbox-write — в use-case'е.
 func (w *securityGroupWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
-	q := fmt.Sprintf(`UPDATE security_groups SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.SGCols)
+	q := fmt.Sprintf(`UPDATE security_groups SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	sg, err := repo.ScanSG(row)
+	sg, err := helpers.ScanSG(row)
 	if err != nil {
-		return nil, repo.WrapSGErr(err, id)
+		return nil, helpers.WrapSGErr(err, id)
 	}
 	return sg, nil
 }
@@ -217,10 +217,10 @@ func (w *securityGroupWriter) SetFolderID(ctx context.Context, id, folderID stri
 func (w *securityGroupWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM security_groups WHERE id = $1`, id)
 	if err != nil {
-		return repo.WrapSGErr(err, id)
+		return helpers.WrapSGErr(err, id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Security group SecurityGroup.Id(value=%s) not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }
@@ -235,12 +235,12 @@ func (w *securityGroupWriter) UpdateRules(ctx context.Context, sgID string, dele
 	var rulesJSON []byte
 	var rowXmin string
 	if err := w.tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin); err != nil {
-		return nil, repo.WrapSGErr(err, sgID)
+		return nil, helpers.WrapSGErr(err, sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
 		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
-			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", repo.ErrInternal, sgID, err)
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", helpers.ErrInternal, sgID, err)
 		}
 	}
 	if len(deleteIDs) > 0 {
@@ -258,20 +258,20 @@ func (w *securityGroupWriter) UpdateRules(ctx context.Context, sgID string, dele
 		rules = filtered
 	}
 	rules = append(rules, add...)
-	newRulesJSON, err := repo.MarshalJSONB(rules, "SecurityGroup.rules")
+	newRulesJSON, err := helpers.MarshalJSONB(rules, "SecurityGroup.rules")
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, repo.SGCols)
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)
-	sg, err := repo.ScanSG(row)
+	sg, err := helpers.ScanSG(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
-				repo.ErrFailedPrecondition, sgID)
+				helpers.ErrFailedPrecondition, sgID)
 		}
-		return nil, repo.WrapSGErr(err, sgID)
+		return nil, helpers.WrapSGErr(err, sgID)
 	}
 	return sg, nil
 }
@@ -284,12 +284,12 @@ func (w *securityGroupWriter) UpdateRule(ctx context.Context, sgID, ruleID, desc
 	var rulesJSON []byte
 	var rowXmin string
 	if err := w.tx.QueryRow(ctx, `SELECT rules, xmin::text FROM security_groups WHERE id = $1`, sgID).Scan(&rulesJSON, &rowXmin); err != nil {
-		return nil, repo.WrapSGErr(err, sgID)
+		return nil, helpers.WrapSGErr(err, sgID)
 	}
 	var rules []domain.SecurityGroupRule
 	if rulesJSON != nil {
 		if err := json.Unmarshal(rulesJSON, &rules); err != nil {
-			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", repo.ErrInternal, sgID, err)
+			return nil, fmt.Errorf("%w: corrupted rules JSONB for SG %s: %v", helpers.ErrInternal, sgID, err)
 		}
 	}
 	found := false
@@ -318,22 +318,22 @@ func (w *securityGroupWriter) UpdateRule(ctx context.Context, sgID, ruleID, desc
 	}
 	if !found {
 		return nil, fmt.Errorf("%w: SecurityGroupRule %s not found in SecurityGroup %s",
-			repo.ErrNotFound, ruleID, sgID)
+			helpers.ErrNotFound, ruleID, sgID)
 	}
-	newRulesJSON, err := repo.MarshalJSONB(rules, "SecurityGroup.rules")
+	newRulesJSON, err := helpers.MarshalJSONB(rules, "SecurityGroup.rules")
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, repo.SGCols)
+	q := fmt.Sprintf(`UPDATE security_groups SET rules = $2 WHERE id = $1 AND xmin::text = $3 RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q, sgID, newRulesJSON, rowXmin)
-	sg, err := repo.ScanSG(row)
+	sg, err := helpers.ScanSG(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: SecurityGroup %s was modified concurrently, please retry",
-				repo.ErrFailedPrecondition, sgID)
+				helpers.ErrFailedPrecondition, sgID)
 		}
-		return nil, repo.WrapSGErr(err, sgID)
+		return nil, helpers.WrapSGErr(err, sgID)
 	}
 	return sg, nil
 }

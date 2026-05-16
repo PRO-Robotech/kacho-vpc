@@ -13,6 +13,7 @@ import (
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 
 	// Blank-import регистрирует трансферы Gateway/time через init() (skill evgeniy §3 C.4).
@@ -96,8 +97,8 @@ func marshalGatewayRecord(rec *kacho.GatewayRecord) (*anypb.Any, error) {
 }
 
 // gatewayPayloadMap — payload snapshot для outbox-event (parity с legacy
-// `repo.gatewayPayload`). Использует exported shim `repo.GatewayPayload` —
+// `repo.gatewayPayload`). Использует exported shim `helpers.GatewayPayload` —
 // иначе пришлось бы дублировать map-encoding здесь.
 func gatewayPayloadMap(g *kacho.GatewayRecord) map[string]any {
-	return repo.GatewayPayload(g)
+	return helpers.GatewayPayload(g)
 }

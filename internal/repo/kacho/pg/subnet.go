@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -21,20 +21,20 @@ import (
 //
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): Subnet переезжает на
 // CQRS-Repository вслед за Network/SG. SQL/scan-семантика — parity с legacy
-// `*repo.SubnetRepo` (helpers экспортированы как shim'ы — `repo.SubnetCols` /
-// `repo.ScanSubnet` / `repo.IsExclusionViolation` / `repo.MarshalDhcp` /
-// `repo.AddressCols` / `repo.ScanAddress`).
+// `*repo.SubnetRepo` (helpers экспортированы как shim'ы — `helpers.SubnetCols` /
+// `helpers.ScanSubnet` / `helpers.IsExclusionViolation` / `helpers.MarshalDhcp` /
+// `helpers.AddressCols` / `helpers.ScanAddress`).
 type subnetReader struct {
 	tx pgx.Tx
 }
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "Subnet <id> not found".
 func (r *subnetReader) Get(ctx context.Context, id string) (*kacho.SubnetRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM subnets WHERE id = $1`, repo.SubnetCols)
+	q := fmt.Sprintf(`SELECT %s FROM subnets WHERE id = $1`, helpers.SubnetCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	s, err := repo.ScanSubnet(row)
+	s, err := helpers.ScanSubnet(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", id)
+		return nil, helpers.WrapPgErr(err, "Subnet", id)
 	}
 	return s, nil
 }
@@ -69,7 +69,7 @@ func (r *subnetReader) List(ctx context.Context, f kacho.SubnetFilter, p kacho.P
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name"})
 		if perr != nil {
-			return nil, "", repo.InvalidFilterErr(perr)
+			return nil, "", helpers.InvalidFilterErr(perr)
 		}
 		if ast != nil {
 			frag, fargs := ast.ToSQL(argIdx)
@@ -79,9 +79,9 @@ func (r *subnetReader) List(ctx context.Context, f kacho.SubnetFilter, p kacho.P
 		}
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -92,31 +92,31 @@ func (r *subnetReader) List(ctx context.Context, f kacho.SubnetFilter, p kacho.P
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	q := fmt.Sprintf(`SELECT %s FROM subnets %s ORDER BY created_at ASC, id ASC LIMIT $%d`, repo.SubnetCols, where, argIdx)
+	q := fmt.Sprintf(`SELECT %s FROM subnets %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.SubnetCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Subnet", "")
+		return nil, "", helpers.WrapPgErr(err, "Subnet", "")
 	}
 	defer rows.Close()
 
 	var result []*kacho.SubnetRecord
 	for rows.Next() {
-		s, err := repo.ScanSubnet(rows)
+		s, err := helpers.ScanSubnet(rows)
 		if err != nil {
-			return nil, "", repo.WrapPgErr(err, "Subnet", "")
+			return nil, "", helpers.WrapPgErr(err, "Subnet", "")
 		}
 		result = append(result, s)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "Subnet", "")
+		return nil, "", helpers.WrapPgErr(err, "Subnet", "")
 	}
 
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -135,9 +135,9 @@ func (r *subnetReader) AddressesBySubnet(ctx context.Context, subnetID string, p
 	argIdx := 2
 	tokenCond := ""
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		tokenCond = fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", argIdx, argIdx+1)
 		args = append(args, ts, id)
@@ -148,29 +148,29 @@ func (r *subnetReader) AddressesBySubnet(ctx context.Context, subnetID string, p
 	      OR (internal_ipv6 IS NOT NULL AND internal_ipv6->>'subnet_id' = $1))
 	    %s
 	  ORDER BY created_at ASC, id ASC
-	  LIMIT $%d`, repo.AddressCols, tokenCond, argIdx)
+	  LIMIT $%d`, helpers.AddressCols, tokenCond, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Address", "")
+		return nil, "", helpers.WrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
 	var result []*kacho.AddressRecord
 	for rows.Next() {
-		a, err := repo.ScanAddress(rows)
+		a, err := helpers.ScanAddress(rows)
 		if err != nil {
-			return nil, "", repo.WrapPgErr(err, "Address", "")
+			return nil, "", helpers.WrapPgErr(err, "Address", "")
 		}
 		result = append(result, a)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "Address", "")
+		return nil, "", helpers.WrapPgErr(err, "Address", "")
 	}
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -199,11 +199,11 @@ type subnetWriter struct {
 //
 // outbox-write — не здесь, а в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.SubnetRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(s.Labels), "Subnet.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(s.Labels), "Subnet.labels")
 	if err != nil {
 		return nil, err
 	}
-	dhcpJSON, err := repo.MarshalDhcp(s.DhcpOptions)
+	dhcpJSON, err := helpers.MarshalDhcp(s.DhcpOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -212,21 +212,21 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 	q := fmt.Sprintf(`
 		INSERT INTO subnets (id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING %s`, repo.SubnetCols)
+		RETURNING %s`, helpers.SubnetCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		s.ID, s.FolderID, now, string(s.Name), string(s.Description), labelsJSON,
 		s.NetworkID, s.ZoneID,
 		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
 		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V6CidrBlocks)), LowerBound: 1}}},
-		repo.NullableStr(s.RouteTableID), dhcpJSON,
+		helpers.NullableStr(s.RouteTableID), dhcpJSON,
 	)
-	result, err := repo.ScanSubnet(row)
-	if repo.IsExclusionViolation(err) {
-		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", repo.ErrFailedPrecondition)
+	result, err := helpers.ScanSubnet(row)
+	if helpers.IsExclusionViolation(err) {
+		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", helpers.ErrFailedPrecondition)
 	}
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", string(s.Name))
+		return nil, helpers.WrapPgErr(err, "Subnet", string(s.Name))
 	}
 	return result, nil
 }
@@ -240,11 +240,11 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 //
 // outbox-write — в use-case'е.
 func (w *subnetWriter) Update(ctx context.Context, s *domain.Subnet) (*kacho.SubnetRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(s.Labels), "Subnet.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(s.Labels), "Subnet.labels")
 	if err != nil {
 		return nil, err
 	}
-	dhcpJSON, err := repo.MarshalDhcp(s.DhcpOptions)
+	dhcpJSON, err := helpers.MarshalDhcp(s.DhcpOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -252,15 +252,15 @@ func (w *subnetWriter) Update(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 	q := fmt.Sprintf(`
 		UPDATE subnets SET name=$2, description=$3, labels=$4, route_table_id=$5, dhcp_options=$6
 		WHERE id=$1
-		RETURNING %s`, repo.SubnetCols)
+		RETURNING %s`, helpers.SubnetCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		s.ID, string(s.Name), string(s.Description), labelsJSON,
-		repo.NullableStr(s.RouteTableID), dhcpJSON,
+		helpers.NullableStr(s.RouteTableID), dhcpJSON,
 	)
-	result, err := repo.ScanSubnet(row)
+	result, err := helpers.ScanSubnet(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", s.ID)
+		return nil, helpers.WrapPgErr(err, "Subnet", s.ID)
 	}
 	return result, nil
 }
@@ -272,17 +272,17 @@ func (w *subnetWriter) Update(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 //
 // outbox-write — в use-case'е.
 func (w *subnetWriter) SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*kacho.SubnetRecord, error) {
-	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2, v6_cidr_blocks = $3 WHERE id = $1 RETURNING %s`, repo.SubnetCols)
+	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2, v6_cidr_blocks = $3 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
 	row := w.tx.QueryRow(ctx, q, id,
 		pgtype.Array[string]{Elements: v4, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v4)), LowerBound: 1}}},
 		pgtype.Array[string]{Elements: v6, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v6)), LowerBound: 1}}},
 	)
-	s, err := repo.ScanSubnet(row)
-	if repo.IsExclusionViolation(err) {
-		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", repo.ErrFailedPrecondition)
+	s, err := helpers.ScanSubnet(row)
+	if helpers.IsExclusionViolation(err) {
+		return nil, fmt.Errorf("%w: Subnet CIDRs can not overlap", helpers.ErrFailedPrecondition)
 	}
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", id)
+		return nil, helpers.WrapPgErr(err, "Subnet", id)
 	}
 	return s, nil
 }
@@ -291,22 +291,22 @@ func (w *subnetWriter) SetCidrBlocks(ctx context.Context, id string, v4, v6 []st
 // равно sync-FailedPrecondition'ит до этого вызова, метод оставлен для
 // completeness / future-state). outbox-write — в use-case'е.
 func (w *subnetWriter) SetZoneID(ctx context.Context, id, zoneID string) (*kacho.SubnetRecord, error) {
-	q := fmt.Sprintf(`UPDATE subnets SET zone_id = $2 WHERE id = $1 RETURNING %s`, repo.SubnetCols)
+	q := fmt.Sprintf(`UPDATE subnets SET zone_id = $2 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
 	row := w.tx.QueryRow(ctx, q, id, zoneID)
-	s, err := repo.ScanSubnet(row)
+	s, err := helpers.ScanSubnet(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", id)
+		return nil, helpers.WrapPgErr(err, "Subnet", id)
 	}
 	return s, nil
 }
 
 // SetFolderID меняет folder_id у Subnet (для :move). outbox-write — в use-case'е.
 func (w *subnetWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
-	q := fmt.Sprintf(`UPDATE subnets SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.SubnetCols)
+	q := fmt.Sprintf(`UPDATE subnets SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	s, err := repo.ScanSubnet(row)
+	s, err := helpers.ScanSubnet(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Subnet", id)
+		return nil, helpers.WrapPgErr(err, "Subnet", id)
 	}
 	return s, nil
 }
@@ -319,13 +319,13 @@ func (w *subnetWriter) SetFolderID(ctx context.Context, id, folderID string) (*k
 func (w *subnetWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM subnets WHERE id = $1`, id)
 	if err != nil {
-		if repo.IsFKViolation(err) {
-			return fmt.Errorf("%w: subnet has dependent resources", repo.ErrFailedPrecondition)
+		if helpers.IsFKViolation(err) {
+			return fmt.Errorf("%w: subnet has dependent resources", helpers.ErrFailedPrecondition)
 		}
-		return repo.WrapPgErr(err, "Subnet", id)
+		return helpers.WrapPgErr(err, "Subnet", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Subnet %s not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Subnet %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }

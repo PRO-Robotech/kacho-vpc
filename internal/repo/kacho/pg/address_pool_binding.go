@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -24,9 +24,9 @@ func (r *addressPoolBindingReader) GetNetworkDefault(ctx context.Context, networ
 		networkID).Scan(&poolID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", repo.ErrNotFound
+			return "", helpers.ErrNotFound
 		}
-		return "", repo.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
+		return "", helpers.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
 	}
 	return poolID, nil
 }
@@ -38,9 +38,9 @@ func (r *addressPoolBindingReader) GetAddressOverride(ctx context.Context, addre
 		addressID).Scan(&poolID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", repo.ErrNotFound
+			return "", helpers.ErrNotFound
 		}
-		return "", repo.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
+		return "", helpers.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
 	}
 	return poolID, nil
 }
@@ -59,7 +59,7 @@ func (w *addressPoolBindingWriter) SetNetworkDefault(ctx context.Context, networ
 		ON CONFLICT (network_id) DO UPDATE SET pool_id = EXCLUDED.pool_id, bound_at = now()
 	`, networkID, poolID)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
+		return helpers.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
 	}
 	return nil
 }
@@ -68,7 +68,7 @@ func (w *addressPoolBindingWriter) UnsetNetworkDefault(ctx context.Context, netw
 	_, err := w.tx.Exec(ctx,
 		`DELETE FROM address_pool_network_default WHERE network_id = $1`, networkID)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
+		return helpers.WrapPgErr(err, "AddressPoolNetworkDefault", networkID)
 	}
 	return nil
 }
@@ -80,7 +80,7 @@ func (w *addressPoolBindingWriter) SetAddressOverride(ctx context.Context, addre
 		ON CONFLICT (address_id) DO UPDATE SET pool_id = EXCLUDED.pool_id, bound_at = now()
 	`, addressID, poolID)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
+		return helpers.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
 	}
 	return nil
 }
@@ -89,7 +89,7 @@ func (w *addressPoolBindingWriter) UnsetAddressOverride(ctx context.Context, add
 	_, err := w.tx.Exec(ctx,
 		`DELETE FROM address_pool_address_override WHERE address_id = $1`, addressID)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
+		return helpers.WrapPgErr(err, "AddressPoolAddressOverride", addressID)
 	}
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
 // MoveRouteTableUseCase — перенос RouteTable в другой folder.
@@ -84,7 +85,7 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 		if uerr != nil {
 			return nil, mapRepoErr(uerr)
 		}
-		if oerr := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", repo.RouteTablePayload(updated)); oerr != nil {
+		if oerr := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", helpers.RouteTablePayload(updated)); oerr != nil {
 			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
 		}
 		if cerr := w.Commit(); cerr != nil {

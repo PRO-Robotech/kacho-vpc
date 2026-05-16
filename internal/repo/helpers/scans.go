@@ -294,6 +294,11 @@ func ScanPrivateEndpoint(row Scannable) (*kachorepo.PrivateEndpointRecord, error
 	return &pe, nil
 }
 
+// ScanNIRec — alias на ScanNI (legacy name from shim_kacho_ni.go re-export).
+func ScanNIRec(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
+	return ScanNI(row)
+}
+
 // ScanNI — row-scanner для NetworkInterfaceRecord.
 func ScanNI(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
 	var rec kachorepo.NetworkInterfaceRecord
@@ -325,9 +330,22 @@ func ScanNI(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
 	return &rec, nil
 }
 
-// ScanAddressPool — row-scanner для domain.AddressPool. Принимает pgx.Row
+// ScanAddressPool — row-scanner для AddressPoolRecord. Принимает pgx.Row
 // (Repo использует QueryRow с pgxpool — pgx.Row API), не Scannable interface.
-func ScanAddressPool(row pgx.Row) (*domain.AddressPool, error) {
+// Парность с ScanAddressPoolDomain — обёртка над domain-сканером с упаковкой
+// в Record (embed-struct).
+func ScanAddressPool(row pgx.Row) (*kachorepo.AddressPoolRecord, error) {
+	dom, err := ScanAddressPoolDomain(row)
+	if err != nil {
+		return nil, err
+	}
+	return &kachorepo.AddressPoolRecord{AddressPool: *dom}, nil
+}
+
+// ScanAddressPoolDomain — row-scanner возвращающий plain `*domain.AddressPool`.
+// Используется внутри ScanAddressPool, а также legacy *AddressPoolRepo
+// (через unexported alias).
+func ScanAddressPoolDomain(row pgx.Row) (*domain.AddressPool, error) {
 	var (
 		p            domain.AddressPool
 		labelsJSON   []byte
