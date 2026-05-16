@@ -17,13 +17,14 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // NetworkRepo — узкий port-интерфейс над repo.NetworkRepo: только методы,
 // нужные для SetDefaultSecurityGroupId.
 type NetworkRepo interface {
-	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
-	Update(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
+	Update(ctx context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error)
 }
 
 // SecurityGroupRepo — узкий port-интерфейс над repo.SecurityGroupRepo: только

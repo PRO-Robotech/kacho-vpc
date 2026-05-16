@@ -10,6 +10,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListNetworksUseCase — list networks с пагинацией. folder_id обязателен.
@@ -25,7 +26,7 @@ func NewListNetworksUseCase(r Repo) *ListNetworksUseCase {
 }
 
 // Execute — folder_id required (закрыто cross-folder enumeration #C1).
-func (u *ListNetworksUseCase) Execute(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error) {
+func (u *ListNetworksUseCase) Execute(ctx context.Context, f NetworkFilter, p Pagination) ([]*kachorepo.NetworkRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}

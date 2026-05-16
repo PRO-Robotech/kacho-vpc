@@ -11,15 +11,13 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Network — type-alias на domain.NetworkRecord (repo-entity с DB-managed
-// CreatedAt). Имя `repo.Network` сохранено для читаемости call-site'ов
-// (`*repo.Network` встречается в service/handler-коде), а сама структура
-// объявлена в `domain` чтобы её мог типизировать ещё и `internal/repo`
-// без import-cycle. Skill evgeniy §4 D.1 / §7 H.1: CreatedAt живёт в
-// repo-entity, не в domain.Network.
-type Network = domain.NetworkRecord
+// объявлена в leaf-пакете `internal/repo/kacho/` (Wave 5, KAC-94, skill
+// evgeniy §4 D.1 — repo-entity физически живёт рядом с repo-имплементацией,
+// не в domain).
+type Network = kachorepo.NetworkRecord
 
 // NetworkRepo — реализация NetworkRepoIface поверх pgxpool.
 type NetworkRepo struct {

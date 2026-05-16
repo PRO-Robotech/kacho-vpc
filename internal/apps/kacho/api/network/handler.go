@@ -16,6 +16,7 @@ import (
 	// Blank-import регистрирует Network/time DTO трансферы (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация vpcv1.NetworkServiceServer на основе use-case'ов
@@ -320,7 +321,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (
 
 // networkToPb — repo-entity Network → proto Network через DTO-реестр (skill
 // evgeniy §3 C.3).
-func networkToPb(rec *domain.NetworkRecord) (*vpcv1.Network, error) {
+func networkToPb(rec *kachorepo.NetworkRecord) (*vpcv1.Network, error) {
 	var dst *vpcv1.Network
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Network failed")

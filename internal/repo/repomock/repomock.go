@@ -20,24 +20,26 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ---- NetworkRepo ----
 //
-// Wave 2 pilot (KAC-99/KAC-94): port-интерфейс возвращает *domain.NetworkRecord
+// Wave 2 pilot (KAC-99/KAC-94): port-интерфейс возвращает *kachorepo.NetworkRecord
 // (repo-entity с DB-managed CreatedAt) вместо *domain.Network. Mock хранит
 // записи в map[id]*NetworkRecord и проставляет CreatedAt при Insert (`now`).
+// Wave 5: NetworkRecord переехал из domain в repo-leaf (`internal/repo/kacho/`).
 
 type NetworkRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.NetworkRecord
+	data map[string]*kachorepo.NetworkRecord
 }
 
 func NewNetworkRepo() *NetworkRepo {
-	return &NetworkRepo{data: make(map[string]*domain.NetworkRecord)}
+	return &NetworkRepo{data: make(map[string]*kachorepo.NetworkRecord)}
 }
 
-func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
+func (r *NetworkRepo) Get(_ context.Context, id string) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
@@ -47,10 +49,10 @@ func (r *NetworkRepo) Get(_ context.Context, id string) (*domain.NetworkRecord, 
 	return n, nil
 }
 
-func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagination) ([]*domain.NetworkRecord, string, error) {
+func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagination) ([]*kachorepo.NetworkRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.NetworkRecord
+	var result []*kachorepo.NetworkRecord
 	for _, n := range r.data {
 		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
 			(f.Name == "" || string(n.Name) == f.Name) {
@@ -60,15 +62,15 @@ func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagin
 	return result, "", nil
 }
 
-func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
+func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
 	r.data[n.ID] = rec
 	return rec, nil
 }
 
-func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
+func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[n.ID]
@@ -90,7 +92,7 @@ func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.NetworkRecord, error) {
+func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.data[id]

@@ -27,6 +27,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
@@ -62,7 +63,7 @@ type SecurityGroupRepo interface {
 // NetworkReader — узкое чтение Network для sync-precondition'а
 // «Network существует» в Create-SG (если network_id задан).
 type NetworkReader interface {
-	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
 }
 
 // FolderClient — peer-сервис kacho-resource-manager: проверка существования

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Shim для пакета `internal/repo/kacho/pg`: экспортирует helper'ы, которые
@@ -69,7 +70,7 @@ func InvalidFilterErr(err error) error {
 }
 
 // NetworkPayload — exported alias of networkPayload (для outbox-snapshot).
-func NetworkPayload(n *domain.NetworkRecord) map[string]any {
+func NetworkPayload(n *kachorepo.NetworkRecord) map[string]any {
 	return networkPayload(n)
 }
 
@@ -81,7 +82,7 @@ const NetworkCols = networkCols
 type Scannable = scannable
 
 // ScanNetwork — exported alias of scanNetwork.
-func ScanNetwork(row Scannable) (*domain.NetworkRecord, error) {
+func ScanNetwork(row Scannable) (*kachorepo.NetworkRecord, error) {
 	return scanNetwork(row)
 }
 

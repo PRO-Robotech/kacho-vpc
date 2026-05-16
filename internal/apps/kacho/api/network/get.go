@@ -5,7 +5,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // GetNetworkUseCase — простой read; единственная «логика» — id-валидация и
@@ -25,7 +25,7 @@ func NewGetNetworkUseCase(r Repo) *GetNetworkUseCase {
 }
 
 // Execute возвращает repo-entity Network. NotFound → mapRepoErr → gRPC NotFound.
-func (u *GetNetworkUseCase) Execute(ctx context.Context, id string) (*domain.NetworkRecord, error) {
+func (u *GetNetworkUseCase) Execute(ctx context.Context, id string) (*kachorepo.NetworkRecord, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, id); err != nil {
 		return nil, err
 	}

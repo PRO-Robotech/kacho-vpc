@@ -3,9 +3,11 @@
 //
 // Wave 2 (KAC-94): зарегистрированы все 8 VPC-ресурсов
 // (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
-// NetworkInterface) + time.Time → *timestamppb.Timestamp. Wave 5 (KAC-94,
-// skill evgeniy §3 C.6): пакет `internal/protoconv` удалён, его последний
-// помощник `Network()` перенесён сюда (`network.go`).
+// NetworkInterface) + time.Time → *timestamppb.Timestamp.
+//
+// Wave 5 (KAC-94, skill §11 AP-11): пакет `internal/protoconv/` полностью
+// удалён (legacy `protoconv.Network` shim был последним остатком и не нужен
+// — handler-test переписан на `dto.Transfer(dto.FromTo(...))`).
 package toproto
 
 import (

@@ -16,10 +16,13 @@
 //
 // Wave 2 (KAC-94): trans-реестр содержит все 8 VPC-ресурсов
 // (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
-// NetworkInterface) + time.Time — см. dto/toproto/. Wave 5 (KAC-94,
-// skill evgeniy §3 C.6): пакет `internal/protoconv` удалён, его последний
-// helper `Network()` перенесён в `dto/toproto/network.go` (используется
-// одним handler_test, будет удалён в следующей фазе).
+// NetworkInterface) + time.Time — см. dto/toproto/.
+//
+// Wave 5 (KAC-94, skill evgeniy §4 D.1 / §11 AP-11): `NetworkRecord` уехал
+// из `domain` в repo-leaf `internal/repo/kacho/entity_network.go` — type-set
+// ниже для Network ссылается на `kacho.NetworkRecord`. Legacy helper
+// `protoconv.Network` удалён вместе с пакетом `internal/protoconv/` —
+// handler-test переписан на `dto.Transfer(dto.FromTo(rec, &dst))`.
 package dto
 
 import (
@@ -31,6 +34,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -149,7 +153,7 @@ type Transferrable interface {
 	Perform() error
 
 	*DTO[time.Time, *timestamppb.Timestamp] |
-		*DTO[domain.NetworkRecord, *vpcv1.Network] |
+		*DTO[kachorepo.NetworkRecord, *vpcv1.Network] |
 		*DTO[domain.SubnetRecord, *vpcv1.Subnet] |
 		*DTO[domain.AddressRecord, *vpcv1.Address] |
 		*DTO[domain.RouteTableRecord, *vpcv1.RouteTable] |

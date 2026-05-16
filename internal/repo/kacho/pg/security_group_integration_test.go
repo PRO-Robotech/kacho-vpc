@@ -19,7 +19,7 @@ import (
 // network_integration_test.go (один пакет).
 
 // helper — создать Network в той же writer-TX (нужен parent для SG.network_id FK).
-func insertNetworkInTx(t *testing.T, ctx context.Context, w kacho.RepositoryWriter, folderID, name string) *domain.NetworkRecord {
+func insertNetworkInTx(t *testing.T, ctx context.Context, w kacho.RepositoryWriter, folderID, name string) *kacho.NetworkRecord {
 	t.Helper()
 	n := newNetwork(folderID, name)
 	created, err := w.Networks().Insert(ctx, n)

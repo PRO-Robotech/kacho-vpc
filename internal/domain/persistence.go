@@ -15,18 +15,13 @@ import "time"
 //
 // Импорт: домен сам ни от чего не зависит (skill §1 A.5), здесь только stdlib
 // `time` — это сохраняет принцип clean architecture.
-
-// NetworkRecord — repo-entity для Network. domain.Network + CreatedAt
-// (DB-managed). Service-слой получает *NetworkRecord из repo.NetworkRepo
-// (port-интерфейс) и пробрасывает в DTO/handler. Клиенту через proto уходит
-// CreatedAt из этой структуры (skill evgeniy §4 D.1 / §7 H.1).
 //
-// Имя `Record` (а не Entity / Persistence) — чтобы не пересечься с другими
-// доменными терминами; «row из таблицы networks» = `NetworkRecord`.
-type NetworkRecord struct {
-	Network
-	CreatedAt time.Time
-}
+// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord` уехал из domain в
+// repo-leaf — теперь живёт в `internal/repo/kacho/entity_network.go` как
+// `kacho.NetworkRecord` (там же будет жить Reader/Writer-iface при дальнейшем
+// CQRS-refactor §6 G.2). Остальные 7 Record-типов (Subnet/Address/RouteTable/
+// SecurityGroup/Gateway/PrivateEndpoint/NetworkInterface) ещё здесь — миграция
+// их в repo-leaf — отдельный subtask Wave 5.
 
 // SubnetRecord — repo-entity для Subnet. domain.Subnet + CreatedAt (DB-managed).
 // Wave 2 batch A (KAC-94) — parity с NetworkRecord. См. doc-комментарий на

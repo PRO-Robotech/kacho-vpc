@@ -143,7 +143,7 @@ type securityGroupWriter struct {
 }
 
 // Insert — INSERT security_groups RETURNING. network_id опционален (kacho-proto#8):
-// пустая строка → SQL NULL, иначе FK сработает на ''.
+// пустая строка → SQL NULL, иначе FK сработает на ”.
 //
 // outbox-write — в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {

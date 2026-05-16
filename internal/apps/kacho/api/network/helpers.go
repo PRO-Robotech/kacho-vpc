@@ -18,13 +18,14 @@ import (
 	// Blank-import регистрирует трансферы Network/time через init() (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // networkPayloadMap — snapshot Network для outbox payload. Wave 5 (KAC-94)
 // CQRS: writer.Outbox().Emit принимает map[string]any (а legacy repo делал
 // snapshot внутри Insert). Здесь — JSON round-trip как networkPayload в
 // `internal/repo/outbox.go` (legacy).
-func networkPayloadMap(n *domain.NetworkRecord) map[string]any {
+func networkPayloadMap(n *kachorepo.NetworkRecord) map[string]any {
 	b, err := json.Marshal(n)
 	if err != nil {
 		return map[string]any{}
@@ -133,7 +134,7 @@ func invalidArg(field, desc string) error {
 // marshalNetworkRecord конвертирует repo-entity Network в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/Move для запихивания результата в Operation.response.
-func marshalNetworkRecord(rec *domain.NetworkRecord) (*anypb.Any, error) {
+func marshalNetworkRecord(rec *kachorepo.NetworkRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Network
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Network: %w", err)

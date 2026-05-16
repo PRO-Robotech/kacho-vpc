@@ -13,12 +13,13 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты PrivateEndpoint use-case'ов и handler'а. Wave 3b (KAC-94).
 
-func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *domain.NetworkRecord {
+func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *kachorepo.NetworkRecord {
 	t.Helper()
 	netID := ids.NewID(ids.PrefixNetwork)
 	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})

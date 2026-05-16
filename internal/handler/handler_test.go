@@ -4,9 +4,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	// blank-import регистрирует трансфер kachorepo.NetworkRecord → *vpcv1.Network
+	// в DTO-реестре.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Fake-реализации port-ов и await-helper'ы — в `internal/repo/repomock`
@@ -19,9 +25,11 @@ import (
 // ---- tests ----
 
 func TestNetworkToProto_Fields(t *testing.T) {
-	// Wave 2 pilot (KAC-99/KAC-94): Network теперь — repo-entity (NetworkRecord)
-	// + domain newtypes для Name/Description/Labels.
-	rec := &domain.NetworkRecord{
+	// Wave 5 (KAC-94, skill evgeniy §11 AP-11): legacy `protoconv.Network()`
+	// helper удалён; production-call идёт через DTO-реестр. Тест валидирует тот
+	// же контракт через `dto.Transfer(dto.FromTo(rec, &dst))`. NetworkRecord
+	// уехал из `domain` в `internal/repo/kacho/` (skill §4 D.1).
+	rec := kachorepo.NetworkRecord{
 		Network: domain.Network{
 			ID:          "net-123",
 			FolderID:    "folder-1",
@@ -30,7 +38,9 @@ func TestNetworkToProto_Fields(t *testing.T) {
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
 		},
 	}
-	p := toproto.Network(rec)
+	var p *vpcv1.Network
+	require.NoError(t, dto.Transfer(dto.FromTo(rec, &p)))
+	require.NotNil(t, p)
 	assert.Equal(t, "net-123", p.Id)
 	assert.Equal(t, "folder-1", p.FolderId)
 	assert.Equal(t, "my-net", p.Name)

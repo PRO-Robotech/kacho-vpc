@@ -38,16 +38,16 @@ type OutboxEvent struct {
 // Repository — in-memory mock корневого CQRS-контракта. Потокобезопасный
 // (sync.Mutex на общем state — нужен для concurrent integration-like тестов).
 type Repository struct {
-	mu              sync.Mutex
-	networks        map[string]*domain.NetworkRecord
-	securityGroups  map[string]*domain.SecurityGroupRecord
-	outbox          []OutboxEvent
+	mu             sync.Mutex
+	networks       map[string]*kacho.NetworkRecord
+	securityGroups map[string]*domain.SecurityGroupRecord
+	outbox         []OutboxEvent
 }
 
 // NewRepository создаёт пустой mock-Repository.
 func NewRepository() *Repository {
 	return &Repository{
-		networks:       make(map[string]*domain.NetworkRecord),
+		networks:       make(map[string]*kacho.NetworkRecord),
 		securityGroups: make(map[string]*domain.SecurityGroupRecord),
 	}
 }
@@ -62,10 +62,10 @@ func (r *Repository) Outbox() []OutboxEvent {
 }
 
 // Networks возвращает копию state'а (для assertions в тестах).
-func (r *Repository) Networks() []*domain.NetworkRecord {
+func (r *Repository) Networks() []*kacho.NetworkRecord {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	res := make([]*domain.NetworkRecord, 0, len(r.networks))
+	res := make([]*kacho.NetworkRecord, 0, len(r.networks))
 	for _, n := range r.networks {
 		res = append(res, n)
 	}
@@ -92,7 +92,7 @@ func (r *Repository) SecurityGroups() []*domain.SecurityGroupRecord {
 func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	netSnap := make(map[string]*domain.NetworkRecord, len(r.networks))
+	netSnap := make(map[string]*kacho.NetworkRecord, len(r.networks))
 	for id, n := range r.networks {
 		cp := *n
 		netSnap[id] = &cp
@@ -112,7 +112,7 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 	defer r.mu.Unlock()
 	// Скопировать current state в writer'овский «working set» — writer видит
 	// свои writes (G.2) поверх committed-snapshot'а.
-	localNets := make(map[string]*domain.NetworkRecord, len(r.networks))
+	localNets := make(map[string]*kacho.NetworkRecord, len(r.networks))
 	for id, n := range r.networks {
 		cp := *n
 		localNets[id] = &cp
@@ -134,7 +134,7 @@ func (r *Repository) Close() {}
 
 // readerImpl — read-only snapshot. Закрытие — no-op (Mock не держит ресурс).
 type readerImpl struct {
-	netSnap map[string]*domain.NetworkRecord
+	netSnap map[string]*kacho.NetworkRecord
 	sgSnap  map[string]*domain.SecurityGroupRecord
 }
 
@@ -153,13 +153,13 @@ func (rd *readerImpl) Close() error { return nil }
 // parent.networks на Commit. local-outbox — буфер outbox-event'ов, на Commit
 // добавляется в parent.outbox.
 type writerImpl struct {
-	parent         *Repository
-	local          map[string]*domain.NetworkRecord
-	localSGs       map[string]*domain.SecurityGroupRecord
-	localOutbox    []OutboxEvent
-	deletedIDs     map[string]struct{} // Network deletions
-	deletedSGIDs   map[string]struct{} // SG deletions
-	finalised      bool
+	parent       *Repository
+	local        map[string]*kacho.NetworkRecord
+	localSGs     map[string]*domain.SecurityGroupRecord
+	localOutbox  []OutboxEvent
+	deletedIDs   map[string]struct{} // Network deletions
+	deletedSGIDs map[string]struct{} // SG deletions
+	finalised    bool
 }
 
 func (w *writerImpl) Networks() kacho.NetworkWriterIface {
@@ -216,10 +216,10 @@ func (w *writerImpl) Abort() {
 // ---- Network reader ----
 
 type networkReader struct {
-	snap map[string]*domain.NetworkRecord
+	snap map[string]*kacho.NetworkRecord
 }
 
-func (r *networkReader) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
+func (r *networkReader) Get(_ context.Context, id string) (*kacho.NetworkRecord, error) {
 	n, ok := r.snap[id]
 	if !ok {
 		return nil, repo.ErrNotFound
@@ -228,8 +228,8 @@ func (r *networkReader) Get(_ context.Context, id string) (*domain.NetworkRecord
 	return &cp, nil
 }
 
-func (r *networkReader) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*domain.NetworkRecord, string, error) {
-	var result []*domain.NetworkRecord
+func (r *networkReader) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
+	var result []*kacho.NetworkRecord
 	for _, n := range r.snap {
 		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
 			(f.Name == "" || string(n.Name) == f.Name) {
@@ -248,7 +248,7 @@ type networkWriter struct {
 }
 
 // Reader-методы writer'а — поверх local (writer видит свои writes, G.2).
-func (nw *networkWriter) Get(_ context.Context, id string) (*domain.NetworkRecord, error) {
+func (nw *networkWriter) Get(_ context.Context, id string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -260,8 +260,8 @@ func (nw *networkWriter) Get(_ context.Context, id string) (*domain.NetworkRecor
 	return &cp, nil
 }
 
-func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*domain.NetworkRecord, string, error) {
-	var result []*domain.NetworkRecord
+func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
+	var result []*kacho.NetworkRecord
 	for id, n := range nw.w.local {
 		if _, deleted := nw.w.deletedIDs[id]; deleted {
 			continue
@@ -276,14 +276,14 @@ func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.
 	return result, "", nil
 }
 
-func (nw *networkWriter) Insert(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
-	rec := &domain.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
+func (nw *networkWriter) Insert(_ context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
+	rec := &kacho.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
 	nw.w.local[n.ID] = rec
 	cp := *rec
 	return &cp, nil
 }
 
-func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
+func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[n.ID]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -296,7 +296,7 @@ func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*domain.N
 	return &cp, nil
 }
 
-func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*domain.NetworkRecord, error) {
+func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -310,7 +310,7 @@ func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*d
 }
 
 // SetDefaultSGID — узкая UPDATE-операция (parity с pg-impl). Wave 5 batch 33/34 (KAC-94).
-func (nw *networkWriter) SetDefaultSGID(_ context.Context, id, sgID string) (*domain.NetworkRecord, error) {
+func (nw *networkWriter) SetDefaultSGID(_ context.Context, id, sgID string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}

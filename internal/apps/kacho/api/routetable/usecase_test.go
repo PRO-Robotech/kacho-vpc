@@ -14,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
@@ -22,7 +23,7 @@ import (
 // RouteTableToProto_*}` и `internal/service/route_table_test.go`,
 // `internal/service/coverage2_test.go::TestRouteTableService_*`.
 
-func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *domain.NetworkRecord {
+func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *kachorepo.NetworkRecord {
 	t.Helper()
 	netID := ids.NewID(ids.PrefixNetwork)
 	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})

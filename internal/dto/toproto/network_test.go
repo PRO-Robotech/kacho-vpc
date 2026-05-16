@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// blank-import регистрирует трансферы Network + time.
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Wave 2 pilot (KAC-99/KAC-94): убеждаемся, что dto.Transfer работает для
@@ -19,7 +20,7 @@ import (
 
 func TestDTO_TransferNetworkRecord(t *testing.T) {
 	at := time.Date(2026, 5, 15, 12, 34, 56, 789_000_000, time.UTC)
-	rec := domain.NetworkRecord{
+	rec := kachorepo.NetworkRecord{
 		Network: domain.Network{
 			ID:                     "enp1",
 			FolderID:               "folder-x",

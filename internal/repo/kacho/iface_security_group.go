@@ -4,11 +4,18 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// SecurityGroupFilter — alias на repo-уровневый value-object (см. iface_network.go).
-type SecurityGroupFilter = repo.SecurityGroupFilter
+// SecurityGroupFilter — фильтр для списка SG. Wave 5 (KAC-94 D.1) перенесён
+// в leaf-пакет `kacho` (вместе с Pagination/NetworkFilter), чтобы избежать
+// import-cycle `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался
+// тонкий type-alias `SecurityGroupFilter = kacho.SecurityGroupFilter`.
+type SecurityGroupFilter struct {
+	FolderID  string
+	NetworkID string
+	Name      string
+	Filter    string
+}
 
 // SecurityGroupReaderIface — read-операции над SecurityGroup в TX-области.
 type SecurityGroupReaderIface interface {

@@ -23,6 +23,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Pagination, *Filter — пере-используем единые value-объекты `internal/repo`
@@ -50,7 +51,7 @@ type SubnetRepo interface {
 
 // NetworkReader — узкий read-интерфейс для проверки parent Network в Create.
 type NetworkReader interface {
-	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
 }
 
 // AddressRefRepo — узкий интерфейс для обогащения ListUsedAddresses записями

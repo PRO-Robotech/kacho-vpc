@@ -15,25 +15,24 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Pagination — постраничная навигация.
-type Pagination struct {
-	PageToken string
-	PageSize  int64
-}
+// Pagination — постраничная навигация. Wave 5 (KAC-94 D.1) переехала вместе с
+// NetworkFilter / SecurityGroupFilter / NetworkRecord в leaf-пакет
+// `internal/repo/kacho/`, чтобы избежать import-cycle
+// `repo → repo/kacho → repo`. Здесь оставлен type-alias для всех существующих
+// callers (`internal/apps/kacho/api/*/ports.go`, `repomock`, integration-тесты).
+type Pagination = kachorepo.Pagination
 
 // NetworkFilter — фильтр для списка сетей.
 //
 // Name — точное совпадение имени (для sync uniqueness-check в Create; verbatim
 // YC `name=...` semantics, но без парсинга filter-выражения). См. kacho-vpc#8.
-type NetworkFilter struct {
-	FolderID string
-	Name     string
-	// Filter — raw filter expression (YC-syntax: `name="<value>"`).
-	// Парсится в repo с whitelist allowedFields=["name"].
-	Filter string
-}
+//
+// Wave 5 (KAC-94 D.1): type-alias на `kacho.NetworkFilter` — см. doc на
+// Pagination выше.
+type NetworkFilter = kachorepo.NetworkFilter
 
 // SubnetFilter — фильтр для списка подсетей.
 type SubnetFilter struct {
@@ -62,12 +61,10 @@ type RouteTableFilter struct {
 }
 
 // SecurityGroupFilter — фильтр для списка SG.
-type SecurityGroupFilter struct {
-	FolderID  string
-	NetworkID string
-	Name      string
-	Filter    string
-}
+//
+// Wave 5 (KAC-94 D.1): type-alias на `kacho.SecurityGroupFilter` — см. doc на
+// Pagination выше.
+type SecurityGroupFilter = kachorepo.SecurityGroupFilter
 
 // GatewayFilter — фильтр для списка NAT Gateways.
 type GatewayFilter struct {
@@ -103,18 +100,21 @@ type NetworkInterfaceFilter struct {
 }
 
 // NetworkRepo — port-интерфейс репозитория сетей. Возвращает
-// `*domain.NetworkRecord` (repo-entity с DB-managed CreatedAt) — skill evgeniy
-// §4 D.1 / §6 G.2 / §7 H.1: CreatedAt живёт в repo-проекции, не в
+// `*kachorepo.NetworkRecord` (repo-entity с DB-managed CreatedAt) — skill
+// evgeniy §4 D.1 / §6 G.2 / §7 H.1: CreatedAt живёт в repo-проекции, не в
 // domain.Network. Insert/Update принимают domain.Network (без CreatedAt) —
 // время выставляет репо.
+//
+// Wave 5 (KAC-94): `NetworkRecord` уехал из domain в repo-leaf
+// (`internal/repo/kacho/entity_network.go`). Остальные ресурсы — на месте.
 type NetworkRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.NetworkRecord, error)
-	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*domain.NetworkRecord, string, error)
-	Insert(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
-	Update(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
+	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*kachorepo.NetworkRecord, string, error)
+	Insert(ctx context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error)
+	Update(ctx context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса (для :move action). Возвращает обновлённый ресурс.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.NetworkRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.NetworkRecord, error)
 }
 
 // SubnetRepo — port-интерфейс репозитория подсетей.

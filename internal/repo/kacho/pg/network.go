@@ -22,7 +22,7 @@ type networkReader struct {
 }
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "Network <id> not found".
-func (r *networkReader) Get(ctx context.Context, id string) (*domain.NetworkRecord, error) {
+func (r *networkReader) Get(ctx context.Context, id string) (*kacho.NetworkRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, repo.NetworkCols)
 	row := r.tx.QueryRow(ctx, q, id)
 	n, err := repo.ScanNetwork(row)
@@ -35,7 +35,7 @@ func (r *networkReader) Get(ctx context.Context, id string) (*domain.NetworkReco
 // List — cursor-based pagination + filter.Parse (YC-syntax). Логика идентична
 // legacy `*repo.NetworkRepo.List` (KAC-94 Wave 5 — переносим как есть; pilot
 // проверяет CQRS-каркас, а не SQL-семантику).
-func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho.Pagination) ([]*domain.NetworkRecord, string, error) {
+func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
 	pageSize, err := validate.PageSize("page_size", p.PageSize)
 	if err != nil {
 		return nil, "", err
@@ -90,7 +90,7 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 	}
 	defer rows.Close()
 
-	var result []*domain.NetworkRecord
+	var result []*kacho.NetworkRecord
 	for rows.Next() {
 		n, err := repo.ScanNetwork(rows)
 		if err != nil {
@@ -128,7 +128,7 @@ type networkWriter struct {
 // детерминированности тестов.
 //
 // outbox-write — не здесь, а в use-case'е через `writer.Outbox().Emit(...)`.
-func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
+func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
 	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
@@ -154,7 +154,7 @@ func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*domain.
 // (folder_id меняется через SetFolderID — для :move action).
 //
 // outbox-write — в use-case'е (см. Insert).
-func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*domain.NetworkRecord, error) {
+func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
 	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
@@ -181,7 +181,7 @@ func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*domain.
 // Insert(Network) → Insert(SG) → SetDefaultSGID(network, sg) (+ единый outbox-emit
 // Network.UPDATED). Без перезаписи name/description/labels — те уже сохранены
 // в Insert и менять их в default-SG-link шаге не нужно.
-func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*domain.NetworkRecord, error) {
+func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*kacho.NetworkRecord, error) {
 	q := fmt.Sprintf(`
 		UPDATE networks SET default_security_group_id = $2
 		WHERE id = $1
@@ -195,7 +195,7 @@ func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*d
 }
 
 // SetFolderID меняет folder_id у Network (для :move).
-func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*domain.NetworkRecord, error) {
+func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
 	q := fmt.Sprintf(`
 		UPDATE networks SET folder_id = $2
 		WHERE id = $1
