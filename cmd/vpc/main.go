@@ -9,9 +9,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/H-BF/corlib/pkg/parallel"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
@@ -193,35 +195,75 @@ func runServe(cfg config.Config) error {
 		"public_endpoint", publicAddr,
 		"internal_endpoint", internalAddr)
 
-	// shutdownDone закрывается после полного дрейна (GracefulStop + LRO worker'ов).
-	shutdownDone := make(chan struct{})
 	gracefulTimeout := cfg.APIServer.GracefulShutdown
 	if gracefulTimeout <= 0 {
 		gracefulTimeout = 10 * time.Second
 	}
-	go func() {
-		defer close(shutdownDone)
-		<-ctx.Done()
-		internalSrv.GracefulStop()
-		grpcSrv.GracefulStop()
-		drainCtx, cancelDrain := context.WithTimeout(context.Background(), 3*gracefulTimeout)
-		defer cancelDrain()
-		if err := operations.Wait(drainCtx); err != nil {
-			logger.Warn("operations workers did not finish in time",
-				"err", err, "active", operations.Active())
-		}
-	}()
 
-	go func() {
-		if err := internalSrv.Serve(internalListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			logger.Error("internal grpc server stopped", "err", err)
-		}
-	}()
+	// K.4 + K.5 + AP-7 (skill evgeniy §9, §11): параллельный запуск
+	// public-сервера + internal-сервера + shutdown-waiter через
+	// `parallel.ExecAbstract` (`github.com/H-BF/corlib/pkg/parallel`).
+	// Failure-isolation: первая ошибка / SIGTERM / SIGINT триггерит
+	// graceful-stop ОБОИХ серверов (раньше — bare `go func() { Serve }()`
+	// без error-prop: умерший internal оставлял public крутиться).
+	//
+	// `grpc.Server.Serve` не реагирует на ctx-cancel сам — поэтому
+	// `triggerShutdown` явно вызывает `GracefulStop` на обоих, после чего
+	// `Serve` возвращает `nil`/`grpc.ErrServerStopped` (трактуется как
+	// штатное завершение). `sync.Once` гарантирует, что параллельные
+	// триггеры (SIGTERM пришёл одновременно с crash internal'а) не
+	// сделают двойной GracefulStop.
+	var shutdownOnce sync.Once
+	triggerShutdown := func() {
+		shutdownOnce.Do(func() {
+			internalSrv.GracefulStop()
+			grpcSrv.GracefulStop()
+		})
+	}
 
-	serveErr := grpcSrv.Serve(listener)
+	tasks := []func() error{
+		// public gRPC server
+		func() error {
+			err := grpcSrv.Serve(listener)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				triggerShutdown()
+				return fmt.Errorf("public grpc server: %w", err)
+			}
+			return nil
+		},
+		// internal gRPC server (admin / kacho-only)
+		func() error {
+			err := internalSrv.Serve(internalListener)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				logger.Error("internal grpc server stopped", "err", err)
+				triggerShutdown()
+				return fmt.Errorf("internal grpc server: %w", err)
+			}
+			return nil
+		},
+		// shutdown waiter: SIGTERM/SIGINT → graceful-stop обоих + дрейн LRO worker'ов.
+		func() error {
+			<-ctx.Done()
+			triggerShutdown()
+			drainCtx, cancelDrain := context.WithTimeout(context.Background(), 3*gracefulTimeout)
+			defer cancelDrain()
+			if err := operations.Wait(drainCtx); err != nil {
+				logger.Warn("operations workers did not finish in time",
+					"err", err, "active", operations.Active())
+			}
+			return nil
+		},
+	}
+
+	// ExecAbstract(taskCount, maxConcurrency, fn): запускает все задачи
+	// параллельно; собирает первую ошибку. maxConcurrency=len(tasks)-1 даёт
+	// схему «1 + (N-1)» — основная горутина + N-1 дополнительных, все
+	// задачи реально параллельны (см. corlib/pkg/parallel/exec-in-parallel.go).
+	err = parallel.ExecAbstract(len(tasks), int32(len(tasks)-1), func(i int) error {
+		return tasks[i]()
+	})
 	cancel()
-	<-shutdownDone
-	return serveErr
+	return err
 }
 
 // KAC-97: dialResourceManager / dialCompute / peerCreds удалены — заменены на
