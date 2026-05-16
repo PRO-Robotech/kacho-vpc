@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateAddressUseCase.Execute. Address — особый
@@ -34,14 +35,16 @@ type UpdateInput struct {
 // UpdateAddressUseCase — sync-валидация update_mask + значений, затем создание
 // Operation + async update в worker'е. Spec-поля (external/internal v4/v6) —
 // hard-immutable, через mask их менять нельзя.
+//
+// A.7 sub-PR 2 (KAC-94): writer-TX явный, DML + outbox atomic (Address.UPDATED).
 type UpdateAddressUseCase struct {
-	repo    AddressRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateAddressUseCase создаёт UpdateAddressUseCase.
-func NewUpdateAddressUseCase(repo AddressRepo, opsRepo operations.Repo) *UpdateAddressUseCase {
-	return &UpdateAddressUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateAddressUseCase(r Repo, opsRepo operations.Repo) *UpdateAddressUseCase {
+	return &UpdateAddressUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -76,15 +79,27 @@ func (u *UpdateAddressUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 }
 
 func (u *UpdateAddressUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.AddressID)
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	defer w.Abort()
 
+	// Get + Update внутри одной writer-TX: race-free read-modify-write.
+	rec, err := w.Addresses().Get(ctx, in.AddressID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
 	applyAddressMask(&rec.Address, in)
 
-	updated, err := u.repo.Update(ctx, &rec.Address)
+	updated, err := w.Addresses().Update(ctx, &rec.Address)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Address", updated.ID, "UPDATED", addressPayloadMap(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalAddressRecord(updated)

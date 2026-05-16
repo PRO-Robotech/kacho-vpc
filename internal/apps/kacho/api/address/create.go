@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/netip"
 	"strings"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -83,8 +82,16 @@ type CreateInput struct {
 // недоступен, IP в результате остаётся пустым (Allocate*IP возвращает
 // Unavailable). v6-internal allocate не зависит от pools — он работает
 // random-pick'ом внутри subnet.v6_cidr_blocks.
+//
+// A.7 sub-PR 2 (KAC-94, skill evgeniy §6 G.5 / I.9 / I.10): worker открывает
+// ОДНУ writer-TX и делает в ней Insert(Address) → Allocate*IP (через writer.
+// Addresses().Set*Spec / AllocateIPFromFreelist / AllocateExternalIPv6) →
+// Outbox.Emit Address.CREATED. Либо весь композит виден (Commit), либо ничего
+// (Abort/crash) — orphan-address-without-allocated-IP window закрыт. Старый
+// compensating delete-after-failure (отдельный TX) больше не нужен — Abort
+// автоматически снимает Insert.
 type CreateAddressUseCase struct {
-	repo         AddressRepo
+	repo         Repo
 	subnetReader SubnetReader
 	folderClient FolderClient
 	opsRepo      operations.Repo
@@ -92,9 +99,9 @@ type CreateAddressUseCase struct {
 }
 
 // NewCreateAddressUseCase создаёт CreateAddressUseCase.
-func NewCreateAddressUseCase(repo AddressRepo, subnetReader SubnetReader, folderClient FolderClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
+func NewCreateAddressUseCase(r Repo, subnetReader SubnetReader, folderClient FolderClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
 	return &CreateAddressUseCase{
-		repo:         repo,
+		repo:         r,
 		subnetReader: subnetReader,
 		folderClient: folderClient,
 		opsRepo:      opsRepo,
@@ -174,7 +181,12 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 		}
 	}
 	if in.Name != "" {
-		existing, _, lerr := u.repo.List(ctx, AddressFilter{FolderID: in.FolderID, Name: in.Name}, Pagination{})
+		rd, err := u.repo.Reader(ctx)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		existing, _, lerr := rd.Addresses().List(ctx, AddressFilter{FolderID: in.FolderID, Name: in.Name}, Pagination{})
+		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
 		}
@@ -255,9 +267,10 @@ func (u *CreateAddressUseCase) validateInternalIPInSubnet(ctx context.Context, s
 }
 
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный
-// backstop: folder-exists + Insert (FK ограничения / UNIQUE-нарушения).
-// Затем — multi-family IPAM allocation (external v4/v6 через pools cascade,
-// internal v4/v6 inline в repo).
+// backstop: folder-exists + Insert + multi-family IPAM allocation +
+// outbox-emit Address.CREATED — всё в одной writer-TX. Defer w.Abort() —
+// при любой ошибке Insert и Allocate-side-effects откатываются автоматически,
+// orphan-address window закрыт.
 func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in CreateInput) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, in.FolderID)
 	if err != nil {
@@ -337,28 +350,33 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 		}
 	}
 
-	created, err := u.repo.Insert(ctx, a)
+	// Открываем ОДНУ writer-TX на Insert + Allocate + Outbox — atomic.
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	created, err := w.Addresses().Insert(ctx, a)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 
-	// Inline IPAM allocation. Idempotent: если IP уже выставлен — Allocate*
-	// возвращает существующий. На allocate-failure делаем compensating delete,
-	// иначе failed Operation оставит dangling Address в БД.
+	// Inline IPAM allocation в той же writer-TX (atomic с Insert + outbox).
+	// При любой ошибке Abort откатывает Insert — compensating delete больше
+	// не нужен.
 	if u.pools != nil {
 		if created.ExternalIpv4 != nil && created.ExternalIpv4.Address == "" {
-			res, aerr := u.allocateExternalIPv4(ctx, created)
+			res, aerr := u.allocateExternalIPv4(ctx, w, created)
 			if aerr != nil {
-				u.compensatingDelete(ctx, created.ID, "external", aerr)
 				return nil, aerr
 			}
 			created.ExternalIpv4.Address = res.IP
 			created.ExternalIpv4.AddressPoolID = res.PoolID
 		}
 		if created.InternalIpv4 != nil && created.InternalIpv4.Address == "" && created.InternalIpv4.SubnetID != "" {
-			res, aerr := u.allocateInternalIPv4(ctx, created)
+			res, aerr := u.allocateInternalIPv4(ctx, w, created)
 			if aerr != nil {
-				u.compensatingDelete(ctx, created.ID, "internal", aerr)
 				return nil, aerr
 			}
 			created.InternalIpv4.Address = res.IP
@@ -367,9 +385,8 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	// IPv6 internal IPAM не зависит от pools (адрес выбирается случайно внутри
 	// subnet.v6_cidr_blocks[0]) — аллоцируем независимо от u.pools.
 	if created.InternalIpv6 != nil && created.InternalIpv6.Address == "" && created.InternalIpv6.SubnetID != "" {
-		res, aerr := u.allocateInternalIPv6(ctx, created)
+		res, aerr := u.allocateInternalIPv6(ctx, w, created)
 		if aerr != nil {
-			u.compensatingDelete(ctx, created.ID, "internal_ipv6", aerr)
 			return nil, aerr
 		}
 		created.InternalIpv6.Address = res.IP
@@ -377,34 +394,21 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	// External IPv6 (KAC-60): sparse counter-based allocator. Полагается на
 	// pools (cascade resolve по zone/labels — как у v4).
 	if u.pools != nil && created.ExternalIpv6 != nil && created.ExternalIpv6.Address == "" {
-		res, aerr := u.allocateExternalIPv6(ctx, created)
+		res, aerr := u.allocateExternalIPv6(ctx, w, created)
 		if aerr != nil {
-			u.compensatingDelete(ctx, created.ID, "external_ipv6", aerr)
 			return nil, aerr
 		}
 		created.ExternalIpv6.Address = res.IP
 		created.ExternalIpv6.AddressPoolID = res.PoolID
 	}
-	return marshalAddressRecord(created)
-}
 
-// compensatingDelete — undo Insert при failed allocate. Использует fresh
-// background ctx чтобы delete отработал даже если caller отменил orig ctx.
-// Failure delete'а — log-only: caller всё равно получает orig allocate-error,
-// orphan address будет подобран garbage-collector'ом / ручным cleanup'ом.
-func (u *CreateAddressUseCase) compensatingDelete(ctx context.Context, addressID, kind string, origErr error) {
-	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if delErr := u.repo.Delete(delCtx, addressID); delErr != nil {
-		slog.WarnContext(ctx, "compensating delete failed after allocate error — orphan address",
-			"address_id", addressID,
-			"kind", kind,
-			"orig_err", origErr,
-			"delete_err", delErr)
-	} else {
-		slog.InfoContext(ctx, "compensating delete after allocate failure",
-			"address_id", addressID, "kind", kind, "orig_err", origErr)
+	if err := w.Outbox().Emit(ctx, "Address", created.ID, "CREATED", addressPayloadMap(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
 	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalAddressRecord(created)
 }
 
 // --- Allocation helpers ------------------------------------------------------
@@ -415,9 +419,9 @@ func (u *CreateAddressUseCase) compensatingDelete(ctx context.Context, addressID
 // RPC continues to live in `internal/service/address.go::AddressService` until
 // the internal handler migrates to its own UC package).
 //
-// The use-case versions receive already-fetched `*kachorepo.AddressRecord` to
-// avoid the second `repo.Get` round-trip — they operate on the just-Inserted
-// row directly.
+// A.7 sub-PR 2 (KAC-94): allocation helpers принимают открытый Writer-TX —
+// SetIPSpec/SetInternalIPv6/AllocateIPFromFreelist/AllocateExternalIPv6 идут
+// через `w.Addresses().*`, atomic с Insert + Outbox в одной TX.
 
 // allocateMaxAttempts — максимум попыток random-pick + retry-on-conflict.
 // При near-full CIDR (≥95% занято) random-pick имеет high false-fail rate
@@ -442,7 +446,7 @@ type allocResult struct {
 	PoolID string // только для external; "" для internal
 }
 
-func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no internal_ipv4 spec", addr.ID)
@@ -492,7 +496,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *k
 			}
 			tried[ip] = struct{}{}
 			addr.InternalIpv4.Address = ip
-			updated, err := u.repo.SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
+			updated, err := w.Addresses().SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
 			if err != nil {
 				if isUniqueViolation(err) {
 					totalConflicts++
@@ -512,7 +516,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *k
 			}
 			tried[candidate] = struct{}{}
 			addr.InternalIpv4.Address = candidate
-			updated, err := u.repo.SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
+			updated, err := w.Addresses().SetIPSpec(ctx, addr.ID, nil, addr.InternalIpv4)
 			if err != nil {
 				if isUniqueViolation(err) {
 					totalConflicts++
@@ -543,7 +547,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, addr *k
 		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
 }
 
-func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s has no internal_ipv6 spec", addr.ID)
 	}
@@ -576,7 +580,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *k
 		}
 		tried[ip] = struct{}{}
 		addr.InternalIpv6.Address = ip
-		updated, uerr := u.repo.SetInternalIPv6(ctx, addr.ID, addr.InternalIpv6)
+		updated, uerr := w.Addresses().SetInternalIPv6(ctx, addr.ID, addr.InternalIpv6)
 		if uerr != nil {
 			if isUniqueViolation(uerr) {
 				conflicts++
@@ -596,7 +600,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, addr *k
 		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
 }
 
-func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no external_ipv4 spec", addr.ID)
@@ -617,7 +621,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *k
 			"address pool %s has no v4_cidr_blocks", pool.ID)
 	}
 
-	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addr.ID)
+	ip, err := w.Addresses().AllocateIPFromFreelist(ctx, pool.ID, addr.ID)
 	if err != nil {
 		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
@@ -630,7 +634,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, addr *k
 	return &allocResult{IP: ip, PoolID: pool.ID}, nil
 }
 
-func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *kachorepo.AddressRecord) (*allocResult, error) {
+func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has no external_ipv6 spec", addr.ID)
@@ -651,7 +655,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, addr *k
 			"address pool %s has no v6_cidr_blocks", pool.ID)
 	}
 
-	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addr.ID, addr.ExternalIpv6.ZoneID)
+	ip, err := w.Addresses().AllocateExternalIPv6(ctx, pool.ID, addr.ID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
 		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,

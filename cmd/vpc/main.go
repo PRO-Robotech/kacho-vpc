@@ -451,16 +451,22 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// Wave 3 (skill evgeniy §2): Address — use-case-структура. Composition с
 	// AddressPoolService для IPAM cascade resolve. Internal Allocate UC отделён —
 	// принимается InternalAddressAllocateHandler через узкий port.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(addressRepo, subnetRepo, folderClient, opsRepo, addressPoolResolver)
-	addressUpdateUC := addressapp.NewUpdateAddressUseCase(addressRepo, opsRepo)
-	addressDeleteUC := addressapp.NewDeleteAddressUseCase(addressRepo, opsRepo)
-	addressMoveUC := addressapp.NewMoveAddressUseCase(addressRepo, folderClient, opsRepo)
-	addressGetUC := addressapp.NewGetAddressUseCase(addressRepo)
-	addressGetByValueUC := addressapp.NewGetByValueUseCase(addressRepo)
-	addressListUC := addressapp.NewListAddressesUseCase(addressRepo)
-	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(addressRepo, subnetRepo)
+	//
+	// A.7 sub-PR 2 (KAC-94): Address use-cases переехали на CQRS-Repository
+	// (`kachoRepo`). IPAM atomicity (Insert + Allocate + Outbox) гарантируется
+	// одной writer-TX в `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`.
+	// Legacy `addressRepo` остаётся для NIC use-cases, addressref, addresspool
+	// resolver — переезд на CQRS в последующих sub-PR'ах.
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetRepo, folderClient, opsRepo, addressPoolResolver)
+	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
+	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
+	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, folderClient, opsRepo)
+	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo)
+	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo)
+	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo)
+	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(kachoRepo, subnetRepo)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
-	addressAllocateUC := addressapp.NewAllocateUseCase(addressRepo, subnetRepo, addressPoolResolver)
+	addressAllocateUC := addressapp.NewAllocateUseCase(kachoRepo, subnetRepo, addressPoolResolver)
 	addressHandler := addressapp.NewHandler(
 		addressCreateUC, addressUpdateUC, addressDeleteUC, addressMoveUC,
 		addressGetUC, addressGetByValueUC, addressListUC, addressListBySubnetUC, addressListOpsUC,
