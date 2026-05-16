@@ -217,6 +217,66 @@ func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
 	assert.Equal(t, "UPDATED", events[2].Action)
 }
 
+// TestCreateDefaultSGUseCase_Execute_Composes — фокус-тест выделенного
+// `CreateDefaultSGUseCase` (skill evgeniy I.9-residual): use-case работает в
+// УЖЕ открытой caller'ом writer-TX, делает Insert(SG) + outbox-emit +
+// SetDefaultSGID + outbox-emit и возвращает updated NetworkRecord. Сам TX не
+// открывает и не commit'ит — это ответственность caller'а.
+func TestCreateDefaultSGUseCase_Execute_Composes(t *testing.T) {
+	kr := kachomock.NewRepository()
+	ctx := context.Background()
+
+	// Caller-аналог: открыл writer-TX, вставил Network. Это симулирует то, что
+	// `CreateNetworkUseCase.doCreate` делает ДО вызова CreateDefaultSGUseCase.
+	w, err := kr.Writer(ctx)
+	require.NoError(t, err)
+	defer w.Abort()
+
+	net := domain.Network{
+		ID:       ids.NewID(ids.PrefixNetwork),
+		FolderID: "f1",
+		Name:     domain.RcNameVPC("net-for-sg"),
+	}
+	created, err := w.Networks().Insert(ctx, &net)
+	require.NoError(t, err)
+	require.NoError(t, w.Outbox().Emit(ctx, "Network", created.ID, "CREATED", map[string]any{}))
+
+	// Сам use-case под тестом.
+	uc := NewCreateDefaultSGUseCase()
+	upd, err := uc.Execute(ctx, w, created.Network)
+	require.NoError(t, err)
+	require.NotNil(t, upd)
+	assert.NotEmpty(t, upd.DefaultSecurityGroupID, "Execute должен вернуть NetworkRecord с заполненным default_security_group_id")
+
+	// Commit делает caller — без него ни Network, ни SG, ни outbox не видны
+	// параллельному reader'у. Это buys atomic-семантику: Abort на любой ошибке
+	// откатил бы и Network, и SG, и все 3 outbox-event'а.
+	require.NoError(t, w.Commit())
+
+	// Post-commit видимость: 1 Network (с заполненным default_sg_id), 1 SG,
+	// 3 outbox-event'а — Network.CREATED (от caller'а) → SecurityGroup.CREATED →
+	// Network.UPDATED (две последние эмитирует use-case под тестом).
+	nets := kr.Networks()
+	require.Len(t, nets, 1)
+	assert.Equal(t, upd.ID, nets[0].ID)
+	assert.NotEmpty(t, nets[0].DefaultSecurityGroupID)
+
+	sgs := kr.SecurityGroups()
+	require.Len(t, sgs, 1)
+	assert.True(t, sgs[0].DefaultForNetwork)
+	assert.Equal(t, net.ID, sgs[0].NetworkID)
+	assert.Equal(t, sgs[0].ID, nets[0].DefaultSecurityGroupID)
+
+	events := kr.Outbox()
+	require.Len(t, events, 3)
+	assert.Equal(t, "Network", events[0].Resource)
+	assert.Equal(t, "CREATED", events[0].Action)
+	assert.Equal(t, "SecurityGroup", events[1].Resource)
+	assert.Equal(t, "CREATED", events[1].Action)
+	assert.Equal(t, "Network", events[2].Resource)
+	assert.Equal(t, "UPDATED", events[2].Action)
+}
+
 // TestCreateUseCase_DefaultSGInline_OFF — defaultSGInline=false: Network есть,
 // SG нет, outbox содержит ровно 1 событие Network.CREATED.
 func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
