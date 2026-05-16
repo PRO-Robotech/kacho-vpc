@@ -133,3 +133,9 @@ func (rw *routeTableWriter) Delete(_ context.Context, id string) error {
 	delete(rw.w.localRTs, id)
 	return nil
 }
+
+// Assertion: routeTableReader/Writer implements iface (Wave 5 G.7 parity).
+var (
+	_ kacho.RouteTableReaderIface = (*routeTableReader)(nil)
+	_ kacho.RouteTableWriterIface = (*routeTableWriter)(nil)
+)
