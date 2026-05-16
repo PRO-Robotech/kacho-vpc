@@ -13,6 +13,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	// Blank-import регистрирует Gateway/time DTO трансферы (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -229,7 +230,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListGatewayOper
 
 // gatewayToPb — repo-entity Gateway → proto Gateway через DTO-реестр (skill
 // evgeniy §3 C.3).
-func gatewayToPb(rec *domain.GatewayRecord) (*vpcv1.Gateway, error) {
+func gatewayToPb(rec *kacho.GatewayRecord) (*vpcv1.Gateway, error) {
 	var dst *vpcv1.Gateway
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Gateway failed")

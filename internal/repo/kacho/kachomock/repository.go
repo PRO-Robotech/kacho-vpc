@@ -51,6 +51,7 @@ type Repository struct {
 	privateEndpoints  map[string]*kacho.PrivateEndpointRecord
 	networkInterfaces map[string]*kacho.NetworkInterfaceRecord // Wave 5 replicate (NIC batch, KAC-94).
 	addresses         map[string]*kacho.AddressRecord          // Wave 5 replicate (Address batch, KAC-94).
+	gateways          map[string]*kacho.GatewayRecord          // Wave 5 replicate (Gateway batch, KAC-94).
 	outbox            []OutboxEvent
 }
 
@@ -64,6 +65,7 @@ func NewRepository() *Repository {
 		privateEndpoints:  make(map[string]*kacho.PrivateEndpointRecord),
 		networkInterfaces: make(map[string]*kacho.NetworkInterfaceRecord),
 		addresses:         make(map[string]*kacho.AddressRecord),
+		gateways:          make(map[string]*kacho.GatewayRecord),
 	}
 }
 
@@ -162,6 +164,19 @@ func (r *Repository) NetworkInterfaces() []*kacho.NetworkInterfaceRecord {
 	return res
 }
 
+// Gateways возвращает копию state'а (для assertions в тестах).
+// Wave 5 replicate (KAC-94, Gateway batch).
+func (r *Repository) Gateways() []*kacho.GatewayRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	res := make([]*kacho.GatewayRecord, 0, len(r.gateways))
+	for _, g := range r.gateways {
+		res = append(res, g)
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].CreatedAt.Before(res[j].CreatedAt) })
+	return res
+}
+
 // Reader открывает read-only «TX». Snapshot текущего committed state'а
 // заfreez'ен на момент открытия — параллельный Writer не виден этому Reader'у
 // (read-committed semantics).
@@ -203,6 +218,11 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		cp := *a
 		addrSnap[id] = &cp
 	}
+	gwSnap := make(map[string]*kacho.GatewayRecord, len(r.gateways))
+	for id, g := range r.gateways {
+		cp := *g
+		gwSnap[id] = &cp
+	}
 	return &readerImpl{
 		netSnap:  netSnap,
 		sgSnap:   sgSnap,
@@ -211,6 +231,7 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		peSnap:   peSnap,
 		niSnap:   niSnap,
 		addrSnap: addrSnap,
+		gwSnap:   gwSnap,
 	}, nil
 }
 
@@ -256,6 +277,11 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 		cp := *a
 		localAddrs[id] = &cp
 	}
+	localGWs := make(map[string]*kacho.GatewayRecord, len(r.gateways))
+	for id, g := range r.gateways {
+		cp := *g
+		localGWs[id] = &cp
+	}
 	return &writerImpl{
 		parent:     r,
 		local:      localNets,
@@ -265,6 +291,7 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 		localPEs:   localPEs,
 		localNIs:   localNIs,
 		localAddrs: localAddrs,
+		localGWs:   localGWs,
 	}, nil
 }
 
@@ -280,6 +307,7 @@ type readerImpl struct {
 	peSnap   map[string]*kacho.PrivateEndpointRecord
 	niSnap   map[string]*kacho.NetworkInterfaceRecord // Wave 5 replicate (NIC batch, KAC-94).
 	addrSnap map[string]*kacho.AddressRecord          // Wave 5 replicate (Address batch, KAC-94).
+	gwSnap   map[string]*kacho.GatewayRecord          // Wave 5 replicate (Gateway batch, KAC-94).
 }
 
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
@@ -316,6 +344,11 @@ func (rd *readerImpl) Addresses() kacho.AddressReaderIface {
 	return &addressReader{snap: rd.addrSnap}
 }
 
+// Gateways — read-only snapshot Gateway. Wave 5 replicate (KAC-94, Gateway batch).
+func (rd *readerImpl) Gateways() kacho.GatewayReaderIface {
+	return &gatewayReader{snap: rd.gwSnap}
+}
+
 func (rd *readerImpl) Close() error { return nil }
 
 // writerImpl — write-«TX». local — working set, окончательно мерж'ится в
@@ -330,6 +363,7 @@ type writerImpl struct {
 	localRTs       map[string]*kacho.RouteTableRecord
 	localNIs       map[string]*kacho.NetworkInterfaceRecord // Wave 5 replicate (NIC batch, KAC-94).
 	localAddrs     map[string]*kacho.AddressRecord          // Wave 5 replicate (Address batch, KAC-94).
+	localGWs       map[string]*kacho.GatewayRecord          // Wave 5 replicate (Gateway batch, KAC-94).
 	localOutbox    []OutboxEvent
 	deletedIDs     map[string]struct{} // Network deletions
 	deletedSGIDs   map[string]struct{} // SG deletions
@@ -338,6 +372,7 @@ type writerImpl struct {
 	deletedRTIDs   map[string]struct{} // RouteTable deletions
 	deletedNIIDs   map[string]struct{} // NIC deletions (Wave 5 replicate, NIC batch).
 	deletedAddrIDs map[string]struct{} // Address deletions (Wave 5 replicate, Address batch).
+	deletedGWIDs   map[string]struct{} // Gateway deletions (Wave 5 replicate, Gateway batch).
 	finalised      bool
 }
 
@@ -377,6 +412,11 @@ func (w *writerImpl) NetworkInterfaces() kacho.NetworkInterfaceWriterIface {
 // replicate (KAC-94, Address batch).
 func (w *writerImpl) Addresses() kacho.AddressWriterIface {
 	return &addressWriter{w: w}
+}
+
+// Gateways возвращает Gateway-writer привязанный к этой «TX». Wave 5 replicate (KAC-94).
+func (w *writerImpl) Gateways() kacho.GatewayWriterIface {
+	return &gatewayWriter{w: w}
 }
 
 func (w *writerImpl) Outbox() kacho.OutboxEmitter {
@@ -447,6 +487,14 @@ func (w *writerImpl) Commit() error {
 	// Применить writes (Address).
 	for id, a := range w.localAddrs {
 		w.parent.addresses[id] = a
+	}
+	// Удалить помеченные на delete (Gateway). Wave 5 replicate (KAC-94, Gateway batch).
+	for id := range w.deletedGWIDs {
+		delete(w.parent.gateways, id)
+	}
+	// Применить writes (Gateway).
+	for id, g := range w.localGWs {
+		w.parent.gateways[id] = g
 	}
 	// Перенести outbox-events в общий state.
 	w.parent.outbox = append(w.parent.outbox, w.localOutbox...)
@@ -1247,3 +1295,114 @@ func (sw *subnetWriter) SetZoneID(_ context.Context, id, zoneID string) (*kacho.
 	cp := *s
 	return &cp, nil
 }
+
+// ---- Gateway reader / writer (Wave 5 replicate, KAC-94) ----
+
+// gatewayReader — read-only snapshot Gateway.
+type gatewayReader struct {
+	snap map[string]*kacho.GatewayRecord
+}
+
+func (r *gatewayReader) Get(_ context.Context, id string) (*kacho.GatewayRecord, error) {
+	g, ok := r.snap[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	cp := *g
+	return &cp, nil
+}
+
+func (r *gatewayReader) List(_ context.Context, f kacho.GatewayFilter, _ kacho.Pagination) ([]*kacho.GatewayRecord, string, error) {
+	var result []*kacho.GatewayRecord
+	for _, g := range r.snap {
+		if (f.FolderID == "" || g.FolderID == f.FolderID) &&
+			(f.Name == "" || string(g.Name) == f.Name) {
+			cp := *g
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
+// gatewayWriter — write-«TX» Gateway. Writer видит свои writes (G.2) —
+// Get/List поверх localGWs.
+type gatewayWriter struct {
+	w *writerImpl
+}
+
+func (gw *gatewayWriter) Get(_ context.Context, id string) (*kacho.GatewayRecord, error) {
+	if _, deleted := gw.w.deletedGWIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	g, ok := gw.w.localGWs[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	cp := *g
+	return &cp, nil
+}
+
+func (gw *gatewayWriter) List(_ context.Context, f kacho.GatewayFilter, _ kacho.Pagination) ([]*kacho.GatewayRecord, string, error) {
+	var result []*kacho.GatewayRecord
+	for id, g := range gw.w.localGWs {
+		if _, deleted := gw.w.deletedGWIDs[id]; deleted {
+			continue
+		}
+		if (f.FolderID == "" || g.FolderID == f.FolderID) &&
+			(f.Name == "" || string(g.Name) == f.Name) {
+			cp := *g
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
+func (gw *gatewayWriter) Insert(_ context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
+	rec := &kacho.GatewayRecord{Gateway: *g, CreatedAt: time.Now().UTC()}
+	gw.w.localGWs[g.ID] = rec
+	cp := *rec
+	return &cp, nil
+}
+
+func (gw *gatewayWriter) Update(_ context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
+	if _, deleted := gw.w.deletedGWIDs[g.ID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	existing, ok := gw.w.localGWs[g.ID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	existing.Gateway = *g
+	cp := *existing
+	return &cp, nil
+}
+
+func (gw *gatewayWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
+	if _, deleted := gw.w.deletedGWIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	g, ok := gw.w.localGWs[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	g.FolderID = folderID
+	cp := *g
+	return &cp, nil
+}
+
+func (gw *gatewayWriter) Delete(_ context.Context, id string) error {
+	if _, ok := gw.w.localGWs[id]; !ok {
+		return repo.ErrNotFound
+	}
+	if gw.w.deletedGWIDs == nil {
+		gw.w.deletedGWIDs = make(map[string]struct{})
+	}
+	gw.w.deletedGWIDs[id] = struct{}{}
+	delete(gw.w.localGWs, id)
+	return nil
+}
+
+// Assertion: Repository удовлетворяет интерфейсу kacho.Repository.
+var _ kacho.Repository = (*Repository)(nil)

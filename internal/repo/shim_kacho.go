@@ -207,3 +207,26 @@ func IsExclusionViolation(err error) bool {
 func MarshalDhcp(d *domain.DhcpOptions) ([]byte, error) {
 	return marshalDhcp(d)
 }
+
+// ---- Gateway shims (Wave 5 replicate, KAC-94: Gateway → CQRS-репо) ----
+
+// GatewayCols — exported gateways column list; used by kacho/pg/gateway.go.
+const GatewayCols = gatewayCols
+
+// ScanGateway — exported alias of scanGateway; used by kacho/pg/gateway.go.
+func ScanGateway(row Scannable) (*kachorepo.GatewayRecord, error) {
+	return scanGateway(row)
+}
+
+// WrapGatewayErr — exported alias of wrapPgErr со значением kind="Gateway"
+// (parity с WrapPgErr; helper для kacho/pg/gateway.go).
+func WrapGatewayErr(err error, id string) error {
+	return wrapPgErr(err, "Gateway", id)
+}
+
+// GatewayPayload — exported alias of gatewayPayload (для outbox-snapshot).
+// Используется apps/kacho/api/gateway/helpers.go при emit'е outbox-событий из
+// use-case-кода.
+func GatewayPayload(g *kachorepo.GatewayRecord) map[string]any {
+	return gatewayPayload(g)
+}

@@ -11,11 +11,12 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Gateway — type-alias на domain.GatewayRecord (repo-entity с DB-managed CreatedAt).
+// Gateway — type-alias на kacho.GatewayRecord (repo-entity с DB-managed CreatedAt).
 // Wave 2 batch B (KAC-94), parity с repo.Network.
-type Gateway = domain.GatewayRecord
+type Gateway = kacho.GatewayRecord
 
 // GatewayRepo — реализация GatewayRepoIface поверх pgxpool.
 type GatewayRepo struct {
@@ -117,7 +118,7 @@ func (r *GatewayRepo) List(ctx context.Context, f GatewayFilter, p Pagination) (
 
 // Insert вставляет Gateway. Принимает domain.Gateway (без CreatedAt — repo сам
 // выставит `now()`; source of truth — БД-колонка). Возвращает *Gateway
-// (= *domain.GatewayRecord) с заполненным CreatedAt.
+// (= *kacho.GatewayRecord) с заполненным CreatedAt.
 func (r *GatewayRepo) Insert(ctx context.Context, g *domain.Gateway) (*Gateway, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {

@@ -46,12 +46,10 @@ type SecurityGroupRecord struct {
 	CreatedAt time.Time
 }
 
-// GatewayRecord — repo-entity для Gateway. domain.Gateway + CreatedAt
-// (DB-managed). Wave 2 batch B (KAC-94).
-type GatewayRecord struct {
-	Gateway
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): GatewayRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_gateway.go` как `kacho.GatewayRecord` (parity с
+// pilot NetworkRecord, §4 D.1 / §7 H.1). Здесь его больше нет — все consumer'ы
+// импортируют `kacho.GatewayRecord` напрямую.
 
 // Wave 5 replicate (KAC-94): PrivateEndpointRecord уехал в repo-leaf
 // `internal/repo/kacho/entity_private_endpoint.go` как

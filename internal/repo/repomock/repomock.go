@@ -764,18 +764,18 @@ func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) 
 
 // ---- GatewayRepo ----
 //
-// Wave 2 batch B (KAC-94): port возвращает *domain.GatewayRecord.
+// Wave 2 batch B (KAC-94): port возвращает *kachorepo.GatewayRecord.
 
 type GatewayRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.GatewayRecord
+	data map[string]*kachorepo.GatewayRecord
 }
 
 func NewGatewayRepo() *GatewayRepo {
-	return &GatewayRepo{data: make(map[string]*domain.GatewayRecord)}
+	return &GatewayRepo{data: make(map[string]*kachorepo.GatewayRecord)}
 }
 
-func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.GatewayRecord, error) {
+func (r *GatewayRepo) Get(_ context.Context, id string) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
@@ -785,10 +785,10 @@ func (r *GatewayRepo) Get(_ context.Context, id string) (*domain.GatewayRecord, 
 	return g, nil
 }
 
-func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagination) ([]*domain.GatewayRecord, string, error) {
+func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagination) ([]*kachorepo.GatewayRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.GatewayRecord
+	var out []*kachorepo.GatewayRecord
 	for _, g := range r.data {
 		if f.FolderID != "" && g.FolderID != f.FolderID {
 			continue
@@ -801,15 +801,15 @@ func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagin
 	return out, "", nil
 }
 
-func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*domain.GatewayRecord, error) {
+func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.GatewayRecord{Gateway: *g, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.GatewayRecord{Gateway: *g, CreatedAt: time.Now().UTC()}
 	r.data[g.ID] = rec
 	return rec, nil
 }
 
-func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*domain.GatewayRecord, error) {
+func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[g.ID]
@@ -827,7 +827,7 @@ func (r *GatewayRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.GatewayRecord, error) {
+func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	g, ok := r.data[id]

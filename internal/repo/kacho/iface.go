@@ -55,6 +55,8 @@ type RepositoryReader interface {
 	PrivateEndpoints() PrivateEndpointReaderIface
 	NetworkInterfaces() NetworkInterfaceReaderIface
 	Subnets() SubnetReaderIface
+	// Gateways — Wave 5 replicate (KAC-94): Gateway read-iface на текущей read-TX.
+	Gateways() GatewayReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -82,6 +84,8 @@ type RepositoryWriter interface {
 	PrivateEndpoints() PrivateEndpointWriterIface
 	NetworkInterfaces() NetworkInterfaceWriterIface
 	Subnets() SubnetWriterIface
+	// Gateways — Wave 5 replicate (KAC-94): Gateway write-iface на текущей write-TX.
+	Gateways() GatewayWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// Commit финализирует tx. После Commit вызов Abort — no-op.

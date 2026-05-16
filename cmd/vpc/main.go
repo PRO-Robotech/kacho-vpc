@@ -283,6 +283,10 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	routeTableRepo := repo.NewRouteTableRepo(pool)
 	sgRepo := repo.NewSecurityGroupRepo(pool)
 	gatewayRepo := repo.NewGatewayRepo(pool)
+	_ = gatewayRepo // Wave 5 replicate (KAC-94): Gateway use-case'ы переехали на
+	// CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo оставлен умышленно —
+	// его консьюмеров в текущем main.go больше нет, но удаление откладывается до
+	// общей чистки legacy-репо после миграции всех 7 не-pilot ресурсов.
 	// Wave 5 replicate (KAC-94): PrivateEndpoint use-case'ы работают через
 	// CQRS-Repository (kachoRepo); legacy *PrivateEndpointRepo больше не
 	// инжектируется. Если потребуется admin-tooling на pgxpool напрямую —
@@ -354,15 +358,22 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		netGetUC, netListUC, netListSubUC, netListSGUC, netListRTUC, netListOpsUC,
 	)
 
-	// Wave 3b (skill evgeniy §2): Gateway / PrivateEndpoint / RouteTable —
-	// use-case-структура. Replicate Wave 3a pilot шаблона.
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): Gateway use-case'ы
+	// работают через CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo
+	// продолжает существовать (наследие admin/handler-кода, internal services) —
+	// он не удаляется в этой миграции; replicate-фаза заменила только
+	// use-case-слой Gateway.
+	//
+	// Wave 3b ранее жил на узком port'е `gatewayapp.GatewayRepo`, теперь на
+	// `gatewayapp.Repo = kacho.Repository`. Wiring остался идентичен по сигнатуре
+	// (use-case-конструктор принимает Repository, открывает Reader/Writer внутри).
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(gatewayRepo, folderClient, opsRepo),
-		gatewayapp.NewUpdateGatewayUseCase(gatewayRepo, opsRepo),
-		gatewayapp.NewDeleteGatewayUseCase(gatewayRepo, opsRepo),
-		gatewayapp.NewMoveGatewayUseCase(gatewayRepo, folderClient, opsRepo),
-		gatewayapp.NewGetGatewayUseCase(gatewayRepo),
-		gatewayapp.NewListGatewaysUseCase(gatewayRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
+		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
+		gatewayapp.NewMoveGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewGetGatewayUseCase(kachoRepo),
+		gatewayapp.NewListGatewaysUseCase(kachoRepo),
 		gatewayapp.NewListOperationsUseCase(opsRepo),
 	)
 

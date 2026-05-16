@@ -9,25 +9,37 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListGatewaysUseCase — list gateways с пагинацией. folder_id обязателен.
+//
+// Wave 5 replicate (KAC-94): открывает read-only TX через `repo.Reader(ctx)`.
 type ListGatewaysUseCase struct {
-	repo GatewayRepo
+	repo Repo
 }
 
 // NewListGatewaysUseCase создаёт ListGatewaysUseCase.
-func NewListGatewaysUseCase(repo GatewayRepo) *ListGatewaysUseCase {
-	return &ListGatewaysUseCase{repo: repo}
+func NewListGatewaysUseCase(r Repo) *ListGatewaysUseCase {
+	return &ListGatewaysUseCase{repo: r}
 }
 
 // Execute — folder_id required (закрыто cross-folder enumeration #C1).
-func (u *ListGatewaysUseCase) Execute(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.GatewayRecord, string, error) {
+func (u *ListGatewaysUseCase) Execute(ctx context.Context, f GatewayFilter, p Pagination) ([]*kacho.GatewayRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return u.repo.List(ctx, f, p)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+
+	gws, nextToken, lerr := rd.Gateways().List(ctx, f, p)
+	if lerr != nil {
+		return nil, "", mapRepoErr(lerr)
+	}
+	return gws, nextToken, nil
 }
 
 // ListOperationsUseCase — операции, относящиеся к конкретному gateway-id.

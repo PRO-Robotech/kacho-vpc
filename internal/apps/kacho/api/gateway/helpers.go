@@ -12,8 +12,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	// Blank-import регистрирует трансферы Gateway/time через init() (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -95,10 +95,17 @@ func invalidArg(field, desc string) error {
 // marshalGatewayRecord конвертирует repo-entity Gateway в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами для запихивания
 // результата в Operation.response.
-func marshalGatewayRecord(rec *domain.GatewayRecord) (*anypb.Any, error) {
+func marshalGatewayRecord(rec *kacho.GatewayRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Gateway
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Gateway: %w", err)
 	}
 	return anypb.New(dst)
+}
+
+// gatewayPayloadMap — payload snapshot для outbox-event (parity с legacy
+// `repo.gatewayPayload`). Использует exported shim `repo.GatewayPayload` —
+// иначе пришлось бы дублировать map-encoding здесь.
+func gatewayPayloadMap(g *kacho.GatewayRecord) map[string]any {
+	return repo.GatewayPayload(g)
 }

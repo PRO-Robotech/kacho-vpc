@@ -14,35 +14,43 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты Gateway use-case'ов и handler'а. Wave 3b (KAC-94): сюда переехали
 // прежние тесты `internal/handler/coverage*_test.go::Test{GatewayHandler_*,
 // GatewayToProto_*}` и `internal/service/coverage2_test.go::Test{GatewayService_*}`.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): use-case-тесты работают
+// через `kachomock.Repository` (in-memory CQRS-mock) вместо узкого
+// `repomock.GatewayRepo`. mock поддерживает TX-семантику (Writer accumulate'ит
+// в local map, Commit flush'ит в parent state) — это позволяет проверять
+// корректность outbox-emit-в-той-же-TX без реального Postgres.
 
 func makeHandler(t *testing.T,
-	gr *repomock.GatewayRepo,
+	kr *kachomock.Repository,
 	or *repomock.OpsRepo,
 	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateGatewayUseCase(gr, fc, or)
-	update := NewUpdateGatewayUseCase(gr, or)
-	deleteUC := NewDeleteGatewayUseCase(gr, or)
-	move := NewMoveGatewayUseCase(gr, fc, or)
-	get := NewGetGatewayUseCase(gr)
-	list := NewListGatewaysUseCase(gr)
+	create := NewCreateGatewayUseCase(kr, fc, or)
+	update := NewUpdateGatewayUseCase(kr, or)
+	deleteUC := NewDeleteGatewayUseCase(kr, or)
+	move := NewMoveGatewayUseCase(kr, fc, or)
+	get := NewGetGatewayUseCase(kr)
+	list := NewListGatewaysUseCase(kr)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, list, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.GatewayRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository) {
 	t.Helper()
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.FolderClient{OK: folderOK}
-	return makeHandler(t, gr, or, fc), or, gr
+	return makeHandler(t, kr, or, fc), or, kr
 }
 
 // ---- Handler — sync paths ----
@@ -101,9 +109,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level ----
 
 func TestCreateUseCase_ValidationError(t *testing.T) {
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
 	// folder_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{Name: "gw1", GatewayType: domain.GatewayTypeSharedEgress}})
@@ -132,9 +140,9 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 }
 
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: false}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: false}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
 		FolderID:    "f1",
@@ -147,9 +155,9 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(gr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
 		FolderID:    "f1",
@@ -163,10 +171,18 @@ func TestCreateUseCase_OK(t *testing.T) {
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
+
+	// kachomock buffer'ит outbox-event'ы и публикует их по Commit. Проверяем,
+	// что Gateway.CREATED был эмитирован (atomicity DML + outbox в одной
+	// writer-TX — G.5).
+	events := kr.Outbox()
+	require.Len(t, events, 1)
+	assert.Equal(t, "Gateway", events[0].Resource)
+	assert.Equal(t, "CREATED", events[0].Action)
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteGatewayUseCase(repomock.NewGatewayRepo(), repomock.NewOpsRepo())
+	uc := NewDeleteGatewayUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -174,7 +190,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveGatewayUseCase(repomock.NewGatewayRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveGatewayUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -184,7 +200,7 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListGatewaysUseCase(repomock.NewGatewayRepo())
+	uc := NewListGatewaysUseCase(kachomock.NewRepository())
 	_, _, err := uc.Execute(context.Background(), GatewayFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -277,9 +293,9 @@ func TestHandler_FullFlow(t *testing.T) {
 }
 
 func TestUpdateUseCase_BadName(t *testing.T) {
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewUpdateGatewayUseCase(gr, or)
+	uc := NewUpdateGatewayUseCase(kr, or)
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		GatewayID:  ids.NewID(ids.PrefixGateway),
 		Gateway:    domain.Gateway{Name: domain.RcNameVPC("BadCaps")},
@@ -291,9 +307,9 @@ func TestUpdateUseCase_BadName(t *testing.T) {
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	gr := repomock.NewGatewayRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewUpdateGatewayUseCase(gr, or)
+	uc := NewUpdateGatewayUseCase(kr, or)
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		GatewayID:  ids.NewID(ids.PrefixGateway),
 		UpdateMask: []string{"unknown_field"},
@@ -302,7 +318,7 @@ func TestUpdateUseCase_UnknownMask(t *testing.T) {
 }
 
 func TestGatewayToPb_SharedEgress(t *testing.T) {
-	rec := &domain.GatewayRecord{
+	rec := &kacho.GatewayRecord{
 		Gateway: domain.Gateway{
 			ID:          "gw-1",
 			FolderID:    "f1",
