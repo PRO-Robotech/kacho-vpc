@@ -11,7 +11,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -23,11 +23,11 @@ type networkReader struct {
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "Network <id> not found".
 func (r *networkReader) Get(ctx context.Context, id string) (*kacho.NetworkRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, repo.NetworkCols)
+	q := fmt.Sprintf(`SELECT %s FROM networks WHERE id = $1`, helpers.NetworkCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	n, err := repo.ScanNetwork(row)
+	n, err := helpers.ScanNetwork(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network", id)
+		return nil, helpers.WrapPgErr(err, "Network", id)
 	}
 	return n, nil
 }
@@ -58,7 +58,7 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name"})
 		if perr != nil {
-			return nil, "", repo.InvalidFilterErr(perr)
+			return nil, "", helpers.InvalidFilterErr(perr)
 		}
 		if ast != nil {
 			frag, fargs := ast.ToSQL(argIdx)
@@ -68,9 +68,9 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 		}
 	}
 	if p.PageToken != "" {
-		ts, id, err := repo.DecodePageToken(p.PageToken)
+		ts, id, err := helpers.DecodePageToken(p.PageToken)
 		if err != nil {
-			return nil, "", repo.InvalidPageTokenErr(err)
+			return nil, "", helpers.InvalidPageTokenErr(err)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -81,31 +81,31 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	q := fmt.Sprintf(`SELECT %s FROM networks %s ORDER BY created_at ASC, id ASC LIMIT $%d`, repo.NetworkCols, where, argIdx)
+	q := fmt.Sprintf(`SELECT %s FROM networks %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.NetworkCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Network", "")
+		return nil, "", helpers.WrapPgErr(err, "Network", "")
 	}
 	defer rows.Close()
 
 	var result []*kacho.NetworkRecord
 	for rows.Next() {
-		n, err := repo.ScanNetwork(rows)
+		n, err := helpers.ScanNetwork(rows)
 		if err != nil {
-			return nil, "", repo.WrapPgErr(err, "Network", "")
+			return nil, "", helpers.WrapPgErr(err, "Network", "")
 		}
 		result = append(result, n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "Network", "")
+		return nil, "", helpers.WrapPgErr(err, "Network", "")
 	}
 
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -129,7 +129,7 @@ type networkWriter struct {
 //
 // outbox-write — не здесь, а в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +138,14 @@ func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.N
 	q := fmt.Sprintf(`
 		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING %s`, repo.NetworkCols)
+		RETURNING %s`, helpers.NetworkCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		n.ID, n.FolderID, now, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
 	)
-	result, err := repo.ScanNetwork(row)
+	result, err := helpers.ScanNetwork(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network", string(n.Name))
+		return nil, helpers.WrapPgErr(err, "Network", string(n.Name))
 	}
 	return result, nil
 }
@@ -155,7 +155,7 @@ func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.N
 //
 // outbox-write — в use-case'е (см. Insert).
 func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(n.Labels), "Network.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -163,14 +163,14 @@ func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*kacho.N
 	q := fmt.Sprintf(`
 		UPDATE networks SET name=$2, description=$3, labels=$4, default_security_group_id=$5
 		WHERE id=$1
-		RETURNING %s`, repo.NetworkCols)
+		RETURNING %s`, helpers.NetworkCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		n.ID, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
 	)
-	result, err := repo.ScanNetwork(row)
+	result, err := helpers.ScanNetwork(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network", n.ID)
+		return nil, helpers.WrapPgErr(err, "Network", n.ID)
 	}
 	return result, nil
 }
@@ -185,11 +185,11 @@ func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*k
 	q := fmt.Sprintf(`
 		UPDATE networks SET default_security_group_id = $2
 		WHERE id = $1
-		RETURNING %s`, repo.NetworkCols)
+		RETURNING %s`, helpers.NetworkCols)
 	row := w.tx.QueryRow(ctx, q, id, sgID)
-	result, err := repo.ScanNetwork(row)
+	result, err := helpers.ScanNetwork(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network", id)
+		return nil, helpers.WrapPgErr(err, "Network", id)
 	}
 	return result, nil
 }
@@ -199,11 +199,11 @@ func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*
 	q := fmt.Sprintf(`
 		UPDATE networks SET folder_id = $2
 		WHERE id = $1
-		RETURNING %s`, repo.NetworkCols)
+		RETURNING %s`, helpers.NetworkCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	result, err := repo.ScanNetwork(row)
+	result, err := helpers.ScanNetwork(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network", id)
+		return nil, helpers.WrapPgErr(err, "Network", id)
 	}
 	return result, nil
 }
@@ -216,13 +216,13 @@ func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*
 func (w *networkWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM networks WHERE id = $1`, id)
 	if err != nil {
-		if repo.IsFKViolation(err) {
-			return fmt.Errorf("%w: network is not empty", repo.ErrFailedPrecondition)
+		if helpers.IsFKViolation(err) {
+			return fmt.Errorf("%w: network is not empty", helpers.ErrFailedPrecondition)
 		}
-		return repo.WrapPgErr(err, "Network", id)
+		return helpers.WrapPgErr(err, "Network", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Network %s not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Network %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }

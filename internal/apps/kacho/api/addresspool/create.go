@@ -12,7 +12,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
 // CreatePoolReq — параметры создания пула.
@@ -120,7 +120,7 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 		}
 	}
 	if err := w.Outbox().Emit(ctx, "AddressPool", created.ID, "CREATED",
-		repo.AddressPoolDomainPayload(&created.AddressPool)); err != nil {
+		helpers.AddressPoolDomainPayload(&created.AddressPool)); err != nil {
 		return nil, status.Errorf(codes.Internal, "outbox emit: %v", err)
 	}
 	if err := w.Commit(); err != nil {

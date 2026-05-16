@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -315,7 +315,7 @@ func (w *writerImpl) Abort() {
 }
 
 // outboxEmitter — emit в `vpc_outbox` через текущую TX writer'а. Делегирует
-// repo.EmitVPC (который оборачивает kacho-corelib/outbox.Emit с фиксированной
+// helpers.EmitVPC (который оборачивает kacho-corelib/outbox.Emit с фиксированной
 // таблицей "vpc_outbox" + trigger pg_notify('vpc_outbox', ...)).
 type outboxEmitter struct {
 	tx pgx.Tx
@@ -324,5 +324,5 @@ type outboxEmitter struct {
 // Emit добавляет outbox-row в той же tx, что и DML resource'а.
 // payload nil → пустой JSON-объект (как у legacy emitVPC).
 func (e *outboxEmitter) Emit(ctx context.Context, resource, id, action string, payload map[string]any) error {
-	return repo.EmitVPC(ctx, e.tx, resource, id, action, payload)
+	return helpers.EmitVPC(ctx, e.tx, resource, id, action, payload)
 }

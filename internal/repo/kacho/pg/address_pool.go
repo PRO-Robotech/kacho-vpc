@@ -9,7 +9,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -26,11 +26,11 @@ type addressPoolReader struct {
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "AddressPool <id> not found".
 func (r *addressPoolReader) Get(ctx context.Context, id string) (*kacho.AddressPoolRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM address_pools WHERE id = $1`, repo.AddressPoolCols)
+	q := fmt.Sprintf(`SELECT %s FROM address_pools WHERE id = $1`, helpers.AddressPoolCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	rec, err := repo.ScanAddressPool(row)
+	rec, err := helpers.ScanAddressPool(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", id)
+		return nil, helpers.WrapPgErr(err, "AddressPool", id)
 	}
 	return rec, nil
 }
@@ -56,9 +56,9 @@ func (r *addressPoolReader) List(ctx context.Context, f kacho.AddressPoolFilter,
 		idx++
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conds = append(conds, fmt.Sprintf("(created_at, id) > ($%d, $%d)", idx, idx+1))
 		args = append(args, ts, id)
@@ -66,33 +66,33 @@ func (r *addressPoolReader) List(ctx context.Context, f kacho.AddressPoolFilter,
 	}
 	where := ""
 	if len(conds) > 0 {
-		where = "WHERE " + repo.JoinAnd(conds)
+		where = "WHERE " + helpers.JoinAnd(conds)
 	}
 	q := fmt.Sprintf(`SELECT %s FROM address_pools %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
-		repo.AddressPoolCols, where, idx)
+		helpers.AddressPoolCols, where, idx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "AddressPool", "")
+		return nil, "", helpers.WrapPgErr(err, "AddressPool", "")
 	}
 	defer rows.Close()
 
 	var out []*kacho.AddressPoolRecord
 	for rows.Next() {
-		rec, scanErr := repo.ScanAddressPool(rows)
+		rec, scanErr := helpers.ScanAddressPool(rows)
 		if scanErr != nil {
-			return nil, "", repo.WrapPgErr(scanErr, "AddressPool", "")
+			return nil, "", helpers.WrapPgErr(scanErr, "AddressPool", "")
 		}
 		out = append(out, rec)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "AddressPool", "")
+		return nil, "", helpers.WrapPgErr(err, "AddressPool", "")
 	}
 	var nextToken string
 	if int64(len(out)) > pageSize {
 		last := out[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		out = out[:pageSize]
 	}
 	return out, nextToken, nil
@@ -106,18 +106,18 @@ func (r *addressPoolReader) GetDefaultForZone(ctx context.Context, zoneID string
 		row pgx.Row
 	)
 	if zoneID == "" {
-		q = fmt.Sprintf(`SELECT %s FROM address_pools WHERE zone_id IS NULL AND kind = $1 AND is_default = true LIMIT 1`, repo.AddressPoolCols)
+		q = fmt.Sprintf(`SELECT %s FROM address_pools WHERE zone_id IS NULL AND kind = $1 AND is_default = true LIMIT 1`, helpers.AddressPoolCols)
 		row = r.tx.QueryRow(ctx, q, int16(kind))
 	} else {
-		q = fmt.Sprintf(`SELECT %s FROM address_pools WHERE zone_id = $1 AND kind = $2 AND is_default = true LIMIT 1`, repo.AddressPoolCols)
+		q = fmt.Sprintf(`SELECT %s FROM address_pools WHERE zone_id = $1 AND kind = $2 AND is_default = true LIMIT 1`, helpers.AddressPoolCols)
 		row = r.tx.QueryRow(ctx, q, zoneID, int16(kind))
 	}
-	rec, err := repo.ScanAddressPool(row)
+	rec, err := helpers.ScanAddressPool(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, repo.ErrNotFound
+			return nil, helpers.ErrNotFound
 		}
-		return nil, repo.WrapPgErr(err, "AddressPool", "")
+		return nil, helpers.WrapPgErr(err, "AddressPool", "")
 	}
 	return rec, nil
 }
@@ -127,12 +127,12 @@ func (r *addressPoolReader) GetDefaultForZone(ctx context.Context, zoneID string
 // иначе — pool'ы привязанные к zone + глобальные.
 func (r *addressPoolReader) FindBySelectorMatch(ctx context.Context, networkSelector map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*kacho.AddressPoolRecord, error) {
 	if len(networkSelector) == 0 {
-		return nil, repo.ErrNotFound
+		return nil, helpers.ErrNotFound
 	}
 	if limit <= 0 {
 		limit = 1
 	}
-	selectorJSON, err := repo.MarshalJSONB(networkSelector, "AddressPool.selector_labels")
+	selectorJSON, err := helpers.MarshalJSONB(networkSelector, "AddressPool.selector_labels")
 	if err != nil {
 		return nil, err
 	}
@@ -152,19 +152,19 @@ LIMIT $4
 `
 	rows, err := r.tx.Query(ctx, q, selectorJSON, zoneID, int16(kind), limit)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", "")
+		return nil, helpers.WrapPgErr(err, "AddressPool", "")
 	}
 	defer rows.Close()
 	var out []*kacho.AddressPoolRecord
 	for rows.Next() {
-		rec, scanErr := repo.ScanAddressPool(rows)
+		rec, scanErr := helpers.ScanAddressPool(rows)
 		if scanErr != nil {
-			return nil, repo.WrapPgErr(scanErr, "AddressPool", "")
+			return nil, helpers.WrapPgErr(scanErr, "AddressPool", "")
 		}
 		out = append(out, rec)
 	}
 	if len(out) == 0 {
-		return nil, repo.ErrNotFound
+		return nil, helpers.ErrNotFound
 	}
 	return out, rows.Err()
 }
@@ -194,7 +194,7 @@ HAVING count(*) > 1
 `, where)
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", "")
+		return nil, helpers.WrapPgErr(err, "AddressPool", "")
 	}
 
 	// Сначала вычитываем все group-id'ы во временный слайс — нельзя гонять
@@ -206,13 +206,13 @@ HAVING count(*) > 1
 		var cnt int
 		if scanErr := rows.Scan(&ids, &cnt); scanErr != nil {
 			rows.Close()
-			return nil, repo.WrapPgErr(scanErr, "AddressPool", "")
+			return nil, helpers.WrapPgErr(scanErr, "AddressPool", "")
 		}
 		raw = append(raw, rawGroup{ids: ids})
 	}
 	if rerr := rows.Err(); rerr != nil {
 		rows.Close()
-		return nil, repo.WrapPgErr(rerr, "AddressPool", "")
+		return nil, helpers.WrapPgErr(rerr, "AddressPool", "")
 	}
 	rows.Close()
 
@@ -242,7 +242,7 @@ func (r *addressPoolReader) CountAddressesByPool(ctx context.Context, poolID str
 		 WHERE external_ipv4 ->> 'address_pool_id' = $1
 		   AND coalesce(external_ipv4 ->> 'address', '') <> ''`, poolID).Scan(&n)
 	if err != nil {
-		return 0, repo.WrapPgErr(err, "AddressPool", poolID)
+		return 0, helpers.WrapPgErr(err, "AddressPool", poolID)
 	}
 	return n, nil
 }
@@ -277,7 +277,7 @@ LEFT JOIN addresses a ON a.external_ipv4 ->> 'address_pool_id' = $1
 GROUP BY c.idx
 `, poolID, v4Cidrs)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", poolID)
+		return nil, helpers.WrapPgErr(err, "AddressPool", poolID)
 	}
 	defer rows.Close()
 	counts := make(map[int]int64, len(v4Cidrs))
@@ -285,12 +285,12 @@ GROUP BY c.idx
 		var idx int
 		var n int64
 		if scanErr := rows.Scan(&idx, &n); scanErr != nil {
-			return nil, repo.WrapPgErr(scanErr, "AddressPool", poolID)
+			return nil, helpers.WrapPgErr(scanErr, "AddressPool", poolID)
 		}
 		counts[idx] = n
 	}
 	if rerr := rows.Err(); rerr != nil {
-		return nil, repo.WrapPgErr(rerr, "AddressPool", poolID)
+		return nil, helpers.WrapPgErr(rerr, "AddressPool", poolID)
 	}
 	for i, c := range v4Cidrs {
 		out[c] = counts[i+1]
@@ -314,43 +314,43 @@ func (r *addressPoolReader) ListAddressesByPool(ctx context.Context, poolID, fol
 		idx++
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conds = append(conds, fmt.Sprintf("(created_at, id) > ($%d, $%d)", idx, idx+1))
 		args = append(args, ts, id)
 		idx += 2
 	}
 	q := fmt.Sprintf(`
-SELECT `+repo.AddressCols+`
+SELECT `+helpers.AddressCols+`
 FROM addresses
 WHERE %s
 ORDER BY created_at ASC, id ASC
-LIMIT $%d`, repo.JoinAnd(conds), idx)
+LIMIT $%d`, helpers.JoinAnd(conds), idx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Address", "")
+		return nil, "", helpers.WrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
 
 	var out []*kacho.AddressRecord
 	for rows.Next() {
-		a, scanErr := repo.ScanAddress(rows)
+		a, scanErr := helpers.ScanAddress(rows)
 		if scanErr != nil {
-			return nil, "", repo.WrapPgErr(scanErr, "Address", "")
+			return nil, "", helpers.WrapPgErr(scanErr, "Address", "")
 		}
 		out = append(out, a)
 	}
 	if rerr := rows.Err(); rerr != nil {
-		return nil, "", repo.WrapPgErr(rerr, "Address", "")
+		return nil, "", helpers.WrapPgErr(rerr, "Address", "")
 	}
 	var nextToken string
 	if int64(len(out)) > pageSize {
 		last := out[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		out = out[:pageSize]
 	}
 	return out, nextToken, nil
@@ -368,11 +368,11 @@ type addressPoolWriter struct {
 
 // Insert — INSERT address_pools RETURNING.
 func (w *addressPoolWriter) Insert(ctx context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
-	labels, err := repo.MarshalJSONB(p.Labels, "AddressPool.labels")
+	labels, err := helpers.MarshalJSONB(p.Labels, "AddressPool.labels")
 	if err != nil {
 		return nil, err
 	}
-	selector, err := repo.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	selector, err := helpers.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
 	if err != nil {
 		return nil, err
 	}
@@ -397,18 +397,18 @@ func (w *addressPoolWriter) Insert(ctx context.Context, p *domain.AddressPool) (
 		VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)
 	`, p.ID, p.Name, p.Description, labels, v4, v6, int16(p.Kind), zoneArg, p.IsDefault, selector, p.SelectorPriority, p.CreatedAt, p.ModifiedAt)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", p.ID)
+		return nil, helpers.WrapPgErr(err, "AddressPool", p.ID)
 	}
 	return &kacho.AddressPoolRecord{AddressPool: *p}, nil
 }
 
 // Update — UPDATE address_pools.
 func (w *addressPoolWriter) Update(ctx context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
-	labels, err := repo.MarshalJSONB(p.Labels, "AddressPool.labels")
+	labels, err := helpers.MarshalJSONB(p.Labels, "AddressPool.labels")
 	if err != nil {
 		return nil, err
 	}
-	selector, err := repo.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	selector, err := helpers.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
 	if err != nil {
 		return nil, err
 	}
@@ -428,10 +428,10 @@ func (w *addressPoolWriter) Update(ctx context.Context, p *domain.AddressPool) (
 		WHERE id = $1
 	`, p.ID, p.Name, p.Description, labels, v4, v6, p.IsDefault, selector, p.SelectorPriority, p.ModifiedAt)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "AddressPool", p.ID)
+		return nil, helpers.WrapPgErr(err, "AddressPool", p.ID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: AddressPool %s", repo.ErrNotFound, p.ID)
+		return nil, fmt.Errorf("%w: AddressPool %s", helpers.ErrNotFound, p.ID)
 	}
 	return &kacho.AddressPoolRecord{AddressPool: *p}, nil
 }
@@ -443,10 +443,10 @@ func (w *addressPoolWriter) Update(ctx context.Context, p *domain.AddressPool) (
 func (w *addressPoolWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM address_pools WHERE id = $1`, id)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPool", id)
+		return helpers.WrapPgErr(err, "AddressPool", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: AddressPool %s", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: AddressPool %s", helpers.ErrNotFound, id)
 	}
 	return nil
 }
@@ -465,7 +465,7 @@ func (w *addressPoolWriter) PopulateFreelistForPool(ctx context.Context, poolID 
 	).Scan(&cidrs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("populate freelist: pool %s: %w", poolID, repo.ErrNotFound)
+			return fmt.Errorf("populate freelist: pool %s: %w", poolID, helpers.ErrNotFound)
 		}
 		return fmt.Errorf("read v4_cidr_blocks for pool %s: %w", poolID, err)
 	}

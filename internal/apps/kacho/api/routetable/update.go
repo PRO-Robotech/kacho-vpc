@@ -14,6 +14,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 )
 
 // UpdateInput — параметры для UpdateRouteTableUseCase.Execute.
@@ -85,7 +86,7 @@ func (u *UpdateRouteTableUseCase) doUpdate(ctx context.Context, in UpdateInput) 
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if err := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", repo.RouteTablePayload(updated)); err != nil {
+	if err := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", helpers.RouteTablePayload(updated)); err != nil {
 		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {

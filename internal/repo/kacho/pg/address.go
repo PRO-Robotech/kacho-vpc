@@ -14,7 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -32,11 +32,11 @@ type addressReader struct {
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "Address <id> not found".
 func (r *addressReader) Get(ctx context.Context, id string) (*kacho.AddressRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, repo.AddressCols)
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1`, helpers.AddressCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	a, err := repo.ScanAddress(row)
+	a, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", id)
+		return nil, helpers.WrapPgErr(err, "Address", id)
 	}
 	return a, nil
 }
@@ -72,7 +72,7 @@ func (r *addressReader) List(ctx context.Context, f kacho.AddressFilter, p kacho
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name"})
 		if perr != nil {
-			return nil, "", repo.InvalidFilterErr(perr)
+			return nil, "", helpers.InvalidFilterErr(perr)
 		}
 		if ast != nil {
 			frag, fargs := ast.ToSQL(argIdx)
@@ -82,9 +82,9 @@ func (r *addressReader) List(ctx context.Context, f kacho.AddressFilter, p kacho
 		}
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -95,31 +95,31 @@ func (r *addressReader) List(ctx context.Context, f kacho.AddressFilter, p kacho
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	q := fmt.Sprintf(`SELECT %s FROM addresses %s ORDER BY created_at ASC, id ASC LIMIT $%d`, repo.AddressCols, where, argIdx)
+	q := fmt.Sprintf(`SELECT %s FROM addresses %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.AddressCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Address", "")
+		return nil, "", helpers.WrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
 
 	var result []*kacho.AddressRecord
 	for rows.Next() {
-		a, err := repo.ScanAddress(rows)
+		a, err := helpers.ScanAddress(rows)
 		if err != nil {
-			return nil, "", repo.WrapPgErr(err, "Address", "")
+			return nil, "", helpers.WrapPgErr(err, "Address", "")
 		}
 		result = append(result, a)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "Address", "")
+		return nil, "", helpers.WrapPgErr(err, "Address", "")
 	}
 
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -141,18 +141,18 @@ func (r *addressReader) GetByValue(ctx context.Context, externalIP, internalIP, 
 		argIdx++
 	}
 	if len(conds) == 0 {
-		return nil, repo.ErrInvalidArg
+		return nil, helpers.ErrInvalidArg
 	}
 	where := "(" + strings.Join(conds, " OR ") + ")"
 	if subnetID != "" {
 		where = fmt.Sprintf(`%s AND internal_ipv4->>'subnet_id' = $%d`, where, argIdx)
 		args = append(args, subnetID)
 	}
-	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE %s LIMIT 1`, repo.AddressCols, where)
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE %s LIMIT 1`, helpers.AddressCols, where)
 	row := r.tx.QueryRow(ctx, q, args...)
-	a, err := repo.ScanAddress(row)
+	a, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", "")
+		return nil, helpers.WrapPgErr(err, "Address", "")
 	}
 	return a, nil
 }
@@ -168,7 +168,7 @@ func (r *addressReader) ExistsIP(ctx context.Context, ip string) (bool, error) {
 		)
 	`, ip).Scan(&count)
 	if err != nil {
-		return false, repo.WrapPgErr(err, "Address", "")
+		return false, helpers.WrapPgErr(err, "Address", "")
 	}
 	return count > 0, nil
 }
@@ -181,7 +181,7 @@ func (r *addressReader) GetReference(ctx context.Context, addressID string) (*do
 		FROM address_references WHERE address_id = $1`, addressID).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", addressID)
+		return nil, helpers.WrapPgErr(err, "Address", addressID)
 	}
 	return &out, nil
 }
@@ -196,18 +196,18 @@ func (r *addressReader) ReferencesForAddresses(ctx context.Context, addressIDs [
 		SELECT address_id, referrer_type, referrer_id, referrer_name, attached_at
 		FROM address_references WHERE address_id = ANY($1)`, addressIDs)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", "")
+		return nil, helpers.WrapPgErr(err, "Address", "")
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var ref domain.AddressReference
 		if err := rows.Scan(&ref.AddressID, &ref.ReferrerType, &ref.ReferrerID, &ref.ReferrerName, &ref.AttachedAt); err != nil {
-			return nil, repo.WrapPgErr(err, "Address", "")
+			return nil, helpers.WrapPgErr(err, "Address", "")
 		}
 		out[ref.AddressID] = &ref
 	}
 	if err := rows.Err(); err != nil {
-		return nil, repo.WrapPgErr(err, "Address", "")
+		return nil, helpers.WrapPgErr(err, "Address", "")
 	}
 	return out, nil
 }
@@ -230,7 +230,7 @@ type addressWriter struct {
 
 // Insert — INSERT addresses RETURNING. CreatedAt — UTC `time.Now()`.
 func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.AddressRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -255,15 +255,15 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 	q := fmt.Sprintf(`
 		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		RETURNING %s`, repo.AddressCols)
+		RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q,
 		a.ID, a.FolderID, now, string(a.Name), string(a.Description), labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
 		extJSON, intJSON, int6JSON, ext6JSON,
 	)
-	result, err := repo.ScanAddress(row)
+	result, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", string(a.Name))
+		return nil, helpers.WrapPgErr(err, "Address", string(a.Name))
 	}
 	return result, nil
 }
@@ -271,31 +271,31 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 // Update — UPDATE name/description/labels/reserved/used/deletion_protection.
 // IP-spec колонки НЕ трогаем (immutable verbatim YC; для них есть SetIPSpec).
 func (w *addressWriter) Update(ctx context.Context, a *domain.Address) (*kacho.AddressRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {
 		return nil, err
 	}
 	q := fmt.Sprintf(`
 		UPDATE addresses SET name=$2, description=$3, labels=$4, reserved=$5, used=$6, deletion_protection=$7
 		WHERE id=$1
-		RETURNING %s`, repo.AddressCols)
+		RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q,
 		a.ID, string(a.Name), string(a.Description), labelsJSON, a.Reserved, a.Used, a.DeletionProtection,
 	)
-	result, err := repo.ScanAddress(row)
+	result, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", a.ID)
+		return nil, helpers.WrapPgErr(err, "Address", a.ID)
 	}
 	return result, nil
 }
 
 // SetFolderID меняет folder_id у Address (для :move).
 func (w *addressWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.AddressRecord, error) {
-	q := fmt.Sprintf(`UPDATE addresses SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.AddressCols)
+	q := fmt.Sprintf(`UPDATE addresses SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	a, err := repo.ScanAddress(row)
+	a, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", id)
+		return nil, helpers.WrapPgErr(err, "Address", id)
 	}
 	return a, nil
 }
@@ -310,36 +310,36 @@ func (w *addressWriter) SetIPSpec(ctx context.Context, id string, ext *domain.Ex
 	args := []any{id}
 	switch {
 	case ext != nil && intn == nil:
-		extJSON, err := repo.MarshalJSONB(ext, "Address.external_ipv4")
+		extJSON, err := helpers.MarshalJSONB(ext, "Address.external_ipv4")
 		if err != nil {
 			return nil, err
 		}
 		q += `external_ipv4 = $2::jsonb`
 		args = append(args, extJSON)
 	case ext == nil && intn != nil:
-		intJSON, err := repo.MarshalJSONB(intn, "Address.internal_ipv4")
+		intJSON, err := helpers.MarshalJSONB(intn, "Address.internal_ipv4")
 		if err != nil {
 			return nil, err
 		}
 		q += `internal_ipv4 = $2::jsonb`
 		args = append(args, intJSON)
 	default:
-		extJSON, err := repo.MarshalJSONB(ext, "Address.external_ipv4")
+		extJSON, err := helpers.MarshalJSONB(ext, "Address.external_ipv4")
 		if err != nil {
 			return nil, err
 		}
-		intJSON, err := repo.MarshalJSONB(intn, "Address.internal_ipv4")
+		intJSON, err := helpers.MarshalJSONB(intn, "Address.internal_ipv4")
 		if err != nil {
 			return nil, err
 		}
 		q += `external_ipv4 = $2::jsonb, internal_ipv4 = $3::jsonb`
 		args = append(args, extJSON, intJSON)
 	}
-	q += ` WHERE id = $1 RETURNING ` + repo.AddressCols
+	q += ` WHERE id = $1 RETURNING ` + helpers.AddressCols
 	row := w.tx.QueryRow(ctx, q, args...)
-	a, err := repo.ScanAddress(row)
+	a, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", id)
+		return nil, helpers.WrapPgErr(err, "Address", id)
 	}
 	return a, nil
 }
@@ -349,14 +349,14 @@ func (w *addressWriter) SetInternalIPv6(ctx context.Context, id string, spec *do
 	if spec == nil {
 		return w.Get(ctx, id)
 	}
-	int6JSON, err := repo.MarshalJSONB(spec, "Address.internal_ipv6")
+	int6JSON, err := helpers.MarshalJSONB(spec, "Address.internal_ipv6")
 	if err != nil {
 		return nil, err
 	}
-	row := w.tx.QueryRow(ctx, `UPDATE addresses SET internal_ipv6 = $2::jsonb WHERE id = $1 RETURNING `+repo.AddressCols, id, int6JSON)
-	a, err := repo.ScanAddress(row)
+	row := w.tx.QueryRow(ctx, `UPDATE addresses SET internal_ipv6 = $2::jsonb WHERE id = $1 RETURNING `+helpers.AddressCols, id, int6JSON)
+	a, err := helpers.ScanAddress(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", id)
+		return nil, helpers.WrapPgErr(err, "Address", id)
 	}
 	return a, nil
 }
@@ -366,13 +366,13 @@ func (w *addressWriter) SetInternalIPv6(ctx context.Context, id string, spec *do
 func (w *addressWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM addresses WHERE id = $1`, id)
 	if err != nil {
-		if repo.IsFKViolation(err) {
-			return fmt.Errorf("%w: address is in use", repo.ErrFailedPrecondition)
+		if helpers.IsFKViolation(err) {
+			return fmt.Errorf("%w: address is in use", helpers.ErrFailedPrecondition)
 		}
-		return repo.WrapPgErr(err, "Address", id)
+		return helpers.WrapPgErr(err, "Address", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Address %s not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }
@@ -384,9 +384,9 @@ func (w *addressWriter) Delete(ctx context.Context, id string) error {
 // `*repo.AddressRepo.AllocateIPFromFreelist`.
 func (w *addressWriter) AllocateIPFromFreelist(ctx context.Context, poolID, addressID string) (string, error) {
 	var ip string
-	err := w.tx.QueryRow(ctx, repo.AllocateFromFreelistSQL, poolID, addressID).Scan(&ip)
+	err := w.tx.QueryRow(ctx, helpers.AllocateFromFreelistSQL, poolID, addressID).Scan(&ip)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", repo.ErrPoolExhausted
+		return "", helpers.ErrPoolExhausted
 	}
 	if err != nil {
 		return "", fmt.Errorf("allocate from freelist: %w", err)
@@ -417,7 +417,7 @@ func (w *addressWriter) InitIPv6PoolCursor(ctx context.Context, poolID string) e
 		 ON CONFLICT (pool_id) DO NOTHING`,
 		poolID)
 	if err != nil {
-		return repo.WrapPgErr(err, "AddressPool", poolID)
+		return helpers.WrapPgErr(err, "AddressPool", poolID)
 	}
 	return nil
 }
@@ -432,16 +432,16 @@ func (w *addressWriter) AllocateExternalIPv6(ctx context.Context, poolID, addres
 	if err := w.tx.QueryRow(ctx,
 		`SELECT v6_cidr_blocks FROM address_pools WHERE id = $1`, poolID).Scan(&v6Blocks); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", repo.ErrNotFound
+			return "", helpers.ErrNotFound
 		}
 		return "", fmt.Errorf("pool op: %w", err)
 	}
 	if len(v6Blocks) == 0 {
-		return "", fmt.Errorf("%w: pool %s has no v6_cidr_blocks", repo.ErrFailedPrecondition, poolID)
+		return "", fmt.Errorf("%w: pool %s has no v6_cidr_blocks", helpers.ErrFailedPrecondition, poolID)
 	}
 	prefix, perr := netip.ParsePrefix(v6Blocks[0])
 	if perr != nil {
-		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", repo.ErrInternal, poolID, v6Blocks[0])
+		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", helpers.ErrInternal, poolID, v6Blocks[0])
 	}
 
 	var offset *big.Int
@@ -478,7 +478,7 @@ func (w *addressWriter) AllocateExternalIPv6(ctx context.Context, poolID, addres
 			RETURNING (next_offset - 1)::text`, poolID).Scan(&offStr)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return "", fmt.Errorf("%w: pool %s has no ipv6 cursor (InitIPv6PoolCursor not called?)", repo.ErrFailedPrecondition, poolID)
+				return "", fmt.Errorf("%w: pool %s has no ipv6 cursor (InitIPv6PoolCursor not called?)", helpers.ErrFailedPrecondition, poolID)
 			}
 			return "", fmt.Errorf("pool op: %w", err)
 		}
@@ -491,10 +491,10 @@ func (w *addressWriter) AllocateExternalIPv6(ctx context.Context, poolID, addres
 
 	ip, err := addOffsetToAddr(prefix.Addr(), offset)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", repo.ErrInternal, err)
+		return "", fmt.Errorf("%w: %v", helpers.ErrInternal, err)
 	}
 	if !prefix.Contains(ip) {
-		return "", repo.ErrPoolExhausted
+		return "", helpers.ErrPoolExhausted
 	}
 
 	if _, err := w.tx.Exec(ctx, `
@@ -509,14 +509,14 @@ func (w *addressWriter) AllocateExternalIPv6(ctx context.Context, poolID, addres
 		ZoneID:        zoneID,
 		AddressPoolID: poolID,
 	}
-	ext6JSON, err := repo.MarshalJSONB(spec, "Address.external_ipv6")
+	ext6JSON, err := helpers.MarshalJSONB(spec, "Address.external_ipv6")
 	if err != nil {
 		return "", err
 	}
 	if _, err := w.tx.Exec(ctx,
 		`UPDATE addresses SET external_ipv6 = $2::jsonb WHERE id = $1`,
 		addressID, ext6JSON); err != nil {
-		return "", repo.WrapPgErr(err, "Address", addressID)
+		return "", helpers.WrapPgErr(err, "Address", addressID)
 	}
 	return ip.String(), nil
 }
@@ -546,7 +546,7 @@ func (w *addressWriter) FreeExternalIPv6(ctx context.Context, addressID string) 
 	}
 	if _, err := w.tx.Exec(ctx,
 		`UPDATE addresses SET external_ipv6 = NULL WHERE id = $1`, addressID); err != nil {
-		return repo.WrapPgErr(err, "Address", addressID)
+		return helpers.WrapPgErr(err, "Address", addressID)
 	}
 	return nil
 }
@@ -559,10 +559,10 @@ func (w *addressWriter) FreeExternalIPv6(ctx context.Context, addressID string) 
 func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tag, err := w.tx.Exec(ctx, `UPDATE addresses SET used = true WHERE id = $1`, ref.AddressID)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", ref.AddressID)
+		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: Address %s not found", repo.ErrNotFound, ref.AddressID)
+		return nil, fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, ref.AddressID)
 	}
 	const q = `
 		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
@@ -578,9 +578,9 @@ func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressRef
 	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: address already referenced by another resource", repo.ErrFailedPrecondition)
+			return nil, fmt.Errorf("%w: address already referenced by another resource", helpers.ErrFailedPrecondition)
 		}
-		return nil, repo.WrapPgErr(err, "Address", ref.AddressID)
+		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}
 	return &out, nil
 }
@@ -589,10 +589,10 @@ func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressRef
 func (w *addressWriter) MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
 	tag, err := w.tx.Exec(ctx, `UPDATE addresses SET reserved = false, used = true WHERE id = $1`, ref.AddressID)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Address", ref.AddressID)
+		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: Address %s not found", repo.ErrNotFound, ref.AddressID)
+		return nil, fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, ref.AddressID)
 	}
 	const q = `
 		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
@@ -608,9 +608,9 @@ func (w *addressWriter) MarkEphemeralInUse(ctx context.Context, ref *domain.Addr
 	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
 		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: address already referenced by another resource", repo.ErrFailedPrecondition)
+			return nil, fmt.Errorf("%w: address already referenced by another resource", helpers.ErrFailedPrecondition)
 		}
-		return nil, repo.WrapPgErr(err, "Address", ref.AddressID)
+		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}
 	return &out, nil
 }
@@ -619,13 +619,13 @@ func (w *addressWriter) MarkEphemeralInUse(ctx context.Context, ref *domain.Addr
 func (w *addressWriter) ClearReference(ctx context.Context, addressID string) error {
 	tag, err := w.tx.Exec(ctx, `UPDATE addresses SET used = false WHERE id = $1`, addressID)
 	if err != nil {
-		return repo.WrapPgErr(err, "Address", addressID)
+		return helpers.WrapPgErr(err, "Address", addressID)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Address %s not found", repo.ErrNotFound, addressID)
+		return fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, addressID)
 	}
 	if _, err := w.tx.Exec(ctx, `DELETE FROM address_references WHERE address_id = $1`, addressID); err != nil {
-		return repo.WrapPgErr(err, "Address", addressID)
+		return helpers.WrapPgErr(err, "Address", addressID)
 	}
 	return nil
 }
@@ -646,24 +646,24 @@ func marshalIPSpec(v any, field string) ([]byte, error) {
 		if s == nil {
 			return nil, nil
 		}
-		return repo.MarshalJSONB(s, field)
+		return helpers.MarshalJSONB(s, field)
 	case *domain.InternalIpv4Spec:
 		if s == nil {
 			return nil, nil
 		}
-		return repo.MarshalJSONB(s, field)
+		return helpers.MarshalJSONB(s, field)
 	case *domain.InternalIpv6Spec:
 		if s == nil {
 			return nil, nil
 		}
-		return repo.MarshalJSONB(s, field)
+		return helpers.MarshalJSONB(s, field)
 	case *domain.ExternalIpv6Spec:
 		if s == nil {
 			return nil, nil
 		}
-		return repo.MarshalJSONB(s, field)
+		return helpers.MarshalJSONB(s, field)
 	}
-	return repo.MarshalJSONB(v, field)
+	return helpers.MarshalJSONB(v, field)
 }
 
 // addOffsetToAddr — IP + offset (big.Int) = новый IP. Для IPv6 — 128-bit math.

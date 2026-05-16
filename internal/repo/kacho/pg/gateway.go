@@ -11,7 +11,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -21,19 +21,19 @@ import (
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): Gateway-репо переезжает
 // на CQRS вслед за pilot Network и batch 33/34 SecurityGroup. SQL/scan-семантика
 // — parity с legacy *repo.GatewayRepo: см. internal/repo/gateway_repo.go
-// (helpers экспортированы как shim-ы — repo.GatewayCols / repo.ScanGateway /
-// repo.WrapGatewayErr / repo.MarshalJSONB / repo.GatewayPayload).
+// (helpers экспортированы как shim-ы — helpers.GatewayCols / helpers.ScanGateway /
+// helpers.WrapGatewayErr / helpers.MarshalJSONB / helpers.GatewayPayload).
 type gatewayReader struct {
 	tx pgx.Tx
 }
 
 // Get — verbatim YC: well-formed-but-absent → NotFound с "Gateway <id> not found".
 func (r *gatewayReader) Get(ctx context.Context, id string) (*kacho.GatewayRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM gateways WHERE id = $1`, repo.GatewayCols)
+	q := fmt.Sprintf(`SELECT %s FROM gateways WHERE id = $1`, helpers.GatewayCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	g, err := repo.ScanGateway(row)
+	g, err := helpers.ScanGateway(row)
 	if err != nil {
-		return nil, repo.WrapGatewayErr(err, id)
+		return nil, helpers.WrapGatewayErr(err, id)
 	}
 	return g, nil
 }
@@ -63,7 +63,7 @@ func (r *gatewayReader) List(ctx context.Context, f kacho.GatewayFilter, p kacho
 	if f.Filter != "" {
 		ast, perr := filter.Parse(f.Filter, []string{"name"})
 		if perr != nil {
-			return nil, "", repo.InvalidFilterErr(perr)
+			return nil, "", helpers.InvalidFilterErr(perr)
 		}
 		if ast != nil {
 			frag, fargs := ast.ToSQL(argIdx)
@@ -73,9 +73,9 @@ func (r *gatewayReader) List(ctx context.Context, f kacho.GatewayFilter, p kacho
 		}
 	}
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
 		args = append(args, ts, id)
@@ -86,31 +86,31 @@ func (r *gatewayReader) List(ctx context.Context, f kacho.GatewayFilter, p kacho
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	q := fmt.Sprintf(`SELECT %s FROM gateways %s ORDER BY created_at ASC, id ASC LIMIT $%d`, repo.GatewayCols, where, argIdx)
+	q := fmt.Sprintf(`SELECT %s FROM gateways %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.GatewayCols, where, argIdx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapGatewayErr(err, "")
+		return nil, "", helpers.WrapGatewayErr(err, "")
 	}
 	defer rows.Close()
 
 	var result []*kacho.GatewayRecord
 	for rows.Next() {
-		g, err := repo.ScanGateway(rows)
+		g, err := helpers.ScanGateway(rows)
 		if err != nil {
-			return nil, "", repo.WrapGatewayErr(err, "")
+			return nil, "", helpers.WrapGatewayErr(err, "")
 		}
 		result = append(result, g)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapGatewayErr(err, "")
+		return nil, "", helpers.WrapGatewayErr(err, "")
 	}
 
 	var nextToken string
 	if int64(len(result)) > pageSize {
 		last := result[pageSize-1]
-		nextToken = repo.EncodePageToken(last.CreatedAt, last.ID)
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		result = result[:pageSize]
 	}
 	return result, nextToken, nil
@@ -135,7 +135,7 @@ type gatewayWriter struct {
 //
 // outbox-write — не здесь, а в use-case-е через writer.Outbox().Emit(...).
 func (w *gatewayWriter) Insert(ctx context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -144,14 +144,14 @@ func (w *gatewayWriter) Insert(ctx context.Context, g *domain.Gateway) (*kacho.G
 	q := fmt.Sprintf(`
 		INSERT INTO gateways (id, folder_id, created_at, name, description, labels, gateway_type)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING %s`, repo.GatewayCols)
+		RETURNING %s`, helpers.GatewayCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		g.ID, g.FolderID, now, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
 	)
-	result, err := repo.ScanGateway(row)
+	result, err := helpers.ScanGateway(row)
 	if err != nil {
-		return nil, repo.WrapGatewayErr(err, string(g.Name))
+		return nil, helpers.WrapGatewayErr(err, string(g.Name))
 	}
 	return result, nil
 }
@@ -161,7 +161,7 @@ func (w *gatewayWriter) Insert(ctx context.Context, g *domain.Gateway) (*kacho.G
 //
 // outbox-write — в use-case-е (см. Insert).
 func (w *gatewayWriter) Update(ctx context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(g.Labels), "Gateway.labels")
 	if err != nil {
 		return nil, err
 	}
@@ -169,25 +169,25 @@ func (w *gatewayWriter) Update(ctx context.Context, g *domain.Gateway) (*kacho.G
 	q := fmt.Sprintf(`
 		UPDATE gateways SET name=$2, description=$3, labels=$4, gateway_type=$5
 		WHERE id=$1
-		RETURNING %s`, repo.GatewayCols)
+		RETURNING %s`, helpers.GatewayCols)
 
 	row := w.tx.QueryRow(ctx, q,
 		g.ID, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
 	)
-	result, err := repo.ScanGateway(row)
+	result, err := helpers.ScanGateway(row)
 	if err != nil {
-		return nil, repo.WrapGatewayErr(err, g.ID)
+		return nil, helpers.WrapGatewayErr(err, g.ID)
 	}
 	return result, nil
 }
 
 // SetFolderID меняет folder_id у Gateway (для :move). outbox-write — в use-case-е.
 func (w *gatewayWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
-	q := fmt.Sprintf(`UPDATE gateways SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.GatewayCols)
+	q := fmt.Sprintf(`UPDATE gateways SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.GatewayCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	g, err := repo.ScanGateway(row)
+	g, err := helpers.ScanGateway(row)
 	if err != nil {
-		return nil, repo.WrapGatewayErr(err, id)
+		return nil, helpers.WrapGatewayErr(err, id)
 	}
 	return g, nil
 }
@@ -200,13 +200,13 @@ func (w *gatewayWriter) SetFolderID(ctx context.Context, id, folderID string) (*
 func (w *gatewayWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM gateways WHERE id = $1`, id)
 	if err != nil {
-		if repo.IsFKViolation(err) {
-			return fmt.Errorf("%w: gateway is in use", repo.ErrFailedPrecondition)
+		if helpers.IsFKViolation(err) {
+			return fmt.Errorf("%w: gateway is in use", helpers.ErrFailedPrecondition)
 		}
-		return repo.WrapGatewayErr(err, id)
+		return helpers.WrapGatewayErr(err, id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Gateway %s not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Gateway %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }

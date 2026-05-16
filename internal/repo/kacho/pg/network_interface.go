@@ -11,7 +11,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -41,11 +41,11 @@ type networkInterfaceReader struct {
 // Get — verbatim YC: well-formed-but-absent → NotFound с
 // "Network interface <id> not found" (через WrapPgErr).
 func (r *networkInterfaceReader) Get(ctx context.Context, id string) (*kacho.NetworkInterfaceRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE id = $1`, repo.NICCols)
+	q := fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE id = $1`, helpers.NICCols)
 	row := r.tx.QueryRow(ctx, q, id)
-	n, err := repo.ScanNIRec(row)
+	n, err := helpers.ScanNIRec(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", id)
+		return nil, helpers.WrapPgErr(err, "Network interface", id)
 	}
 	return n, nil
 }
@@ -77,37 +77,37 @@ func (r *networkInterfaceReader) List(ctx context.Context, f kacho.NetworkInterf
 	}
 	add("subnet_id", f.SubnetID)
 	if p.PageToken != "" {
-		ts, id, derr := repo.DecodePageToken(p.PageToken)
+		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
-			return nil, "", repo.InvalidPageTokenErr(derr)
+			return nil, "", helpers.InvalidPageTokenErr(derr)
 		}
 		args = append(args, ts, id)
 		conds = append(conds, fmt.Sprintf("(created_at, id) > ($%d, $%d)", len(args)-1, len(args)))
 	}
 	args = append(args, pageSize+1)
 	q := fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
-		repo.NICCols, strings.Join(conds, " AND "), len(args))
+		helpers.NICCols, strings.Join(conds, " AND "), len(args))
 
 	rows, err := r.tx.Query(ctx, q, args...)
 	if err != nil {
-		return nil, "", repo.WrapPgErr(err, "Network interface", "")
+		return nil, "", helpers.WrapPgErr(err, "Network interface", "")
 	}
 	defer rows.Close()
 	var out []*kacho.NetworkInterfaceRecord
 	for rows.Next() {
-		n, err := repo.ScanNIRec(rows)
+		n, err := helpers.ScanNIRec(rows)
 		if err != nil {
-			return nil, "", repo.WrapPgErr(err, "Network interface", "")
+			return nil, "", helpers.WrapPgErr(err, "Network interface", "")
 		}
 		out = append(out, n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", repo.WrapPgErr(err, "Network interface", "")
+		return nil, "", helpers.WrapPgErr(err, "Network interface", "")
 	}
 	var next string
 	if int64(len(out)) > pageSize {
 		last := out[pageSize-1]
-		next = repo.EncodePageToken(last.CreatedAt, last.ID)
+		next = helpers.EncodePageToken(last.CreatedAt, last.ID)
 		out = out[:pageSize]
 	}
 	return out, next, nil
@@ -118,22 +118,22 @@ func (r *networkInterfaceReader) List(ctx context.Context, f kacho.NetworkInterf
 // Не paginated (Subnet с >1000 NIC — edge-case; legacy-репо тоже без paging).
 func (r *networkInterfaceReader) ListBySubnet(ctx context.Context, subnetID string) ([]*kacho.NetworkInterfaceRecord, error) {
 	rows, err := r.tx.Query(ctx,
-		fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE subnet_id = $1 ORDER BY id ASC`, repo.NICCols),
+		fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE subnet_id = $1 ORDER BY id ASC`, helpers.NICCols),
 		subnetID)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", "")
+		return nil, helpers.WrapPgErr(err, "Network interface", "")
 	}
 	defer rows.Close()
 	var out []*kacho.NetworkInterfaceRecord
 	for rows.Next() {
-		n, err := repo.ScanNIRec(rows)
+		n, err := helpers.ScanNIRec(rows)
 		if err != nil {
-			return nil, repo.WrapPgErr(err, "Network interface", "")
+			return nil, helpers.WrapPgErr(err, "Network interface", "")
 		}
 		out = append(out, n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", "")
+		return nil, helpers.WrapPgErr(err, "Network interface", "")
 	}
 	return out, nil
 }
@@ -153,25 +153,25 @@ type networkInterfaceWriter struct {
 // caller'ом (use-case аллоцирует через `macutil.GenerateMAC`).
 //
 // Cloud-wide UNIQUE на mac_address (constraint `network_interfaces_mac_address_key`,
-// миграция 0014/KAC-48) — при коллизии возвращаем `repo.ErrMacCollision`
+// миграция 0014/KAC-48) — при коллизии возвращаем `helpers.ErrMacCollision`
 // (caller retry'ит с новым MAC). Прочие нарушения (folder/name UNIQUE, FK
 // subnet_id) — `WrapPgErr` → ErrAlreadyExists / ErrFailedPrecondition.
 //
 // outbox-write — в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *networkInterfaceWriter) Insert(ctx context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
 	if err != nil {
 		return nil, err
 	}
-	sgJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.SecurityGroupIDs), "NetworkInterface.security_group_ids")
+	sgJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.SecurityGroupIDs), "NetworkInterface.security_group_ids")
 	if err != nil {
 		return nil, err
 	}
-	v4IDsJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
+	v4IDsJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
 	if err != nil {
 		return nil, err
 	}
-	v6IDsJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
+	v6IDsJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
 	if err != nil {
 		return nil, err
 	}
@@ -181,17 +181,17 @@ func (w *networkInterfaceWriter) Insert(ctx context.Context, n *domain.NetworkIn
 		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id,
 			v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-		RETURNING %s`, repo.NICCols)
+		RETURNING %s`, helpers.NICCols)
 	row := w.tx.QueryRow(ctx, q,
 		n.ID, n.FolderID, now, string(n.Name), string(n.Description), labelsJSON, n.SubnetID,
 		v4IDsJSON, v6IDsJSON, sgJSON,
-		n.UsedByType, n.UsedByID, n.UsedByName, n.MAC, repo.NIStatusName(n.Status))
-	rec, err := repo.ScanNIRec(row)
+		n.UsedByType, n.UsedByID, n.UsedByName, n.MAC, helpers.NIStatusName(n.Status))
+	rec, err := helpers.ScanNIRec(row)
 	if err != nil {
-		if repo.IsNICMacCollision(err) {
-			return nil, repo.ErrMacCollision
+		if helpers.IsNICMacCollision(err) {
+			return nil, helpers.ErrMacCollision
 		}
-		return nil, repo.WrapPgErr(err, "Network interface", string(n.Name))
+		return nil, helpers.WrapPgErr(err, "Network interface", string(n.Name))
 	}
 	return rec, nil
 }
@@ -199,30 +199,30 @@ func (w *networkInterfaceWriter) Insert(ctx context.Context, n *domain.NetworkIn
 // UpdateMeta — UPDATE name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
 // outbox-write — в use-case'е.
 func (w *networkInterfaceWriter) UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
-	labelsJSON, err := repo.MarshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
+	labelsJSON, err := helpers.MarshalJSONB(domain.LabelsToMap(n.Labels), "NetworkInterface.labels")
 	if err != nil {
 		return nil, err
 	}
-	sgJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.SecurityGroupIDs), "NetworkInterface.security_group_ids")
+	sgJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.SecurityGroupIDs), "NetworkInterface.security_group_ids")
 	if err != nil {
 		return nil, err
 	}
-	v4IDsJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
+	v4IDsJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.V4AddressIDs), "NetworkInterface.v4_address_ids")
 	if err != nil {
 		return nil, err
 	}
-	v6IDsJSON, err := repo.MarshalJSONB(repo.OrEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
+	v6IDsJSON, err := helpers.MarshalJSONB(helpers.OrEmptyStrSlice(n.V6AddressIDs), "NetworkInterface.v6_address_ids")
 	if err != nil {
 		return nil, err
 	}
 	q := fmt.Sprintf(`
 		UPDATE network_interfaces SET name=$2, description=$3, labels=$4, security_group_ids=$5, v4_address_ids=$6, v6_address_ids=$7
 		WHERE id=$1
-		RETURNING %s`, repo.NICCols)
+		RETURNING %s`, helpers.NICCols)
 	row := w.tx.QueryRow(ctx, q, n.ID, string(n.Name), string(n.Description), labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON)
-	rec, err := repo.ScanNIRec(row)
+	rec, err := helpers.ScanNIRec(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", n.ID)
+		return nil, helpers.WrapPgErr(err, "Network interface", n.ID)
 	}
 	return rec, nil
 }
@@ -231,11 +231,11 @@ func (w *networkInterfaceWriter) UpdateMeta(ctx context.Context, n *domain.Netwo
 // (NIC привязан к Subnet); метод оставлен для parity с другими writer-iface
 // (NetworkWriterIface / SecurityGroupWriterIface), на случай admin-tooling.
 func (w *networkInterfaceWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
-	q := fmt.Sprintf(`UPDATE network_interfaces SET folder_id = $2 WHERE id = $1 RETURNING %s`, repo.NICCols)
+	q := fmt.Sprintf(`UPDATE network_interfaces SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.NICCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
-	rec, err := repo.ScanNIRec(row)
+	rec, err := helpers.ScanNIRec(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", id)
+		return nil, helpers.WrapPgErr(err, "Network interface", id)
 	}
 	return rec, nil
 }
@@ -259,15 +259,15 @@ func (w *networkInterfaceWriter) AttachToInstance(ctx context.Context, id, refTy
 		UPDATE network_interfaces
 		   SET used_by_type=$2, used_by_id=$3, used_by_name=$4, status=$5
 		 WHERE id=$1 AND (used_by_id = '' OR used_by_id = $3)
-		RETURNING %s`, repo.NICCols)
-	row := w.tx.QueryRow(ctx, q, id, refType, refID, refName, repo.NIStatusName(domain.NIStatusActive))
-	rec, err := repo.ScanNIRec(row)
+		RETURNING %s`, helpers.NICCols)
+	row := w.tx.QueryRow(ctx, q, id, refType, refID, refName, helpers.NIStatusName(domain.NIStatusActive))
+	rec, err := helpers.ScanNIRec(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// CAS failed — someone else owns it (UPDATE matched 0 rows).
-			return nil, repo.ErrFailedPrecondition
+			return nil, helpers.ErrFailedPrecondition
 		}
-		return nil, repo.WrapPgErr(err, "Network interface", id)
+		return nil, helpers.WrapPgErr(err, "Network interface", id)
 	}
 	return rec, nil
 }
@@ -278,11 +278,11 @@ func (w *networkInterfaceWriter) DetachFromInstance(ctx context.Context, id stri
 	q := fmt.Sprintf(`
 		UPDATE network_interfaces SET used_by_type='', used_by_id='', used_by_name='', status=$2
 		WHERE id=$1
-		RETURNING %s`, repo.NICCols)
-	row := w.tx.QueryRow(ctx, q, id, repo.NIStatusName(domain.NIStatusAvailable))
-	rec, err := repo.ScanNIRec(row)
+		RETURNING %s`, helpers.NICCols)
+	row := w.tx.QueryRow(ctx, q, id, helpers.NIStatusName(domain.NIStatusAvailable))
+	rec, err := helpers.ScanNIRec(row)
 	if err != nil {
-		return nil, repo.WrapPgErr(err, "Network interface", id)
+		return nil, helpers.WrapPgErr(err, "Network interface", id)
 	}
 	return rec, nil
 }
@@ -296,10 +296,10 @@ func (w *networkInterfaceWriter) DetachFromInstance(ctx context.Context, id stri
 func (w *networkInterfaceWriter) Delete(ctx context.Context, id string) error {
 	tag, err := w.tx.Exec(ctx, `DELETE FROM network_interfaces WHERE id = $1`, id)
 	if err != nil {
-		return repo.WrapPgErr(err, "Network interface", id)
+		return helpers.WrapPgErr(err, "Network interface", id)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: Network interface %s not found", repo.ErrNotFound, id)
+		return fmt.Errorf("%w: Network interface %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
 }
