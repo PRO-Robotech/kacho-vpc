@@ -9,6 +9,18 @@ type DhcpOptions struct {
 	NtpServers        []string `json:"ntp_servers,omitempty"`
 }
 
+// Equal — deep equality. nil-DhcpOptions считается равным nil; order-sensitive
+// для DomainNameServers/NtpServers (как и для всех reference-list'ов VPC).
+// skill evgeniy §4 D.10.
+func (d *DhcpOptions) Equal(other *DhcpOptions) bool {
+	if d == nil || other == nil {
+		return d == other
+	}
+	return d.DomainName == other.DomainName &&
+		stringSlicesEqual(d.DomainNameServers, other.DomainNameServers) &&
+		stringSlicesEqual(d.NtpServers, other.NtpServers)
+}
+
 // Subnet — подсеть (Wave 2 batch A, KAC-94).
 //
 // Семантически-нагруженные поля (Name/Description/Labels) — newtypes из
@@ -45,4 +57,21 @@ func (s Subnet) Validate() error {
 		s.Description.Validate(),
 		ValidateLabels(s.Labels),
 	)
+}
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). DhcpOptions сравнивается через `DhcpOptions.Equal` (handle nil/nil
+// корректно). skill evgeniy §4 D.10.
+func (s Subnet) Equal(other Subnet) bool {
+	return s.ID == other.ID &&
+		s.FolderID == other.FolderID &&
+		s.Name == other.Name &&
+		s.Description == other.Description &&
+		LabelsEqual(s.Labels, other.Labels) &&
+		s.NetworkID == other.NetworkID &&
+		s.ZoneID == other.ZoneID &&
+		stringSlicesEqual(s.V4CidrBlocks, other.V4CidrBlocks) &&
+		stringSlicesEqual(s.V6CidrBlocks, other.V6CidrBlocks) &&
+		s.RouteTableID == other.RouteTableID &&
+		s.DhcpOptions.Equal(other.DhcpOptions)
 }

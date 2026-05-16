@@ -36,3 +36,15 @@ func (n Network) Validate() error {
 		ValidateLabels(n.Labels),
 	)
 }
+
+// Equal — deep equality по domain-полям. `CreatedAt` сюда не входит (он в
+// repo-leaf Record, см. skill evgeniy §4 D.1). Используется для noop-detection
+// в Update-flow и для testing-equality в use-case тестах. skill evgeniy §4 D.10.
+func (n Network) Equal(other Network) bool {
+	return n.ID == other.ID &&
+		n.FolderID == other.FolderID &&
+		n.Name == other.Name &&
+		n.Description == other.Description &&
+		LabelsEqual(n.Labels, other.Labels) &&
+		n.DefaultSecurityGroupID == other.DefaultSecurityGroupID
+}

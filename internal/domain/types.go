@@ -189,3 +189,60 @@ func LabelsToMap(d RcLabels) map[string]string {
 	})
 	return m
 }
+
+// ---- Equal helpers (skill evgeniy §4 D.10) ----------------------------------
+
+// LabelsEqual — set-equality для RcLabels: равны, если одинаковое число пар
+// и каждая пара (key→value) совпадает. Порядок (как у map) — не важен.
+//
+// Используется в `<Resource>.Equal()` методах для noop-detection в Update-flow
+// и в testing-equality use-case тестов. Сам dict.HDict определяет метод `Eq`
+// с произвольным `valuesEq`, но HDict[Tk, Tv] хранит embedded private map —
+// поэтому свободная функция здесь — самый прямой способ скрыть call-site
+// детали (pointer-receiver, callback) от domain-кода.
+func LabelsEqual(a, b RcLabels) bool {
+	if a.Len() != b.Len() {
+		return false
+	}
+	equal := true
+	a.Iterate(func(k LabelKey, v LabelVal) bool {
+		bv, ok := b.Get(k)
+		if !ok || bv != v {
+			equal = false
+			return false
+		}
+		return true
+	})
+	return equal
+}
+
+// stringSlicesEqual — order-sensitive equality для []string (reference-id
+// массивов: SecurityGroupIDs, V4AddressIDs, V6AddressIDs у NIC). Для consistency
+// выбран order-sensitive вариант: порядок reference-id фиксирован сервис-слоем
+// (validate + insert) и не должен меняться без явного intent'а в Update.
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// labelsMapEqual — equality для `map[string]string` (rule-level labels у
+// SecurityGroupRule, см. domain/security_group.go: rule.Labels не RcLabels —
+// JSONB round-trip ограничение). Order-insensitive (map-семантика).
+func labelsMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}

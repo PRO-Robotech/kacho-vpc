@@ -87,3 +87,24 @@ func (n NetworkInterface) Validate() error {
 	}
 	return multierr.Combine(errs...)
 }
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). Reference-id массивы (V4AddressIDs/V6AddressIDs/SecurityGroupIDs) —
+// order-sensitive: порядок задаётся сервис-слоем на Create/Update, его
+// фиксируем для consistency. skill evgeniy §4 D.10.
+func (n NetworkInterface) Equal(other NetworkInterface) bool {
+	return n.ID == other.ID &&
+		n.FolderID == other.FolderID &&
+		n.Name == other.Name &&
+		n.Description == other.Description &&
+		LabelsEqual(n.Labels, other.Labels) &&
+		n.SubnetID == other.SubnetID &&
+		stringSlicesEqual(n.V4AddressIDs, other.V4AddressIDs) &&
+		stringSlicesEqual(n.V6AddressIDs, other.V6AddressIDs) &&
+		stringSlicesEqual(n.SecurityGroupIDs, other.SecurityGroupIDs) &&
+		n.UsedByType == other.UsedByType &&
+		n.UsedByID == other.UsedByID &&
+		n.UsedByName == other.UsedByName &&
+		n.MAC == other.MAC &&
+		n.Status == other.Status
+}

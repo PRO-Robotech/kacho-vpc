@@ -43,16 +43,52 @@ type AddressRequirements struct {
 	OutgoingSmtpCapability string `json:"outgoing_smtp_capability,omitempty"`
 }
 
+// Equal — deep equality. nil/nil считается равным. skill evgeniy §4 D.10.
+func (r *AddressRequirements) Equal(other *AddressRequirements) bool {
+	if r == nil || other == nil {
+		return r == other
+	}
+	return r.DdosProtectionProvider == other.DdosProtectionProvider &&
+		r.OutgoingSmtpCapability == other.OutgoingSmtpCapability
+}
+
+// Equal — deep equality для ExternalIpv4Spec. nil/nil — равны. skill evgeniy §4 D.10.
+func (s *ExternalIpv4Spec) Equal(other *ExternalIpv4Spec) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.Address == other.Address &&
+		s.ZoneID == other.ZoneID &&
+		s.Requirements.Equal(other.Requirements) &&
+		s.AddressPoolID == other.AddressPoolID
+}
+
 // InternalIpv4Spec — параметры внутреннего IPv4-адреса.
 type InternalIpv4Spec struct {
 	Address  string `json:"address"` // например 10.0.0.X
 	SubnetID string `json:"subnet_id"`
 }
 
+// Equal — deep equality. nil/nil — равны. skill evgeniy §4 D.10.
+func (s *InternalIpv4Spec) Equal(other *InternalIpv4Spec) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.Address == other.Address && s.SubnetID == other.SubnetID
+}
+
 // InternalIpv6Spec — параметры внутреннего IPv6-адреса (зеркалит InternalIpv4Spec).
 type InternalIpv6Spec struct {
 	Address  string `json:"address"` // например 2001:db8::5
 	SubnetID string `json:"subnet_id"`
+}
+
+// Equal — deep equality. nil/nil — равны. skill evgeniy §4 D.10.
+func (s *InternalIpv6Spec) Equal(other *InternalIpv6Spec) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.Address == other.Address && s.SubnetID == other.SubnetID
 }
 
 // ExternalIpv6Spec — параметры внешнего IPv6-адреса (KAC-58, зеркалит
@@ -68,6 +104,17 @@ type ExternalIpv6Spec struct {
 	AddressPoolID string `json:"address_pool_id,omitempty"`
 }
 
+// Equal — deep equality. nil/nil — равны. skill evgeniy §4 D.10.
+func (s *ExternalIpv6Spec) Equal(other *ExternalIpv6Spec) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.Address == other.Address &&
+		s.ZoneID == other.ZoneID &&
+		s.Requirements.Equal(other.Requirements) &&
+		s.AddressPoolID == other.AddressPoolID
+}
+
 // AddressReference — кто использует Address (YC-like referrer-tracking).
 // Один referrer на адрес. ReferrerType — "compute_instance" (расширяемо).
 type AddressReference struct {
@@ -76,6 +123,20 @@ type AddressReference struct {
 	ReferrerID   string
 	ReferrerName string
 	AttachedAt   time.Time
+}
+
+// Equal — deep equality. nil/nil — равны. AttachedAt сравнивается через
+// `time.Time.Equal` (учитывает monotonic clock / location-agnostic).
+// skill evgeniy §4 D.10.
+func (r *AddressReference) Equal(other *AddressReference) bool {
+	if r == nil || other == nil {
+		return r == other
+	}
+	return r.AddressID == other.AddressID &&
+		r.ReferrerType == other.ReferrerType &&
+		r.ReferrerID == other.ReferrerID &&
+		r.ReferrerName == other.ReferrerName &&
+		r.AttachedAt.Equal(other.AttachedAt)
 }
 
 // Address — IP-адрес (internal или external). Wave 2 batch A (KAC-94).
@@ -123,6 +184,42 @@ func (a Address) Validate() error {
 		a.Description.Validate(),
 		ValidateLabels(a.Labels),
 	)
+}
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). Nested specs (ExternalIpv4/InternalIpv4/InternalIpv6/ExternalIpv6) —
+// через их `Equal`-методы (handle nil/nil). UsedBy — order-sensitive slice
+// of *AddressReference. skill evgeniy §4 D.10.
+func (a Address) Equal(other Address) bool {
+	if a.ID != other.ID ||
+		a.FolderID != other.FolderID ||
+		a.Name != other.Name ||
+		a.Description != other.Description ||
+		a.Type != other.Type ||
+		a.IpVersion != other.IpVersion ||
+		a.Reserved != other.Reserved ||
+		a.Used != other.Used ||
+		a.DeletionProtection != other.DeletionProtection {
+		return false
+	}
+	if !LabelsEqual(a.Labels, other.Labels) {
+		return false
+	}
+	if !a.ExternalIpv4.Equal(other.ExternalIpv4) ||
+		!a.InternalIpv4.Equal(other.InternalIpv4) ||
+		!a.InternalIpv6.Equal(other.InternalIpv6) ||
+		!a.ExternalIpv6.Equal(other.ExternalIpv6) {
+		return false
+	}
+	if len(a.UsedBy) != len(other.UsedBy) {
+		return false
+	}
+	for i := range a.UsedBy {
+		if !a.UsedBy[i].Equal(other.UsedBy[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // AllocateResult — результат IPAM allocate (используется и use-case-пакетом

@@ -1,6 +1,10 @@
 package domain
 
-import "go.uber.org/multierr"
+import (
+	"reflect"
+
+	"go.uber.org/multierr"
+)
 
 // PrivateEndpoint — PrivateLink endpoint к internal services (Object Storage etc;
 // Wave 2 batch B, KAC-94).
@@ -44,4 +48,23 @@ func (p PrivateEndpoint) Validate() error {
 		p.Description.Validate(),
 		ValidateLabels(p.Labels),
 	)
+}
+
+// Equal — deep equality по domain-полям. `CreatedAt` не входит (skill evgeniy
+// §4 D.1). `DnsOptions` (`map[string]any`) сравнивается через `reflect.DeepEqual`
+// — это единственный безопасный способ для опционального JSON-blob'а с
+// произвольной структурой. skill evgeniy §4 D.10.
+func (p PrivateEndpoint) Equal(other PrivateEndpoint) bool {
+	return p.ID == other.ID &&
+		p.FolderID == other.FolderID &&
+		p.Name == other.Name &&
+		p.Description == other.Description &&
+		LabelsEqual(p.Labels, other.Labels) &&
+		p.NetworkID == other.NetworkID &&
+		p.SubnetID == other.SubnetID &&
+		p.AddressID == other.AddressID &&
+		p.IPAddress == other.IPAddress &&
+		p.ServiceType == other.ServiceType &&
+		p.Status == other.Status &&
+		reflect.DeepEqual(p.DnsOptions, other.DnsOptions)
 }
