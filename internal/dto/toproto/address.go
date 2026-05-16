@@ -5,17 +5,19 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// address — receiver-объект под трансфер domain.AddressRecord → *vpcv1.Address.
-// Wave 2 batch A (KAC-94), parity с network.go.
+// address — receiver-объект под трансфер kacho.AddressRecord → *vpcv1.Address.
+// Wave 5 replicate (KAC-94): AddressRecord уехал из domain в repo-leaf;
+// parity с network.go (network{}.toPb).
 type address struct{}
 
 // toPb формирует *vpcv1.Address из repo-entity. CreatedAt — truncate до секунд.
 //
 // oneof Address (External/Internal v4/v6) выбирается по тому, какое из specs
 // заполнено. Семантика идентична legacy protoconv.Address.
-func (address) toPb(rec domain.AddressRecord) (*vpcv1.Address, error) {
+func (address) toPb(rec kachorepo.AddressRecord) (*vpcv1.Address, error) {
 	ts, err := (timeObj{}).toPb(rec.CreatedAt)
 	if err != nil {
 		return nil, err

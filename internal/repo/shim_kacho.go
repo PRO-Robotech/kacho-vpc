@@ -92,7 +92,7 @@ func ScanNetwork(row Scannable) (*kachorepo.NetworkRecord, error) {
 const SGCols = sgCols
 
 // ScanSG — exported alias of scanSG; used by kacho/pg/security_group.go.
-func ScanSG(row Scannable) (*domain.SecurityGroupRecord, error) {
+func ScanSG(row Scannable) (*kachorepo.SecurityGroupRecord, error) {
 	return scanSG(row)
 }
 
@@ -103,7 +103,7 @@ func WrapSGErr(err error, id string) error {
 }
 
 // SecurityGroupPayload — exported alias of securityGroupPayload (outbox snapshot).
-func SecurityGroupPayload(sg *domain.SecurityGroupRecord) map[string]any {
+func SecurityGroupPayload(sg *kachorepo.SecurityGroupRecord) map[string]any {
 	return securityGroupPayload(sg)
 }
 
@@ -112,3 +112,68 @@ func SecurityGroupPayload(sg *domain.SecurityGroupRecord) map[string]any {
 func NullableStr(s string) *string {
 	return nullableStr(s)
 }
+
+// ---- RouteTable shims (Wave 5 replicate, KAC-94: RT → CQRS-репо) ----
+
+// RouteTableCols — exported route_tables column list; used by kacho/pg/route_table.go.
+const RouteTableCols = routeTableCols
+
+// ScanRouteTable — exported alias of scanRouteTable; used by kacho/pg/route_table.go.
+func ScanRouteTable(row Scannable) (*kachorepo.RouteTableRecord, error) {
+	return scanRouteTable(row)
+}
+
+// MarshalStaticRoutes — exported alias of marshalStaticRoutes; used by
+// kacho/pg/route_table.go для подготовки jsonb-payload `static_routes`.
+func MarshalStaticRoutes(routes []domain.StaticRoute) ([]byte, error) {
+	return marshalStaticRoutes(routes)
+}
+
+// RouteTablePayload — exported alias of routeTablePayload (outbox snapshot).
+// Используется apps/kacho/api/routetable/helpers.go при emit'е outbox-событий из
+// use-case-кода.
+func RouteTablePayload(rt *kachorepo.RouteTableRecord) map[string]any {
+	return routeTablePayload(rt)
+}
+
+// ---- PrivateEndpoint shims (Wave 5 replicate, KAC-94: PE → CQRS-репо) ----
+
+// PECols — exported private_endpoints column list; used by kacho/pg/private_endpoint.go.
+const PECols = peCols
+
+// ScanPrivateEndpoint — exported alias of scanPrivateEndpoint; used by
+// kacho/pg/private_endpoint.go.
+func ScanPrivateEndpoint(row Scannable) (*kachorepo.PrivateEndpointRecord, error) {
+	return scanPrivateEndpoint(row)
+}
+
+// PrivateEndpointPayload — exported alias of privateEndpointPayload (outbox
+// snapshot). Используется apps/kacho/api/privateendpoint/helpers.go при emit'е
+// outbox-событий из use-case-кода.
+func PrivateEndpointPayload(pe *kachorepo.PrivateEndpointRecord) map[string]any {
+	return privateEndpointPayload(pe)
+}
+
+// ---- Address shims (Wave 5 replicate, KAC-94: Address → CQRS-репо) ----
+
+// AddressCols — exported addresses column list; used by kacho/pg/address.go
+// в SQL-запросах. Parity с NetworkCols / SGCols / RouteTableCols.
+const AddressCols = addressCols
+
+// ScanAddress — exported alias of scanAddress; used by kacho/pg/address.go.
+func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
+	return scanAddress(row)
+}
+
+// AddressPayload — exported alias of addressPayload (outbox snapshot).
+// Используется apps/kacho/api/address/helpers.go при emit'е outbox-событий из
+// use-case-кода.
+func AddressPayload(a *kachorepo.AddressRecord) map[string]any {
+	return addressPayload(a)
+}
+
+// AllocateFromFreelistSQL — exported SQL для PG-native v4 freelist allocator;
+// используется kacho/pg/address.go::AllocateIPFromFreelist (атомарный pop из
+// address_pool_free_ips FOR UPDATE SKIP LOCKED + UPDATE addresses.external_ipv4
+// — один SQL-statement, нулевая contention между параллельными аллокаторами).
+const AllocateFromFreelistSQL = allocateFromFreelistSQL

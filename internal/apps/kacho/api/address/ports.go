@@ -10,18 +10,18 @@
 //
 // Локальные port-интерфейсы (а не type-alias на `internal/repo.*Repo`)
 // — skill §6 G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО
-// использует. AddressPoolService живёт в `internal/apps/kacho/services/addresspool/`
-// (миграция на use-case-структуру — отдельная итерация) — здесь объявлен лишь
-// port `PoolService`, которому `*addresspool.AddressPoolService` удовлетворяет
-// в composition root.
+// использует. AddressPool — `internal/apps/kacho/api/addresspool/` (use-case-
+// структура, Wave 5 batch 36, KAC-94). Здесь объявлен лишь port `PoolService`,
+// которому `*addresspool.ResolverService` удовлетворяет в composition root.
 package address
 
 import (
 	"context"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addresspool"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Pagination, *Filter — пере-используем единые value-объекты `internal/repo`.
@@ -32,19 +32,20 @@ type (
 
 // AddressRepo — то, что use-case'ам Address нужно от репозитория адресов.
 //
-// Все методы возвращают `*domain.AddressRecord` (skill evgeniy §4 D.1 / §7 H.1 —
-// repo-entity несёт DB-managed CreatedAt). Insert/Update/SetIPSpec/SetInternalIPv6/
+// Все методы возвращают `*kacho.AddressRecord` (skill evgeniy §4 D.1 / §7 H.1 —
+// repo-entity несёт DB-managed CreatedAt; Wave 5 replicate KAC-94 — уехал из
+// `domain.AddressRecord` в repo-leaf). Insert/Update/SetIPSpec/SetInternalIPv6/
 // SetFolderID принимают `*domain.Address` (без CreatedAt).
 type AddressRepo interface {
-	Get(ctx context.Context, id string) (*domain.AddressRecord, error)
-	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error)
-	Insert(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
-	Update(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.AddressRecord, error)
+	List(ctx context.Context, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error)
+	Insert(ctx context.Context, a *domain.Address) (*kachorepo.AddressRecord, error)
+	Update(ctx context.Context, a *domain.Address) (*kachorepo.AddressRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.AddressRecord, error)
-	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.AddressRecord, error)
-	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.AddressRecord, error)
-	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.AddressRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.AddressRecord, error)
+	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*kachorepo.AddressRecord, error)
+	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*kachorepo.AddressRecord, error)
+	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*kachorepo.AddressRecord, error)
 
 	// PG-native freelist IPAM (v4).
 	AllocateIPFromFreelist(ctx context.Context, poolID, addressID string) (string, error)
@@ -68,7 +69,7 @@ type AddressRepo interface {
 //   - ListBySubnet — child-list через AddressesBySubnet.
 type SubnetReader interface {
 	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
-	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error)
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 }
 
 // FolderClient — то, что use-case'ам Address нужно от peer-сервиса
@@ -78,13 +79,13 @@ type FolderClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }
 
-// PoolService — узкий port AddressPoolService для cascade-резолва pool по
-// family. Реализуется `*addresspool.AddressPoolService` (миграция AddressPool —
-// отдельная итерация, см. repo.go header).
+// PoolService — узкий port AddressPool-resolver'а для cascade-резолва pool по
+// family. Реализуется `*addresspool.ResolverService` (после переезда AP на
+// use-case-структуру — Wave 5 batch 36, KAC-94).
 //
 // Использует FamilyV4 / FamilyV6 как enum (alias на addresspool.AddressFamily —
 // не вводим параллельный тип, чтобы вызывающий handler/cmd прозрачно
-// переиспользовал константы pool service'а).
+// переиспользовал константы pool resolver'а).
 type PoolService interface {
-	ResolvePoolForAddressObjFamily(ctx context.Context, addr *domain.AddressRecord, family addresspool.AddressFamily) (*addresspool.ResolvedPool, error)
+	ResolvePoolForAddressObjFamily(ctx context.Context, addr *kachorepo.AddressRecord, family addresspool.AddressFamily) (*addresspool.ResolvedPool, error)
 }

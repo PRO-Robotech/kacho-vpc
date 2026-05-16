@@ -10,6 +10,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // GetAddressUseCase — простой read; id-валидация + перевод repo-sentinel в gRPC
@@ -26,7 +27,7 @@ func NewGetAddressUseCase(repo AddressRepo) *GetAddressUseCase {
 
 // Execute возвращает repo-entity Address. NotFound → mapRepoErr → gRPC NotFound.
 // UsedBy обогащается best-effort (failure → лог + адрес без UsedBy).
-func (u *GetAddressUseCase) Execute(ctx context.Context, id string) (*domain.AddressRecord, error) {
+func (u *GetAddressUseCase) Execute(ctx context.Context, id string) (*kachorepo.AddressRecord, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func (u *GetAddressUseCase) Execute(ctx context.Context, id string) (*domain.Add
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, []*domain.AddressRecord{a})
+	loadUsedBy(ctx, u.repo, []*kachorepo.AddressRecord{a})
 	return a, nil
 }
 
@@ -51,7 +52,7 @@ func NewGetByValueUseCase(repo AddressRepo) *GetByValueUseCase {
 }
 
 // Execute — sync-валидация + lookup по IP + загрузка UsedBy.
-func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.AddressRecord, error) {
+func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP, subnetID string) (*kachorepo.AddressRecord, error) {
 	if externalIP == "" && internalIP == "" {
 		return nil, invalidArg("address", "address (external_ipv4_address or internal_ipv4_address) is required")
 	}
@@ -59,7 +60,7 @@ func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP,
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, []*domain.AddressRecord{a})
+	loadUsedBy(ctx, u.repo, []*kachorepo.AddressRecord{a})
 	return a, nil
 }
 
@@ -70,7 +71,7 @@ func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP,
 //
 // Live-копия `service.AddressService.loadUsedBy` (Wave 3 migration; общий
 // helper можно будет вынести после полного переезда use-case'ов).
-func loadUsedBy(ctx context.Context, repo AddressRepo, addrs []*domain.AddressRecord) {
+func loadUsedBy(ctx context.Context, repo AddressRepo, addrs []*kachorepo.AddressRecord) {
 	if len(addrs) == 0 {
 		return
 	}

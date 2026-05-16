@@ -13,11 +13,14 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Address — type-alias на domain.AddressRecord (repo-entity с DB-managed
-// CreatedAt). Wave 2 batch A (KAC-94), parity с repo.Network.
-type Address = domain.AddressRecord
+// Address — type-alias на kacho.AddressRecord (repo-entity с DB-managed
+// CreatedAt). Wave 5 replicate (KAC-94, skill evgeniy §4 D.1 / §6 G.2 / §7 H.1):
+// уехал из `domain.AddressRecord` в repo-leaf `internal/repo/kacho/entity_address.go`
+// — parity с repo.Network / repo.RouteTable.
+type Address = kachorepo.AddressRecord
 
 // AddressRepo — реализация AddressRepoIface поверх pgxpool.
 type AddressRepo struct {
@@ -123,7 +126,7 @@ func (r *AddressRepo) List(ctx context.Context, f AddressFilter, p Pagination) (
 }
 
 // Insert вставляет Address. Принимает domain.Address (без CreatedAt — DB-managed).
-// Возвращает *Address (= *domain.AddressRecord) с заполненным CreatedAt.
+// Возвращает *Address (= *kacho.AddressRecord) с заполненным CreatedAt.
 func (r *AddressRepo) Insert(ctx context.Context, a *domain.Address) (*Address, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(a.Labels), "Address.labels")
 	if err != nil {

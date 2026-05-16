@@ -204,25 +204,27 @@ func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.Su
 	return s, nil
 }
 
-func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ repo.Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
 // ---- AddressRepo ----
 //
-// Wave 2 batch A (KAC-94): port возвращает *domain.AddressRecord (repo-entity
+// Wave 2 batch A (KAC-94): port возвращает *kachorepo.AddressRecord (repo-entity
 // с DB-managed CreatedAt). Mock хранит записи в map[id]*AddressRecord и
 // проставляет CreatedAt при Insert.
 
 type AddressRepo struct {
 	mu        sync.Mutex
-	data      map[string]*domain.AddressRecord
+	data      map[string]*kachorepo.AddressRecord
 	refs      map[string]*domain.AddressReference // referrer-tracking (addressID → ref)
 	freelists map[string][]string                 // poolID → ordered free IPs (FIFO)
 	v6        map[string]*v6CursorState           // KAC-60: per-pool v6 sparse counter
 }
 
-func NewAddressRepo() *AddressRepo { return &AddressRepo{data: make(map[string]*domain.AddressRecord)} }
+func NewAddressRepo() *AddressRepo {
+	return &AddressRepo{data: make(map[string]*kachorepo.AddressRecord)}
+}
 
 // SeedFreelist засыпает poolID-freelist ровно перечисленными IP в указанном
 // порядке (для unit-тестов, чтобы не материализовать CIDR целиком).
@@ -238,13 +240,13 @@ func (r *AddressRepo) SeedFreelist(poolID string, ips ...string) {
 // Seed добавляет address напрямую в стор (для тестовых fixture'ов). Принимает
 // repo-entity (AddressRecord) — caller выставляет CreatedAt сам (либо оставляет
 // zero для unit-тестов, где TS не важен).
-func (r *AddressRepo) Seed(rec *domain.AddressRecord) {
+func (r *AddressRepo) Seed(rec *kachorepo.AddressRecord) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data[rec.ID] = rec
 }
 
-func (r *AddressRepo) Get(_ context.Context, id string) (*domain.AddressRecord, error) {
+func (r *AddressRepo) Get(_ context.Context, id string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -254,10 +256,10 @@ func (r *AddressRepo) Get(_ context.Context, id string) (*domain.AddressRecord, 
 	return a, nil
 }
 
-func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagination) ([]*domain.AddressRecord, string, error) {
+func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.AddressRecord
+	var result []*kachorepo.AddressRecord
 	for _, a := range r.data {
 		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
 			(f.Name == "" || string(a.Name) == f.Name) {
@@ -267,15 +269,15 @@ func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagin
 	return result, "", nil
 }
 
-func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*domain.AddressRecord, error) {
+func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.AddressRecord{Address: *a, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.AddressRecord{Address: *a, CreatedAt: time.Now().UTC()}
 	r.data[a.ID] = rec
 	return rec, nil
 }
 
-func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*domain.AddressRecord, error) {
+func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[a.ID]
@@ -297,7 +299,7 @@ func (r *AddressRepo) Delete(_ context.Context, id string) error {
 }
 
 // SetIPSpec — mock-stub (порт обязателен, для test'а возвращаем как Update).
-func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*domain.AddressRecord, error) {
+func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.ExternalIpv4Spec, intn *domain.InternalIpv4Spec) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -314,7 +316,7 @@ func (r *AddressRepo) SetIPSpec(_ context.Context, id string, ext *domain.Extern
 }
 
 // SetInternalIPv6 — mock-stub (порт обязателен).
-func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.AddressRecord, error) {
+func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain.InternalIpv6Spec) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -327,7 +329,7 @@ func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain
 	return a, nil
 }
 
-func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.AddressRecord, error) {
+func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
@@ -352,7 +354,7 @@ func (r *AddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
 	return false, nil
 }
 
-func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*domain.AddressRecord, error) {
+func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, a := range r.data {
@@ -584,19 +586,19 @@ func (r *AddressRepo) FreeExternalIPv6(_ context.Context, addressID string) erro
 
 // ---- RouteTableRepo ----
 //
-// Wave 2 batch A (KAC-94): port возвращает *domain.RouteTableRecord (repo-entity
+// Wave 2 batch A (KAC-94): port возвращает *kachorepo.RouteTableRecord (repo-entity
 // с DB-managed CreatedAt). Mock хранит записи в map[id]*RouteTableRecord.
 
 type RouteTableRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.RouteTableRecord
+	data map[string]*kachorepo.RouteTableRecord
 }
 
 func NewRouteTableRepo() *RouteTableRepo {
-	return &RouteTableRepo{data: make(map[string]*domain.RouteTableRecord)}
+	return &RouteTableRepo{data: make(map[string]*kachorepo.RouteTableRecord)}
 }
 
-func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTableRecord, error) {
+func (r *RouteTableRepo) Get(_ context.Context, id string) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
@@ -606,10 +608,10 @@ func (r *RouteTableRepo) Get(_ context.Context, id string) (*domain.RouteTableRe
 	return rt, nil
 }
 
-func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo.Pagination) ([]*domain.RouteTableRecord, string, error) {
+func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo.Pagination) ([]*kachorepo.RouteTableRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.RouteTableRecord
+	var result []*kachorepo.RouteTableRecord
 	for _, rt := range r.data {
 		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
 			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
@@ -620,15 +622,15 @@ func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo
 	return result, "", nil
 }
 
-func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error) {
+func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.RouteTableRecord{RouteTable: *rt, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.RouteTableRecord{RouteTable: *rt, CreatedAt: time.Now().UTC()}
 	r.data[rt.ID] = rec
 	return rec, nil
 }
 
-func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error) {
+func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[rt.ID]
@@ -649,7 +651,7 @@ func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.RouteTableRecord, error) {
+func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
@@ -662,19 +664,19 @@ func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*d
 
 // ---- SecurityGroupRepo ----
 //
-// Wave 2 batch B (KAC-94): port возвращает *domain.SecurityGroupRecord (repo-entity
+// Wave 2 batch B (KAC-94): port возвращает *kachorepo.SecurityGroupRecord (repo-entity
 // с DB-managed CreatedAt). Parity с SubnetRepo (KAC-94 batch A).
 
 type SecurityGroupRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.SecurityGroupRecord
+	data map[string]*kachorepo.SecurityGroupRecord
 }
 
 func NewSecurityGroupRepo() *SecurityGroupRepo {
-	return &SecurityGroupRepo{data: make(map[string]*domain.SecurityGroupRecord)}
+	return &SecurityGroupRepo{data: make(map[string]*kachorepo.SecurityGroupRecord)}
 }
 
-func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
@@ -684,10 +686,10 @@ func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*domain.SecurityG
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, _ repo.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, _ repo.Pagination) ([]*kachorepo.SecurityGroupRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.SecurityGroupRecord
+	var out []*kachorepo.SecurityGroupRecord
 	for _, sg := range r.data {
 		if f.FolderID != "" && sg.FolderID != f.FolderID {
 			continue
@@ -703,15 +705,15 @@ func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, 
 	return out, "", nil
 }
 
-func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.SecurityGroupRecord{SecurityGroup: *sg, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.SecurityGroupRecord{SecurityGroup: *sg, CreatedAt: time.Now().UTC()}
 	r.data[sg.ID] = rec
 	return rec, nil
 }
 
-func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[sg.ID]
@@ -729,7 +731,7 @@ func (r *SecurityGroupRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
@@ -739,7 +741,7 @@ func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []stri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[sgID]
@@ -749,7 +751,7 @@ func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ stri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
@@ -838,18 +840,19 @@ func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*doma
 
 // ---- PrivateEndpointRepo ----
 //
-// Wave 2 batch B (KAC-94): port возвращает *domain.PrivateEndpointRecord.
+// Wave 5 replicate (KAC-94): port возвращает *kachorepo.PrivateEndpointRecord
+// (repo-entity уехал из domain в repo-leaf `internal/repo/kacho/entity_private_endpoint.go`).
 
 type PrivateEndpointRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.PrivateEndpointRecord
+	data map[string]*kachorepo.PrivateEndpointRecord
 }
 
 func NewPrivateEndpointRepo() *PrivateEndpointRepo {
-	return &PrivateEndpointRepo{data: make(map[string]*domain.PrivateEndpointRecord)}
+	return &PrivateEndpointRepo{data: make(map[string]*kachorepo.PrivateEndpointRecord)}
 }
 
-func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.PrivateEndpointRecord, error) {
+func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, ok := r.data[id]
@@ -859,10 +862,10 @@ func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*domain.Private
 	return p, nil
 }
 
-func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilter, _ repo.Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
+func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilter, _ repo.Pagination) ([]*kachorepo.PrivateEndpointRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []*domain.PrivateEndpointRecord
+	var out []*kachorepo.PrivateEndpointRecord
 	for _, p := range r.data {
 		if f.FolderID != "" && p.FolderID != f.FolderID {
 			continue
@@ -875,15 +878,15 @@ func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilt
 	return out, "", nil
 }
 
-func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error) {
+func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.PrivateEndpointRecord{PrivateEndpoint: *p, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.PrivateEndpointRecord{PrivateEndpoint: *p, CreatedAt: time.Now().UTC()}
 	r.data[p.ID] = rec
 	return rec, nil
 }
 
-func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error) {
+func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[p.ID]

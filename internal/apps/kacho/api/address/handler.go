@@ -13,6 +13,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	// Blank-import регистрирует Address/time DTO трансферы (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -325,7 +326,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (
 
 // addressToPb — repo-entity Address → proto Address через DTO-реестр (skill
 // evgeniy §3 C.3).
-func addressToPb(rec *domain.AddressRecord) (*vpcv1.Address, error) {
+func addressToPb(rec *kachorepo.AddressRecord) (*vpcv1.Address, error) {
 	var dst *vpcv1.Address
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Address failed")

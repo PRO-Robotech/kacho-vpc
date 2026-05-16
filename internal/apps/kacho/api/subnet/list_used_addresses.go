@@ -9,6 +9,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListUsedAddressesUseCase — возвращает Address-ресурсы, привязанные к подсети
@@ -28,7 +29,7 @@ func NewListUsedAddressesUseCase(repo SubnetRepo, addrRefRepo AddressRefRepo) *L
 
 // Execute — id-валидация + existence + AddressesBySubnet + (optional)
 // referrer-обогащение.
-func (u *ListUsedAddressesUseCase) Execute(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, map[string]*domain.AddressReference, string, error) {
+func (u *ListUsedAddressesUseCase) Execute(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, map[string]*domain.AddressReference, string, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, subnetID); err != nil {
 		return nil, nil, "", err
 	}

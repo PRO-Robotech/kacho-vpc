@@ -141,34 +141,34 @@ type SubnetRepoIface interface {
 	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети
 	// (через internal_ipv4.subnet_id). Использовалось ListUsedAddresses и
 	// AddressService.ListBySubnet.
-	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error)
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 }
 
 // AddressRepo — port-интерфейс репозитория адресов.
 //
-// Wave 2 batch A (KAC-94): возвращает `*domain.AddressRecord` (repo-entity с
+// Wave 2 batch A (KAC-94): возвращает `*kachorepo.AddressRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.Address` (без CreatedAt).
 type AddressRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.AddressRecord, error)
-	List(ctx context.Context, f AddressFilter, p Pagination) ([]*domain.AddressRecord, string, error)
-	Insert(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
-	Update(ctx context.Context, a *domain.Address) (*domain.AddressRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.AddressRecord, error)
+	List(ctx context.Context, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error)
+	Insert(ctx context.Context, a *domain.Address) (*kachorepo.AddressRecord, error)
+	Update(ctx context.Context, a *domain.Address) (*kachorepo.AddressRecord, error)
 	Delete(ctx context.Context, id string) error
 	// ExistsIP проверяет уникальность IP (external) в рамках folder/global.
 	ExistsIP(ctx context.Context, ip string) (bool, error)
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.AddressRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.AddressRecord, error)
 	// GetByValue возвращает Address по конкретному IP (external или internal).
 	// scope — опционально subnet_id (для уточнения внутри одной подсети).
-	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*domain.AddressRecord, error)
+	GetByValue(ctx context.Context, externalIP, internalIP, subnetID string) (*kachorepo.AddressRecord, error)
 	// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 (JSONB-spec)
 	// + emit outbox-event Address.UPDATED. Используется AddressAllocator.
 	// Передавайте nil для поля, которое не нужно менять; оба nil — no-op.
-	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*domain.AddressRecord, error)
+	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*kachorepo.AddressRecord, error)
 	// SetInternalIPv6 атомарно обновляет internal_ipv6 (JSONB-spec) + emit
 	// outbox-event Address.UPDATED. Используется AllocateInternalIPv6 (random-pick
 	// + retry на UNIQUE-violation). nil → no-op.
-	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*domain.AddressRecord, error)
+	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*kachorepo.AddressRecord, error)
 
 	// AllocateIPFromFreelist атомарно достаёт один свободный IP из
 	// address_pool_free_ips для poolID (FOR UPDATE SKIP LOCKED) и проставляет
@@ -224,61 +224,61 @@ type AddressRepoIface interface {
 
 // SecurityGroupRepo — port-интерфейс репозитория SG.
 //
-// Wave 2 batch B (KAC-94): возвращает `*domain.SecurityGroupRecord` (repo-entity с
+// Wave 2 batch B (KAC-94): возвращает `*kachorepo.SecurityGroupRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.SecurityGroup` (без CreatedAt).
 // Skill evgeniy §4 D.1 / §6 G.2 / §7 H.1. Parity с NetworkRepo (KAC-99).
 type SecurityGroupRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.SecurityGroupRecord, error)
-	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*domain.SecurityGroupRecord, string, error)
-	Insert(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
-	Update(ctx context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SecurityGroupRecord, error)
+	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kachorepo.SecurityGroupRecord, string, error)
+	Insert(ctx context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error)
+	Update(ctx context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.SecurityGroupRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error)
 	// UpdateRules атомарно заменяет набор правил SG: удаляет правила с
 	// id ∈ deleteIDs и добавляет правила из add (с auto-id если пусто).
 	// Возвращает обновлённый SG с актуальным списком правил.
-	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error)
+	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*kachorepo.SecurityGroupRecord, error)
 	// UpdateRule обновляет description/labels единичного правила в SG.
-	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error)
+	UpdateRule(ctx context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*kachorepo.SecurityGroupRecord, error)
 }
 
 // GatewayRepo — port-интерфейс репозитория Gateways.
 //
-// Wave 2 batch B (KAC-94): возвращает `*domain.GatewayRecord` (repo-entity с
+// Wave 2 batch B (KAC-94): возвращает `*kachorepo.GatewayRecord` (repo-entity с
 // DB-managed CreatedAt). Insert/Update принимают `*domain.Gateway` (без CreatedAt).
 type GatewayRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.GatewayRecord, error)
-	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*domain.GatewayRecord, string, error)
-	Insert(ctx context.Context, g *domain.Gateway) (*domain.GatewayRecord, error)
-	Update(ctx context.Context, g *domain.Gateway) (*domain.GatewayRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.GatewayRecord, error)
+	List(ctx context.Context, f GatewayFilter, p Pagination) ([]*kachorepo.GatewayRecord, string, error)
+	Insert(ctx context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error)
+	Update(ctx context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error)
 	Delete(ctx context.Context, id string) error
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.GatewayRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.GatewayRecord, error)
 }
 
 // PrivateEndpointRepo — port-интерфейс репозитория PrivateEndpoints.
 //
-// Wave 2 batch B (KAC-94): возвращает `*domain.PrivateEndpointRecord` (repo-entity
+// Wave 2 batch B (KAC-94): возвращает `*kachorepo.PrivateEndpointRecord` (repo-entity
 // с DB-managed CreatedAt). Insert/Update принимают `*domain.PrivateEndpoint` (без CreatedAt).
 type PrivateEndpointRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.PrivateEndpointRecord, error)
-	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpointRecord, string, error)
-	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error)
-	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*domain.PrivateEndpointRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.PrivateEndpointRecord, error)
+	List(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*kachorepo.PrivateEndpointRecord, string, error)
+	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error)
+	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error)
 	Delete(ctx context.Context, id string) error
 }
 
 // RouteTableRepo — port-интерфейс репозитория таблиц маршрутизации.
 //
-// Wave 2 batch A (KAC-94): возвращает `*domain.RouteTableRecord` (repo-entity
+// Wave 2 batch A (KAC-94): возвращает `*kachorepo.RouteTableRecord` (repo-entity
 // с DB-managed CreatedAt). Insert/Update принимают `*domain.RouteTable` (без CreatedAt).
 type RouteTableRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.RouteTableRecord, error)
-	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*domain.RouteTableRecord, string, error)
-	Insert(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error)
-	Update(ctx context.Context, rt *domain.RouteTable) (*domain.RouteTableRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.RouteTableRecord, error)
+	List(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kachorepo.RouteTableRecord, string, error)
+	Insert(ctx context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error)
+	Update(ctx context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.RouteTableRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.RouteTableRecord, error)
 }
 
 // FolderClient — port для проверки существования Folder и lookup'а cloud_id.
@@ -346,7 +346,7 @@ type AddressPoolRepoIface interface {
 	CountAddressesByPoolPerCIDR(ctx context.Context, poolID string) (map[string]int64, error)
 	// ListAddressesByPool — все Address (cross-folder) использующие pool.
 	// Pagination через page_size+token.
-	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*domain.AddressRecord, string, error)
+	ListAddressesByPool(ctx context.Context, poolID, folderFilter string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 
 	// PopulateFreelistForPool материализует все usable IPv4 адреса из
 	// pool.cidr_blocks в address_pool_free_ips (миграция 0014). Идемпотентно

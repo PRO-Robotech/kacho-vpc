@@ -14,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
@@ -304,7 +305,7 @@ func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
 func TestUpdateUseCase_DeletionProtection(t *testing.T) {
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	rec := &domain.AddressRecord{Address: domain.Address{
+	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 ids.NewID(ids.PrefixAddress),
 		FolderID:           "f1",
 		Name:               "addr",
@@ -347,7 +348,7 @@ func TestDeleteUseCase_NotFound(t *testing.T) {
 func TestDeleteUseCase_DeletionProtection(t *testing.T) {
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	rec := &domain.AddressRecord{Address: domain.Address{
+	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 ids.NewID(ids.PrefixAddress),
 		FolderID:           "f1",
 		DeletionProtection: true,
@@ -364,7 +365,7 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	addrID := ids.NewID(ids.PrefixAddress)
-	rec := &domain.AddressRecord{Address: domain.Address{
+	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:       addrID,
 		FolderID: "f1",
 		Used:     true,
@@ -473,7 +474,7 @@ func TestHandler_FullFlow(t *testing.T) {
 }
 
 func TestAddressToPb_External(t *testing.T) {
-	rec := &domain.AddressRecord{
+	rec := &kachorepo.AddressRecord{
 		Address: domain.Address{
 			ID:       "e9b-test",
 			FolderID: "f1",

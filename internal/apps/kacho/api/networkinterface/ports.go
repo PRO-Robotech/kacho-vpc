@@ -9,12 +9,19 @@
 // — с атомарным CAS-апдейтом `used_by_id` (миграция 0016, KAC-52; workspace
 // CLAUDE.md §«Within-service refs — DB-уровень обязателен», запрет #10).
 //
-// Локальные port-интерфейсы (а не type-alias на `internal/repo.*`) — skill §6
-// G.2-G.3: каждый use-case-пакет описывает только то, что РЕАЛЬНО использует.
-// Адаптерами выступают существующие `internal/repo/network_interface_repo.go`,
-// `internal/repo/subnet_repo.go`, `internal/repo/address_repo.go` — они уже
-// реализуют соответствующие port-интерфейсы из `internal/repo`/`internal/service`,
-// которые ⊇ локальным интерфейсам.
+// Wave 5 replicate (KAC-94, NIC batch, skill evgeniy §6 G.1-G.7): use-case'ы NIC
+// работают через CQRS-Repository (Reader / Writer split) — аналог Network pilot.
+// Каждый use-case открывает TX явно (`u.repo.Writer(ctx)` или `Reader(ctx)`), и
+// outbox-emit лежит в той же tx writer'а — атомарность DML + outbox гарантирована
+// (G.5). Это финальная защита от TOCTOU при NIC attach (KAC-52): single-statement
+// AttachToInstance CAS на writer-TX закрывает race-window между Get → check →
+// Update в use-case'е.
+//
+// Address-attach при NIC.Create по-прежнему идёт через legacy `AddressRepo`
+// (отдельная TX в `AddressRepo.SetReference`) — переход на единую writer-TX
+// (Insert(NIC) + SetReference(addr) атомарно) — отдельный шаг следующей итерации
+// (требует CQRS для Address, который частично сделан, но без `SetReference` в
+// writer-iface).
 package networkinterface
 
 import (
@@ -22,35 +29,35 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Pagination — alias на единый value-объект `internal/repo`.
+// Pagination — alias на единый value-объект `internal/repo/kacho` (через
+// `internal/repo` для обратной совместимости с handler-кодом).
 type Pagination = repo.Pagination
 
-// NetworkInterfaceFilter — фильтр для List. Зеркалит `repo.NetworkInterfaceFilter`
-// (репо реализует ports-shape; локальный alias избавляет от прокидывания
-// ports-типа в use-case-package, но удерживает совместимость с repo-адаптером).
+// NetworkInterfaceFilter — фильтр для List. Зеркалит `kacho.NetworkInterfaceFilter`
+// (CQRS-iface; до Wave 5 replicate это был `repo.NetworkInterfaceFilter`, но
+// после переноса iface в leaf — alias на kacho-type через legacy `repo`-shim).
 type NetworkInterfaceFilter = repo.NetworkInterfaceFilter
 
-// NetworkInterfaceRepo — то, что use-case'ам NIC нужно от репозитория NIC.
-//
-// Все методы возвращают `*domain.NetworkInterfaceRecord` (skill evgeniy §4 D.1 /
-// §7 H.1 — repo-entity несёт DB-managed CreatedAt). Insert/UpdateMeta принимают
-// `*domain.NetworkInterface` (без CreatedAt). SetUsedBy — atomic CAS из миграции
-// 0016 (KAC-52, ON CONFLICT DO UPDATE WHERE used_by_id=” OR used_by_id=$new),
-// возвращает ErrFailedPrecondition при CAS-конфликте.
-type NetworkInterfaceRepo interface {
-	Get(ctx context.Context, id string) (*domain.NetworkInterfaceRecord, error)
-	List(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*domain.NetworkInterfaceRecord, string, error)
-	Insert(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error)
-	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error)
-	// SetUsedBy атомарно выставляет/очищает denorm used_by-ссылку NIC (refID="" — очистка)
-	// и публичный status. CAS-семантика на repo-уровне (миграция 0016, KAC-52).
-	SetUsedBy(ctx context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterfaceRecord, error)
-	Delete(ctx context.Context, id string) error
-}
+// Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
+// работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias
+// (не type wrap) — тип взаимозаменяем с источником, никаких shim'ов. Parity с
+// `internal/apps/kacho/api/network/ports.go`.
+type (
+	Repo                        = kacho.Repository
+	Reader                      = kacho.RepositoryReader
+	Writer                      = kacho.RepositoryWriter
+	NetworkInterfaceReaderIface = kacho.NetworkInterfaceReaderIface
+	NetworkInterfaceWriterIface = kacho.NetworkInterfaceWriterIface
+	OutboxEmitter               = kacho.OutboxEmitter
+)
 
 // SubnetReader — узкий read-интерфейс для проверки parent Subnet в Create.
+// Subnet ещё не переехал на CQRS-iface (replicate-фаза — следующая итерация);
+// продолжаем использовать legacy port-shape (возвращает `*domain.SubnetRecord`).
 type SubnetReader interface {
 	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
 }
@@ -58,8 +65,11 @@ type SubnetReader interface {
 // AddressRepo — узкий интерфейс работы с Address-ресурсами, нужный NIC use-case'ам:
 // валидация cross-resource (Address существует, нужной IP-версии, в той же подсети,
 // не занят) + помечание used + referrer-tracking при attach/detach.
+//
+// Возвращает `*kacho.AddressRecord` — repo-entity переехала в leaf-пакет
+// `internal/repo/kacho/entity_address.go` ранее в replicate-фазе (Wave 5).
 type AddressRepo interface {
-	Get(ctx context.Context, id string) (*domain.AddressRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.AddressRecord, error)
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
 	ClearReference(ctx context.Context, addressID string) error
 }

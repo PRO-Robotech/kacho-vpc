@@ -11,6 +11,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
@@ -20,8 +21,8 @@ import (
 // `repomock.AddressRepo` напрямую и конструктор `NewService(repo)`. Поведение
 // и контракт идентичны.
 
-func seedAddrForRef(ar *repomock.AddressRepo) *domain.AddressRecord {
-	rec := &domain.AddressRecord{
+func seedAddrForRef(ar *repomock.AddressRepo) *kachorepo.AddressRecord {
+	rec := &kachorepo.AddressRecord{
 		Address: domain.Address{
 			ID:           ids.NewID(ids.PrefixAddress),
 			FolderID:     "f1",

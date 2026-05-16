@@ -14,6 +14,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	// Blank-import регистрирует трансферы Address/time через init() (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -125,7 +126,7 @@ func isUniqueViolation(err error) bool {
 // marshalAddressRecord конвертирует repo-entity Address в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/Move для запихивания результата в Operation.response.
-func marshalAddressRecord(rec *domain.AddressRecord) (*anypb.Any, error) {
+func marshalAddressRecord(rec *kachorepo.AddressRecord) (*anypb.Any, error) {
 	var dst *vpcv1.Address
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer Address: %w", err)

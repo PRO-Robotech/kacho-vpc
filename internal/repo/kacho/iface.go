@@ -41,11 +41,22 @@ type Repository interface {
 //
 // Pilot: Networks() + SecurityGroups() (последнее — batch 33/34, KAC-94: SG-CQRS
 // нужен, чтобы Network.Create мог inline создать default-SG в одной writer-TX).
-// Replicate-фаза добавит Subnets() / Addresses() / RouteTables() / Gateways() /
-// PrivateEndpoints() / NetworkInterfaces().
+// Wave 5 replicate (KAC-94): Addresses() добавлен — Address переехал на CQRS
+// repo вместе с IPAM allocate-flow в одной writer-TX. RouteTables() добавлен
+// в этой же replicate-фазе — parity с Network/SG/Address. PrivateEndpoints()
+// добавлен следующим в той же replicate-фазе.
+// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaces() добавлен — NIC
+// переехал на CQRS (attach-race protection KAC-52 atomic CAS, MAC-allocation
+// retry, v4/v6 cardinality CHECK, FK RESTRICT на Subnet — все DB-уровневые,
+// репо только маппит SQL → repo-sentinel).
+// Дальнейшие 2 (Subnets / Gateways) — следующие итерации эпика.
 type RepositoryReader interface {
 	Networks() NetworkReaderIface
 	SecurityGroups() SecurityGroupReaderIface
+	Addresses() AddressReaderIface
+	RouteTables() RouteTableReaderIface
+	PrivateEndpoints() PrivateEndpointReaderIface
+	NetworkInterfaces() NetworkInterfaceReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -55,12 +66,24 @@ type RepositoryReader interface {
 // гарантирует атомарность DML + outbox в одной TX (skill evgeniy §6 G.5).
 //
 // Pilot: Networks() + SecurityGroups() + Outbox() (batch 33/34, KAC-94).
-// Replicate-фаза добавит остальные resource writer'ы. Сейчас при попытке
-// вызвать неимплементированный resource — паника от nil-method receiver (это
-// сознательно: pilot не пытается покрыть все 8 ресурсов одновременно).
+// Wave 5 replicate (KAC-94): Addresses() — Address Create/Update/Delete/Move +
+// IPAM allocate (SetIPSpec/AllocateIPFromFreelist/AllocateExternalIPv6/…) теперь
+// идут через единый writer.Addresses().*  Атомарность Insert + Allocate +
+// outbox-emit гарантируется одной pgx.Tx writer'а (skill evgeniy I.9/I.10).
+// RouteTables() — добавлен в этой же replicate-фазе. PrivateEndpoints() —
+// тоже в этой же replicate-фазе (parity, FK network_id/subnet_id/address_id из
+// миграции 0024 проверяются Postgres'ом в commit-time writer-TX).
+// Replicate-фаза добавит остальные resource writer'ы.
 type RepositoryWriter interface {
 	Networks() NetworkWriterIface
 	SecurityGroups() SecurityGroupWriterIface
+	Addresses() AddressWriterIface
+	RouteTables() RouteTableWriterIface
+	PrivateEndpoints() PrivateEndpointWriterIface
+	// NetworkInterfaces — Wave 5 replicate (KAC-94, NIC batch): NIC-CQRS writer.
+	// Inсludes atomic AttachToInstance CAS (KAC-52) + idempotent DetachFromInstance
+	// + Insert с возможным MAC-collision sentinel (caller retry'ит с новым MAC).
+	NetworkInterfaces() NetworkInterfaceWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// Commit финализирует tx. После Commit вызов Abort — no-op.

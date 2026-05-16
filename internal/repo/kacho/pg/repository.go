@@ -76,6 +76,30 @@ func (r *readerImpl) SecurityGroups() kacho.SecurityGroupReaderIface {
 	return &securityGroupReader{tx: r.tx}
 }
 
+// Addresses возвращает Address-reader, привязанный к этой read-TX. Wave 5
+// replicate (KAC-94, skill evgeniy I.9/I.10).
+func (r *readerImpl) Addresses() kacho.AddressReaderIface {
+	return &addressReader{tx: r.tx}
+}
+
+// PrivateEndpoints возвращает PrivateEndpoint-reader, привязанный к этой read-TX.
+// Wave 5 replicate (KAC-94).
+func (r *readerImpl) PrivateEndpoints() kacho.PrivateEndpointReaderIface {
+	return &privateEndpointReader{tx: r.tx}
+}
+
+// RouteTables возвращает RouteTable-reader, привязанный к этой read-TX.
+// Wave 5 replicate (KAC-94).
+func (r *readerImpl) RouteTables() kacho.RouteTableReaderIface {
+	return &routeTableReader{tx: r.tx}
+}
+
+// NetworkInterfaces возвращает NIC-reader, привязанный к этой read-TX.
+// Wave 5 replicate (KAC-94, NIC batch). См. doc-комментарий на iface_network_interface.go.
+func (r *readerImpl) NetworkInterfaces() kacho.NetworkInterfaceReaderIface {
+	return &networkInterfaceReader{tx: r.tx}
+}
+
 // Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
 // Идемпотентно. Игнорирует pgx.ErrTxClosed.
 func (r *readerImpl) Close() error {
@@ -111,6 +135,48 @@ func (w *writerImpl) SecurityGroups() kacho.SecurityGroupWriterIface {
 	return &securityGroupWriter{
 		securityGroupReader: securityGroupReader{tx: w.tx},
 		emitter:             &outboxEmitter{tx: w.tx},
+	}
+}
+
+// Addresses возвращает Address-writer, привязанный к этой write-TX. G.2: writer
+// видит свои writes (reader-методы — поверх той же pgx.Tx). Wave 5 replicate
+// (KAC-94, skill evgeniy I.9/I.10): IPAM allocate-flow атомарен — Insert(addr)
+// + AllocateIPFromFreelist/AllocateExternalIPv6 + outbox-emit идут в одной
+// writer-TX, либо все вместе видны, либо ни один (Abort/crash).
+func (w *writerImpl) Addresses() kacho.AddressWriterIface {
+	return &addressWriter{
+		addressReader: addressReader{tx: w.tx},
+		emitter:       &outboxEmitter{tx: w.tx},
+	}
+}
+
+// PrivateEndpoints возвращает PrivateEndpoint-writer, привязанный к этой write-TX.
+// G.2: writer видит свои writes. Wave 5 replicate (KAC-94).
+func (w *writerImpl) PrivateEndpoints() kacho.PrivateEndpointWriterIface {
+	return &privateEndpointWriter{
+		privateEndpointReader: privateEndpointReader{tx: w.tx},
+		emitter:               &outboxEmitter{tx: w.tx},
+	}
+}
+
+// RouteTables возвращает RouteTable-writer, привязанный к этой write-TX.
+// G.2: writer видит свои writes (reader-методы — поверх той же pgx.Tx).
+// Wave 5 replicate (KAC-94).
+func (w *writerImpl) RouteTables() kacho.RouteTableWriterIface {
+	return &routeTableWriter{
+		routeTableReader: routeTableReader{tx: w.tx},
+		emitter:          &outboxEmitter{tx: w.tx},
+	}
+}
+
+// NetworkInterfaces возвращает NIC-writer, привязанный к этой write-TX.
+// G.2: writer видит свои writes. Wave 5 replicate (KAC-94, NIC batch). Includes
+// atomic AttachToInstance CAS (KAC-52), idempotent DetachFromInstance, Insert
+// с возможным MAC-collision sentinel (caller retry'ит с новым MAC).
+func (w *writerImpl) NetworkInterfaces() kacho.NetworkInterfaceWriterIface {
+	return &networkInterfaceWriter{
+		networkInterfaceReader: networkInterfaceReader{tx: w.tx},
+		emitter:                &outboxEmitter{tx: w.tx},
 	}
 }
 

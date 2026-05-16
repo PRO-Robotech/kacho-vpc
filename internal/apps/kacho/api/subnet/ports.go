@@ -46,7 +46,7 @@ type SubnetRepo interface {
 	Delete(ctx context.Context, id string) error
 	SetFolderID(ctx context.Context, id, folderID string) (*domain.SubnetRecord, error)
 	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.SubnetRecord, error)
-	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*domain.AddressRecord, string, error)
+	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 }
 
 // NetworkReader — узкий read-интерфейс для проверки parent Network в Create.

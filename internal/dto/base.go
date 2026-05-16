@@ -155,12 +155,12 @@ type Transferrable interface {
 	*DTO[time.Time, *timestamppb.Timestamp] |
 		*DTO[kachorepo.NetworkRecord, *vpcv1.Network] |
 		*DTO[domain.SubnetRecord, *vpcv1.Subnet] |
-		*DTO[domain.AddressRecord, *vpcv1.Address] |
-		*DTO[domain.RouteTableRecord, *vpcv1.RouteTable] |
-		*DTO[domain.SecurityGroupRecord, *vpcv1.SecurityGroup] |
-		*DTO[domain.GatewayRecord, *vpcv1.Gateway] |
-		*DTO[domain.PrivateEndpointRecord, *pepb.PrivateEndpoint] |
-		*DTO[domain.NetworkInterfaceRecord, *vpcv1.NetworkInterface]
+		*DTO[kachorepo.AddressRecord, *vpcv1.Address] |
+		*DTO[kachorepo.RouteTableRecord, *vpcv1.RouteTable] |
+		*DTO[kachorepo.SecurityGroupRecord, *vpcv1.SecurityGroup] |
+		*DTO[kachorepo.GatewayRecord, *vpcv1.Gateway] |
+		*DTO[kachorepo.PrivateEndpointRecord, *pepb.PrivateEndpoint] |
+		*DTO[kachorepo.NetworkInterfaceRecord, *vpcv1.NetworkInterface]
 }
 
 // Transfer запускает Perform() на dto. Это единственная публичная entry-point.

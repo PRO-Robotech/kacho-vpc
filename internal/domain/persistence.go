@@ -16,12 +16,12 @@ import "time"
 // Импорт: домен сам ни от чего не зависит (skill §1 A.5), здесь только stdlib
 // `time` — это сохраняет принцип clean architecture.
 //
-// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord` уехал из domain в
-// repo-leaf — теперь живёт в `internal/repo/kacho/entity_network.go` как
-// `kacho.NetworkRecord` (там же будет жить Reader/Writer-iface при дальнейшем
-// CQRS-refactor §6 G.2). Остальные 7 Record-типов (Subnet/Address/RouteTable/
+// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord` и `AddressRecord`
+// уехали из domain в repo-leaf — теперь живут как `kacho.NetworkRecord` /
+// `kacho.AddressRecord` в `internal/repo/kacho/entity_network.go` /
+// `entity_address.go`. Остальные 6 Record-типов (Subnet/RouteTable/
 // SecurityGroup/Gateway/PrivateEndpoint/NetworkInterface) ещё здесь — миграция
-// их в repo-leaf — отдельный subtask Wave 5.
+// их в repo-leaf — отдельные subtasks Wave 5 replicate.
 
 // SubnetRecord — repo-entity для Subnet. domain.Subnet + CreatedAt (DB-managed).
 // Wave 2 batch A (KAC-94) — parity с NetworkRecord. См. doc-комментарий на
@@ -31,12 +31,10 @@ type SubnetRecord struct {
 	CreatedAt time.Time
 }
 
-// AddressRecord — repo-entity для Address. domain.Address + CreatedAt (DB-managed).
-// Wave 2 batch A (KAC-94).
-type AddressRecord struct {
-	Address
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): AddressRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_address.go` как `kacho.AddressRecord` (parity
+// с NetworkRecord). Здесь его больше нет — все consumer'ы импортируют
+// `kacho.AddressRecord` напрямую.
 
 // RouteTableRecord — repo-entity для RouteTable. domain.RouteTable + CreatedAt
 // (DB-managed). Wave 2 batch A (KAC-94).
