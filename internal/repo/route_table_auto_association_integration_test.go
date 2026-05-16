@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -12,7 +11,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // KAC-56: DB-level auto-association (PL/pgSQL triggers, миграция 0019).
@@ -23,72 +23,95 @@ import (
 //     не перетирается.
 //  2. BEFORE INSERT ON subnets → Subnet, создаваемый в сети с RT, получает
 //     route_table_id = самой ранней RT (auto-pick); если RT нет — NULL.
-//  3. FK subnets.route_table_id → route_tables(id) ON DELETE SET NULL:
-//     RT.Delete обнуляет route_table_id в зависимых Subnet'ах.
+//  3. FK subnets.route_table_id → route_tables(id) ON DELETE SET NULL.
 //  4. AFTER UPDATE OF route_table_id ON subnets → outbox-эмит Subnet.UPDATED
 //     с payload.auto_association=true.
 //
 // Тестируем напрямую через repo (без service-слоя) — это DB-level гарантия.
+//
+// KAC-94 A.7 sub-PR 5/6: переписан на CQRS Writer.
+
+func setupAssocRepo(t *testing.T) (kacho.Repository, func()) {
+	ctx := context.Background()
+	dsn := setupTestDB(t)
+	pool, err := coredb.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	r := kachopg.New(pool, nil)
+	return r, func() {
+		r.Close()
+		pool.Close()
+	}
+}
 
 func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	ctx := context.Background()
-	dsn := setupTestDB(t)
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
+	r, cleanup := setupAssocRepo(t)
+	defer cleanup()
 
-	netRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	rtRepo := repo.NewRouteTableRepo(pool)
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
-	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-a", Name: domain.RcNameVPC("net-assoc-a"),
 	}
-	_, err = netRepo.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
-	// Подсеть #1 — без route_table_id (auto-pick должен оставить NULL, так как
-	// RT ещё нет; trigger (2) кэндидатов не находит).
 	subA := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-a", Name: domain.RcNameVPC("sub-assoc-a"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.71.0.0/24"},
 	}
-	_, err = subnetRepo.Insert(ctx, subA)
-	require.NoError(t, err)
-	subAGot, err := subnetRepo.Get(ctx, subA.ID)
-	require.NoError(t, err)
-	require.Empty(t, subAGot.RouteTableID, "auto-pick: нет RT в сети — должен остаться NULL/'' ")
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, subA)
+		return e
+	}))
 
-	// Подсеть #2 — с explicit route_table_id (укажем тот id, что заведём ниже
-	// для RT-explicit-protection); сначала создадим эту RT.
+	subnetGet := func(id string) *kacho.SubnetRecord {
+		rd, err := r.Reader(ctx)
+		require.NoError(t, err)
+		defer rd.Close()
+		got, err := rd.Subnets().Get(ctx, id)
+		require.NoError(t, err)
+		return got
+	}
+
+	require.Empty(t, subnetGet(subA.ID).RouteTableID, "auto-pick: нет RT в сети — должен остаться NULL/'' ")
+
+	// Создаём RT — AFTER INSERT trigger обновит subA на rtExplicit.id.
 	rtExplicit := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", Name: domain.RcNameVPC("rt-explicit"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rtExplicit)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rtExplicit)
+		return e
+	}))
 
-	// После INSERT RT-1 — trigger (1) обновит subA на rtExplicit.id.
-	subAAfter, err := subnetRepo.Get(ctx, subA.ID)
-	require.NoError(t, err)
-	require.Equal(t, rtExplicit.ID, subAAfter.RouteTableID,
+	require.Equal(t, rtExplicit.ID, subnetGet(subA.ID).RouteTableID,
 		"AFTER INSERT trigger должен auto-assoc subA на новую RT")
 
-	// Subnet с explicit RT — создаём новую RT-2 и Subnet-B, у которого
-	// route_table_id уже задан = rtExplicit.id (а не RT-2).
+	// Новая RT-2 не должна перетирать subA's route_table_id.
 	rt2 := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-a", Name: domain.RcNameVPC("rt-explicit-2"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rt2)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rt2)
+		return e
+	}))
 
-	// subA по-прежнему привязан к rtExplicit (RT-2 не перетирает — route_table_id уже NOT NULL).
-	subAAfter2, err := subnetRepo.Get(ctx, subA.ID)
-	require.NoError(t, err)
-	require.Equal(t, rtExplicit.ID, subAAfter2.RouteTableID,
+	require.Equal(t, rtExplicit.ID, subnetGet(subA.ID).RouteTableID,
 		"existing route_table_id не должен перетираться при INSERT новой RT")
 }
 
@@ -97,55 +120,74 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	ctx := context.Background()
-	dsn := setupTestDB(t)
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
+	r, cleanup := setupAssocRepo(t)
+	defer cleanup()
 
-	netRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	rtRepo := repo.NewRouteTableRepo(pool)
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
-	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-b", Name: domain.RcNameVPC("net-assoc-b"),
 	}
-	_, err = netRepo.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
-	// Сначала RT, потом Subnet — BEFORE INSERT trigger должен auto-pick RT.
 	rtEarly := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", Name: domain.RcNameVPC("rt-early"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rtEarly)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rtEarly)
+		return e
+	}))
 
 	rtLate := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-b", Name: domain.RcNameVPC("rt-late"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rtLate)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rtLate)
+		return e
+	}))
 
 	sub := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", Name: domain.RcNameVPC("sub-autopick"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.72.0.0/24"},
-		// route_table_id не задан — trigger должен подставить rtEarly (по created_at ASC).
 	}
-	_, err = subnetRepo.Insert(ctx, sub)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, sub)
+		return e
+	}))
+
+	rd, err := r.Reader(ctx)
 	require.NoError(t, err)
-	subGot, err := subnetRepo.Get(ctx, sub.ID)
+	subGot, err := rd.Subnets().Get(ctx, sub.ID)
+	require.NoError(t, rd.Close())
 	require.NoError(t, err)
 	require.Equal(t, rtEarly.ID, subGot.RouteTableID,
 		"auto-pick должен выбрать самую раннюю RT (created_at ASC)")
 
-	// Subnet с explicit route_table_id=rtLate — trigger не должен перетереть.
 	subExplicit := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-b", Name: domain.RcNameVPC("sub-explicit-late"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.73.0.0/24"}, RouteTableID: rtLate.ID,
 	}
-	_, err = subnetRepo.Insert(ctx, subExplicit)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, subExplicit)
+		return e
+	}))
+
+	rd2, err := r.Reader(ctx)
 	require.NoError(t, err)
-	subExplicitGot, err := subnetRepo.Get(ctx, subExplicit.ID)
+	subExplicitGot, err := rd2.Subnets().Get(ctx, subExplicit.ID)
+	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	require.Equal(t, rtLate.ID, subExplicitGot.RouteTableID,
 		"explicit route_table_id не должен перетираться auto-pick'ом")
@@ -156,43 +198,61 @@ func TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	ctx := context.Background()
-	dsn := setupTestDB(t)
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
+	r, cleanup := setupAssocRepo(t)
+	defer cleanup()
 
-	netRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	rtRepo := repo.NewRouteTableRepo(pool)
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
-	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-c", Name: domain.RcNameVPC("net-assoc-c"),
 	}
-	_, err = netRepo.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
 	rt := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-c", Name: domain.RcNameVPC("rt-tobedeleted"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rt)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rt)
+		return e
+	}))
 
 	sub := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-c", Name: domain.RcNameVPC("sub-fk-setnull"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.74.0.0/24"},
-		// route_table_id не задан — auto-pick подставит rt.ID.
 	}
-	_, err = subnetRepo.Insert(ctx, sub)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, sub)
+		return e
+	}))
+
+	rd, err := r.Reader(ctx)
 	require.NoError(t, err)
-	subBefore, err := subnetRepo.Get(ctx, sub.ID)
+	subBefore, err := rd.Subnets().Get(ctx, sub.ID)
+	require.NoError(t, rd.Close())
 	require.NoError(t, err)
 	require.Equal(t, rt.ID, subBefore.RouteTableID, "auto-pick precondition")
 
 	// Удаляем RT — FK ON DELETE SET NULL обнулит subnet.route_table_id.
-	require.NoError(t, rtRepo.Delete(ctx, rt.ID))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.RouteTables().Delete(ctx, rt.ID)
+	}))
 
-	subAfter, err := subnetRepo.Get(ctx, sub.ID)
+	rd2, err := r.Reader(ctx)
+	require.NoError(t, err)
+	subAfter, err := rd2.Subnets().Get(ctx, sub.ID)
+	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	require.Empty(t, subAfter.RouteTableID,
 		"FK ON DELETE SET NULL: subnet.route_table_id должен обнулиться после RT.Delete")
@@ -207,36 +267,49 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 	pool, err := coredb.NewPool(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
-	netRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	rtRepo := repo.NewRouteTableRepo(pool)
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
-	_ = time.Now().UTC().Truncate(time.Microsecond) // CreatedAt — DB-managed (KAC-94).
 	net := &domain.Network{
 		ID: ids.NewID(ids.PrefixNetwork), FolderID: "f-assoc-d", Name: domain.RcNameVPC("net-assoc-d"),
 	}
-	_, err = netRepo.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
 	sub := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "f-assoc-d", Name: domain.RcNameVPC("sub-outbox"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.75.0.0/24"},
 	}
-	_, err = subnetRepo.Insert(ctx, sub)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, sub)
+		return e
+	}))
 
-	// snapshot outbox seq до создания RT
+	// snapshot outbox seq до создания RT.
 	var seqBefore int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COALESCE(MAX(sequence_no), 0) FROM vpc_outbox`).Scan(&seqBefore))
 
-	// Создаём RT — trigger (1) обновит subnet, trigger (5) запишет outbox.
 	rt := &domain.RouteTable{
 		ID: ids.NewID(ids.PrefixRouteTable), FolderID: "f-assoc-d", Name: domain.RcNameVPC("rt-outbox"), NetworkID: net.ID,
 	}
-	_, err = rtRepo.Insert(ctx, rt)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.RouteTables().Insert(ctx, rt)
+		return e
+	}))
 
 	// Проверяем что в outbox есть Subnet.UPDATED с auto_association=true.
 	var (
@@ -261,7 +334,6 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 		"triggered emit ставит auto_association=true маркер")
 }
 
-// scanOutboxRow — общий helper для тестов: распаковывает row в kind/id/evtType/payload.
 func scanOutboxRow(row interface {
 	Scan(dest ...any) error
 }, kind, resID, evtType *string, payload *map[string]any) error {

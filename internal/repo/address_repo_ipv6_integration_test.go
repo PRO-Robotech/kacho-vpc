@@ -11,7 +11,8 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // KAC-60: sparse counter-based IPv6 allocator (миграция 0021).
@@ -21,12 +22,8 @@ import (
 //  2. AllocateExternalIPv6 — последовательно выдаёт IP'и pool_base+1, +2, +3,
 //     записывает в ipv6_allocated_ips и addresses.external_ipv6, эмитит outbox.
 //  3. FreeExternalIPv6 → push offset → ipv6_released_offsets → переиспользование.
-
-func setupV6Pool(t *testing.T, ctx context.Context, pool interface {
-	Exec(context.Context, string, ...any) (any, error)
-}, poolID, cidr string) {
-	t.Helper()
-}
+//
+// KAC-94 A.7 sub-PR 5/6: переписан на CQRS Writer.
 
 func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	if testing.Short() {
@@ -38,14 +35,22 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	require.NoError(t, err)
 	defer p.Close()
 
-	addrRepo := repo.NewAddressRepo(p)
+	r := kachopg.New(p, nil)
+	defer r.Close()
 
-	// Setup: address_pool с v6 CIDR через PoolRepo (правильные defaults +
-	// freelist-population). Pool изолирован за t.Cleanup → cascade удалит
-	// ipv6_pool_cursors / allocated / released (FK ON DELETE CASCADE из 0021).
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
+
+	// Setup: address_pool с v6 CIDR через raw SQL (правильные defaults).
 	poolID := "aplv6test12345678901"
-	// KAC-71: after migration 0022, column `cidr_blocks` split into
-	// v4_cidr_blocks / v6_cidr_blocks — v6 prefix goes into the v6 slot.
 	_, err = p.Exec(ctx, `
 		INSERT INTO address_pools (id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, is_default, created_at, modified_at, selector_labels, selector_priority)
 		VALUES ($1, 'test-v6-pool', '', '{}'::jsonb, ARRAY[]::text[], ARRAY['2001:db8::/64']::text[], 1, false, now(), now(), '{}'::jsonb, 0)`,
@@ -54,8 +59,12 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	t.Cleanup(func() { _, _ = p.Exec(context.Background(), `DELETE FROM address_pools WHERE id = $1`, poolID) })
 
 	// Step 1: InitIPv6PoolCursor — идемпотент.
-	require.NoError(t, addrRepo.InitIPv6PoolCursor(ctx, poolID))
-	require.NoError(t, addrRepo.InitIPv6PoolCursor(ctx, poolID), "must be idempotent")
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().InitIPv6PoolCursor(ctx, poolID)
+	}))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().InitIPv6PoolCursor(ctx, poolID)
+	}), "must be idempotent")
 
 	var nextOff int64
 	require.NoError(t, p.QueryRow(ctx,
@@ -69,37 +78,47 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	addr2 := makeAddrShell(folderID, now, "a-v6-2")
 	addr3 := makeAddrShell(folderID, now, "a-v6-3")
 	for _, a := range []*domain.Address{addr1, addr2, addr3} {
-		_, err := addrRepo.Insert(ctx, a)
-		require.NoError(t, err)
+		ad := a
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			_, e := w.Addresses().Insert(ctx, ad)
+			return e
+		}))
 	}
 
-	ip1, err := addrRepo.AllocateExternalIPv6(ctx, poolID, addr1.ID, "ru-central1-a")
-	if err != nil {
-		t.Fatalf("AllocateExternalIPv6 ip1: %+v", err)
+	allocV6 := func(addrID string) string {
+		var ip string
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			var e error
+			ip, e = w.Addresses().AllocateExternalIPv6(ctx, poolID, addrID, "ru-central1-a")
+			return e
+		}))
+		return ip
 	}
-	ip2, err := addrRepo.AllocateExternalIPv6(ctx, poolID, addr2.ID, "ru-central1-a")
-	require.NoError(t, err)
-	ip3, err := addrRepo.AllocateExternalIPv6(ctx, poolID, addr3.ID, "ru-central1-a")
-	require.NoError(t, err)
 
-	// Monotonic: pool_base = 2001:db8::, offsets 1,2,3 → 2001:db8::1, ::2, ::3.
-	require.Equal(t, "2001:db8::1", ip1)
-	require.Equal(t, "2001:db8::2", ip2)
-	require.Equal(t, "2001:db8::3", ip3)
+	require.Equal(t, "2001:db8::1", allocV6(addr1.ID))
+	require.Equal(t, "2001:db8::2", allocV6(addr2.ID))
+	require.Equal(t, "2001:db8::3", allocV6(addr3.ID))
 
 	// addresses.external_ipv6 заполнен.
-	got1, err := addrRepo.Get(ctx, addr1.ID)
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got1, err := rd.Addresses().Get(ctx, addr1.ID)
+	require.NoError(t, rd.Close())
 	require.NoError(t, err)
 	require.NotNil(t, got1.ExternalIpv6)
 	require.Equal(t, "2001:db8::1", got1.ExternalIpv6.Address)
 	require.Equal(t, poolID, got1.ExternalIpv6.AddressPoolID)
 
-	// Step 3: Free addr2 → offset должен попасть в released. Следующая аллокация
-	// (для нового address) использует ::2 (offset 2 из released, не fresh).
-	require.NoError(t, addrRepo.FreeExternalIPv6(ctx, addr2.ID))
+	// Step 3: Free addr2 → offset должен попасть в released.
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().FreeExternalIPv6(ctx, addr2.ID)
+	}))
 
 	// addresses.external_ipv6 у addr2 очищен.
-	got2, err := addrRepo.Get(ctx, addr2.ID)
+	rd2, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got2, err := rd2.Addresses().Get(ctx, addr2.ID)
+	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	require.Nil(t, got2.ExternalIpv6, "FreeExternalIPv6 must clear external_ipv6")
 
@@ -110,19 +129,25 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 	require.Equal(t, int64(2), rOff)
 
 	addr4 := makeAddrShell(folderID, now, "a-v6-4")
-	_, err = addrRepo.Insert(ctx, addr4)
-	require.NoError(t, err)
-	ip4, err := addrRepo.AllocateExternalIPv6(ctx, poolID, addr4.ID, "ru-central1-a")
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Addresses().Insert(ctx, addr4)
+		return e
+	}))
+	ip4 := allocV6(addr4.ID)
 	require.Equal(t, "2001:db8::2", ip4, "must reuse released offset 2 before fresh next_offset=4")
 
-	// Free идемпотент: повторный Free на freed-уже-address — no-op.
-	require.NoError(t, addrRepo.FreeExternalIPv6(ctx, addr2.ID))
+	// Free идемпотент.
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().FreeExternalIPv6(ctx, addr2.ID)
+	}))
 
 	// cleanup
 	for _, a := range []*domain.Address{addr1, addr2, addr3, addr4} {
-		_ = addrRepo.FreeExternalIPv6(ctx, a.ID)
-		_ = addrRepo.Delete(ctx, a.ID)
+		ad := a
+		_ = withTx(t, func(w kacho.RepositoryWriter) error {
+			_ = w.Addresses().FreeExternalIPv6(ctx, ad.ID)
+			return w.Addresses().Delete(ctx, ad.ID)
+		})
 	}
 }
 

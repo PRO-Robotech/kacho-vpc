@@ -11,17 +11,20 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // KAC-94 (Wave 2 batch D, skill evgeniy §5 E.2): миграция
 // 0033_labels_check_constraints добавляет DB-уровневый CHECK на JSONB
 // `labels`-поле всех 8 VPC-таблиц через helper-функцию kacho_labels_valid().
-// Эти тесты идут в обход domain.ValidateLabels (прямой INSERT через repo) и
+// Эти тесты идут в обход domain.ValidateLabels (прямой INSERT через writer) и
 // убеждаются что DB-CHECK ловит cardinality / key-regex / value-length
 // нарушения — financial backstop для bug'ов в app-коде / внешних writers.
 //
-// SQLSTATE 23514 → wrapPgErr → repo.ErrInvalidArg.
+// SQLSTATE 23514 → helpers.WrapPgErr → helpers.ErrInvalidArg.
+//
+// KAC-94 A.7 sub-PR 5/6: переписан на CQRS Writer.
 
 func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	if testing.Short() {
@@ -34,7 +37,20 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	netRepo := repo.NewNetworkRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
+
+	insertNet := func(t *testing.T, n *domain.Network) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		_, err = w.Networks().Insert(ctx, n)
+		if err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
 	// 1. Пустой labels (default '{}'::jsonb) — CHECK проходит.
 	emptyNet := &domain.Network{
@@ -43,8 +59,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 		Name:     domain.RcNameVPC("empty-labels"),
 		Labels:   domain.LabelsFromMap(nil),
 	}
-	_, err = netRepo.Insert(ctx, emptyNet)
-	require.NoError(t, err, "empty labels должен проходить CHECK")
+	require.NoError(t, insertNet(t, emptyNet), "empty labels должен проходить CHECK")
 
 	// 2. Валидные labels — CHECK проходит. Используем ключи, демонстрирующие
 	//    полный character class: lowercase letters, digits, '-', '_', '.', '/',
@@ -61,13 +76,11 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 			"a@b":              "v",
 		}),
 	}
-	_, err = netRepo.Insert(ctx, validNet)
-	require.NoError(t, err, "валидные labels должны проходить CHECK")
+	require.NoError(t, insertNet(t, validNet), "валидные labels должны проходить CHECK")
 
 	// 3. 65 пар — cardinality нарушение, CHECK отбивает.
 	tooMany := make(map[string]string, 65)
 	for i := 0; i < 65; i++ {
-		// Detтерминированно генерируем валидные ключи длины ≤ 63.
 		k := "k" + padDigits(i, 4)
 		tooMany[k] = "v"
 	}
@@ -77,9 +90,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 		Name:     domain.RcNameVPC("too-many"),
 		Labels:   domain.LabelsFromMap(tooMany),
 	}
-	_, err = netRepo.Insert(ctx, tooManyNet)
+	err = insertNet(t, tooManyNet)
 	require.Error(t, err, "labels с 65 парами должно отбиваться CHECK (cardinality > 64)")
-	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, helpers.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (cardinality), got: %v", err)
 
 	// 4. Ключ нарушает regex (uppercase в начале) — CHECK отбивает.
@@ -88,12 +101,12 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 		FolderID: "folder-labels",
 		Name:     domain.RcNameVPC("bad-key"),
 		Labels: domain.LabelsFromMap(map[string]string{
-			"Bad-Key": "v", // uppercase B в начале — нарушает ^[a-z]...
+			"Bad-Key": "v",
 		}),
 	}
-	_, err = netRepo.Insert(ctx, badKeyNet)
+	err = insertNet(t, badKeyNet)
 	require.Error(t, err, "labels с key uppercase-start должно отбиваться CHECK (regex)")
-	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, helpers.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (key regex), got: %v", err)
 
 	// 5. Значение длиной 64 — CHECK отбивает (max 63).
@@ -106,9 +119,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 			"k": longVal,
 		}),
 	}
-	_, err = netRepo.Insert(ctx, badValNet)
+	err = insertNet(t, badValNet)
 	require.Error(t, err, "labels с value длиной 64 должно отбиваться CHECK (length > 63)")
-	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, helpers.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (value length), got: %v", err)
 
 	// 6. Edge: value длиной ровно 63 — OK (boundary).
@@ -120,12 +133,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 			"k": strings.Repeat("a", 63),
 		}),
 	}
-	_, err = netRepo.Insert(ctx, okBoundaryNet)
-	require.NoError(t, err, "value длиной ровно 63 byte — boundary OK")
+	require.NoError(t, insertNet(t, okBoundaryNet), "value длиной ровно 63 byte — boundary OK")
 }
 
-// padDigits возвращает n как 4-digit zero-padded строку без зависимости от fmt
-// (детерминированно, без аллокаций fmt.Sprintf — тесту достаточно простоты).
 func padDigits(n, width int) string {
 	s := ""
 	for n > 0 {

@@ -11,14 +11,13 @@ import (
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
-// insertTestPoolForFreelist inserts a fresh address_pool with the given IPv4 CIDR.
-// kind=1 == EXTERNAL_PUBLIC (см. domain.AddressPoolKindExternalPublic).
-//
-// KAC-71: after migration 0022 column `cidr_blocks` is split — IPv4 prefixes go
-// into `v4_cidr_blocks`.
+// KAC-94 A.7 sub-PR 5/6: переписан на CQRS Writer.
+
 func insertTestPoolForFreelist(t testing.TB, ctx context.Context, pool *pgxpool.Pool, cidr string) string {
 	t.Helper()
 	poolID := ids.NewID("apl")
@@ -30,8 +29,6 @@ func insertTestPoolForFreelist(t testing.TB, ctx context.Context, pool *pgxpool.
 	return poolID
 }
 
-// insertTestAddressFreelist inserts a barebones external IPv4 address row with
-// the minimum NOT-NULL columns satisfied via defaults. Returns its id.
 func insertTestAddressFreelist(t testing.TB, ctx context.Context, pool *pgxpool.Pool) string {
 	t.Helper()
 	addrID := ids.NewID(ids.PrefixAddress)
@@ -43,8 +40,17 @@ func insertTestAddressFreelist(t testing.TB, ctx context.Context, pool *pgxpool.
 	return addrID
 }
 
-// TestFreelist_BackfillPopulatesIPs — populating the freelist for a /28
-// (16 addresses, 14 usable) yields exactly 14 freelist rows for that pool.
+func freelistWithTx(t *testing.T, ctx context.Context, r kacho.Repository, fn func(kacho.RepositoryWriter) error) error {
+	t.Helper()
+	w, err := r.Writer(ctx)
+	require.NoError(t, err)
+	if err := fn(w); err != nil {
+		w.Abort()
+		return err
+	}
+	return w.Commit()
+}
+
 func TestFreelist_BackfillPopulatesIPs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -54,9 +60,13 @@ func TestFreelist_BackfillPopulatesIPs(t *testing.T) {
 	require.NoError(t, err)
 	defer pgPool.Close()
 
+	r := kachopg.New(pgPool, nil)
+	defer r.Close()
+
 	poolID := insertTestPoolForFreelist(t, ctx, pgPool, "198.51.100.0/28")
-	poolRepo := repo.NewAddressPoolRepo(pgPool)
-	require.NoError(t, poolRepo.PopulateFreelistForPool(ctx, poolID))
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.AddressPools().PopulateFreelistForPool(ctx, poolID)
+	}))
 
 	var count int
 	err = pgPool.QueryRow(ctx,
@@ -67,9 +77,6 @@ func TestFreelist_BackfillPopulatesIPs(t *testing.T) {
 	require.Equal(t, 14, count, "expected 14 usable IPs for /28 (16 - network - broadcast)")
 }
 
-// TestFreelist_ConcurrentAllocateUnique — N concurrent allocators against a
-// pool with N free IPs each get a distinct IP; the (N+1)-th call returns
-// repo.ErrPoolExhausted.
 func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -79,10 +86,13 @@ func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 	require.NoError(t, err)
 	defer pgPool.Close()
 
+	r := kachopg.New(pgPool, nil)
+	defer r.Close()
+
 	poolID := insertTestPoolForFreelist(t, ctx, pgPool, "198.51.100.0/28")
-	addrRepo := repo.NewAddressRepo(pgPool)
-	poolRepo := repo.NewAddressPoolRepo(pgPool)
-	require.NoError(t, poolRepo.PopulateFreelistForPool(ctx, poolID))
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.AddressPools().PopulateFreelistForPool(ctx, poolID)
+	}))
 
 	const N = 14
 	addrIDs := make([]string, N)
@@ -100,9 +110,14 @@ func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 		wg.Add(1)
 		go func(addrID string) {
 			defer wg.Done()
-			ip, allocErr := addrRepo.AllocateIPFromFreelist(ctx, poolID, addrID)
-			if allocErr != nil {
-				errsCh <- allocErr
+			var ip string
+			err := freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+				var e error
+				ip, e = w.Addresses().AllocateIPFromFreelist(ctx, poolID, addrID)
+				return e
+			})
+			if err != nil {
+				errsCh <- err
 				return
 			}
 			mu.Lock()
@@ -121,15 +136,16 @@ func TestFreelist_ConcurrentAllocateUnique(t *testing.T) {
 	}
 	require.Equal(t, N, len(ips), "expected %d unique IPs", N)
 
-	// 15-я попытка — пул пуст → repo.ErrPoolExhausted.
+	// 15-я попытка — пул пуст → helpers.ErrPoolExhausted.
 	addr15 := insertTestAddressFreelist(t, ctx, pgPool)
-	_, err = addrRepo.AllocateIPFromFreelist(ctx, poolID, addr15)
-	require.Truef(t, errors.Is(err, repo.ErrPoolExhausted),
-		"expected repo.ErrPoolExhausted, got %v", err)
+	err = freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Addresses().AllocateIPFromFreelist(ctx, poolID, addr15)
+		return e
+	})
+	require.Truef(t, errors.Is(err, helpers.ErrPoolExhausted),
+		"expected helpers.ErrPoolExhausted, got %v", err)
 }
 
-// TestFreelist_DeleteReturnsIP — ReturnIPToFreelist puts an IP back; calling
-// it twice is idempotent (ON CONFLICT DO NOTHING).
 func TestFreelist_DeleteReturnsIP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -139,14 +155,21 @@ func TestFreelist_DeleteReturnsIP(t *testing.T) {
 	require.NoError(t, err)
 	defer pgPool.Close()
 
+	r := kachopg.New(pgPool, nil)
+	defer r.Close()
+
 	poolID := insertTestPoolForFreelist(t, ctx, pgPool, "198.51.100.0/28")
-	addrRepo := repo.NewAddressRepo(pgPool)
-	poolRepo := repo.NewAddressPoolRepo(pgPool)
-	require.NoError(t, poolRepo.PopulateFreelistForPool(ctx, poolID))
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.AddressPools().PopulateFreelistForPool(ctx, poolID)
+	}))
 
 	addrID := insertTestAddressFreelist(t, ctx, pgPool)
-	ip, err := addrRepo.AllocateIPFromFreelist(ctx, poolID, addrID)
-	require.NoError(t, err)
+	var ip string
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		ip, e = w.Addresses().AllocateIPFromFreelist(ctx, poolID, addrID)
+		return e
+	}))
 
 	count := func() int {
 		var n int
@@ -157,10 +180,14 @@ func TestFreelist_DeleteReturnsIP(t *testing.T) {
 	}
 	require.Equal(t, 13, count(), "after one allocation expected 13 free")
 
-	require.NoError(t, addrRepo.ReturnIPToFreelist(ctx, poolID, ip))
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().ReturnIPToFreelist(ctx, poolID, ip)
+	}))
 	require.Equal(t, 14, count(), "after return expected 14 free")
 
-	// Idempotency: returning again is a no-op.
-	require.NoError(t, addrRepo.ReturnIPToFreelist(ctx, poolID, ip))
+	// Idempotency.
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().ReturnIPToFreelist(ctx, poolID, ip)
+	}))
 	require.Equal(t, 14, count(), "second return should be no-op")
 }

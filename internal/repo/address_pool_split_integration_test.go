@@ -38,8 +38,21 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
+
+// splitWithTx — helper для CQRS-tx обвязки в split-тестах. KAC-94 A.7 sub-PR 5/6.
+func splitWithTx(t *testing.T, ctx context.Context, r kacho.Repository, fn func(kacho.RepositoryWriter) error) error {
+	t.Helper()
+	w, err := r.Writer(ctx)
+	require.NoError(t, err)
+	if err := fn(w); err != nil {
+		w.Abort()
+		return err
+	}
+	return w.Commit()
+}
 
 // setupTestDBWithMigrationsUpto — поднимает testcontainer Postgres + применяет
 // миграции до указанного version (inclusive). Используется в C-тестах:
@@ -456,7 +469,8 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := repo.NewAddressPoolRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
 	const concurrency = 5
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -481,7 +495,10 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 				CreatedAt:    now,
 				ModifiedAt:   now,
 			}
-			_, e := r.Insert(ctx, p)
+			e := splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+				_, ie := w.AddressPools().Insert(ctx, p)
+				return ie
+			})
 			mu.Lock()
 			defer mu.Unlock()
 			if e == nil {
@@ -582,8 +599,8 @@ func TestAddressPoolSplit_H3_FreelistAllocateConcurrentNoDup(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := repo.NewAddressPoolRepo(pool)
-	ar := repo.NewAddressRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
 	// Создаём pool с маленьким CIDR-блоком — гарантируем что freelist
 	// не пуст для concurrency-теста.
@@ -596,9 +613,13 @@ func TestAddressPoolSplit_H3_FreelistAllocateConcurrentNoDup(t *testing.T) {
 		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
 	}
 	p.ModifiedAt = p.CreatedAt
-	_, err = r.Insert(ctx, p)
-	require.NoError(t, err)
-	require.NoError(t, r.PopulateFreelistForPool(ctx, p.ID))
+	require.NoError(t, splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.AddressPools().Insert(ctx, p)
+		return e
+	}))
+	require.NoError(t, splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.AddressPools().PopulateFreelistForPool(ctx, p.ID)
+	}))
 
 	// 5 concurrent allocate'ов в 5 разных Address.
 	const N = 5
@@ -621,7 +642,12 @@ func TestAddressPoolSplit_H3_FreelistAllocateConcurrentNoDup(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			ip, e := ar.AllocateIPFromFreelist(ctx, p.ID, addrIDs[i])
+			var ip string
+			e := splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+				var ierr error
+				ip, ierr = w.Addresses().AllocateIPFromFreelist(ctx, p.ID, addrIDs[i])
+				return ierr
+			})
 			require.NoError(t, e)
 			ipsMu.Lock()
 			ips[ip]++

@@ -14,12 +14,11 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
-// stubFolderClient maps folder_id -> cloud_id for the IPAM cascade step-3
-// (folder -> cloud -> cloud_pool_selector). Returns "" (no cloud) for unknown
-// folders, which makes the cascade skip the label-selector step.
+// stubFolderClient maps folder_id -> cloud_id for IPAM cascade step-3.
 type stubFolderClient struct {
 	clouds map[string]string
 }
@@ -29,15 +28,11 @@ func (s stubFolderClient) GetCloudID(_ context.Context, folderID string) (string
 	return s.clouds[folderID], nil
 }
 
-// TestIntegration_IPAM_Cascade_FiveSteps wires real pgxpool + real repos against
-// the testcontainers Postgres and a stub repo.FolderClient, then drives the 5-step
-// AddressPool resolve cascade end-to-end:
+// TestIntegration_IPAM_Cascade_FiveSteps wires real pgxpool + CQRS repo + a stub
+// FolderClient, then drives the 5-step AddressPool resolve cascade end-to-end.
 //
-//	step 1 address_override -> step 2 network_default -> step 3 cloud-label-selector
-//	-> step 4 zone_default -> step 5 global_default
-//
-// plus the inverse-containment edge (cloud selector has an extra label not in
-// any pool -> falls through to zone_default, NOT the special pool).
+// KAC-94 A.7 sub-PR 5/6: переписан полностью на CQRS Writer/Reader (раньше
+// часть setup'а шла через legacy *_repo.go).
 func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -50,23 +45,24 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	// Geography (Region/Zone) переехала в kacho-compute (эпик KAC-15): в схеме
-	// kacho_vpc больше нет таблиц regions/zones — zone_id хранится как обычная
-	// строка без FK; существование зоны валидируется на request-path вызовом
-	// compute.v1.ZoneService.Get (см. internal/clients/compute_client.go).
-	poolRepo := repo.NewAddressPoolRepo(pool)
-	bindRepo := repo.NewAddressPoolBindingRepo(pool)
-	cloudSelRepo := repo.NewCloudPoolSelectorRepo(pool)
-	netRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	addrRepo := repo.NewAddressRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
+
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
 	const zone = "ru-central1-a"
 
 	now := time.Now().UTC()
 	mkPool := func(name, zoneID string, isDefault bool, selector map[string]string, cidr string) *domain.AddressPool {
-		// KAC-71: cidr_blocks split — все тестовые pool'ы — v4-only (/24 v4 префиксы),
-		// поэтому кладём в V4CIDRBlocks.
 		p := &domain.AddressPool{
 			ID:             ids.NewID("apl"),
 			Name:           name,
@@ -78,129 +74,100 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 			CreatedAt:      now,
 			ModifiedAt:     now,
 		}
-		out, e := poolRepo.Insert(ctx, p)
-		require.NoError(t, e)
-		return out
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			_, e := w.AddressPools().Insert(ctx, p)
+			return e
+		}))
+		return p
 	}
 
-	// 5 pools, one per cascade level (all kind=EXTERNAL_PUBLIC).
-	globalPool := mkPool("global-default", "", true, nil, "198.18.0.0/24")                                         // step 5
-	zonePool := mkPool("zone-default", zone, true, nil, "198.18.1.0/24")                                           // step 4
-	selectorPool := mkPool("premium-selector", zone, false, map[string]string{"tier": "premium"}, "198.18.2.0/24") // step 3
-	networkBindingPool := mkPool("network-bound", zone, false, nil, "198.18.3.0/24")                               // step 2
-	overridePool := mkPool("address-override", zone, false, nil, "198.18.4.0/24")                                  // step 1
+	globalPool := mkPool("global-default", "", true, nil, "198.18.0.0/24")
+	zonePool := mkPool("zone-default", zone, true, nil, "198.18.1.0/24")
+	selectorPool := mkPool("premium-selector", zone, false, map[string]string{"tier": "premium"}, "198.18.2.0/24")
+	networkBindingPool := mkPool("network-bound", zone, false, nil, "198.18.3.0/24")
+	overridePool := mkPool("address-override", zone, false, nil, "198.18.4.0/24")
 
-	// AllocateExternalIP теперь использует address_pool_free_ips (миграция 0014).
-	// Pool'ы созданы напрямую через poolRepo.Insert (не через
-	// InternalAddressPoolService.Create, который сам зовёт PopulateFreelistForPool),
-	// поэтому материализуем freelist руками — иначе Allocate-ассерты ниже упали бы
-	// в FailedPrecondition "address pool exhausted".
 	for _, p := range []*domain.AddressPool{globalPool, zonePool, selectorPool, networkBindingPool, overridePool} {
-		require.NoError(t, poolRepo.PopulateFreelistForPool(ctx, p.ID))
+		pID := p.ID
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			return w.AddressPools().PopulateFreelistForPool(ctx, pID)
+		}))
 	}
 
-	// Network + subnet for the internal-address (step-2) path.
 	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", Name: domain.RcNameVPC("net-step2")}
-	_, err = netRepo.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 	sub := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-step2",
 		Name: domain.RcNameVPC("sub-step2"), NetworkID: net.ID, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
 	}
-	_, err = subnetRepo.Insert(ctx, sub)
-	require.NoError(t, err)
-	require.NoError(t, bindRepo.SetNetworkDefault(ctx, net.ID, networkBindingPool.ID))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, sub)
+		return e
+	}))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.AddressPoolBindings().SetNetworkDefault(ctx, net.ID, networkBindingPool.ID)
+	}))
 
 	folderClient := stubFolderClient{clouds: map[string]string{
 		"folder-step1": "cloud-step1",
-		"folder-step3": "cloud-step3", // has a matching selector
-		"folder-edge":  "cloud-edge",  // selector with an extra label not in any pool
-		// folder-step2 / folder-step4 / folder-step5 -> no cloud => step 3 skipped
+		"folder-step3": "cloud-step3",
+		"folder-edge":  "cloud-edge",
 	}}
-	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-step3", map[string]string{"tier": "premium"}, "admin@test"))
-	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.CloudPoolSelectors().Set(ctx, "cloud-step3", map[string]string{"tier": "premium"}, "admin@test")
+	}))
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.CloudPoolSelectors().Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test")
+	}))
 
-	// Wave 5 batch 36 (KAC-94): AddressPool — use-case-структура; cascade-resolve
-	// движок выделен в `*addresspool.ResolverService`. Wave 5 A.7 sub-PR 1/6
-	// (KAC-94): ResolverService теперь работает через `kacho.Repository`
-	// (CQRS — единая read-TX на весь cascade). Здесь собираем kachoRepo поверх
-	// того же master pool'а — read-методы AddressPool / Binding / CloudSelector
-	// возьмут данные из тех же таблиц, в которые legacy-репо выше через
-	// `poolRepo.Insert` / `bindRepo.SetNetworkDefault` / `cloudSelRepo.Set` уже
-	// записали fixtures.
-	kachoRepo := kachopg.New(pool, nil)
-	defer kachoRepo.Close()
-	apResolver := addresspool.NewResolverService(kachoRepo, addrRepo, subnetRepo, folderClient)
-	_ = poolRepo
-	_ = bindRepo
-	_ = cloudSelRepo
-	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
-	// A.7 sub-PR 2 (KAC-94): AllocateUseCase принимает CQRS-Repository — переиспользуем
-	// `kachoRepo` созданный выше для `ResolverService`.
-	addrSvc := addressapp.NewAllocateUseCase(kachoRepo, subnetRepo, apResolver)
+	// ResolverService + AllocateUseCase. Они принимают `kacho.Repository` напрямую.
+	// Legacy подсетный/адресный сервис-параметры (subnetRepo/addrRepo) — пока
+	// нужны для constructor'а; передаём legacy *Repo (они только-чтение через
+	// shim_kacho и инициируются от того же pool'а).
+	subnetRepo := repo.NewSubnetRepo(pool)
+	addrRepo := repo.NewAddressRepo(pool)
+	apResolver := addresspool.NewResolverService(r, addrRepo, subnetRepo, folderClient)
+	addrSvc := addressapp.NewAllocateUseCase(r, subnetRepo, apResolver)
 
-	// --- address fixtures ---
-
-	// step 1: external address with an explicit address-override binding.
-	a1 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step1", Name: domain.RcNameVPC("a-step1"),
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
+	mkAddr := func(folderID, name string, t domain.AddressType, v domain.IpVersion, ext *domain.ExternalIpv4Spec, intSpec *domain.InternalIpv4Spec) *domain.Address {
+		return &domain.Address{
+			ID: ids.NewID(ids.PrefixAddress), FolderID: folderID, Name: domain.RcNameVPC(name),
+			Type: t, IpVersion: v, ExternalIpv4: ext, InternalIpv4: intSpec,
+		}
 	}
-	_, err = addrRepo.Insert(ctx, a1)
-	require.NoError(t, err)
-	require.NoError(t, bindRepo.SetAddressOverride(ctx, a1.ID, overridePool.ID))
 
-	// step 2: internal address whose subnet's network has a network_default binding.
-	a2 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step2", Name: domain.RcNameVPC("a-step2"),
-		Type: domain.AddressTypeInternal, IpVersion: domain.IpVersionIPv4,
-		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: sub.ID},
+	insertAddr := func(a *domain.Address) {
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			_, e := w.Addresses().Insert(ctx, a)
+			return e
+		}))
 	}
-	_, err = addrRepo.Insert(ctx, a2)
-	require.NoError(t, err)
 
-	// step 3: external address whose folder->cloud has a selector matching selectorPool.
-	a3 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step3", Name: domain.RcNameVPC("a-step3"),
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
-	}
-	_, err = addrRepo.Insert(ctx, a3)
-	require.NoError(t, err)
+	a1 := mkAddr("folder-step1", "a-step1", domain.AddressTypeExternal, domain.IpVersionIPv4, &domain.ExternalIpv4Spec{ZoneID: zone}, nil)
+	insertAddr(a1)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		return w.AddressPoolBindings().SetAddressOverride(ctx, a1.ID, overridePool.ID)
+	}))
 
-	// step 4: external address with a zone but no override / binding / matching cloud selector.
-	a4 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step4", Name: domain.RcNameVPC("a-step4"),
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
-	}
-	_, err = addrRepo.Insert(ctx, a4)
-	require.NoError(t, err)
+	a2 := mkAddr("folder-step2", "a-step2", domain.AddressTypeInternal, domain.IpVersionIPv4, nil, &domain.InternalIpv4Spec{SubnetID: sub.ID})
+	insertAddr(a2)
 
-	// step 5: external address with NO zone -> only the global default applies.
-	a5 := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-step5", Name: domain.RcNameVPC("a-step5"),
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: ""},
-	}
-	_, err = addrRepo.Insert(ctx, a5)
-	require.NoError(t, err)
+	a3 := mkAddr("folder-step3", "a-step3", domain.AddressTypeExternal, domain.IpVersionIPv4, &domain.ExternalIpv4Spec{ZoneID: zone}, nil)
+	insertAddr(a3)
 
-	// edge: external address whose folder->cloud selector has an extra label
-	// ({tier:premium, customer:acme}) not present in selectorPool's
-	// selector_labels ({tier:premium}) -> inverse-containment fails ->
-	// cascade falls through to zone_default, NOT the special pool.
-	aEdge := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-edge", Name: domain.RcNameVPC("a-edge"),
-		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
-		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
-	}
-	_, err = addrRepo.Insert(ctx, aEdge)
-	require.NoError(t, err)
+	a4 := mkAddr("folder-step4", "a-step4", domain.AddressTypeExternal, domain.IpVersionIPv4, &domain.ExternalIpv4Spec{ZoneID: zone}, nil)
+	insertAddr(a4)
+
+	a5 := mkAddr("folder-step5", "a-step5", domain.AddressTypeExternal, domain.IpVersionIPv4, &domain.ExternalIpv4Spec{ZoneID: ""}, nil)
+	insertAddr(a5)
+
+	aEdge := mkAddr("folder-edge", "a-edge", domain.AddressTypeExternal, domain.IpVersionIPv4, &domain.ExternalIpv4Spec{ZoneID: zone}, nil)
+	insertAddr(aEdge)
 
 	// --- assertions: ResolvePoolForAddress picks the expected pool / MatchedVia ---
-
 	cases := []struct {
 		name       string
 		addressID  string
@@ -224,7 +191,6 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 		})
 	}
 
-	// --- and AllocateExternalIP actually allocates an IP from the resolved pool ---
 	for _, tc := range []struct {
 		name       string
 		addressID  string
@@ -242,7 +208,6 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 			require.NotNil(t, res)
 			assert.NotEmpty(t, res.IP, "an IP must be allocated")
 			assert.Equal(t, tc.wantPoolID, res.PoolID, "IP must come from the cascade-resolved pool")
-			// Idempotency: a second call returns the same IP, AlreadyAllocated=true.
 			res2, aerr2 := addrSvc.AllocateExternalIP(ctx, tc.addressID)
 			require.NoError(t, aerr2)
 			assert.Equal(t, res.IP, res2.IP)
