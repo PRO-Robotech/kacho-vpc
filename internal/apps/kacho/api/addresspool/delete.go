@@ -15,21 +15,30 @@ import (
 // external_ipv4.address_pool_id = id и непустым address). FK constraint
 // невозможен (адрес ссылается через JSONB, не через колонку) —
 // service-level guard обязателен.
+//
+// Wave 5 A.7 sub-PR 1/6: Get + CountAddressesByPool + Delete + outbox-emit идут
+// в одной writer-TX kacho.Repository.Writer(ctx).
 type DeleteAddressPoolUseCase struct {
-	pools AddressPoolRepo
+	repo Repo
 }
 
 // NewDeleteAddressPoolUseCase собирает use-case.
-func NewDeleteAddressPoolUseCase(pools AddressPoolRepo) *DeleteAddressPoolUseCase {
-	return &DeleteAddressPoolUseCase{pools: pools}
+func NewDeleteAddressPoolUseCase(r Repo) *DeleteAddressPoolUseCase {
+	return &DeleteAddressPoolUseCase{repo: r}
 }
 
 // Execute удаляет AddressPool. Verbatim семантика legacy-сервиса.
 func (u *DeleteAddressPoolUseCase) Execute(ctx context.Context, id string) error {
-	if _, err := u.pools.Get(ctx, id); err != nil {
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
 		return err
 	}
-	n, err := u.pools.CountAddressesByPool(ctx, id)
+	defer w.Abort()
+
+	if _, err := w.AddressPools().Get(ctx, id); err != nil {
+		return err
+	}
+	n, err := w.AddressPools().CountAddressesByPool(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -37,5 +46,11 @@ func (u *DeleteAddressPoolUseCase) Execute(ctx context.Context, id string) error
 		return status.Errorf(codes.FailedPrecondition,
 			"AddressPool %s is not empty (%d allocated addresses); release IPs first", id, n)
 	}
-	return u.pools.Delete(ctx, id)
+	if err := w.AddressPools().Delete(ctx, id); err != nil {
+		return err
+	}
+	if err := w.Outbox().Emit(ctx, "AddressPool", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return status.Errorf(codes.Internal, "outbox emit: %v", err)
+	}
+	return w.Commit()
 }

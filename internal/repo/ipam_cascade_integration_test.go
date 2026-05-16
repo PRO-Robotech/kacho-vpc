@@ -14,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // stubFolderClient maps folder_id -> cloud_id for the IPAM cascade step-3
@@ -120,9 +121,19 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	require.NoError(t, cloudSelRepo.Set(ctx, "cloud-edge", map[string]string{"tier": "premium", "customer": "acme"}, "admin@test"))
 
 	// Wave 5 batch 36 (KAC-94): AddressPool — use-case-структура; cascade-resolve
-	// движок выделен в `*addresspool.ResolverService`. Здесь нужен только
-	// resolver (Bind/Create/Update не вызываются), поэтому собираем напрямую.
-	apResolver := addresspool.NewResolverService(poolRepo, bindRepo, cloudSelRepo, addrRepo, subnetRepo, folderClient)
+	// движок выделен в `*addresspool.ResolverService`. Wave 5 A.7 sub-PR 1/6
+	// (KAC-94): ResolverService теперь работает через `kacho.Repository`
+	// (CQRS — единая read-TX на весь cascade). Здесь собираем kachoRepo поверх
+	// того же master pool'а — read-методы AddressPool / Binding / CloudSelector
+	// возьмут данные из тех же таблиц, в которые legacy-репо выше через
+	// `poolRepo.Insert` / `bindRepo.SetNetworkDefault` / `cloudSelRepo.Set` уже
+	// записали fixtures.
+	kachoRepo := kachopg.New(pool, nil)
+	defer kachoRepo.Close()
+	apResolver := addresspool.NewResolverService(kachoRepo, addrRepo, subnetRepo, folderClient)
+	_ = poolRepo
+	_ = bindRepo
+	_ = cloudSelRepo
 	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
 	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apResolver)
 

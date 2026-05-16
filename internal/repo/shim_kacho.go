@@ -230,3 +230,50 @@ func WrapGatewayErr(err error, id string) error {
 func GatewayPayload(g *kachorepo.GatewayRecord) map[string]any {
 	return gatewayPayload(g)
 }
+
+// ---- AddressPool shims (Wave 5 replicate, KAC-94 A.7 sub-PR 1/6: AddressPool → CQRS-репо) ----
+
+// AddressPoolCols — exported address_pools column list; used by kacho/pg/address_pool.go.
+const AddressPoolCols = addressPoolCols
+
+// ScanAddressPool — exported alias of scanAddressPool; used by
+// kacho/pg/address_pool.go. Возвращает *kachorepo.AddressPoolRecord
+// (после миграции AddressPool в repo-leaf — §4 D.1 sub-PR 1/6).
+func ScanAddressPool(row Scannable) (*kachorepo.AddressPoolRecord, error) {
+	dom, err := scanAddressPool(row)
+	if err != nil {
+		return nil, err
+	}
+	return &kachorepo.AddressPoolRecord{AddressPool: *dom}, nil
+}
+
+// AddressPoolDomainPayload — domain-snapshot для outbox-event.
+func AddressPoolDomainPayload(p *domain.AddressPool) map[string]any {
+	return domainToMap(p)
+}
+
+// AddressPoolPayload — outbox snapshot для Record-payload (parity с
+// NetworkPayload / AddressPayload). Делегирует на domain-payload через embed.
+func AddressPoolPayload(rec *kachorepo.AddressPoolRecord) map[string]any {
+	if rec == nil {
+		return nil
+	}
+	return domainToMap(&rec.AddressPool)
+}
+
+// ---- AddressPoolBinding / CloudPoolSelector — shims не нужны: SQL inline в pg-impl
+// (parity с гавайки simple-table-state). Узкие операции (Set/Unset network_default,
+// SetAddressOverride, Set CloudPoolSelector) — переписаны прямо в kacho/pg/.
+// ----
+//
+// JoinAnd — exported alias of joinAnd; used by kacho/pg для composable
+// WHERE-conds. Parity с EncodePageToken / WrapPgErr.
+func JoinAnd(conds []string) string {
+	return joinAnd(conds)
+}
+
+// NormalizeMap — exported alias for normalizeMap; used by kacho/pg/cloud_pool_selector.go.
+// nil → empty map (deterministic JSONB).
+func NormalizeMap(m map[string]string) map[string]string {
+	return normalizeMap(m)
+}

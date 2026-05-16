@@ -60,6 +60,16 @@ type RepositoryReader interface {
 	Subnets() SubnetReaderIface
 	// Gateways — Wave 5 replicate (KAC-94): Gateway read-iface на текущей read-TX.
 	Gateways() GatewayReaderIface
+	// AddressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-only
+	// global infra resource. Read-методы для cascade-resolve / Check /
+	// GetUtilization / ListAddresses.
+	AddressPools() AddressPoolReaderIface
+	// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-only
+	// explicit bindings (network_default / address_override). Read для cascade.
+	AddressPoolBindings() AddressPoolBindingReaderIface
+	// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-
+	// controlled routing-labels per Cloud. Read для cascade Step 3.
+	CloudPoolSelectors() CloudPoolSelectorReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -89,6 +99,16 @@ type RepositoryWriter interface {
 	Subnets() SubnetWriterIface
 	// Gateways — Wave 5 replicate (KAC-94): Gateway write-iface на текущей write-TX.
 	Gateways() GatewayWriterIface
+	// AddressPools — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-only
+	// write-iface (CRUD + PopulateFreelistForPool). Atomic DML+outbox через
+	// одну writer-TX.
+	AddressPools() AddressPoolWriterIface
+	// AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-only
+	// explicit bindings write (Set/Unset Network default / Address override).
+	AddressPoolBindings() AddressPoolBindingWriterIface
+	// CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6): admin-
+	// controlled routing-labels per Cloud (Set/Unset).
+	CloudPoolSelectors() CloudPoolSelectorWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// Commit финализирует tx. После Commit вызов Abort — no-op.

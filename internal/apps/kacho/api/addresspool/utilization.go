@@ -32,22 +32,30 @@ type CIDRUsage struct {
 // ведёт свою бухгалтерию через ipv6_pool_cursors / ipv6_allocated_ips —
 // отдельный observability path). Чтобы admin-UI видел v6-CIDR'ы в списке,
 // добавляем их с Total=Used=0 (placeholder, реальная v6-стата — TBD).
+//
+// Wave 5 A.7 sub-PR 1/6: Reader-TX.
 type GetPoolUtilizationUseCase struct {
-	pools AddressPoolRepo
+	repo Repo
 }
 
 // NewGetPoolUtilizationUseCase собирает use-case.
-func NewGetPoolUtilizationUseCase(pools AddressPoolRepo) *GetPoolUtilizationUseCase {
-	return &GetPoolUtilizationUseCase{pools: pools}
+func NewGetPoolUtilizationUseCase(r Repo) *GetPoolUtilizationUseCase {
+	return &GetPoolUtilizationUseCase{repo: r}
 }
 
 // Execute считает utilization для pool'а.
 func (u *GetPoolUtilizationUseCase) Execute(ctx context.Context, poolID string) (*PoolUtilization, error) {
-	pool, err := u.pools.Get(ctx, poolID)
+	rd, err := u.repo.Reader(ctx)
 	if err != nil {
 		return nil, err
 	}
-	perCIDR, err := u.pools.CountAddressesByPoolPerCIDR(ctx, poolID)
+	defer func() { _ = rd.Close() }()
+
+	pool, err := rd.AddressPools().Get(ctx, poolID)
+	if err != nil {
+		return nil, err
+	}
+	perCIDR, err := rd.AddressPools().CountAddressesByPoolPerCIDR(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -73,13 +81,15 @@ func (u *GetPoolUtilizationUseCase) Execute(ctx context.Context, poolID string) 
 }
 
 // ListPoolAddressesUseCase — кросс-folder список Address с IP из pool.
+//
+// Wave 5 A.7 sub-PR 1/6: Reader-TX.
 type ListPoolAddressesUseCase struct {
-	pools AddressPoolRepo
+	repo Repo
 }
 
 // NewListPoolAddressesUseCase собирает use-case.
-func NewListPoolAddressesUseCase(pools AddressPoolRepo) *ListPoolAddressesUseCase {
-	return &ListPoolAddressesUseCase{pools: pools}
+func NewListPoolAddressesUseCase(r Repo) *ListPoolAddressesUseCase {
+	return &ListPoolAddressesUseCase{repo: r}
 }
 
 // Execute возвращает страницу Address-ресурсов + next-page token.
@@ -87,5 +97,11 @@ func (u *ListPoolAddressesUseCase) Execute(ctx context.Context, poolID, folderFi
 	if poolID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "pool_id required")
 	}
-	return u.pools.ListAddressesByPool(ctx, poolID, folderFilter, p)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = rd.Close() }()
+
+	return rd.AddressPools().ListAddressesByPool(ctx, poolID, folderFilter, p)
 }

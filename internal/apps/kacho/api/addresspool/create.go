@@ -12,6 +12,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // CreatePoolReq — параметры создания пула.
@@ -35,19 +36,24 @@ type CreatePoolReq struct {
 
 // CreateAddressPoolUseCase — admin-only Create. Sync flow (нет Operation —
 // AP не выставляется на external endpoint, никакого async-worker'а): валидация
-// → zone-check (опц.) → Insert → materialize freelist (v4) / init cursor (v6).
+// → zone-check (опц.) → Writer-TX: Insert + PopulateFreelistForPool +
+// InitIPv6PoolCursor (если v6 непустой) + outbox-emit `AddressPool.CREATED` →
+// Commit.
 //
-// Семантика идентична legacy `*AddressPoolService.Create`.
+// Wave 5 A.7 sub-PR 1/6 (skill evgeniy §6 G.5): атомарность DML + freelist
+// materialization + outbox-emit гарантируется одной pgx.Tx writer'а
+// `kacho.Repository.Writer(ctx)`. Прежняя схема (3 отдельных own-Begin/Commit
+// в `*AddressPoolRepo.Insert` → `*AddressPoolRepo.PopulateFreelistForPool` →
+// `*AddressRepo.InitIPv6PoolCursor`) могла оставлять orphan-state при crash
+// между шагами; теперь либо всё, либо ничего.
 type CreateAddressPoolUseCase struct {
-	pools    AddressPoolRepo
-	addrRepo AddressRepo
-	zoneReg  ZoneRegistry // nil → zone-check skip
+	repo    Repo
+	zoneReg ZoneRegistry // nil → zone-check skip
 }
 
-// NewCreateAddressPoolUseCase собирает use-case. addrRepo нужен для
-// InitIPv6PoolCursor (sparse v6 allocator, KAC-58).
-func NewCreateAddressPoolUseCase(pools AddressPoolRepo, addrRepo AddressRepo, zoneReg ZoneRegistry) *CreateAddressPoolUseCase {
-	return &CreateAddressPoolUseCase{pools: pools, addrRepo: addrRepo, zoneReg: zoneReg}
+// NewCreateAddressPoolUseCase собирает use-case.
+func NewCreateAddressPoolUseCase(r Repo, zoneReg ZoneRegistry) *CreateAddressPoolUseCase {
+	return &CreateAddressPoolUseCase{repo: r, zoneReg: zoneReg}
 }
 
 // Execute создаёт AddressPool. Verbatim семантика legacy-сервиса.
@@ -55,24 +61,19 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 	if req.Kind == domain.AddressPoolKindUnspecified {
 		return nil, status.Error(codes.InvalidArgument, "kind must be specified")
 	}
-	// REQ-IPL-CR-04 / B5: хотя бы одно из v4_cidr_blocks / v6_cidr_blocks
-	// непусто. Pool без CIDR — бессмысленен (нельзя ни v4-, ни v6-аллокацию).
+	// REQ-IPL-CR-04 / B5: хотя бы одно из v4_cidr_blocks / v6_cidr_blocks непусто.
 	if len(req.V4CIDRBlocks) == 0 && len(req.V6CIDRBlocks) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"v4_cidr_blocks and v6_cidr_blocks must not be both empty")
 	}
-	// REQ-IPL-CR-05 / B6: family-strict валидация каждого слота. IPv6-prefix в
-	// V4CIDRBlocks или IPv4 в V6CIDRBlocks → InvalidArgument с verbatim текстом
-	// (см. acceptance §0 «CIDR family detection в API-слое»).
+	// REQ-IPL-CR-05 / B6: family-strict валидация каждого слота.
 	if err := validateAddressPoolCIDRs("v4_cidr_blocks", req.V4CIDRBlocks, familyV4Strict); err != nil {
 		return nil, err
 	}
 	if err := validateAddressPoolCIDRs("v6_cidr_blocks", req.V6CIDRBlocks, familyV6Strict); err != nil {
 		return nil, err
 	}
-	// zone_id existence — Geography (Region/Zone) — домен kacho-compute (эпик KAC-15):
-	// FK address_pools.zone_id → zones убрана; существование зоны проверяем вызовом
-	// compute.v1.ZoneService.Get через ZoneRegistry. "" = глобальный пул (zone не нужна).
+	// zone_id existence — Geography (Region/Zone) — домен kacho-compute (KAC-15).
 	if req.ZoneID != "" && u.zoneReg != nil {
 		if _, err := u.zoneReg.Get(ctx, req.ZoneID); err != nil {
 			if errors.Is(err, ErrNotFound) {
@@ -83,7 +84,7 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 	}
 	now := time.Now().UTC()
 	p := &domain.AddressPool{
-		ID:               ids.NewID("apl"), // 3-char prefix per YC convention
+		ID:               ids.NewID("apl"),
 		Name:             req.Name,
 		Description:      req.Description,
 		Labels:           req.Labels,
@@ -97,25 +98,34 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 		CreatedAt:        now,
 		ModifiedAt:       now,
 	}
-	created, err := u.pools.Insert(ctx, p)
+
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Материализуем per-IP freelist только для V4CIDRBlocks (миграция 0015):
-	// PG-native AllocateIPFromFreelist полагается на эту таблицу. v6-блоки
-	// идут через sparse counter в ipv6_pool_cursors (см. ниже).
-	// PopulateFreelistForPool сам читает только v4_cidr_blocks (KAC-71) —
-	// для v4-only / dual-stack pool заполнит ровно v4-CIDR'ы; для v6-only
-	// pool это no-op.
-	if err := u.pools.PopulateFreelistForPool(ctx, created.ID); err != nil {
+	defer w.Abort()
+
+	created, err := w.AddressPools().Insert(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	// Материализуем per-IP freelist только для V4CIDRBlocks (миграция 0014).
+	if err := w.AddressPools().PopulateFreelistForPool(ctx, created.ID); err != nil {
 		return nil, status.Errorf(codes.Internal, "populate freelist: %v", err)
 	}
-	// KAC-58: pool с IPv6 CIDR использует sparse counter-based allocator
-	// (миграция 0020). Initialise next_offset=1 если pool имеет v6-блоки.
+	// KAC-58: pool с IPv6 CIDR использует sparse counter-based allocator.
 	if len(created.V6CIDRBlocks) > 0 {
-		if err := u.addrRepo.InitIPv6PoolCursor(ctx, created.ID); err != nil {
+		if err := w.Addresses().InitIPv6PoolCursor(ctx, created.ID); err != nil {
 			return nil, status.Errorf(codes.Internal, "init ipv6 cursor: %v", err)
 		}
 	}
-	return created, nil
+	if err := w.Outbox().Emit(ctx, "AddressPool", created.ID, "CREATED",
+		repo.AddressPoolDomainPayload(&created.AddressPool)); err != nil {
+		return nil, status.Errorf(codes.Internal, "outbox emit: %v", err)
+	}
+	if err := w.Commit(); err != nil {
+		return nil, err
+	}
+	out := created.AddressPool
+	return &out, nil
 }
