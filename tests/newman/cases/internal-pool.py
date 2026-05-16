@@ -35,7 +35,10 @@ CASES.append(Case(
                           "pm.test('id has apl prefix', () => pm.expect(j.id).to.match(/^apl/));",
                           "pm.test('name matches', () => pm.expect(j.name).to.eql('ipl-crud-' + pm.environment.get('runId')));",
                           "pm.test('kind echoed', () => pm.expect(j.kind).to.eql('EXTERNAL_PUBLIC'));",
-                          "pm.test('isDefault false', () => pm.expect(j.isDefault).to.eql(false));",
+                          # KAC-50: internal mux api-gateway эмитит EmitUnpopulated=false →
+                          # bool false опускается из JSON. Поэтому `isDefault` приходит как
+                          # undefined, что эквивалентно отсутствию default-флага.
+                          "pm.test('isDefault false', () => pm.expect(j.isDefault || false).to.eql(false));",
                           "pm.test('v4CidrBlocks echoed', () => pm.expect(j.v4CidrBlocks).to.eql(['203.0.113.0/24']));",
                           "pm.test('v6CidrBlocks empty', () => pm.expect(j.v6CidrBlocks || []).to.eql([]));",
                           *save_from_response("j.id", "iplId")]),
@@ -331,18 +334,22 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="IPL-EXPLAIN-UNRESOLVABLE",
-    title="ExplainResolution?networkId=<garbage> (нет global default) → FailedPrecondition (FINDING-008 fixed)",
+    title="ExplainResolution?networkId=<garbage> (нет global default) → 200 matched_via=none (REQ-RESOLVE-04/D4)",
     classes=["NEG", "CONF"], priority="P2",
     steps=[
-        # FINDING-008 fixed: ErrPoolNotResolved теперь классифицируется в internalMapErr →
-        # FailedPrecondition (9), а не INTERNAL (13). (Если сервис делает network-exists-check
-        # раньше cascade — возможен NotFound (5); допускаем оба, но не 13.)
+        # REQ-RESOLVE-04 / D4 (KAC-71): ErrPoolNotResolved в ExplainResolution
+        # трактуется как «нет подходящего pool» — это нормальный ответ для
+        # admin diagnostic, а НЕ ошибка. Handler.ExplainResolution возвращает
+        # HTTP 200 + `matched_via="none"` с пустым `selected_pool`. (В отличие
+        # от AllocateExternalIPv4/v6, которые при той же ошибке возвращают
+        # FailedPrecondition — это intentional split, см. handler.go::ExplainResolution.)
         Step(name="explain-garbage", method="GET",
              path=POOLS + ":explainResolution?networkId=enpnonexistent999999",
              test_script=[
-                 "pm.test('non-2xx', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));",
+                 *assert_status(200),
                  "const j = pm.response.json();",
-                 "pm.test('grpc error code in {9, 5} (не 13 INTERNAL)', () => pm.expect(j.code).to.be.oneOf([9, 5]));",
+                 "pm.test('matched_via=none', () => pm.expect(j.matchedVia).to.eql('none'));",
+                 "pm.test('selected_pool absent', () => pm.expect(j.selectedPool).to.be.oneOf([undefined, null]));",
              ]),
     ],
 ))

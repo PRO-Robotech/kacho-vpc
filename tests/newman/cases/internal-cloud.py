@@ -9,6 +9,11 @@ kacho-resource-manager). RPC проброшены через api-gateway cluster
 
 Использует existingCloudId из env. Тест восстанавливает исходное состояние
 selector'а (unset) в конце — selector seeded-стенда по умолчанию present=false.
+
+NB (KAC-50): internal mux api-gateway маршалит ответы с
+`EmitUnpopulated=false` — bool false / нулевые значения опускаются из JSON.
+Поэтому `present=false` приходит как `undefined`, а не как `false`. Чтобы тест
+не зависел от marshaler-режима, проверяем «не true», а не «строго false».
 """
 
 CASES = []
@@ -27,7 +32,7 @@ CASES.append(Case(
         Step(name="get-empty", method="GET", path=SEL,
              test_script=[*assert_status(200),
                           "const j = pm.response.json();",
-                          "pm.test('present false', () => pm.expect(j.present).to.eql(false));",
+                          "pm.test('present false', () => pm.expect(j.present || false).to.eql(false));",
                           "pm.test('selector empty/absent', () => pm.expect(Object.keys(j.selector || {}).length).to.eql(0));"]),
         Step(name="set", method="POST", path=SEL,
              body={"selector": {"tier": "premium", "region": "ru"}, "setBy": "newman-{{runId}}"},
@@ -55,7 +60,7 @@ CASES.append(Case(
                           "pm.test('unset returns obj', () => pm.expect(pm.response.json()).to.be.an('object'));"]),
         Step(name="get-after-unset", method="GET", path=SEL,
              test_script=[*assert_status(200),
-                          "pm.test('present false again', () => pm.expect(pm.response.json().present).to.eql(false));"]),
+                          "pm.test('present false again', () => pm.expect(pm.response.json().present || false).to.eql(false));"]),
         # Idempotent unset on absent → no-op.
         Step(name="unset-again", method="DELETE", path=SEL,
              test_script=["pm.test('idempotent unset', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
@@ -73,7 +78,7 @@ CASES.append(Case(
         # Get не делает folder/cloud-existence check — просто читает row (или его нет).
         Step(name="get-unknown", method="GET", path="/vpc/v1/clouds/b1gnonexistent999999/poolSelector",
              test_script=[*assert_status(200),
-                          "pm.test('present false for unknown cloud', () => pm.expect(pm.response.json().present).to.eql(false));"]),
+                          "pm.test('present false for unknown cloud', () => pm.expect(pm.response.json().present || false).to.eql(false));"]),
     ],
 ))
 
