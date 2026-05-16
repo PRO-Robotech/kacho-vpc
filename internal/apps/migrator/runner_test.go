@@ -1,7 +1,8 @@
 // internal/apps/migrator/runner_test.go — KAC-96.
 //
-// Unit-тесты на чистую логику Runner / Dialect / Config — без обращения к БД.
+// Unit-тесты на чистую логику Runner / Config — без обращения к БД.
 // Реальный apply покрыт integration-suite'ом в `internal/repo/...`.
+// Тесты на Dialect-фабрику и spec'ы — в dialect_test.go (KAC-94 K.3).
 package migrator
 
 import (
@@ -10,41 +11,22 @@ import (
 	"testing/fstest"
 )
 
-func TestResolveDialect_Builtin(t *testing.T) {
-	for _, name := range []string{"postgres", "cockroach"} {
-		d, err := ResolveDialect(name)
-		if err != nil {
-			t.Errorf("ResolveDialect(%q) failed: %v", name, err)
-			continue
-		}
-		if d.Name != name {
-			t.Errorf("expected Name=%q, got %q", name, d.Name)
-		}
-		if d.SQLDriver == "" {
-			t.Errorf("dialect %q has empty SQLDriver", name)
-		}
-	}
-}
-
-func TestResolveDialect_Unknown(t *testing.T) {
-	_, err := ResolveDialect("nosuchdb")
-	if err == nil || !strings.Contains(err.Error(), "unknown dialect") {
-		t.Fatalf("expected 'unknown dialect' error, got %v", err)
-	}
-}
-
 func TestConfigValidate(t *testing.T) {
-	fs := fstest.MapFS{}
+	fsys := fstest.MapFS{}
+	pg, err := NewDialect("postgres")
+	if err != nil {
+		t.Fatalf("NewDialect(postgres) failed: %v", err)
+	}
 	cases := []struct {
 		name    string
 		cfg     Config
 		wantErr string
 	}{
-		{name: "missing dialect", cfg: Config{DSN: "x", FS: fs, MigrationsDir: "."}, wantErr: "dialect"},
-		{name: "missing dsn", cfg: Config{Dialect: DialectPostgres, FS: fs, MigrationsDir: "."}, wantErr: "dsn"},
-		{name: "missing fs", cfg: Config{Dialect: DialectPostgres, DSN: "x", MigrationsDir: "."}, wantErr: "migrations FS"},
-		{name: "missing dir", cfg: Config{Dialect: DialectPostgres, DSN: "x", FS: fs}, wantErr: "migrations dir"},
-		{name: "ok", cfg: Config{Dialect: DialectPostgres, DSN: "x", FS: fs, MigrationsDir: "."}},
+		{name: "missing dialect", cfg: Config{DSN: "x", FS: fsys, MigrationsDir: "."}, wantErr: "dialect"},
+		{name: "missing dsn", cfg: Config{Dialect: pg, FS: fsys, MigrationsDir: "."}, wantErr: "dsn"},
+		{name: "missing fs", cfg: Config{Dialect: pg, DSN: "x", MigrationsDir: "."}, wantErr: "migrations FS"},
+		{name: "missing dir", cfg: Config{Dialect: pg, DSN: "x", FS: fsys}, wantErr: "migrations dir"},
+		{name: "ok", cfg: Config{Dialect: pg, DSN: "x", FS: fsys, MigrationsDir: "."}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,8 +87,12 @@ func TestParseTargetVersion(t *testing.T) {
 }
 
 func TestRunner_CreateRejectsEmptyNameOrDir(t *testing.T) {
+	pg, err := NewDialect("postgres")
+	if err != nil {
+		t.Fatalf("NewDialect(postgres) failed: %v", err)
+	}
 	r, err := New(Config{
-		Dialect:       DialectPostgres,
+		Dialect:       pg,
 		DSN:           "x",
 		FS:            fstest.MapFS{},
 		MigrationsDir: ".",
@@ -119,17 +105,5 @@ func TestRunner_CreateRejectsEmptyNameOrDir(t *testing.T) {
 	}
 	if err := r.Create("/tmp", ""); err == nil {
 		t.Fatal("expected error for empty name")
-	}
-}
-
-func TestRegisterDialect(t *testing.T) {
-	custom := Dialect{Name: "test-custom", GooseDialect: "postgres", SQLDriver: "pgx"}
-	RegisterDialect(custom)
-	d, err := ResolveDialect("test-custom")
-	if err != nil {
-		t.Fatalf("ResolveDialect failed: %v", err)
-	}
-	if d.GooseDialect != "postgres" {
-		t.Fatalf("expected GooseDialect=postgres, got %q", d.GooseDialect)
 	}
 }
