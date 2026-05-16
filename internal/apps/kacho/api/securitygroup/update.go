@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateInput — параметры для UpdateSecurityGroupUseCase.Execute. Несёт
@@ -33,15 +34,16 @@ type UpdateInput struct {
 // создание Operation + async update в worker'е.
 //
 // Skill evgeniy §2 B.1: распилили SecurityGroupService.Update на отдельный
-// use-case рядом с handler'ом.
+// use-case рядом с handler'ом. Wave 5 replicate (KAC-94 §6 G.5): Get + Update +
+// outbox-emit в одной writer-TX (G.2 — writer видит свои writes для Get).
 type UpdateSecurityGroupUseCase struct {
-	repo    SecurityGroupRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateSecurityGroupUseCase создаёт UpdateSecurityGroupUseCase.
-func NewUpdateSecurityGroupUseCase(repo SecurityGroupRepo, opsRepo operations.Repo) *UpdateSecurityGroupUseCase {
-	return &UpdateSecurityGroupUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateSecurityGroupUseCase(r Repo, opsRepo operations.Repo) *UpdateSecurityGroupUseCase {
+	return &UpdateSecurityGroupUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-проверки и запуск Update в worker'е.
@@ -76,14 +78,25 @@ func (u *UpdateSecurityGroupUseCase) Execute(ctx context.Context, in UpdateInput
 }
 
 func (u *UpdateSecurityGroupUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
-	rec, err := u.repo.Get(ctx, in.SecurityGroupID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+	rec, err := w.SecurityGroups().Get(ctx, in.SecurityGroupID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 	applySGMask(&rec.SecurityGroup, in)
-	updated, err := u.repo.Update(ctx, &rec.SecurityGroup)
+	updated, err := w.SecurityGroups().Update(ctx, &rec.SecurityGroup)
 	if err != nil {
 		return nil, mapRepoErr(err)
+	}
+	if oerr := w.Outbox().Emit(ctx, "SecurityGroup", updated.ID, "UPDATED", securityGroupPayloadMap(updated)); oerr != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+	}
+	if cerr := w.Commit(); cerr != nil {
+		return nil, mapRepoErr(cerr)
 	}
 	return marshalSecurityGroupRecord(updated)
 }

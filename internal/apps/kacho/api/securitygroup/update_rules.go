@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateRulesInput — split-endpoint: атомарно удалить deletion_rule_ids и
@@ -36,13 +37,13 @@ type UpdateRulesInput struct {
 // (SG-специфика: split-endpoint требует собственный input-тип, не масштабируется
 // через общий Update).
 type UpdateRulesUseCase struct {
-	repo    SecurityGroupRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateRulesUseCase создаёт UpdateRulesUseCase.
-func NewUpdateRulesUseCase(repo SecurityGroupRepo, opsRepo operations.Repo) *UpdateRulesUseCase {
-	return &UpdateRulesUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateRulesUseCase(r Repo, opsRepo operations.Repo) *UpdateRulesUseCase {
+	return &UpdateRulesUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация правил + Operation + async repo.UpdateRules.
@@ -73,9 +74,20 @@ func (u *UpdateRulesUseCase) Execute(ctx context.Context, in UpdateRulesInput) (
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
 		add := assignRuleIDs(in.AdditionRuleSpecs)
-		updated, err := u.repo.UpdateRules(ctx, in.SecurityGroupID, in.DeletionRuleIDs, add)
-		if err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+		updated, uerr := w.SecurityGroups().UpdateRules(ctx, in.SecurityGroupID, in.DeletionRuleIDs, add)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", updated.ID, "UPDATED", securityGroupPayloadMap(updated)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			return nil, mapRepoErr(cerr)
 		}
 		return marshalSecurityGroupRecord(updated)
 	})

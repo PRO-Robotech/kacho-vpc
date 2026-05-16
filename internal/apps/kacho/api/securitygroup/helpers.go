@@ -146,6 +146,15 @@ func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule 
 	return out
 }
 
+// securityGroupPayloadMap — snapshot SecurityGroup для outbox payload. Wave 5
+// replicate (KAC-94, skill evgeniy §6 G.5): use-case Create/Update/Delete/Move
+// формирует payload в той же writer-TX, что и DML, через `w.Outbox().Emit(...)`.
+// Делегирует exported shim `repo.SecurityGroupPayload`, чтобы держать
+// json.Marshal-схему единой со legacy `*repo.SecurityGroupRepo`-консьюмерами.
+func securityGroupPayloadMap(sg *kacho.SecurityGroupRecord) map[string]any {
+	return repo.SecurityGroupPayload(sg)
+}
+
 // marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/
 // Update/UpdateRules/UpdateRule/Move для запихивания результата в Operation.response.

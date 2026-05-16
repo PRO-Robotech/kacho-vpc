@@ -13,6 +13,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // UpdateRuleInput — параметры UpdateRule: обновить description/labels единичного
@@ -36,13 +37,13 @@ type UpdateRuleInput struct {
 // Skill evgeniy §2 B.1: SG-специфика — отдельный use-case рядом с handler'ом
 // (response-type расходится с обычным Update, и input-тип тоже свой).
 type UpdateRuleUseCase struct {
-	repo    SecurityGroupRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewUpdateRuleUseCase создаёт UpdateRuleUseCase.
-func NewUpdateRuleUseCase(repo SecurityGroupRepo, opsRepo operations.Repo) *UpdateRuleUseCase {
-	return &UpdateRuleUseCase{repo: repo, opsRepo: opsRepo}
+func NewUpdateRuleUseCase(r Repo, opsRepo operations.Repo) *UpdateRuleUseCase {
+	return &UpdateRuleUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация id и domain self-validation
@@ -70,9 +71,15 @@ func (u *UpdateRuleUseCase) Execute(ctx context.Context, in UpdateRuleInput) (*o
 	if err := domain.ValidateLabels(domain.LabelsFromMap(in.Labels)); err != nil {
 		return nil, err
 	}
-	if _, err := u.repo.Get(ctx, in.SecurityGroupID); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	if _, gerr := rd.SecurityGroups().Get(ctx, in.SecurityGroupID); gerr != nil {
+		_ = rd.Close()
+		return nil, mapRepoErr(gerr)
+	}
+	_ = rd.Close()
 
 	op, err := operations.New(
 		ids.PrefixOperationVPC,
@@ -90,9 +97,20 @@ func (u *UpdateRuleUseCase) Execute(ctx context.Context, in UpdateRuleInput) (*o
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		updated, err := u.repo.UpdateRule(ctx, in.SecurityGroupID, in.RuleID, in.Description, in.Labels, in.UpdateMask)
-		if err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+		updated, uerr := w.SecurityGroups().UpdateRule(ctx, in.SecurityGroupID, in.RuleID, in.Description, in.Labels, in.UpdateMask)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", updated.ID, "UPDATED", securityGroupPayloadMap(updated)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			return nil, mapRepoErr(cerr)
 		}
 		// Response — parent SecurityGroup (verbatim YC CLI 1.x compat).
 		// CLI hardcodes expectation на SecurityGroup, не SecurityGroupRule.

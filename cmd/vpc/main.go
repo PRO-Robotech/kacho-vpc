@@ -444,16 +444,22 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 
 	// Wave 3 (skill evgeniy §2): SecurityGroup — use-case-структура. Split-endpoint
 	// Update / UpdateRules / UpdateRule (OCC через xmin в repo).
+	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): use-case'ы SG переехали
+	// на CQRS-Repository (`kachoRepo`). Все DML + outbox-emit идут в одной
+	// writer-TX (G.5). Legacy `sgRepo` остаётся в композиции — он передаётся
+	// в Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
+	// Network.Delete (там CQRS-SG-writer не доступен из Network reader-TX
+	// после Close).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(sgRepo, networkRepo, folderClient, opsRepo),
-		sgapp.NewUpdateSecurityGroupUseCase(sgRepo, opsRepo),
-		sgapp.NewUpdateRulesUseCase(sgRepo, opsRepo),
-		sgapp.NewUpdateRuleUseCase(sgRepo, opsRepo),
-		sgapp.NewDeleteSecurityGroupUseCase(sgRepo, opsRepo),
-		sgapp.NewMoveSecurityGroupUseCase(sgRepo, folderClient, opsRepo),
-		sgapp.NewGetSecurityGroupUseCase(sgRepo),
-		sgapp.NewListSecurityGroupsUseCase(sgRepo),
-		sgapp.NewListOperationsUseCase(sgRepo, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkRepo, folderClient, opsRepo),
+		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
+		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
+		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
+		sgapp.NewDeleteSecurityGroupUseCase(kachoRepo, opsRepo),
+		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, folderClient, opsRepo),
+		sgapp.NewGetSecurityGroupUseCase(kachoRepo),
+		sgapp.NewListSecurityGroupsUseCase(kachoRepo),
+		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
 	)
 
 	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура.
