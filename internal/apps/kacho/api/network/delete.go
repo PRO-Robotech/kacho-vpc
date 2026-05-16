@@ -13,13 +13,17 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // DeleteNetworkUseCase — sync FAILED_PRECONDITION если в Network есть subnets /
 // route tables / non-default SG. Async-часть (worker): удалить default SG (если
 // есть), потом сам Network. FK RESTRICT — атомарный backstop.
+//
+// Wave 5 pilot (KAC-94): Network.Delete + outbox-emit DELETED в одной CQRS-TX.
+// Default-SG cleanup — legacy (SG-repo не CQRS pilot).
 type DeleteNetworkUseCase struct {
-	repo           NetworkRepo
+	repo           Repo
 	subnetReader   SubnetReader      // may be nil → skip child class
 	routeTableRead RouteTableReader  // may be nil
 	sgRepo         SecurityGroupRepo // may be nil → skip default-SG cleanup
@@ -29,9 +33,9 @@ type DeleteNetworkUseCase struct {
 // NewDeleteNetworkUseCase создаёт DeleteNetworkUseCase. Все child-reader'ы
 // необязательны: nil → пропускаем соответствующий child-класс (для unit-тестов
 // со scoped wiring).
-func NewDeleteNetworkUseCase(repo NetworkRepo, subnetReader SubnetReader, routeTableRead RouteTableReader, sgRepo SecurityGroupRepo, opsRepo operations.Repo) *DeleteNetworkUseCase {
+func NewDeleteNetworkUseCase(r Repo, subnetReader SubnetReader, routeTableRead RouteTableReader, sgRepo SecurityGroupRepo, opsRepo operations.Repo) *DeleteNetworkUseCase {
 	return &DeleteNetworkUseCase{
-		repo:           repo,
+		repo:           r,
 		subnetReader:   subnetReader,
 		routeTableRead: routeTableRead,
 		sgRepo:         sgRepo,
@@ -64,21 +68,48 @@ func (u *DeleteNetworkUseCase) Execute(ctx context.Context, id string) (*operati
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		// Перед удалением Network — удалить связанный default SG (FK RESTRICT).
-		// Не-default SG — preserve, FK не даст удалить Network ⇒ FAILED_PRECONDITION.
-		if u.sgRepo != nil {
-			n, gerr := u.repo.Get(ctx, id)
+		return u.doDelete(ctx, id)
+	})
+
+	return &op, nil
+}
+
+// doDelete — async-часть Delete. Wave 5 (KAC-94): Default-SG cleanup идёт через
+// legacy sgRepo (отдельный TX внутри него), Network.Delete + outbox-emit
+// DELETED — через CQRS writer-TX.
+func (u *DeleteNetworkUseCase) doDelete(ctx context.Context, id string) (*anypb.Any, error) {
+	// Default-SG cleanup. Перед удалением Network — удалить связанный default SG
+	// (FK RESTRICT). Не-default SG — preserve, FK не даст удалить Network ⇒
+	// FAILED_PRECONDITION. Cleanup идёт через legacy sgRepo (KAC-94 SG-repo
+	// пока не CQRS).
+	if u.sgRepo != nil {
+		rd, err := u.repo.Reader(ctx)
+		if err == nil {
+			n, gerr := rd.Networks().Get(ctx, id)
+			_ = rd.Close()
 			if gerr == nil && n.DefaultSecurityGroupID != "" {
 				_ = u.sgRepo.Delete(ctx, n.DefaultSecurityGroupID)
 			}
 		}
-		if err := u.repo.Delete(ctx, id); err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return anypb.New(&emptypb.Empty{})
-	})
+	}
 
-	return &op, nil
+	// Сам Delete + outbox-DELETED атомарны в одной CQRS-TX.
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	if err := w.Networks().Delete(ctx, id); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Network", id, "DELETED", map[string]any{"id": id}); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", ports.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return anypb.New(&emptypb.Empty{})
 }
 
 // checkNetworkEmpty — sync FAILED_PRECONDITION if the network still has

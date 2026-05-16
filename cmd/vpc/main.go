@@ -41,6 +41,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // configPathEnv — путь к YAML-конфигу. Пустое значение допустимо (defaults +
@@ -254,20 +255,25 @@ func buildServices(pool *pgxpool.Pool, folderClient ports.FolderClient, geoClien
 	addressPoolSvc := addresspool.NewAddressPoolService(addressPoolRepo, addressPoolBindingRepo, cloudPoolSelectorRepo, addressRepo, networkRepo, subnetRepo, folderClient, geoClient)
 	addressRefSvc := addressref.NewService(addressRepo)
 
-	// Wave 3a pilot (skill evgeniy §2): Network — use-case-структура.
-	// Каждый use-case инжектируется в Handler. Все use-case'ы делят repo
-	// (networkRepo / sgRepo / ...) — composition-root решает, какой sgRepo
-	// проинжектировать (defaultSGRepo может быть nil при выключенном
-	// `network.default-sg-inline`).
-	netCreateUC := networkapp.NewCreateNetworkUseCase(networkRepo, folderClient, opsRepo, defaultSGRepo)
-	netUpdateUC := networkapp.NewUpdateNetworkUseCase(networkRepo, opsRepo)
-	netDeleteUC := networkapp.NewDeleteNetworkUseCase(networkRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
-	netMoveUC := networkapp.NewMoveNetworkUseCase(networkRepo, folderClient, opsRepo)
-	netGetUC := networkapp.NewGetNetworkUseCase(networkRepo)
-	netListUC := networkapp.NewListNetworksUseCase(networkRepo)
-	netListSubUC := networkapp.NewListSubnetsUseCase(networkRepo, subnetRepo)
-	netListSGUC := networkapp.NewListSecurityGroupsUseCase(networkRepo, sgRepo)
-	netListRTUC := networkapp.NewListRouteTablesUseCase(networkRepo, routeTableRepo)
+	// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network use-case'ы
+	// работают через CQRS-Repository (Reader / Writer split). pgxpool-impl —
+	// `internal/repo/kacho/pg`. Остальные 7 ресурсов продолжают работать
+	// через legacy `*repo.NetworkRepo` etc. — replicate-фаза (отдельный
+	// эпик-subtask).
+	kachoRepo := kachopg.New(pool)
+
+	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
+	// kachoRepo используется только Network'ом; для SG/Subnet/RT — пока legacy.
+	// defaultSGRepo может быть nil при выключенном `network.default-sg-inline`.
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, defaultSGRepo)
+	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
+	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
+	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, folderClient, opsRepo)
+	netGetUC := networkapp.NewGetNetworkUseCase(kachoRepo)
+	netListUC := networkapp.NewListNetworksUseCase(kachoRepo)
+	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetRepo)
+	netListSGUC := networkapp.NewListSecurityGroupsUseCase(kachoRepo, sgRepo)
+	netListRTUC := networkapp.NewListRouteTablesUseCase(kachoRepo, routeTableRepo)
 	netListOpsUC := networkapp.NewListOperationsUseCase(opsRepo)
 	netHandler := networkapp.NewHandler(
 		netCreateUC, netUpdateUC, netDeleteUC, netMoveUC,

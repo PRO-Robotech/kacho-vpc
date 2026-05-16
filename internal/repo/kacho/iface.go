@@ -1,0 +1,77 @@
+// Package kacho — CQRS-разделённый корневой контракт репозитория VPC.
+//
+// Phase 5 (skill evgeniy §6 G.1-G.7, KAC-94): Repository / RepositoryReader /
+// RepositoryWriter явно разделяют read-path и write-path. Use-case-слой видит
+// в типе вызова, читает он ресурс или меняет — это упрощает routing на slave-
+// реплику (G.4) и фиксирует точку открытия транзакции (G.5).
+//
+// Pilot реализует Network (как первый ресурс из 8 в kacho-vpc). Остальные 7
+// (Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/NetworkInterface)
+// — replicate-фаза, отдельные subtasks эпика KAC-94.
+//
+// Адаптеры:
+//   - `internal/repo/kacho/pg/` — pgxpool-impl (read-only TX vs RW TX).
+//   - `internal/repo/kacho/kachomock/` — in-memory implementation для unit-тестов
+//     use-case'ов (replaces portmock.NetworkRepo для Network-кода).
+//
+// Legacy `*repo.NetworkRepo` / `internal/ports/portmock.NetworkRepo` НЕ удаляются
+// — на них завязаны admin-сервисы (networkinternal/addresspool/...) и
+// существующие integration-тесты `internal/repo/network_repo_*test.go`,
+// которые проверяют именно legacy-репо.
+package kacho
+
+import "context"
+
+// Repository — корневой контракт repo-слоя VPC.
+//
+// Reader(ctx) открывает read-only TX (read-committed) — на slave-реплике, когда
+// та будет; сейчас на той же мастер-pool. Caller обязан вызвать Close() после
+// использования (rollback read-only TX).
+//
+// Writer(ctx) открывает RW TX на мастере. Caller обязан вызвать либо Commit(),
+// либо Abort() (Abort идемпотентен — безопасно ставить через defer).
+type Repository interface {
+	Reader(ctx context.Context) (RepositoryReader, error)
+	Writer(ctx context.Context) (RepositoryWriter, error)
+	Close()
+}
+
+// RepositoryReader — read-only проекция репозитория. Все ресурс-специфичные
+// reader'ы возвращаются через свой method.
+//
+// Pilot: только Networks(). Replicate-фаза добавит Subnets() / Addresses() /
+// RouteTables() / SecurityGroups() / Gateways() / PrivateEndpoints() /
+// NetworkInterfaces().
+type RepositoryReader interface {
+	Networks() NetworkReaderIface
+	// Close завершает read-TX (rollback). Идемпотентно.
+	Close() error
+}
+
+// RepositoryWriter — RW проекция репозитория. Writer виден свои writes
+// (G.2 — writer extends reader). Outbox-emit живёт здесь же — это
+// гарантирует атомарность DML + outbox в одной TX (skill evgeniy §6 G.5).
+//
+// Pilot: только Networks() + Outbox(). Replicate-фаза добавит остальные resource
+// writer'ы. Сейчас при попытке вызвать неимплементированный resource — паника
+// от nil-method receiver (это сознательно: pilot не пытается покрыть все 8
+// ресурсов одновременно).
+type RepositoryWriter interface {
+	Networks() NetworkWriterIface
+	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
+	Outbox() OutboxEmitter
+	// Commit финализирует tx. После Commit вызов Abort — no-op.
+	Commit() error
+	// Abort откатывает tx. Идемпотентен — после Commit no-op, можно ставить
+	// через `defer w.Abort()` сразу после открытия writer'а.
+	Abort()
+}
+
+// OutboxEmitter — emit одного outbox-события (vpc_outbox row + trigger pg_notify).
+// Использует pgx.Tx writer'а, поэтому DML + outbox commit'ятся атомарно: либо
+// resource + event оба видны watcher'у, либо ничего (Abort).
+//
+// payload — произвольная map (snapshot resource'а после DML). nil → пустой JSON.
+type OutboxEmitter interface {
+	Emit(ctx context.Context, resource, id, action string, payload map[string]any) error
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // CreateInput — параметры для CreateNetworkUseCase.Execute. Использует
@@ -27,13 +28,20 @@ type CreateInput struct {
 // fast-fail gRPC-status, а не «200 + операция, упавшая через секунду» (см.
 // kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop через FK/UNIQUE.
 //
-// Wave 3a pilot (skill evgeniy §2 B.1): бывший `NetworkService.Create` +
-// `NetworkService.doCreate` переехал сюда. Default-SG creation остаётся inline
-// в worker'е через явный builder `domain.NewDefaultSecurityGroup` (§4 D.7, §7
-// I.9 — отдельная builder-функция, а не magic-литерал «default-sg-» + hardcoded
-// status «ACTIVE»).
+// Wave 5 pilot (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX
+// явно через `repo.Writer(ctx)`. Insert + outbox-emit идут в одной TX
+// (атомарность гарантирована pgx-уровнем) — никакого dual-write.
+//
+// Default-SG creation остаётся inline в worker'е через явный builder
+// `domain.NewDefaultSecurityGroup` (§4 D.7, §7 I.9). KAC-94 caveat: SG-repo
+// пока не CQRS, поэтому inline default-SG creation идёт через legacy
+// `SecurityGroupRepo.Insert` ВНЕ writer-TX. После Insert(Network) writer
+// коммитится; затем второй writer (закрытый TX-scope) пишет SG через legacy
+// repo (свой TX внутри). Финальный link (`UPDATE networks SET default_sg_id`)
+// — третий writer. Это **известное расхождение** с целью CQRS (atomic emit) —
+// будет решено в replicate-фазе после переноса SG-repo на CQRS.
 type CreateNetworkUseCase struct {
-	repo         NetworkRepo
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 	// sgRepo: nil → default-SG inline creation отключена (флаг
@@ -42,9 +50,9 @@ type CreateNetworkUseCase struct {
 }
 
 // NewCreateNetworkUseCase создаёт CreateNetworkUseCase.
-func NewCreateNetworkUseCase(repo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *CreateNetworkUseCase {
+func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
-		repo:         repo,
+		repo:         r,
 		folderClient: folderClient,
 		opsRepo:      opsRepo,
 		sgRepo:       sgRepo,
@@ -58,8 +66,6 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	if n.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	// Domain-self-validation (skill evgeniy §4 D.5 / AP-1): NameVPC / Description /
-	// Labels валидируются через newtypes — service-слой больше НЕ зовёт corevalidate.*.
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
@@ -68,7 +74,12 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 	name := string(n.Name)
 	if name != "" {
-		existing, _, lerr := u.repo.List(ctx, NetworkFilter{FolderID: n.FolderID, Name: name}, Pagination{})
+		rd, err := u.repo.Reader(ctx)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		existing, _, lerr := rd.Networks().List(ctx, NetworkFilter{FolderID: n.FolderID, Name: name}, Pagination{})
+		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
 		}
@@ -100,6 +111,8 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
 // folder-exists + Insert (FK ограничения / UNIQUE-нарушения); inline default-SG
 // creation (builder из domain), затем link через UPDATE networks.default_sg_id.
+//
+// CQRS Wave 5: Insert + outbox-emit идут в одной TX через writer.
 func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, n.FolderID)
 	if err != nil {
@@ -110,13 +123,31 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	}
 
 	n.ID = netID
-	created, err := u.repo.Insert(ctx, &n)
+
+	// CQRS write-TX: Insert + outbox-emit атомарны.
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	defer w.Abort()
 
-	// Inline default-SG. Skill evgeniy §4 D.7 / AP-2 — domain-builder вместо
-	// magic-литерала с hardcoded status «ACTIVE» / name «default-sg-{id[:8]}».
+	created, err := w.Networks().Insert(ctx, &n)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Network", created.ID, "CREATED", networkPayloadMap(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", ports.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+
+	// Default-SG creation. KAC-94 caveat (см. doc-комментарий на UseCase): SG-repo
+	// — пока legacy non-CQRS, поэтому inline default-SG creation идёт ВНЕ
+	// writer-TX выше. SG-Insert использует свой TX через legacy repo, эмитит
+	// SecurityGroup.CREATED outbox-event сам. Финальный link `UPDATE
+	// networks.default_sg_id` — второй writer-TX ниже. Это **известное
+	// расхождение** с целью atomic emit; решается в replicate-фазе (CQRS для SG).
 	if u.sgRepo != nil {
 		sg := domain.NewDefaultSecurityGroup(created.Network)
 		createdSG, sgErr := u.sgRepo.Insert(ctx, &sg)
@@ -125,14 +156,25 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 			// (admin может создать default SG руками через public API).
 			return marshalNetworkRecord(created)
 		}
-		// Bind SG как default через NetworkRepo.Update.
+		// Bind SG как default. Второй CQRS-writer (Update + outbox-emit
+		// атомарны).
 		created.DefaultSecurityGroupID = createdSG.ID
-		updated, uerr := u.repo.Update(ctx, &created.Network)
-		if uerr == nil {
-			return marshalNetworkRecord(updated)
+		w2, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return marshalNetworkRecord(created)
 		}
-		// Update failed — возвращаем без bind'а (orphan SG, admin зачистит).
-		return marshalNetworkRecord(created)
+		defer w2.Abort()
+		updated, uerr := w2.Networks().Update(ctx, &created.Network)
+		if uerr != nil {
+			return marshalNetworkRecord(created)
+		}
+		if oerr := w2.Outbox().Emit(ctx, "Network", updated.ID, "UPDATED", networkPayloadMap(updated)); oerr != nil {
+			return marshalNetworkRecord(created)
+		}
+		if cerr := w2.Commit(); cerr != nil {
+			return marshalNetworkRecord(created)
+		}
+		return marshalNetworkRecord(updated)
 	}
 	return marshalNetworkRecord(created)
 }

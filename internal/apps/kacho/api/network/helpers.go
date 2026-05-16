@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +19,22 @@ import (
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/type2pb"
 	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
+
+// networkPayloadMap — snapshot Network для outbox payload. Wave 5 (KAC-94)
+// CQRS: writer.Outbox().Emit принимает map[string]any (а legacy repo делал
+// snapshot внутри Insert). Здесь — JSON round-trip как networkPayload в
+// `internal/repo/outbox.go` (legacy).
+func networkPayloadMap(n *domain.NetworkRecord) map[string]any {
+	b, err := json.Marshal(n)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
+}
 
 // mapRepoErr — переводит repo-sentinel в gRPC status. Логика идентична
 // `service.mapRepoErr`; live-копия здесь нужна, потому что та функция лежит в

@@ -12,20 +12,23 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/ports"
 )
 
 // MoveNetworkUseCase — перенос Network в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
 // SetFolderID.
+//
+// Wave 5 pilot (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveNetworkUseCase struct {
-	repo         NetworkRepo
+	repo         Repo
 	folderClient FolderClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveNetworkUseCase создаёт MoveNetworkUseCase.
-func NewMoveNetworkUseCase(repo NetworkRepo, folderClient FolderClient, opsRepo operations.Repo) *MoveNetworkUseCase {
-	return &MoveNetworkUseCase{repo: repo, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveNetworkUseCase {
+	return &MoveNetworkUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
@@ -39,7 +42,12 @@ func (u *MoveNetworkUseCase) Execute(ctx context.Context, id, destFolderID strin
 	if destFolderID == "" {
 		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
 	}
-	cur, err := u.repo.Get(ctx, id)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	cur, err := rd.Networks().Get(ctx, id)
+	_ = rd.Close()
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
@@ -60,19 +68,36 @@ func (u *MoveNetworkUseCase) Execute(ctx context.Context, id, destFolderID strin
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, err := u.folderClient.Exists(ctx, destFolderID)
-		if err != nil {
-			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
-		}
-		if !exists {
-			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
-		}
-		updated, err := u.repo.SetFolderID(ctx, id, destFolderID)
-		if err != nil {
-			return nil, mapRepoErr(err)
-		}
-		return marshalNetworkRecord(updated)
+		return u.doMove(ctx, id, destFolderID)
 	})
 
 	return &op, nil
+}
+
+func (u *MoveNetworkUseCase) doMove(ctx context.Context, id, destFolderID string) (*anypb.Any, error) {
+	exists, err := u.folderClient.Exists(ctx, destFolderID)
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+	}
+
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	updated, err := w.Networks().SetFolderID(ctx, id, destFolderID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "Network", updated.ID, "UPDATED", networkPayloadMap(updated)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", ports.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return marshalNetworkRecord(updated)
 }
