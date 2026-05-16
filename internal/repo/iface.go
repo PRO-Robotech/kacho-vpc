@@ -43,7 +43,7 @@ import (
 // NetworkFilter / SecurityGroupFilter / NetworkRecord в leaf-пакет
 // `internal/repo/kacho/`, чтобы избежать import-cycle
 // `repo → repo/kacho → repo`. Здесь оставлен type-alias для всех существующих
-// callers (`internal/apps/kacho/api/*/ports.go`, `repomock`, integration-тесты).
+// callers (`internal/apps/kacho/api/*/iface.go`, `repomock`, integration-тесты).
 type Pagination = kachorepo.Pagination
 
 // NetworkFilter — фильтр для списка сетей.

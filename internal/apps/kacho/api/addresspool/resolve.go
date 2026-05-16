@@ -13,7 +13,7 @@ import (
 
 // ResolverService — cascade-resolve движок AddressPool. Используется
 // напрямую `apps/kacho/api/address/*` use-case'ами (через port `PoolService` в
-// address-pkg ports.go) — Address.Create / Allocate*IP проводят resolve чтобы
+// address-pkg iface.go) — Address.Create / Allocate*IP проводят resolve чтобы
 // выяснить, из какого pool брать IP.
 //
 // Это **не handler-уровневый use-case**, а сервис-инфраструктурный (часть

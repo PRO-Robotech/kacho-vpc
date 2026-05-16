@@ -105,7 +105,7 @@ func (u *UpdateNetworkInterfaceUseCase) doUpdate(ctx context.Context, in UpdateI
 	}
 	// Если изменились address-refs — пересчитываем diff: detach убранные,
 	// attach добавленные (с валидацией). Best-effort v1 (address-attach не в
-	// той же writer-TX; см. doc-комментарий на ports.go).
+	// той же writer-TX; см. doc-комментарий на iface.go).
 	newV4 := nicMaskV4(rec, in)
 	newV6 := nicMaskV6(rec, in)
 	if !strSetEqual(rec.V4AddressIDs, newV4) || !strSetEqual(rec.V6AddressIDs, newV6) {

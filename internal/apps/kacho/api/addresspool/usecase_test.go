@@ -261,7 +261,7 @@ func (r *stubCloudSelRepo) Unset(_ context.Context, cloudID string) error {
 }
 
 // networkRepoAdapter — repomock.NetworkRepo возвращает kacho.NetworkRecord,
-// что точно matches порт `NetworkRepo` в ports.go (Get → *kacho.NetworkRecord).
+// что точно matches порт `NetworkRepo` в iface.go (Get → *kacho.NetworkRecord).
 // type-alias просто переименовывает для удобства test-кода.
 type networkRepoAdapter struct {
 	*repomock.NetworkRepo
