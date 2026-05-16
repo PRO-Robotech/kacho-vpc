@@ -68,11 +68,12 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, in CreateInput) (
 		return nil, err
 	}
 
-	// Verbatim YC: existence / uniqueness checks run synchronously, BEFORE the
-	// Operation. Async copies в doCreate стоят как defensive backstop.
-	if err := checkFolderExists(ctx, u.folderClient, rt.FolderID); err != nil {
-		return nil, err
-	}
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
+	// Sync uniqueness/network-existence-проверки (через DB-state в той же сервис-БД)
+	// остаются — они race-free относительно peer-сервисов.
 	// Existence parent Network через CQRS Reader.
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

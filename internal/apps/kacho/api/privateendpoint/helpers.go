@@ -1,7 +1,6 @@
 package privateendpoint
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,18 +66,6 @@ func stripSentinel(err, sentinel error) string {
 		return rest
 	}
 	return msg
-}
-
-// checkFolderExists — verbatim YC sync precondition.
-func checkFolderExists(ctx context.Context, fc FolderClient, folderID string) error {
-	exists, err := fc.Exists(ctx, folderID)
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "folder check: %v", err)
-	}
-	if !exists {
-		return status.Errorf(codes.NotFound, "Folder with id %s not found", folderID)
-	}
-	return nil
 }
 
 // invalidArg — InvalidArgument с BadRequest-details.

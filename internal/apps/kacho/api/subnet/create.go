@@ -96,13 +96,13 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, in CreateInput) (*ope
 		return nil, err
 	}
 
-	// Verbatim YC: existence / uniqueness / overlap checks run synchronously,
-	// BEFORE the Operation. The async copies in doCreate + the DB EXCLUDE
-	// constraint stay as the atomic backstops. См. kacho-vpc#8.
-	if err := checkFolderExists(ctx, u.folderClient, s.FolderID); err != nil {
-		return nil, err
-	}
-
+	// Sync folder.Exists precheck удалён (KAC-94, skill evgeniy I.4 / AP-5) —
+	// race-prone: между sync-проверкой и async-частью folder может быть удалён
+	// peer-сервисом, и second-writer-wins безусловно создавал ресурс. Verbatim-YC
+	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
+	// Sync uniqueness/overlap-проверки (через DB-state в той же сервис-БД)
+	// остаются — они race-free относительно peer-сервисов.
+	//
 	// Sync existence / uniqueness / overlap — все через single Reader-TX.
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

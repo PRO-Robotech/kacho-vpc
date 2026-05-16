@@ -234,15 +234,28 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="GW-CR-NEG-FOLDER-NF",
-    title="Create Gateway в несуществующий folder → sync 404 NOT_FOUND (kacho-vpc#8)",
+    title="Create Gateway в несуществующий folder → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["NEG", "CONF"], priority="P0",
     steps=[
         Step(name="create-bad-folder", method="POST", path="/vpc/v1/gateways",
              body={"folderId": "{{garbageId}}", "name": "gw-fnf-{{runId}}",
                    "sharedEgressGatewaySpec": {}},
+             # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
+             # (race-prone). Operation создаётся (200), затем worker падает с
+             # NotFound — проверяем через poll-operation.
              test_script=[
-                 *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
-                 "pm.test('mentions folder not found', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('folder'));",
+                 *assert_status(200),
+                 *save_from_response("j.id", "opId"),
+             ]),
+        poll_operation_until_done(),
+        Step(name="assert-op-error", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
+                 "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
+                 "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
+                 "pm.test('mentions folder not found', () => pm.expect((j.error.message || '').toLowerCase()).to.include('folder'));",
              ]),
     ],
 ))

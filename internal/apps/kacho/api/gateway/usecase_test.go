@@ -139,19 +139,28 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
+// TestCreateUseCase_FolderNotFound — KAC-94 / skill evgeniy I.4: sync
+// folder.Exists precheck удалён (race-prone). Verbatim-YC NotFound теперь
+// возвращается через `operation.error` из async `doCreate`, не через
+// sync-status. Поэтому: Execute → не ошибка; AwaitOpDone → Operation.Done=true
+// с Error.Code == NotFound.
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: false}, or)
 
-	_, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
+	op, err := uc.Execute(context.Background(), CreateInput{Gateway: domain.Gateway{
 		FolderID:    "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	}})
-	require.Error(t, err)
-	st, _ := status.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
+	require.NoError(t, err)
+	require.NotEmpty(t, op.ID)
+
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.NotNil(t, saved.Error, "operation should fail in worker — folder missing")
+	assert.Equal(t, int32(codes.NotFound), saved.Error.Code)
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
