@@ -2,33 +2,22 @@
 // (FolderClient / ZoneRegistry / SubnetExistsChecker), используемые use-case
 // слоем kacho-vpc.
 //
-// Wave 5 finalize (KAC-94, skill evgeniy §1 A.7 + §6 G.6): legacy port-
-// интерфейсы `NetworkRepoIface` / `SubnetRepoIface` / `AddressRepoIface` /
-// `RouteTableRepoIface` / `SecurityGroupRepoIface` / `GatewayRepoIface` /
-// `PrivateEndpointRepoIface` / `AddressPoolRepoIface` /
-// `AddressPoolBindingRepoIface` / `CloudPoolSelectorRepoIface` — **удалены**.
+// KAC-94 A.7 ultra-final (skill evgeniy §1 A.7 + §6 G.6): legacy port-
+// интерфейсы (`NetworkRepoIface` / `SubnetRepoIface` / …) И concrete-структуры
+// (`*repo.NetworkRepo` / `*repo.SubnetRepo` / `*repo.AddressRepo` /
+// `*repo.RouteTableRepo` / `*repo.SecurityGroupRepo` / `*repo.GatewayRepo` /
+// `*repo.PrivateEndpointRepo` / `*repo.NetworkInterfaceRepo`) — **удалены**.
 //
-// Use-case-слой VPC переехал на CQRS-Repository (`internal/repo/kacho`) —
-// Network / Subnet / Address / RouteTable / SecurityGroup / Gateway /
-// PrivateEndpoint / NetworkInterface работают через `kacho.Repository` с
-// `Reader(ctx)` / `Writer(ctx)` разделением (skill evgeniy §6 G.1-G.7).
+// Use-case-слой VPC + admin-services + peer-port'ы работают через
+// CQRS-Repository (`internal/repo/kacho`) — `kacho.Repository` с `Reader(ctx)`
+// / `Writer(ctx)` разделением (skill evgeniy §6 G.1-G.7). Узкие port'ы admin/
+// peer-сервисов получают тонкие adapter'ы поверх `kacho.Repository` из
+// пакета `internal/repo/cqrsadapter`.
 //
-// Admin-сервисы, которым нужны старые `*Repo` (`networkinternal.Service`,
-// addresspool use-case'ы, `addressref.Service`) описывают **узкие** port-
-// интерфейсы у себя в пакете (skill evgeniy §6 G.2 — «каждый use-case-пакет
-// описывает узкий port»). Concrete-структуры `*repo.NetworkRepo` /
-// `*repo.SubnetRepo` / `*repo.AddressRepo` / … / `*repo.AddressPoolRepo` /
-// `*repo.AddressPoolBindingRepo` / `*repo.CloudPoolSelectorRepo` остаются как
-// pgxpool-impl этих узких port'ов; общий port-интерфейс в этом файле — больше
-// не нужен.
-//
-// Concrete-структуры **не удалены** только из-за integration-тестов
-// `internal/repo/*_integration_test.go`, которые конструируют их напрямую
-// (`repo.NewNetworkRepo(pool)`) и проверяют SQL-сторону репо — это
-// acceptable per workspace-CLAUDE.md «Within-service refs — DB-уровень»
-// (raw-pgx-test of constraints + indices). Когда integration-test-слой
-// тоже переедет на CQRS-pg-impl (`internal/repo/kacho/pg`), legacy
-// файлы будут удалены вторым PR.
+// Этот файл оставлен только под Filter-type-alias'ы (`SubnetFilter` /
+// `NetworkFilter` / `AddressFilter` / …) — они проксируются на leaf-пакет
+// `internal/repo/kacho` (D.1), и peer-service port'ы (FolderClient /
+// SubnetExistsChecker / ZoneRegistry).
 
 package repo
 
