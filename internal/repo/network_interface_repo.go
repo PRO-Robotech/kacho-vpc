@@ -1,3 +1,8 @@
+// Deprecated: legacy concrete `*<Resource>Repo` struct, оставлен временно ради integration-тестов
+// и узких port-адаптеров в admin-services (AddressPool/Address/NIC use-cases ещё не на CQRS).
+// Финальное удаление — после полной миграции на kacho.Repository (KAC-94 / skill evgeniy A.7).
+//
+
 package repo
 
 import (
