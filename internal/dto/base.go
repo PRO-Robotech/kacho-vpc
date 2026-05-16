@@ -26,6 +26,12 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
+
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Interface — generic transfer-функтор F → T. Реализация живёт в подпакете
@@ -124,21 +130,40 @@ func FromTo[F any, T any](src F, dst *T) *DTO[F, T] {
 	return &DTO[F, T]{src: src, dst: dst}
 }
 
-// Transferrable — type-set constraint для Transfer(): принимает только те
-// *DTO[F,T] пары, для которых вызов имеет Perform()-метод. На pilot-стадии
-// (только Network + time.Time) этот constraint допускает любую *DTO[F,T] —
-// сужающий type-set из PR #52 (`*DTO[domain.Network, *vpcv1.Network] | ...`)
-// добавит compile-time-гарантии когда DTO-реестр стабилизируется (Wave 3).
+// Transferrable — закрытый sum-type generic constraint для Transfer():
+// принимает только те *DTO[F,T] пары, которые **явно** зарегистрированы в
+// type-set ниже. Это даёт compile-time гарантию: попытка вызвать
+// `dto.Transfer(dto.FromTo(someUnregisteredSrc, &dst))` с парой (F,T), не
+// перечисленной в union — провалится в compile-time, а не во время выполнения
+// через ErrTransferNotRegistered.
+//
+// Skill evgeniy §3 C.5 (соответствует `types2ProtoVariants` в исходной spec):
+// type-set генерик-constraint над union допустимых пар. Wave 2 (KAC-94) —
+// зафиксирован для всех 8 VPC-ресурсов + time.Time.
+//
+// Расширение: добавление нового ресурса в DTO-реестр требует одновременно
+// (а) новой `*DTO[domain.<X>Record, *<protopb>.<X>]` пары в union ниже,
+// (б) нового `init()` с `dto.RegTransfer(dto.Fn2Face(<x>{}.toPb))` в
+// `internal/dto/toproto/`. Без обоих изменений код не скомпилируется.
 type Transferrable interface {
 	Perform() error
+
+	*DTO[time.Time, *timestamppb.Timestamp] |
+		*DTO[domain.NetworkRecord, *vpcv1.Network] |
+		*DTO[domain.SubnetRecord, *vpcv1.Subnet] |
+		*DTO[domain.AddressRecord, *vpcv1.Address] |
+		*DTO[domain.RouteTableRecord, *vpcv1.RouteTable] |
+		*DTO[domain.SecurityGroupRecord, *vpcv1.SecurityGroup] |
+		*DTO[domain.GatewayRecord, *vpcv1.Gateway] |
+		*DTO[domain.PrivateEndpointRecord, *pepb.PrivateEndpoint] |
+		*DTO[domain.NetworkInterfaceRecord, *vpcv1.NetworkInterface]
 }
 
 // Transfer запускает Perform() на dto. Это единственная публичная entry-point.
 //
-// Skill evgeniy §3 C.5: `Transfer[v types2ProtoVariants]` — generic constraint
-// над type-set допустимых пар. На pilot мы оставляем constraint открытым
-// (`Transferrable`) ради экономии boilerplate; точный набор пар (sum-type)
-// будет зафиксирован в `dto/toproto/dtos.go` когда мигрируют все 8 ресурсов.
+// Skill evgeniy §3 C.5: `Transfer[V types2ProtoVariants]` — generic constraint
+// над type-set допустимых пар. С Wave 2 (KAC-94) type-set закрыт (см.
+// `Transferrable` выше) — допустимые пары фиксируются compile-time.
 func Transfer[V Transferrable](dto V) error {
 	return dto.Perform()
 }
