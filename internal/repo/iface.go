@@ -35,12 +35,10 @@ type Pagination = kachorepo.Pagination
 type NetworkFilter = kachorepo.NetworkFilter
 
 // SubnetFilter — фильтр для списка подсетей.
-type SubnetFilter struct {
-	FolderID  string
-	NetworkID string
-	Name      string
-	Filter    string // raw filter expression (YC-syntax)
-}
+//
+// Wave 5 replicate (KAC-94 D.1): type-alias на `kacho.SubnetFilter` — см. doc на
+// Pagination/NetworkFilter выше.
+type SubnetFilter = kachorepo.SubnetFilter
 
 // AddressFilter — фильтр для списка адресов.
 type AddressFilter struct {
@@ -119,25 +117,25 @@ type NetworkRepoIface interface {
 
 // SubnetRepo — port-интерфейс репозитория подсетей.
 //
-// Wave 2 batch A (KAC-94): возвращает `*domain.SubnetRecord` (repo-entity с
-// DB-managed CreatedAt) вместо `*domain.Subnet`. Insert/Update принимают
-// `*domain.Subnet` (без CreatedAt — DB-managed). Skill evgeniy §4 D.1 / §6 G.2 /
-// §7 H.1. Parity с NetworkRepo (KAC-99).
+// Wave 5 replicate (KAC-94): `SubnetRecord` уехал из domain в repo-leaf
+// (`internal/repo/kacho/entity_subnet.go`) — parity с NetworkRecord (Wave 5 pilot).
+// Insert/Update принимают `*domain.Subnet` (без CreatedAt — DB-managed).
+// Skill evgeniy §4 D.1 / §6 G.2 / §7 H.1.
 type SubnetRepoIface interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
-	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error)
-	Insert(ctx context.Context, s *domain.Subnet) (*domain.SubnetRecord, error)
-	Update(ctx context.Context, s *domain.Subnet) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
+	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*kachorepo.SubnetRecord, string, error)
+	Insert(ctx context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error)
+	Update(ctx context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetFolderID меняет folder_id ресурса.
-	SetFolderID(ctx context.Context, id, folderID string) (*domain.SubnetRecord, error)
+	SetFolderID(ctx context.Context, id, folderID string) (*kachorepo.SubnetRecord, error)
 	// SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks
 	// (для AddCidrBlocks/RemoveCidrBlocks). Триггеры EXCLUDE
 	// (subnets_no_overlap_v4 / subnets_no_overlap_v6) проверяют overlap по
 	// primary CIDR каждого семейства.
-	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*domain.SubnetRecord, error)
+	SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*kachorepo.SubnetRecord, error)
 	// SetZoneID меняет zone_id у подсети (для Relocate).
-	SetZoneID(ctx context.Context, id, zoneID string) (*domain.SubnetRecord, error)
+	SetZoneID(ctx context.Context, id, zoneID string) (*kachorepo.SubnetRecord, error)
 	// AddressesBySubnet возвращает Address-ресурсы, привязанные к подсети
 	// (через internal_ipv4.subnet_id). Использовалось ListUsedAddresses и
 	// AddressService.ListBySubnet.
@@ -293,7 +291,7 @@ type FolderClient interface {
 
 // SubnetExistsChecker — port для проверки существования Subnet (используется другими сервисами).
 type SubnetExistsChecker interface {
-	GetSubnet(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	GetSubnet(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // ZoneRegistry — port для проверки существования зоны (таблица `zones`).

@@ -49,7 +49,7 @@ type (
 
 // SubnetReader — узкое чтение Subnet, нужное для ListSubnets / checkNetworkEmpty.
 type SubnetReader interface {
-	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error)
+	List(ctx context.Context, f SubnetFilter, p Pagination) ([]*kacho.SubnetRecord, string, error)
 }
 
 // RouteTableReader — узкое чтение RouteTable, нужное для ListRouteTables /

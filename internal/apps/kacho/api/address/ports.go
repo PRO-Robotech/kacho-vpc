@@ -68,7 +68,7 @@ type AddressRepo interface {
 //   - Create.doCreate / Allocate*IP / AllocateInternalIPv6 — FK-валидация подсети;
 //   - ListBySubnet — child-list через AddressesBySubnet.
 type SubnetReader interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 }
 

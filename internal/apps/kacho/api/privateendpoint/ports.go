@@ -56,7 +56,7 @@ type NetworkReader interface {
 // SubnetReader — узкий read-интерфейс для проверки parent Subnet. Subnet
 // optional на PrivateEndpoint (oneof AddressSpec.InternalIpv4AddressSpec).
 type SubnetReader interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // FolderClient — peer-сервис kacho-resource-manager.

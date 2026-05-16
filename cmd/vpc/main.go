@@ -394,20 +394,21 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): Subnet — use-case-структура с 11 use-case'ами
-	// включая специфические AddCidrBlocks / RemoveCidrBlocks / Relocate /
-	// ListUsedAddresses.
+	// Wave 5 replicate (KAC-94): Subnet переехал на CQRS-Repository вслед за
+	// Network/SG. Use-case'ы Subnet принимают kachoRepo (которое уже сконструировано
+	// для Network/SG); legacy `subnetRepo` остаётся для admin/peer-сервисов
+	// (`addressPoolSvc`, `peapp.NewCreatePrivateEndpointUseCase` etc.).
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(subnetRepo, networkRepo, folderClient, geoClient, opsRepo),
-		subnetapp.NewUpdateSubnetUseCase(subnetRepo, opsRepo),
-		subnetapp.NewDeleteSubnetUseCase(subnetRepo, niRepo, opsRepo),
-		subnetapp.NewMoveSubnetUseCase(subnetRepo, folderClient, opsRepo),
-		subnetapp.NewGetSubnetUseCase(subnetRepo),
-		subnetapp.NewListSubnetsUseCase(subnetRepo),
-		subnetapp.NewAddCidrBlocksUseCase(subnetRepo, opsRepo),
-		subnetapp.NewRemoveCidrBlocksUseCase(subnetRepo, opsRepo),
-		subnetapp.NewRelocateUseCase(subnetRepo, geoClient),
-		subnetapp.NewListUsedAddressesUseCase(subnetRepo, addressRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, folderClient, geoClient, opsRepo),
+		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
+		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niRepo, opsRepo),
+		subnetapp.NewMoveSubnetUseCase(kachoRepo, folderClient, opsRepo),
+		subnetapp.NewGetSubnetUseCase(kachoRepo),
+		subnetapp.NewListSubnetsUseCase(kachoRepo),
+		subnetapp.NewAddCidrBlocksUseCase(kachoRepo, opsRepo),
+		subnetapp.NewRemoveCidrBlocksUseCase(kachoRepo, opsRepo),
+		subnetapp.NewRelocateUseCase(kachoRepo, geoClient),
+		subnetapp.NewListUsedAddressesUseCase(kachoRepo, addressRepo),
 		subnetapp.NewListOperationsUseCase(opsRepo),
 	)
 

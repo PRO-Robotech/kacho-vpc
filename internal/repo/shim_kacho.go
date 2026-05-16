@@ -156,11 +156,14 @@ func PrivateEndpointPayload(pe *kachorepo.PrivateEndpointRecord) map[string]any 
 
 // ---- Address shims (Wave 5 replicate, KAC-94: Address → CQRS-репо) ----
 
-// AddressCols — exported addresses column list; used by kacho/pg/address.go
-// в SQL-запросах. Parity с NetworkCols / SGCols / RouteTableCols.
+// AddressCols — exported addresses column list; used by kacho/pg/address.go и
+// kacho/pg/subnet.go (последний — для AddressesBySubnet JOIN-less filter по
+// internal_ipv4/v6 JSONB). Parity с NetworkCols / SGCols / RouteTableCols.
 const AddressCols = addressCols
 
-// ScanAddress — exported alias of scanAddress; used by kacho/pg/address.go.
+// ScanAddress — exported alias of scanAddress; used by kacho/pg/address.go и
+// kacho/pg/subnet.go. Возвращает *kachorepo.AddressRecord (после миграции
+// Address в repo-leaf — §4 D.1).
 func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
 	return scanAddress(row)
 }
@@ -177,3 +180,30 @@ func AddressPayload(a *kachorepo.AddressRecord) map[string]any {
 // address_pool_free_ips FOR UPDATE SKIP LOCKED + UPDATE addresses.external_ipv4
 // — один SQL-statement, нулевая contention между параллельными аллокаторами).
 const AllocateFromFreelistSQL = allocateFromFreelistSQL
+
+// ---- Subnet shims (Wave 5 replicate, KAC-94: Subnet → CQRS-репо) ----
+
+// SubnetCols — exported subnets column list; used by kacho/pg/subnet.go.
+const SubnetCols = subnetCols
+
+// ScanSubnet — exported alias of scanSubnet; used by kacho/pg/subnet.go.
+func ScanSubnet(row Scannable) (*kachorepo.SubnetRecord, error) {
+	return scanSubnet(row)
+}
+
+// SubnetPayload — exported alias of subnetPayload (outbox snapshot).
+func SubnetPayload(s *kachorepo.SubnetRecord) map[string]any {
+	return subnetPayload(s)
+}
+
+// IsExclusionViolation — exported alias of isExclusionViolation; used by
+// kacho/pg/subnet.go для распознавания CIDR-overlap (SQLSTATE 23P01).
+func IsExclusionViolation(err error) bool {
+	return isExclusionViolation(err)
+}
+
+// MarshalDhcp — exported alias of marshalDhcp; used by kacho/pg/subnet.go.
+// nil → nil (NULL in SQL); non-nil → JSONB bytes.
+func MarshalDhcp(d *domain.DhcpOptions) ([]byte, error) {
+	return marshalDhcp(d)
+}

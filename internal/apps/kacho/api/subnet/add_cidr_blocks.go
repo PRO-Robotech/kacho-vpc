@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // AddCidrBlocksUseCase — атомарное добавление CIDR-блоков к подсети.
@@ -26,15 +27,18 @@ import (
 // Известное ограничение: EXCLUDE checks только array[1]. Если v4_cidr_primary
 // неизменен (добавляем не в начало), overlap с соседними подсетями по
 // добавляемым CIDR не проверяется на DB-уровне. Покрываем service-level
-// проверкой через repo.List (subnet.go:382-388 — старый комментарий).
+// проверкой через repo.List.
+//
+// Wave 5 replicate (KAC-94): Get + SetCidrBlocks + outbox-emit UPDATED атомарны
+// в одной writer-TX.
 type AddCidrBlocksUseCase struct {
-	repo    SubnetRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewAddCidrBlocksUseCase создаёт AddCidrBlocksUseCase.
-func NewAddCidrBlocksUseCase(repo SubnetRepo, opsRepo operations.Repo) *AddCidrBlocksUseCase {
-	return &AddCidrBlocksUseCase{repo: repo, opsRepo: opsRepo}
+func NewAddCidrBlocksUseCase(r Repo, opsRepo operations.Repo) *AddCidrBlocksUseCase {
+	return &AddCidrBlocksUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация id/CIDR-формата + Operation + async-merge в worker'е.
@@ -76,9 +80,15 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 		return nil, err
 	}
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		sub, err := u.repo.Get(ctx, id)
-		if err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+
+		sub, gerr := w.Subnets().Get(ctx, id)
+		if gerr != nil {
+			return nil, mapRepoErr(gerr)
 		}
 		mergedV4 := append([]string{}, sub.V4CidrBlocks...)
 		mergedV4 = append(mergedV4, v4...)
@@ -93,8 +103,14 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 		if err := checkCIDRDisjoint("v6_cidr_blocks", mergedV6); err != nil {
 			return nil, err
 		}
-		updated, err := u.repo.SetCidrBlocks(ctx, id, mergedV4, mergedV6)
-		if err != nil {
+		updated, uerr := w.Subnets().SetCidrBlocks(ctx, id, mergedV4, mergedV6)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if err := w.Outbox().Emit(ctx, "Subnet", updated.ID, "UPDATED", subnetPayloadMap(updated)); err != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+		}
+		if err := w.Commit(); err != nil {
 			return nil, mapRepoErr(err)
 		}
 		return marshalSubnetRecord(updated)

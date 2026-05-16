@@ -12,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
 // RemoveCidrBlocksUseCase — атомарное удаление CIDR-блоков из подсети.
@@ -21,14 +22,17 @@ import (
 //   - Если будет удалён последний CIDR → FailedPrecondition (subnet не может быть пустой).
 //   - Если внутри CIDR есть Address — на текущей фазе пропускаем (доп. проверка
 //     потребует JSON-запрос по addresses; в будущем добавится).
+//
+// Wave 5 replicate (KAC-94): Get + SetCidrBlocks + outbox-emit UPDATED атомарны
+// в одной writer-TX.
 type RemoveCidrBlocksUseCase struct {
-	repo    SubnetRepo
+	repo    Repo
 	opsRepo operations.Repo
 }
 
 // NewRemoveCidrBlocksUseCase создаёт RemoveCidrBlocksUseCase.
-func NewRemoveCidrBlocksUseCase(repo SubnetRepo, opsRepo operations.Repo) *RemoveCidrBlocksUseCase {
-	return &RemoveCidrBlocksUseCase{repo: repo, opsRepo: opsRepo}
+func NewRemoveCidrBlocksUseCase(r Repo, opsRepo operations.Repo) *RemoveCidrBlocksUseCase {
+	return &RemoveCidrBlocksUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация id + Operation + async-вычитание в worker'е.
@@ -54,9 +58,15 @@ func (u *RemoveCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6
 		return nil, err
 	}
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		sub, err := u.repo.Get(ctx, id)
-		if err != nil {
-			return nil, mapRepoErr(err)
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			return nil, mapRepoErr(werr)
+		}
+		defer w.Abort()
+
+		sub, gerr := w.Subnets().Get(ctx, id)
+		if gerr != nil {
+			return nil, mapRepoErr(gerr)
 		}
 		remainingV4, removedV4 := subtractCIDRs(sub.V4CidrBlocks, v4)
 		remainingV6, removedV6 := subtractCIDRs(sub.V6CidrBlocks, v6)
@@ -66,8 +76,14 @@ func (u *RemoveCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6
 		if len(remainingV4) == 0 && len(remainingV6) == 0 {
 			return nil, status.Errorf(codes.FailedPrecondition, "cannot remove last CIDR block from subnet")
 		}
-		updated, err := u.repo.SetCidrBlocks(ctx, id, remainingV4, remainingV6)
-		if err != nil {
+		updated, uerr := w.Subnets().SetCidrBlocks(ctx, id, remainingV4, remainingV6)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if err := w.Outbox().Emit(ctx, "Subnet", updated.ID, "UPDATED", subnetPayloadMap(updated)); err != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+		}
+		if err := w.Commit(); err != nil {
 			return nil, mapRepoErr(err)
 		}
 		return marshalSubnetRecord(updated)

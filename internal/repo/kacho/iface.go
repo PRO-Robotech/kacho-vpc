@@ -41,15 +41,12 @@ type Repository interface {
 //
 // Pilot: Networks() + SecurityGroups() (последнее — batch 33/34, KAC-94: SG-CQRS
 // нужен, чтобы Network.Create мог inline создать default-SG в одной writer-TX).
-// Wave 5 replicate (KAC-94): Addresses() добавлен — Address переехал на CQRS
-// repo вместе с IPAM allocate-flow в одной writer-TX. RouteTables() добавлен
-// в этой же replicate-фазе — parity с Network/SG/Address. PrivateEndpoints()
-// добавлен следующим в той же replicate-фазе.
-// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaces() добавлен — NIC
-// переехал на CQRS (attach-race protection KAC-52 atomic CAS, MAC-allocation
-// retry, v4/v6 cardinality CHECK, FK RESTRICT на Subnet — все DB-уровневые,
-// репо только маппит SQL → repo-sentinel).
-// Дальнейшие 2 (Subnets / Gateways) — следующие итерации эпика.
+// Wave 5 replicate (KAC-94): Addresses() / RouteTables() / PrivateEndpoints() /
+// NetworkInterfaces() / Subnets() добавлены — все 5 ресурсов переехали на CQRS
+// repo (attach-race protection KAC-52, IPAM allocate в одной writer-TX, v4/v6
+// cardinality CHECK на NIC, FK RESTRICT — все DB-уровневые, репо только маппит
+// SQL → repo-sentinel).
+// Дальнейшие итерации эпика: Gateways() — последний из 8.
 type RepositoryReader interface {
 	Networks() NetworkReaderIface
 	SecurityGroups() SecurityGroupReaderIface
@@ -57,6 +54,7 @@ type RepositoryReader interface {
 	RouteTables() RouteTableReaderIface
 	PrivateEndpoints() PrivateEndpointReaderIface
 	NetworkInterfaces() NetworkInterfaceReaderIface
+	Subnets() SubnetReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -73,17 +71,17 @@ type RepositoryReader interface {
 // RouteTables() — добавлен в этой же replicate-фазе. PrivateEndpoints() —
 // тоже в этой же replicate-фазе (parity, FK network_id/subnet_id/address_id из
 // миграции 0024 проверяются Postgres'ом в commit-time writer-TX).
-// Replicate-фаза добавит остальные resource writer'ы.
+// NetworkInterfaces() — NIC-CQRS writer (atomic AttachToInstance CAS KAC-52 +
+// idempotent DetachFromInstance + Insert с возможным MAC-collision sentinel).
+// Subnets() — Subnet-CQRS writer (последний из 7 после Gateway).
 type RepositoryWriter interface {
 	Networks() NetworkWriterIface
 	SecurityGroups() SecurityGroupWriterIface
 	Addresses() AddressWriterIface
 	RouteTables() RouteTableWriterIface
 	PrivateEndpoints() PrivateEndpointWriterIface
-	// NetworkInterfaces — Wave 5 replicate (KAC-94, NIC batch): NIC-CQRS writer.
-	// Inсludes atomic AttachToInstance CAS (KAC-52) + idempotent DetachFromInstance
-	// + Insert с возможным MAC-collision sentinel (caller retry'ит с новым MAC).
 	NetworkInterfaces() NetworkInterfaceWriterIface
+	Subnets() SubnetWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// Commit финализирует tx. После Commit вызов Abort — no-op.

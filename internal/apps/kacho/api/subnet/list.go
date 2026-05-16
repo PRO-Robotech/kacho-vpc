@@ -9,26 +9,33 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListSubnetsUseCase — list subnets с пагинацией. folder_id обязателен
 // (R10 #C1 closure).
+//
+// Wave 5 replicate (KAC-94): использует CQRS Reader.
 type ListSubnetsUseCase struct {
-	repo SubnetRepo
+	repo Repo
 }
 
 // NewListSubnetsUseCase создаёт ListSubnetsUseCase.
-func NewListSubnetsUseCase(repo SubnetRepo) *ListSubnetsUseCase {
-	return &ListSubnetsUseCase{repo: repo}
+func NewListSubnetsUseCase(r Repo) *ListSubnetsUseCase {
+	return &ListSubnetsUseCase{repo: r}
 }
 
 // Execute — folder_id required (закрыто cross-folder enumeration #C1).
-func (u *ListSubnetsUseCase) Execute(ctx context.Context, f SubnetFilter, p Pagination) ([]*domain.SubnetRecord, string, error) {
+func (u *ListSubnetsUseCase) Execute(ctx context.Context, f SubnetFilter, p Pagination) ([]*kachorepo.SubnetRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return u.repo.List(ctx, f, p)
+	r, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = r.Close() }()
+	return r.Subnets().List(ctx, f, p)
 }
 
 // ListOperationsUseCase — операции, относящиеся к конкретному subnet-id.

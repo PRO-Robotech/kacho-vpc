@@ -21,13 +21,13 @@ import (
 // валидации destination_zone_id и проверки существования подсети →
 // FAILED_PRECONDITION "Invalid subnet state".
 type RelocateUseCase struct {
-	repo    SubnetRepo
+	repo    Repo
 	zoneReg ZoneRegistry
 }
 
 // NewRelocateUseCase создаёт RelocateUseCase.
-func NewRelocateUseCase(repo SubnetRepo, zoneReg ZoneRegistry) *RelocateUseCase {
-	return &RelocateUseCase{repo: repo, zoneReg: zoneReg}
+func NewRelocateUseCase(r Repo, zoneReg ZoneRegistry) *RelocateUseCase {
+	return &RelocateUseCase{repo: r, zoneReg: zoneReg}
 }
 
 // Execute — синхронные precondition'ы → ВСЕГДА FailedPrecondition.
@@ -42,8 +42,14 @@ func (u *RelocateUseCase) Execute(ctx context.Context, id, destZoneID string) (*
 	if err := validateZoneID(ctx, u.zoneReg, "destination_zone_id", destZoneID); err != nil {
 		return nil, err
 	}
-	if _, err := u.repo.Get(ctx, id); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
 		return nil, mapRepoErr(err)
+	}
+	_, gerr := rd.Subnets().Get(ctx, id)
+	_ = rd.Close()
+	if gerr != nil {
+		return nil, mapRepoErr(gerr)
 	}
 	return nil, status.Error(codes.FailedPrecondition, "Invalid subnet state")
 }

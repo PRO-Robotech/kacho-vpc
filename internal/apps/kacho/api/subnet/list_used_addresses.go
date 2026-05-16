@@ -16,15 +16,17 @@ import (
 // (через internal_ipv4.subnet_id) + referrer-записи (кто использует адрес,
 // map address-id → reference; ключ отсутствует если referrer'а нет). Sync RPC,
 // не Operation.
+//
+// Wave 5 replicate (KAC-94): использует CQRS Reader для existence + AddressesBySubnet.
 type ListUsedAddressesUseCase struct {
-	repo        SubnetRepo
+	repo        Repo
 	addrRefRepo AddressRefRepo // optional → references[] пуст (graceful degradation)
 }
 
 // NewListUsedAddressesUseCase создаёт ListUsedAddressesUseCase. `addrRefRepo`
 // опционален (nil → references[] пуст).
-func NewListUsedAddressesUseCase(repo SubnetRepo, addrRefRepo AddressRefRepo) *ListUsedAddressesUseCase {
-	return &ListUsedAddressesUseCase{repo: repo, addrRefRepo: addrRefRepo}
+func NewListUsedAddressesUseCase(r Repo, addrRefRepo AddressRefRepo) *ListUsedAddressesUseCase {
+	return &ListUsedAddressesUseCase{repo: r, addrRefRepo: addrRefRepo}
 }
 
 // Execute — id-валидация + existence + AddressesBySubnet + (optional)
@@ -36,10 +38,15 @@ func (u *ListUsedAddressesUseCase) Execute(ctx context.Context, subnetID string,
 	if subnetID == "" {
 		return nil, nil, "", status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if _, err := u.repo.Get(ctx, subnetID); err != nil {
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
 		return nil, nil, "", mapRepoErr(err)
 	}
-	addrs, nextToken, err := u.repo.AddressesBySubnet(ctx, subnetID, p)
+	defer func() { _ = rd.Close() }()
+	if _, err := rd.Subnets().Get(ctx, subnetID); err != nil {
+		return nil, nil, "", mapRepoErr(err)
+	}
+	addrs, nextToken, err := rd.Subnets().AddressesBySubnet(ctx, subnetID, p)
 	if err != nil {
 		return nil, nil, "", mapRepoErr(err)
 	}

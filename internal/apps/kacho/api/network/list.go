@@ -51,7 +51,7 @@ func NewListSubnetsUseCase(r Repo, subnetReader SubnetReader) *ListSubnetsUseCas
 }
 
 // Execute — id validate → existence check → list subnets.
-func (u *ListSubnetsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*domain.SubnetRecord, string, error) {
+func (u *ListSubnetsUseCase) Execute(ctx context.Context, networkID string, p Pagination) ([]*kachorepo.SubnetRecord, string, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, networkID); err != nil {
 		return nil, "", err
 	}

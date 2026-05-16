@@ -25,7 +25,7 @@ import (
 // nil (skip AuthZ — R10 fail-fast hardening; production composition root
 // в cmd/vpc/main.go обязан передать non-nil).
 type SubnetAuthZGetter interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // Handler — реализация vpcv1.AddressServiceServer на основе use-case'ов

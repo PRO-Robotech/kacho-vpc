@@ -16,20 +16,16 @@ import "time"
 // Импорт: домен сам ни от чего не зависит (skill §1 A.5), здесь только stdlib
 // `time` — это сохраняет принцип clean architecture.
 //
-// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord` и `AddressRecord`
-// уехали из domain в repo-leaf — теперь живут как `kacho.NetworkRecord` /
-// `kacho.AddressRecord` в `internal/repo/kacho/entity_network.go` /
-// `entity_address.go`. Остальные 6 Record-типов (Subnet/RouteTable/
-// SecurityGroup/Gateway/PrivateEndpoint/NetworkInterface) ещё здесь — миграция
-// их в repo-leaf — отдельные subtasks Wave 5 replicate.
-
-// SubnetRecord — repo-entity для Subnet. domain.Subnet + CreatedAt (DB-managed).
-// Wave 2 batch A (KAC-94) — parity с NetworkRecord. См. doc-комментарий на
-// NetworkRecord выше.
-type SubnetRecord struct {
-	Subnet
-	CreatedAt time.Time
-}
+// Wave 5 (KAC-94, skill evgeniy §4 D.1): `NetworkRecord`, `SubnetRecord`,
+// `AddressRecord`, `PrivateEndpointRecord`, `NetworkInterfaceRecord` уехали из
+// domain в repo-leaf — теперь живут как `kacho.<X>Record` в
+// `internal/repo/kacho/entity_<x>.go`. Остаются здесь только
+// `RouteTableRecord`/`SecurityGroupRecord`/`GatewayRecord` — RouteTable и
+// Gateway уже частично мигрированы через separate `kacho.<X>Record` (см.
+// `entity_route_table.go` / `entity_gateway.go`), но domain-копии оставлены
+// до удаления последних `domain.<X>Record` referenсes по всему коду;
+// SecurityGroup — мигрируется в финальном subtask Wave 5 replicate (SG own
+// use-cases CQRS).
 
 // Wave 5 replicate (KAC-94): AddressRecord уехал в repo-leaf
 // `internal/repo/kacho/entity_address.go` как `kacho.AddressRecord` (parity

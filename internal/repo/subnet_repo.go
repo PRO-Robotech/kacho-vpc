@@ -12,14 +12,15 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Subnet — type-alias на domain.SubnetRecord (repo-entity с DB-managed
+// Subnet — type-alias на kachorepo.SubnetRecord (repo-entity с DB-managed
 // CreatedAt). Имя `repo.Subnet` сохранено для читаемости call-site'ов
 // (`*repo.Subnet` в service/handler-коде), а сама структура объявлена в
 // `domain` чтобы её мог типизировать ещё и `internal/repo` без import-cycle.
 // Wave 2 batch A (KAC-94), parity с repo.Network.
-type Subnet = domain.SubnetRecord
+type Subnet = kachorepo.SubnetRecord
 
 // SubnetRepo — реализация SubnetRepoIface поверх pgxpool.
 type SubnetRepo struct {
@@ -126,7 +127,7 @@ func (r *SubnetRepo) List(ctx context.Context, f SubnetFilter, p Pagination) ([]
 
 // Insert вставляет Subnet. Принимает domain.Subnet (без CreatedAt — DB-managed
 // через явный UTC-now для детерминированности тестов; source of truth — БД).
-// Возвращает *Subnet (= *domain.SubnetRecord) с заполненным CreatedAt.
+// Возвращает *Subnet (= *kachorepo.SubnetRecord) с заполненным CreatedAt.
 func (r *SubnetRepo) Insert(ctx context.Context, s *domain.Subnet) (*Subnet, error) {
 	labelsJSON, err := marshalJSONB(domain.LabelsToMap(s.Labels), "Subnet.labels")
 	if err != nil {

@@ -332,7 +332,7 @@ func networkToPb(rec *kachorepo.NetworkRecord) (*vpcv1.Network, error) {
 // subnetToPb / routeTableToPb / securityGroupToPb — repo-entity child-resource
 // → proto. Reuse уже зарегистрированных DTO-трансферов из `internal/dto/toproto`
 // (blank-import выше).
-func subnetToPb(rec *domain.SubnetRecord) (*vpcv1.Subnet, error) {
+func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	var dst *vpcv1.Subnet
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer Subnet failed")

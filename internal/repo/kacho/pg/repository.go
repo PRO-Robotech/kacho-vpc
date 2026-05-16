@@ -100,6 +100,12 @@ func (r *readerImpl) NetworkInterfaces() kacho.NetworkInterfaceReaderIface {
 	return &networkInterfaceReader{tx: r.tx}
 }
 
+// Subnets возвращает Subnet-reader, привязанный к этой read-TX.
+// Wave 5 replicate (KAC-94).
+func (r *readerImpl) Subnets() kacho.SubnetReaderIface {
+	return &subnetReader{tx: r.tx}
+}
+
 // Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
 // Идемпотентно. Игнорирует pgx.ErrTxClosed.
 func (r *readerImpl) Close() error {
@@ -177,6 +183,16 @@ func (w *writerImpl) NetworkInterfaces() kacho.NetworkInterfaceWriterIface {
 	return &networkInterfaceWriter{
 		networkInterfaceReader: networkInterfaceReader{tx: w.tx},
 		emitter:                &outboxEmitter{tx: w.tx},
+	}
+}
+
+// Subnets возвращает Subnet-writer, привязанный к этой write-TX.
+// G.2: writer видит свои writes (reader-методы — поверх той же pgx.Tx).
+// Wave 5 replicate (KAC-94).
+func (w *writerImpl) Subnets() kacho.SubnetWriterIface {
+	return &subnetWriter{
+		subnetReader: subnetReader{tx: w.tx},
+		emitter:      &outboxEmitter{tx: w.tx},
 	}
 }
 

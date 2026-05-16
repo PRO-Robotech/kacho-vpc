@@ -28,39 +28,38 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Pagination — alias на единый value-объект `internal/repo/kacho` (legacy
 // `repo.Pagination` сам уже alias на `kacho.Pagination` через iface.go).
-type Pagination = kacho.Pagination
+type Pagination = kachorepo.Pagination
 
 // NetworkInterfaceFilter — фильтр для List. Wave 5 replicate (KAC-94, NIC batch):
 // alias на CQRS-iface `kacho.NetworkInterfaceFilter`. Поля идентичны legacy
 // `repo.NetworkInterfaceFilter` (FolderID/InstanceID/SubnetID/NetworkID) — обе
 // структуры по сути одно и то же, после полной CQRS-миграции legacy `repo`-тип
 // уберём.
-type NetworkInterfaceFilter = kacho.NetworkInterfaceFilter
+type NetworkInterfaceFilter = kachorepo.NetworkInterfaceFilter
 
 // Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
 // работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias
 // (не type wrap) — тип взаимозаменяем с источником, никаких shim'ов. Parity с
 // `internal/apps/kacho/api/network/ports.go`.
 type (
-	Repo                        = kacho.Repository
-	Reader                      = kacho.RepositoryReader
-	Writer                      = kacho.RepositoryWriter
-	NetworkInterfaceReaderIface = kacho.NetworkInterfaceReaderIface
-	NetworkInterfaceWriterIface = kacho.NetworkInterfaceWriterIface
-	OutboxEmitter               = kacho.OutboxEmitter
+	Repo                        = kachorepo.Repository
+	Reader                      = kachorepo.RepositoryReader
+	Writer                      = kachorepo.RepositoryWriter
+	NetworkInterfaceReaderIface = kachorepo.NetworkInterfaceReaderIface
+	NetworkInterfaceWriterIface = kachorepo.NetworkInterfaceWriterIface
+	OutboxEmitter               = kachorepo.OutboxEmitter
 )
 
 // SubnetReader — узкий read-интерфейс для проверки parent Subnet в Create.
 // Subnet ещё не переехал на CQRS-iface (replicate-фаза — следующая итерация);
 // продолжаем использовать legacy port-shape (возвращает `*domain.SubnetRecord`).
 type SubnetReader interface {
-	Get(ctx context.Context, id string) (*domain.SubnetRecord, error)
+	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
 // AddressRepo — узкий интерфейс работы с Address-ресурсами, нужный NIC use-case'ам:

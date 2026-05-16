@@ -154,7 +154,7 @@ type Transferrable interface {
 
 	*DTO[time.Time, *timestamppb.Timestamp] |
 		*DTO[kachorepo.NetworkRecord, *vpcv1.Network] |
-		*DTO[domain.SubnetRecord, *vpcv1.Subnet] |
+		*DTO[kachorepo.SubnetRecord, *vpcv1.Subnet] |
 		*DTO[kachorepo.AddressRecord, *vpcv1.Address] |
 		*DTO[kachorepo.RouteTableRecord, *vpcv1.RouteTable] |
 		*DTO[kachorepo.SecurityGroupRecord, *vpcv1.SecurityGroup] |

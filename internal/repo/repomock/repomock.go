@@ -105,18 +105,18 @@ func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*kach
 
 // ---- SubnetRepo ----
 //
-// Wave 2 batch A (KAC-94): port возвращает *domain.SubnetRecord (repo-entity
+// Wave 2 batch A (KAC-94): port возвращает *kachorepo.SubnetRecord (repo-entity
 // с DB-managed CreatedAt). Mock хранит записи в map[id]*SubnetRecord и
 // проставляет CreatedAt при Insert. Parity с NetworkRepo (KAC-99).
 
 type SubnetRepo struct {
 	mu   sync.Mutex
-	data map[string]*domain.SubnetRecord
+	data map[string]*kachorepo.SubnetRecord
 }
 
-func NewSubnetRepo() *SubnetRepo { return &SubnetRepo{data: make(map[string]*domain.SubnetRecord)} }
+func NewSubnetRepo() *SubnetRepo { return &SubnetRepo{data: make(map[string]*kachorepo.SubnetRecord)} }
 
-func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) Get(_ context.Context, id string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -126,10 +126,10 @@ func (r *SubnetRepo) Get(_ context.Context, id string) (*domain.SubnetRecord, er
 	return s, nil
 }
 
-func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Pagination) ([]*domain.SubnetRecord, string, error) {
+func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Pagination) ([]*kachorepo.SubnetRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var result []*domain.SubnetRecord
+	var result []*kachorepo.SubnetRecord
 	for _, s := range r.data {
 		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
 			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
@@ -140,15 +140,15 @@ func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Paginat
 	return result, "", nil
 }
 
-func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rec := &domain.SubnetRecord{Subnet: *s, CreatedAt: time.Now().UTC()}
+	rec := &kachorepo.SubnetRecord{Subnet: *s, CreatedAt: time.Now().UTC()}
 	r.data[s.ID] = rec
 	return rec, nil
 }
 
-func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.data[s.ID]
@@ -170,7 +170,7 @@ func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -181,7 +181,7 @@ func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*domai
 	return s, nil
 }
 
-func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
@@ -193,7 +193,7 @@ func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string
 	return s, nil
 }
 
-func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*domain.SubnetRecord, error) {
+func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
