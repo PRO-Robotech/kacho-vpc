@@ -23,7 +23,10 @@ import (
 // обратной совместимости с legacy `*repo.SecurityGroupRepo`-консьюмерами.
 type SecurityGroup = kachorepo.SecurityGroupRecord
 
-// SecurityGroupRepo — реализация SecurityGroupRepoIface поверх pgxpool.
+// SecurityGroupRepo — pgxpool-impl репозитория SG. KAC-94 finalize: общий
+// port `SecurityGroupRepoIface` удалён (skill evgeniy A.7 + G.6); use-case-слой
+// — на CQRS-Repository, эта структура — для integration-тестов и duck-typing
+// admin-сервисов (`networkinternal` использует узкий port с одним `Get`).
 type SecurityGroupRepo struct {
 	pool *pgxpool.Pool
 }

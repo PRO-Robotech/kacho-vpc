@@ -12,7 +12,12 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
-// AddressPoolRepo — реализация AddressPoolRepoIface.
+// AddressPoolRepo — pgxpool-impl репозитория AddressPool. KAC-94 finalize:
+// общий port `AddressPoolRepoIface` удалён (skill evgeniy A.7 + G.6); use-case
+// слой `internal/apps/kacho/api/addresspool` описывает свой узкий port
+// (см. `addresspool.AddressPoolRepo` там — duck-typing); расширение CQRS-
+// Repository на AddressPool — отдельная итерация (admin-resource, низкая частота
+// write'ов, нет multi-resource atomic-инвариантов в одной writer-TX).
 type AddressPoolRepo struct {
 	pool *pgxpool.Pool
 }

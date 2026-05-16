@@ -19,7 +19,10 @@ import (
 // parity с repo.Network.
 type RouteTable = kachorepo.RouteTableRecord
 
-// RouteTableRepo — реализация RouteTableRepoIface поверх pgxpool.
+// RouteTableRepo — pgxpool-impl репозитория Route Tables. KAC-94 finalize:
+// общий port `RouteTableRepoIface` удалён (skill evgeniy A.7 + G.6); use-case-
+// слой — на CQRS-Repository, эта структура — для integration-тестов и
+// Network.Delete children-check (передаётся как узкий port).
 type RouteTableRepo struct {
 	pool *pgxpool.Pool
 }
