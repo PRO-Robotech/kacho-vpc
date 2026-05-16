@@ -2,6 +2,7 @@ package networkinterface
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,11 +16,11 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// Blank-import регистрирует трансферы (включая NetworkInterface) через init().
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // niResource — название ресурса для сообщений `corevalidate.ResourceID`.
@@ -115,10 +116,30 @@ func validateNICAddressCardinality(v4IDs, v6IDs []string) error {
 // marshalNetworkInterfaceRecord конвертирует repo-entity NIC в *anypb.Any через
 // DTO-реестр (skill evgeniy §3 C.3 / C.4). Используется worker'ами Create/Update/
 // Attach/Detach для запихивания результата в Operation.response.
-func marshalNetworkInterfaceRecord(rec *domain.NetworkInterfaceRecord) (*anypb.Any, error) {
+//
+// Wave 5 replicate (KAC-94, NIC batch): принимает `*kacho.NetworkInterfaceRecord`
+// — repo-entity переехала из domain в repo-leaf.
+func marshalNetworkInterfaceRecord(rec *kachorepo.NetworkInterfaceRecord) (*anypb.Any, error) {
 	var dst *vpcv1.NetworkInterface
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, fmt.Errorf("dto.Transfer NetworkInterface: %w", err)
 	}
 	return anypb.New(dst)
+}
+
+// networkInterfacePayloadMap — snapshot NIC для outbox payload. Wave 5 replicate
+// (KAC-94, NIC batch): use-case-слой эмитит outbox-event через
+// `writer.Outbox().Emit(...)` (вместо legacy emit'а из глубин repo), поэтому
+// snapshot собирается здесь — JSON round-trip как `networkInterfacePayload` в
+// `internal/repo/outbox.go` / `internal/repo/shim_kacho_ni.go::NetworkInterfacePayload`.
+func networkInterfacePayloadMap(n *kachorepo.NetworkInterfaceRecord) map[string]any {
+	b, err := json.Marshal(n)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
 }

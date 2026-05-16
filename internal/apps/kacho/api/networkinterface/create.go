@@ -47,8 +47,14 @@ type CreateInput struct {
 // exists, name unique, cardinality v4/v6, address-refs) выполняются ДО создания
 // Operation. Async-часть (`doCreate`) — атомарный backstop через FK / DB CHECK
 // (миграция 0018, KAC-55) / UNIQUE MAC.
+//
+// Wave 5 replicate (KAC-94, NIC batch, skill evgeniy §6 G.5 / §7 I.9 / I.10):
+// worker открывает ОДНУ writer-TX и делает в ней Insert(NIC) + outbox-emit
+// атомарно. Address-attach (SetReference на addresses) пока через legacy
+// AddressRepo — отдельная TX (Address ещё не полностью на CQRS-writer для
+// SetReference); переход на single writer-TX — следующий шаг replicate-фазы.
 type CreateNetworkInterfaceUseCase struct {
-	repo         NetworkInterfaceRepo
+	repo         Repo
 	subnetRead   SubnetReader
 	addressRepo  AddressRepo
 	folderClient FolderClient
@@ -56,9 +62,9 @@ type CreateNetworkInterfaceUseCase struct {
 }
 
 // NewCreateNetworkInterfaceUseCase создаёт CreateNetworkInterfaceUseCase.
-func NewCreateNetworkInterfaceUseCase(repo NetworkInterfaceRepo, subnetRead SubnetReader, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
+func NewCreateNetworkInterfaceUseCase(r Repo, subnetRead SubnetReader, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
 	return &CreateNetworkInterfaceUseCase{
-		repo:         repo,
+		repo:         r,
 		subnetRead:   subnetRead,
 		addressRepo:  addressRepo,
 		folderClient: folderClient,
@@ -76,10 +82,14 @@ func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateIn
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
 	// Domain-self-validation (skill evgeniy §4 D.5 / AP-1): Name/Description/Labels
-	// + MAC через newtype Validate(). Service-слой больше НЕ зовёт corevalidate.*.
+	// + MAC + cardinality v4/v6 (KAC-55) через newtype Validate(). Service-слой
+	// больше НЕ зовёт corevalidate.* для этих инвариантов.
 	if err := n.Validate(); err != nil {
 		return nil, err
 	}
+	// validateNICAddressCardinality — fast-fail с понятным `invalidArg` (с
+	// BadRequest-details для verbatim YC parity); domain.Validate тоже это
+	// проверяет, но даёт generic error. См. helpers.go.
 	if err := validateNICAddressCardinality(n.V4AddressIDs, n.V6AddressIDs); err != nil {
 		return nil, err
 	}
@@ -109,6 +119,11 @@ func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateIn
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
 // folder-exists + Subnet.Get + Address-refs валидация + маркировка (used + referrer)
 // + Insert NIC. MAC-allocation retry на cloud-wide UNIQUE-collision.
+//
+// Wave 5 replicate (KAC-94, NIC batch): Insert(NIC) + outbox-emit идут в одной
+// writer-TX (skill evgeniy §6 G.5). Address-маркировка — пока legacy (отдельная
+// TX в `AddressRepo.SetReference`); rollback маркировки при ошибке Insert —
+// best-effort через `detachAddresses`.
 func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID string, in CreateInput) (*anypb.Any, error) {
 	n := in.NetworkInterface
 	exists, err := u.folderClient.Exists(ctx, n.FolderID)
@@ -123,7 +138,8 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	}
 	// Валидируем ссылки на Address-ресурсы (существуют, нужной версии, в той же
 	// подсети, не заняты другим референтом) и помечаем их used=true + referrer.
-	// Best-effort v1: валидация/маркировка адресов и Insert NIC не в одной tx.
+	// Best-effort v1: валидация/маркировка адресов и Insert NIC не в одной tx —
+	// rollback маркировки при ошибке делается через `detachAddresses` ниже.
 	if err := u.validateAndAttachAddresses(ctx, niID, string(n.Name), n.SubnetID, n.V4AddressIDs, n.V6AddressIDs); err != nil {
 		return nil, err
 	}
@@ -147,31 +163,46 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		UsedByID:         usedByID,
 		Status:           st,
 	}
+	allAddrs := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
 	// MAC аллоцируется здесь и больше не меняется на жизни NIC (AWS-ENI semantics).
 	// При cloud-wide UNIQUE-collision генерируем новый MAC и повторяем Insert.
-	var created *domain.NetworkInterfaceRecord
-	var insertErr error
+	// Каждая попытка — отдельная writer-TX (CAS-конфликт на MAC требует start-over).
 	for attempt := 0; attempt < niMacRetryAttempts; attempt++ {
 		mac, merr := macutil.GenerateMAC()
 		if merr != nil {
-			u.detachAddresses(ctx, append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...))
+			u.detachAddresses(ctx, allAddrs)
 			return nil, status.Errorf(codes.Internal, "generate mac: %v", merr)
 		}
 		rec.MAC = mac
-		created, insertErr = u.repo.Insert(ctx, rec)
-		if insertErr == nil {
-			return marshalNetworkInterfaceRecord(created)
+
+		w, werr := u.repo.Writer(ctx)
+		if werr != nil {
+			u.detachAddresses(ctx, allAddrs)
+			return nil, mapRepoErr(werr)
 		}
-		if !errors.Is(insertErr, repo.ErrMacCollision) {
-			break
+		created, insertErr := w.NetworkInterfaces().Insert(ctx, rec)
+		if insertErr != nil {
+			w.Abort()
+			if errors.Is(insertErr, repo.ErrMacCollision) {
+				continue // retry с новым MAC
+			}
+			u.detachAddresses(ctx, allAddrs)
+			return nil, mapRepoErr(insertErr)
 		}
+		if oerr := w.Outbox().Emit(ctx, "NetworkInterface", created.ID, "CREATED", networkInterfacePayloadMap(created)); oerr != nil {
+			w.Abort()
+			u.detachAddresses(ctx, allAddrs)
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		if cerr := w.Commit(); cerr != nil {
+			u.detachAddresses(ctx, allAddrs)
+			return nil, mapRepoErr(cerr)
+		}
+		return marshalNetworkInterfaceRecord(created)
 	}
-	// rollback маркировки адресов best-effort.
-	u.detachAddresses(ctx, append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...))
-	if errors.Is(insertErr, repo.ErrMacCollision) {
-		return nil, status.Errorf(codes.Internal, "could not allocate unique MAC after %d attempts", niMacRetryAttempts)
-	}
-	return nil, mapRepoErr(insertErr)
+	// Все попытки исчерпаны — rollback маркировки адресов best-effort.
+	u.detachAddresses(ctx, allAddrs)
+	return nil, status.Errorf(codes.Internal, "could not allocate unique MAC after %d attempts", niMacRetryAttempts)
 }
 
 // validateAddressRef проверяет, что Address id существует, имеет ожидаемую
@@ -210,6 +241,11 @@ func (u *CreateNetworkInterfaceUseCase) validateAddressRef(ctx context.Context, 
 // validateAndAttachAddresses валидирует все v4/v6 address-refs, затем помечает
 // каждый used=true + referrer={network_interface, nicID, nicName}. Best-effort:
 // если что-то падает в середине, ранее размеченные адреса откатываются.
+//
+// **Address attach-race (workspace CLAUDE.md §«Within-service refs — DB-уровень
+// обязателен», запрет #10):** SetReference на repo-уровне делает atomic CAS на
+// `addresses.used` — параллельная попытка занять тот же адрес → ErrFailedPrecondition.
+// Этот use-case ловит ошибку, откатывает уже-attached и возвращает её клиенту.
 func (u *CreateNetworkInterfaceUseCase) validateAndAttachAddresses(ctx context.Context, nicID, nicName, nicSubnet string, v4IDs, v6IDs []string) error {
 	for _, id := range v4IDs {
 		if err := u.validateAddressRef(ctx, id, nicSubnet, domain.IpVersionIPv4); err != nil {

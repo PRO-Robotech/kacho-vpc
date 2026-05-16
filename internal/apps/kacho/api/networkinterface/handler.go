@@ -16,6 +16,7 @@ import (
 	// Blank-import регистрирует NetworkInterface/time DTO трансферы (skill evgeniy §3 C.4).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация vpcv1.NetworkInterfaceServiceServer на основе use-case'ов
@@ -251,7 +252,9 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkInte
 }
 
 // networkInterfaceToPb — repo-entity NIC → proto NIC через DTO-реестр.
-func networkInterfaceToPb(rec *domain.NetworkInterfaceRecord) (*vpcv1.NetworkInterface, error) {
+// Wave 5 replicate (KAC-94, NIC batch): принимает `*kacho.NetworkInterfaceRecord`
+// (repo-entity переехала из domain в repo-leaf).
+func networkInterfaceToPb(rec *kachorepo.NetworkInterfaceRecord) (*vpcv1.NetworkInterface, error) {
 	var dst *vpcv1.NetworkInterface
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
 		return nil, status.Error(codes.Internal, "dto.Transfer NetworkInterface failed")

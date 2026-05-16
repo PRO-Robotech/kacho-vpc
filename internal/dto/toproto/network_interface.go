@@ -5,13 +5,19 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// networkInterface — receiver-объект под трансфер domain.NetworkInterfaceRecord →
+// networkInterface — receiver-объект под трансфер kacho.NetworkInterfaceRecord →
 // *vpcv1.NetworkInterface. Wave 2 batch C (KAC-94), parity с network.go (pilot KAC-99) /
 // security_group.go (batch B). Принимает repo-entity (NetworkInterfaceRecord),
 // потому что в pb-выходе требуется CreatedAt — он живёт в repo-проекции, не в
 // domain.NetworkInterface (skill evgeniy §4 D.1 / §7 H.1).
+//
+// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaceRecord переехал из
+// `domain` в repo-leaf `internal/repo/kacho/entity_network_interface.go` — DTO
+// теперь импортит kachorepo, что семантически правильно (DTO мост между
+// repo-entity и proto).
 type networkInterface struct{}
 
 // toPb формирует *vpcv1.NetworkInterface из repo-entity. CreatedAt — truncate
@@ -19,7 +25,7 @@ type networkInterface struct{}
 //
 // Публичная проекция — без data-plane-полей; раньше data-plane была в отдельной
 // InternalNetworkInterface message, удалена в KAC-79/KAC-36 (post-kube-ovn).
-func (networkInterface) toPb(rec domain.NetworkInterfaceRecord) (*vpcv1.NetworkInterface, error) {
+func (networkInterface) toPb(rec kachorepo.NetworkInterfaceRecord) (*vpcv1.NetworkInterface, error) {
 	ts, err := (timeObj{}).toPb(rec.CreatedAt)
 	if err != nil {
 		return nil, err

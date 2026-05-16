@@ -12,12 +12,19 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// NetworkInterface — type-alias на domain.NetworkInterfaceRecord (repo-entity
-// с DB-managed CreatedAt). Wave 2 batch C (KAC-94), parity с repo.SecurityGroup /
-// repo.PrivateEndpoint.
-type NetworkInterface = domain.NetworkInterfaceRecord
+// NetworkInterface — type-alias на kacho.NetworkInterfaceRecord (repo-entity
+// с DB-managed CreatedAt).
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §4 D.1 / §7 H.1): NIC-Record уехал
+// из `domain` в repo-leaf `internal/repo/kacho/entity_network_interface.go`.
+// Тип не изменился (поля идентичны: `domain.NetworkInterface` + `CreatedAt`);
+// сместился из domain в repo-пакет, чтобы DB-managed CreatedAt не жил в
+// domain. Legacy NICRepo продолжает использовать alias под коротким именем
+// `repo.NetworkInterface`.
+type NetworkInterface = kachorepo.NetworkInterfaceRecord
 
 // NetworkInterfaceRepo — реализация NetworkInterfaceRepo поверх pgxpool.
 type NetworkInterfaceRepo struct {

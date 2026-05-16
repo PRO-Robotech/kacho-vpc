@@ -62,9 +62,7 @@ type GatewayRecord struct {
 // `kacho.PrivateEndpointRecord` (parity с NetworkRecord). Здесь его больше нет
 // — все consumer'ы импортируют `kacho.PrivateEndpointRecord` напрямую.
 
-// NetworkInterfaceRecord — repo-entity для NetworkInterface. domain.NetworkInterface
-// + CreatedAt (DB-managed). Wave 2 batch C (KAC-94).
-type NetworkInterfaceRecord struct {
-	NetworkInterface
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaceRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_network_interface.go` как
+// `kacho.NetworkInterfaceRecord` (parity с NetworkRecord). Здесь его больше нет
+// — все consumer'ы импортируют `kacho.NetworkInterfaceRecord` напрямую.

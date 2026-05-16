@@ -2,8 +2,8 @@ package networkinterface
 
 import (
 	"context"
-	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,130 +13,72 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
-// Тесты NetworkInterface use-case'ов и handler'а. Wave 3 (KAC-94).
+// Тесты NetworkInterface use-case'ов и handler'а.
+//
+// Wave 5 replicate (KAC-94, NIC batch): NIC use-case'ы переехали на CQRS-Repository
+// (skill evgeniy §6 G.1-G.7). NIC-mock — `kachomock.Repository` (in-memory
+// CQRS-impl с TX-семантикой и outbox-буфером); Subnet/Address — пока legacy
+// `repomock.*`.
 //
 // NIC-specific:
 //   - Нет Move RPC (NIC привязан к Subnet).
 //   - Есть AttachToInstance / DetachFromInstance с atomic CAS на repo-уровне
 //     (миграция 0016, KAC-52). На уровне unit-теста мы проверяем sync-семантику
-//     handler'а; race-сценарии — `internal/repo/network_interface_attach_race_integration_test.go`.
-//   - MAC аллокация — в `internal/service/mac.go` (не дёргаем напрямую).
-
-// ---- in-memory NIC repo fake ----
-
-// niRepoFake — реализация NetworkInterfaceRepo для unit-тестов use-case'ов.
-// Параллель `internal/service/ni_test_helpers_test.go::niRepoFake`, но локальная
-// (use-case-пакет не зависит от service-test-helper'а; параметризация типов та же).
-type niRepoFake struct {
-	mu   sync.Mutex
-	data map[string]*domain.NetworkInterfaceRecord
-}
-
-func newNIRepoFake() *niRepoFake {
-	return &niRepoFake{data: map[string]*domain.NetworkInterfaceRecord{}}
-}
-
-func (r *niRepoFake) Get(_ context.Context, id string) (*domain.NetworkInterfaceRecord, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	n, ok := r.data[id]
-	if !ok {
-		return nil, repo.ErrNotFound
-	}
-	cp := *n
-	return &cp, nil
-}
-
-func (r *niRepoFake) List(_ context.Context, _ NetworkInterfaceFilter, _ Pagination) ([]*domain.NetworkInterfaceRecord, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var out []*domain.NetworkInterfaceRecord
-	for _, n := range r.data {
-		cp := *n
-		out = append(out, &cp)
-	}
-	return out, "", nil
-}
-
-func (r *niRepoFake) Insert(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	rec := &domain.NetworkInterfaceRecord{NetworkInterface: *n}
-	r.data[n.ID] = rec
-	return rec, nil
-}
-
-func (r *niRepoFake) UpdateMeta(_ context.Context, n *domain.NetworkInterface) (*domain.NetworkInterfaceRecord, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	rec := &domain.NetworkInterfaceRecord{NetworkInterface: *n}
-	r.data[n.ID] = rec
-	return rec, nil
-}
-
-func (r *niRepoFake) SetUsedBy(_ context.Context, id, refType, refID, refName string, st domain.NetworkInterfaceStatus) (*domain.NetworkInterfaceRecord, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	n, ok := r.data[id]
-	if !ok {
-		return nil, repo.ErrNotFound
-	}
-	if refID == "" {
-		refType, refName = "", ""
-	}
-	// CAS-семантика: если NIC уже attached к другому owner-у — FailedPrecondition
-	// (зеркало repo-уровня, миграция 0016 / KAC-52).
-	if refID != "" && n.UsedByID != "" && n.UsedByID != refID {
-		return nil, repo.ErrFailedPrecondition
-	}
-	n.UsedByType, n.UsedByID, n.UsedByName, n.Status = refType, refID, refName, st
-	return n, nil
-}
-
-func (r *niRepoFake) Delete(_ context.Context, id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.data[id]; !ok {
-		return repo.ErrNotFound
-	}
-	delete(r.data, id)
-	return nil
-}
+//     handler'а через kachomock, который зеркалит CAS-семантику; реальные
+//     race-сценарии — `internal/repo/network_interface_attach_race_integration_test.go`
+//     (legacy) и новый `internal/repo/kacho/pg/network_interface_integration_test.go`.
 
 // ---- handler builder ----
 
 func makeHandler(t *testing.T,
-	nr *niRepoFake,
+	kr *kachomock.Repository,
 	sr *repomock.SubnetRepo,
 	ar *repomock.AddressRepo,
 	or *repomock.OpsRepo,
 	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateNetworkInterfaceUseCase(nr, sr, ar, fc, or)
-	update := NewUpdateNetworkInterfaceUseCase(nr, ar, or)
-	deleteUC := NewDeleteNetworkInterfaceUseCase(nr, ar, or)
-	get := NewGetNetworkInterfaceUseCase(nr)
-	list := NewListNetworkInterfacesUseCase(nr)
-	attach := NewAttachToInstanceUseCase(nr, or)
-	detach := NewDetachFromInstanceUseCase(nr, or)
+	create := NewCreateNetworkInterfaceUseCase(kr, sr, ar, fc, or)
+	update := NewUpdateNetworkInterfaceUseCase(kr, ar, or)
+	deleteUC := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
+	get := NewGetNetworkInterfaceUseCase(kr)
+	list := NewListNetworkInterfacesUseCase(kr)
+	attach := NewAttachToInstanceUseCase(kr, or)
+	detach := NewDetachFromInstanceUseCase(kr, or)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, get, list, attach, detach, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *niRepoFake, *repomock.SubnetRepo, *repomock.AddressRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, *repomock.SubnetRepo, *repomock.AddressRepo) {
 	t.Helper()
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.FolderClient{OK: folderOK}
-	return makeHandler(t, nr, sr, ar, or, fc), or, nr, sr, ar
+	return makeHandler(t, kr, sr, ar, or, fc), or, kr, sr, ar
+}
+
+// preloadNIC помещает NIC прямо в state mock-Repository (как если бы он
+// уже существовал) — обходим Writer-TX, потому что в тестах нужно arrange
+// pre-existing state до Action.
+func preloadNIC(t *testing.T, kr *kachomock.Repository, rec *kachorepo.NetworkInterfaceRecord) {
+	t.Helper()
+	if rec.CreatedAt.IsZero() {
+		rec.CreatedAt = time.Now().UTC()
+	}
+	w, err := kr.Writer(context.Background())
+	require.NoError(t, err)
+	_, err = w.NetworkInterfaces().Insert(context.Background(), &rec.NetworkInterface)
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
 }
 
 // ---- Handler — sync paths ----
@@ -209,11 +151,11 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 // ---- use-case-level ----
 
 func TestCreateUseCase_FolderRequired(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{Name: "nic"}})
 	require.Error(t, err)
@@ -222,11 +164,11 @@ func TestCreateUseCase_FolderRequired(t *testing.T) {
 }
 
 func TestCreateUseCase_SubnetRequired(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{FolderID: "f1", Name: "nic"}})
 	require.Error(t, err)
@@ -235,11 +177,11 @@ func TestCreateUseCase_SubnetRequired(t *testing.T) {
 }
 
 func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID:     "f1",
@@ -253,14 +195,14 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 }
 
 func TestCreateUseCase_OK(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	// preset subnet
 	_, err := sr.Insert(context.Background(), &domain.Subnet{ID: "e9bsub1", FolderID: "f1", Name: "sn"})
 	require.NoError(t, err)
-	uc := NewCreateNetworkInterfaceUseCase(nr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID: "f1",
@@ -276,7 +218,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 }
 
 func TestUpdateUseCase_RequiresID(t *testing.T) {
-	uc := NewUpdateNetworkInterfaceUseCase(newNIRepoFake(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
+	uc := NewUpdateNetworkInterfaceUseCase(kachomock.NewRepository(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{NetworkInterfaceID: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -284,7 +226,7 @@ func TestUpdateUseCase_RequiresID(t *testing.T) {
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
-	uc := NewDeleteNetworkInterfaceUseCase(newNIRepoFake(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
+	uc := NewDeleteNetworkInterfaceUseCase(kachomock.NewRepository(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -292,7 +234,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListNetworkInterfacesUseCase(newNIRepoFake())
+	uc := NewListNetworkInterfacesUseCase(kachomock.NewRepository())
 	_, _, err := uc.Execute(context.Background(), NetworkInterfaceFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -300,7 +242,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestAttachUseCase_RequiresInstance(t *testing.T) {
-	uc := NewAttachToInstanceUseCase(newNIRepoFake(), repomock.NewOpsRepo())
+	uc := NewAttachToInstanceUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), "", "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -308,10 +250,10 @@ func TestAttachUseCase_RequiresInstance(t *testing.T) {
 }
 
 func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
-	nr.data[nicID] = &domain.NetworkInterfaceRecord{
+	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
 			FolderID:   "f1",
@@ -320,8 +262,8 @@ func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 			UsedByID:   "other-instance",
 			Status:     domain.NIStatusActive,
 		},
-	}
-	uc := NewAttachToInstanceUseCase(nr, or)
+	})
+	uc := NewAttachToInstanceUseCase(kr, or)
 	op, err := uc.Execute(context.Background(), nicID, "my-instance", "0")
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -330,18 +272,18 @@ func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 }
 
 func TestAttachUseCase_OK(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
-	nr.data[nicID] = &domain.NetworkInterfaceRecord{
+	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:       nicID,
 			FolderID: "f1",
 			SubnetID: "e9bsub1",
 			Status:   domain.NIStatusAvailable,
 		},
-	}
-	uc := NewAttachToInstanceUseCase(nr, or)
+	})
+	uc := NewAttachToInstanceUseCase(kr, or)
 	op, err := uc.Execute(context.Background(), nicID, "my-instance", "0")
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -350,10 +292,10 @@ func TestAttachUseCase_OK(t *testing.T) {
 }
 
 func TestDetachUseCase_OK(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
-	nr.data[nicID] = &domain.NetworkInterfaceRecord{
+	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
 			FolderID:   "f1",
@@ -362,27 +304,30 @@ func TestDetachUseCase_OK(t *testing.T) {
 			UsedByID:   "my-instance",
 			Status:     domain.NIStatusActive,
 		},
-	}
-	uc := NewDetachFromInstanceUseCase(nr, or)
+	})
+	uc := NewDetachFromInstanceUseCase(kr, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.Nil(t, saved.Error)
 	// После detach NIC должен быть available и без owner.
-	got, err := nr.Get(context.Background(), nicID)
+	rd, err := kr.Reader(context.Background())
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	got, err := rd.NetworkInterfaces().Get(context.Background(), nicID)
 	require.NoError(t, err)
 	assert.Equal(t, "", got.UsedByID)
 	assert.Equal(t, domain.NIStatusAvailable, got.Status)
 }
 
-// ---- delete response = Empty ----
+// ---- delete precondition / response = Empty ----
 
 func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	ar := repomock.NewAddressRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
-	nr.data[nicID] = &domain.NetworkInterfaceRecord{
+	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
 			FolderID:   "f1",
@@ -391,8 +336,8 @@ func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 			UsedByID:   "my-instance",
 			Status:     domain.NIStatusActive,
 		},
-	}
-	uc := NewDeleteNetworkInterfaceUseCase(nr, ar, or)
+	})
+	uc := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -401,19 +346,19 @@ func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 }
 
 func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
-	nr := newNIRepoFake()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	ar := repomock.NewAddressRepo()
 	nicID := ids.NewID(ids.PrefixSubnet)
-	nr.data[nicID] = &domain.NetworkInterfaceRecord{
+	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:       nicID,
 			FolderID: "f1",
 			SubnetID: "e9bsub1",
 			Status:   domain.NIStatusAvailable,
 		},
-	}
-	uc := NewDeleteNetworkInterfaceUseCase(nr, ar, or)
+	})
+	uc := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
 	op, err := uc.Execute(context.Background(), nicID)
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -424,7 +369,7 @@ func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
 }
 
 func TestNetworkInterfaceToPb_Fields(t *testing.T) {
-	rec := &domain.NetworkInterfaceRecord{
+	rec := &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:               "e9bnic1",
 			FolderID:         "f1",

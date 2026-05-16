@@ -66,8 +66,11 @@ type AddressRefRepo interface {
 // `nil` → проверка пропускается (FK RESTRICT в worker'е всё равно подберёт
 // address-bearing NIC через цепочку NIC → Address → Subnet). NIC-репо живёт в
 // `internal/service/network_interface.go` — wire через composition root.
+//
+// Wave 5 replicate (KAC-94, NIC batch): возвращает `*kacho.NetworkInterfaceRecord`
+// — NIC-Record переехал из domain в repo-leaf.
 type NetworkInterfaceRepo interface {
-	ListBySubnet(ctx context.Context, subnetID string) ([]*domain.NetworkInterfaceRecord, error)
+	ListBySubnet(ctx context.Context, subnetID string) ([]*kachorepo.NetworkInterfaceRecord, error)
 }
 
 // FolderClient — то, что use-case'ам Subnet нужно от peer-сервиса

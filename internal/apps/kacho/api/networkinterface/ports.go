@@ -28,19 +28,20 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// Pagination — alias на единый value-объект `internal/repo/kacho` (через
-// `internal/repo` для обратной совместимости с handler-кодом).
-type Pagination = repo.Pagination
+// Pagination — alias на единый value-объект `internal/repo/kacho` (legacy
+// `repo.Pagination` сам уже alias на `kacho.Pagination` через iface.go).
+type Pagination = kacho.Pagination
 
-// NetworkInterfaceFilter — фильтр для List. Зеркалит `kacho.NetworkInterfaceFilter`
-// (CQRS-iface; до Wave 5 replicate это был `repo.NetworkInterfaceFilter`, но
-// после переноса iface в leaf — alias на kacho-type через legacy `repo`-shim).
-type NetworkInterfaceFilter = repo.NetworkInterfaceFilter
+// NetworkInterfaceFilter — фильтр для List. Wave 5 replicate (KAC-94, NIC batch):
+// alias на CQRS-iface `kacho.NetworkInterfaceFilter`. Поля идентичны legacy
+// `repo.NetworkInterfaceFilter` (FolderID/InstanceID/SubnetID/NetworkID) — обе
+// структуры по сути одно и то же, после полной CQRS-миграции legacy `repo`-тип
+// уберём.
+type NetworkInterfaceFilter = kacho.NetworkInterfaceFilter
 
 // Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
 // работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias

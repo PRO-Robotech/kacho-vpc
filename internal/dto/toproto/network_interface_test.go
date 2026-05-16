@@ -12,14 +12,17 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	// blank-import регистрирует трансферы (включая NetworkInterface).
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Wave 2 batch C (KAC-94): smoke-test трансфера NetworkInterfaceRecord →
 // *vpcv1.NetworkInterface. Регистрация — в init() пакета toproto.
+// Wave 5 replicate (KAC-94, NIC batch): NetworkInterfaceRecord уехал из
+// domain в repo-leaf — тесты используют `kacho.NetworkInterfaceRecord`.
 
 func TestDTO_TransferNetworkInterfaceRecord(t *testing.T) {
 	at := time.Date(2026, 5, 15, 12, 34, 56, 789_000_000, time.UTC)
-	rec := domain.NetworkInterfaceRecord{
+	rec := kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:               "e9bnic",
 			FolderID:         "folder-x",
@@ -57,7 +60,7 @@ func TestDTO_TransferNetworkInterfaceRecord(t *testing.T) {
 // TestDTO_NetworkInterface_UsedByFilled — Reference{referrer{type,id}, type=USED_BY}
 // заполняется только когда UsedByID != "" (parity со старым protoconv.NetworkInterface).
 func TestDTO_NetworkInterface_UsedByFilled(t *testing.T) {
-	rec := domain.NetworkInterfaceRecord{
+	rec := kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         "e9bnic",
 			SubnetID:   "e9bsub",
@@ -76,7 +79,7 @@ func TestDTO_NetworkInterface_UsedByFilled(t *testing.T) {
 }
 
 func TestDTO_NetworkInterface_UsedByEmpty(t *testing.T) {
-	rec := domain.NetworkInterfaceRecord{
+	rec := kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID: "e9bnic", SubnetID: "e9bsub", MAC: "0e:11:22:33:44:55", Status: domain.NIStatusAvailable,
 		},
