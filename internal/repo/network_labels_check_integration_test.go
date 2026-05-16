@@ -12,7 +12,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	"github.com/PRO-Robotech/kacho-vpc/internal/service"
 )
 
 // KAC-94 (Wave 2 batch D, skill evgeniy §5 E.2): миграция
@@ -22,7 +21,7 @@ import (
 // убеждаются что DB-CHECK ловит cardinality / key-regex / value-length
 // нарушения — financial backstop для bug'ов в app-коде / внешних writers.
 //
-// SQLSTATE 23514 → wrapPgErr → service.ErrInvalidArg.
+// SQLSTATE 23514 → wrapPgErr → repo.ErrInvalidArg.
 
 func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	if testing.Short() {
@@ -80,7 +79,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	}
 	_, err = netRepo.Insert(ctx, tooManyNet)
 	require.Error(t, err, "labels с 65 парами должно отбиваться CHECK (cardinality > 64)")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (cardinality), got: %v", err)
 
 	// 4. Ключ нарушает regex (uppercase в начале) — CHECK отбивает.
@@ -94,7 +93,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	}
 	_, err = netRepo.Insert(ctx, badKeyNet)
 	require.Error(t, err, "labels с key uppercase-start должно отбиваться CHECK (regex)")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (key regex), got: %v", err)
 
 	// 5. Значение длиной 64 — CHECK отбивает (max 63).
@@ -109,7 +108,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	}
 	_, err = netRepo.Insert(ctx, badValNet)
 	require.Error(t, err, "labels с value длиной 64 должно отбиваться CHECK (length > 63)")
-	require.Truef(t, errors.Is(err, service.ErrInvalidArg),
+	require.Truef(t, errors.Is(err, repo.ErrInvalidArg),
 		"expected ErrInvalidArg from CHECK violation (value length), got: %v", err)
 
 	// 6. Edge: value длиной ровно 63 — OK (boundary).
