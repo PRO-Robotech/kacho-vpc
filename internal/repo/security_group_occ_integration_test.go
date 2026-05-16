@@ -11,17 +11,22 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
 // TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC drives two concurrent
 // UpdateRules calls against the same SecurityGroup row and asserts the
 // optimistic-concurrency guard (xmin::text WHERE-clause) holds: at most one
 // UPDATE lands per pair (never a silent lost-update), and any losing call gets
-// the conflict error contract (repo.ErrFailedPrecondition).
+// the conflict error contract (helpers.ErrFailedPrecondition).
 //
 // Run for many iterations to make the race fire reliably; assert globally that
 // a conflict was observed at least once (otherwise the OCC path is dead code).
+//
+// KAC-94 A.7 sub-PR 5/6: переписан на CQRS Writer (раньше — repo.SecurityGroupRepo
+// с автоматической tx-обёрткой; теперь каждый UpdateRules идёт в своей writer-TX).
 func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -34,16 +39,29 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	nr := repo.NewNetworkRepo(pool)
-	sgr := repo.NewSecurityGroupRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
+
+	withTx := func(t *testing.T, fn func(kacho.RepositoryWriter) error) error {
+		t.Helper()
+		w, err := r.Writer(ctx)
+		require.NoError(t, err)
+		if err := fn(w); err != nil {
+			w.Abort()
+			return err
+		}
+		return w.Commit()
+	}
 
 	net := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
 		FolderID: "folder-occ",
 		Name:     domain.RcNameVPC("net-for-occ-sg"),
 	}
-	_, err = nr.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
 	const iterations = 30
 	conflicts := 0
@@ -55,18 +73,18 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 			ID:        ids.NewID(ids.PrefixSecurityGroup),
 			FolderID:  "folder-occ",
 			NetworkID: net.ID,
-			Name:      "", // empty name => not subject to (folder_id, name) partial unique
+			Name:      "",
 			Status:    domain.SecurityGroupStatusActive,
 			Rules: []domain.SecurityGroupRule{
 				{ID: "seed", Direction: domain.SecurityGroupRuleDirectionIngress, ProtocolName: "ANY", FromPort: -1, ToPort: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
 			},
 		}
-		created, insErr := sgr.Insert(ctx, sg)
-		require.NoError(t, insErr)
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			_, e := w.SecurityGroups().Insert(ctx, sg)
+			return e
+		}))
 
-		// Each goroutine reads the SG (capturing the same xmin internally) and
-		// calls UpdateRules with a distinct addition rule. Without the OCC guard
-		// the second writer would overwrite the first → lost update.
+		// Each goroutine opens own writer-TX and calls UpdateRules.
 		var wg sync.WaitGroup
 		errs := make([]error, 2)
 		ruleIDs := [2]string{"add-a", "add-b"}
@@ -84,7 +102,10 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 					ToPort:       int64(8000 + idx),
 					V4CidrBlocks: []string{"10.0.0.0/8"},
 				}}
-				_, errs[idx] = sgr.UpdateRules(ctx, created.ID, nil, add)
+				errs[idx] = withTx(t, func(w kacho.RepositoryWriter) error {
+					_, e := w.SecurityGroups().UpdateRules(ctx, sg.ID, nil, add)
+					return e
+				})
 			}(g)
 		}
 		close(start)
@@ -92,29 +113,29 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 
 		switch {
 		case errs[0] == nil && errs[1] == nil:
-			// No conflict this round — both transactions serialized cleanly.
 			bothSucceeded++
 		case (errs[0] == nil) != (errs[1] == nil):
-			// Exactly one winner — the loser must report the conflict contract.
 			conflicts++
 			loser := errs[0]
 			if errs[1] != nil {
 				loser = errs[1]
 			}
-			require.ErrorIs(t, loser, repo.ErrFailedPrecondition,
+			require.ErrorIs(t, loser, helpers.ErrFailedPrecondition,
 				"the losing concurrent UpdateRules must return the OCC conflict error")
 		default:
 			t.Fatalf("iter %d: both UpdateRules failed (errA=%v, errB=%v) — at least one must always win", i, errs[0], errs[1])
 		}
 
 		// Invariant check: whichever update(s) succeeded, the row must contain
-		// the seed rule plus the additions from every successful writer — and in
-		// no case a *lost* update (a successful writer's rule missing).
-		final, getErr := sgr.Get(ctx, created.ID)
+		// the seed rule plus the additions from every successful writer.
+		rd, err := r.Reader(ctx)
+		require.NoError(t, err)
+		final, getErr := rd.SecurityGroups().Get(ctx, sg.ID)
+		require.NoError(t, rd.Close())
 		require.NoError(t, getErr)
 		have := map[string]bool{}
-		for _, r := range final.Rules {
-			have[r.ID] = true
+		for _, rr := range final.Rules {
+			have[rr.ID] = true
 		}
 		assert.True(t, have["seed"], "iter %d: seed rule must survive", i)
 		if errs[0] == nil {
@@ -123,7 +144,6 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 		if errs[1] == nil {
 			assert.True(t, have[ruleIDs[1]], "iter %d: successful writer B's rule must be present (no lost update)", i)
 		}
-		// When a conflict occurred, exactly one of the two additions should be present.
 		if conflicts > 0 && errs[0] != errs[1] {
 			cnt := 0
 			if have[ruleIDs[0]] {
@@ -135,7 +155,9 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 			assert.Equal(t, 1, cnt, "iter %d: on conflict exactly one addition must land", i)
 		}
 
-		require.NoError(t, sgr.Delete(ctx, created.ID))
+		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
+			return w.SecurityGroups().Delete(ctx, sg.ID)
+		}))
 	}
 
 	t.Logf("OCC iterations=%d conflicts=%d both-succeeded=%d", iterations, conflicts, bothSucceeded)

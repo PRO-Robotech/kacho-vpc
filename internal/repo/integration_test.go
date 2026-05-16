@@ -16,8 +16,13 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
+
+// KAC-94 A.7 sub-PR 5/6: переписан полностью на CQRS Writer (вместо legacy
+// repo.NewNetworkRepo / NewSubnetRepo / NewAddressRepo / NewRouteTableRepo).
 
 func setupTestDB(t testing.TB) string {
 	t.Helper()
@@ -44,15 +49,9 @@ func setupTestDB(t testing.TB) string {
 	require.NoError(t, goose.SetDialect("postgres"))
 	require.NoError(t, goose.Up(db, "."))
 
-	// KAC-94 (миграция 0034): схема `public` → `kacho_vpc`. Production-DSN
-	// получает search_path через config.baseDSN(); тесты строят DSN из
-	// testcontainers напрямую, поэтому добавляем то же значение здесь —
-	// иначе любой query из pgxpool после migrations не найдёт таблицы.
 	return appendSearchPathOptions(dsn)
 }
 
-// appendSearchPathOptions добавляет libpq `options=-c search_path=kacho_vpc,public`
-// в DSN (если ещё не задан). См. config.baseDSN — production-эквивалент.
 func appendSearchPathOptions(dsn string) string {
 	const optionsParam = "options=-c%20search_path%3Dkacho_vpc%2Cpublic"
 	if strings.Contains(dsn, "options=") || strings.Contains(dsn, "options%3D") {
@@ -63,6 +62,17 @@ func appendSearchPathOptions(dsn string) string {
 		sep = "&"
 	}
 	return dsn + sep + optionsParam
+}
+
+func legacyWithTx(t *testing.T, ctx context.Context, r kacho.Repository, fn func(kacho.RepositoryWriter) error) error {
+	t.Helper()
+	w, err := r.Writer(ctx)
+	require.NoError(t, err)
+	if err := fn(w); err != nil {
+		w.Abort()
+		return err
+	}
+	return w.Commit()
 }
 
 func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
@@ -77,10 +87,9 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := repo.NewNetworkRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
-	// Insert. Wave 2 pilot (KAC-99/KAC-94): domain.Network больше не несёт
-	// CreatedAt (DB-managed) и принимает newtypes для Name/Description/Labels.
 	n := &domain.Network{
 		ID:          ids.NewUID(),
 		FolderID:    "folder-1",
@@ -88,44 +97,56 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 		Description: domain.RcDescription("test"),
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
 	}
-	created, err := r.Insert(ctx, n)
-	require.NoError(t, err)
+	var created *kacho.NetworkRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created, e = w.Networks().Insert(ctx, n)
+		return e
+	}))
 	assert.Equal(t, n.ID, created.ID)
 	assert.Equal(t, domain.RcNameVPC("test-network"), created.Name)
 	val, _ := created.Labels.Get("env")
 	assert.Equal(t, domain.LabelVal("test"), val)
 
 	// Get
-	got, err := r.Get(ctx, n.ID)
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got, err := rd.Networks().Get(ctx, n.ID)
+	require.NoError(t, rd.Close())
 	require.NoError(t, err)
 	assert.Equal(t, n.ID, got.ID)
 
 	// List
-	nets, nextToken, err := r.List(ctx, repo.NetworkFilter{FolderID: "folder-1"}, repo.Pagination{})
+	rd2, err := r.Reader(ctx)
+	require.NoError(t, err)
+	nets, nextToken, err := rd2.Networks().List(ctx, kacho.NetworkFilter{FolderID: "folder-1"}, kacho.Pagination{})
+	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	assert.Len(t, nets, 1)
 	assert.Empty(t, nextToken)
 
-	// Update — Update принимает domain.Network (без CreatedAt). Берём embedded
-	// из repo-entity, меняем нужные поля.
+	// Update.
 	got.Name = domain.RcNameVPC("updated-network")
 	got.Description = domain.RcDescription("updated")
-	updated, err := r.Update(ctx, &got.Network)
-	require.NoError(t, err)
+	var updated *kacho.NetworkRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		updated, e = w.Networks().Update(ctx, &got.Network)
+		return e
+	}))
 	assert.Equal(t, domain.RcNameVPC("updated-network"), updated.Name)
 
-	// Delete
-	err = r.Delete(ctx, n.ID)
+	// Delete.
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Networks().Delete(ctx, n.ID)
+	}))
+
+	rd3, err := r.Reader(ctx)
 	require.NoError(t, err)
-
-	// Get after delete — должна вернуть ErrNotFound
-	_, err = r.Get(ctx, n.ID)
-	assert.ErrorIs(t, err, repo.ErrNotFound)
+	_, err = rd3.Networks().Get(ctx, n.ID)
+	require.NoError(t, rd3.Close())
+	assert.ErrorIs(t, err, helpers.ErrNotFound)
 }
-
-// TestIntegration_NetworkRepo_VPNIDAllocation — удалён в KAC-79/KAC-36
-// (post-kube-ovn: vpn_id allocation больше не выполняется kacho-vpc, kube-ovn
-// управляет underlay сам).
 
 func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	if testing.Short() {
@@ -139,20 +160,19 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	nr := repo.NewNetworkRepo(pool)
-	sr := repo.NewSubnetRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
-	// Сначала создаём network (FK constraint). CreatedAt больше не в domain
-	// (KAC-99/KAC-94), DB-managed via repo.
 	net := &domain.Network{
 		ID:       ids.NewUID(),
 		FolderID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-subnet"),
 	}
-	_, err = nr.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
-	// Insert subnet с несколькими CIDRs
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
 		FolderID:     "folder-1",
@@ -161,12 +181,19 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
 	}
-	created, err := sr.Insert(ctx, sub)
-	require.NoError(t, err)
+	var created *kacho.SubnetRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created, e = w.Subnets().Insert(ctx, sub)
+		return e
+	}))
 	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, created.V4CidrBlocks)
 
-	// Get
-	got, err := sr.Get(ctx, sub.ID)
+	// Get.
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got, err := rd.Subnets().Get(ctx, sub.ID)
+	require.NoError(t, rd.Close())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, got.V4CidrBlocks)
 	assert.Empty(t, got.V6CidrBlocks)
@@ -184,9 +211,10 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	ar := repo.NewAddressRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
-	// External address
+	// External address.
 	extAddr := &domain.Address{
 		ID:        ids.NewUID(),
 		FolderID:  "folder-1",
@@ -199,30 +227,37 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 			ZoneID:  "ru-central1-a",
 		},
 	}
-	created, err := ar.Insert(ctx, extAddr)
-	require.NoError(t, err)
+	var created *kacho.AddressRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created, e = w.Addresses().Insert(ctx, extAddr)
+		return e
+	}))
 	require.NotNil(t, created.ExternalIpv4)
 	assert.Equal(t, "203.0.113.10", created.ExternalIpv4.Address)
 	assert.Nil(t, created.InternalIpv4)
 
-	// ExistsIP
-	exists, err := ar.ExistsIP(ctx, "203.0.113.10")
+	// ExistsIP.
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	exists, err := rd.Addresses().ExistsIP(ctx, "203.0.113.10")
 	require.NoError(t, err)
 	assert.True(t, exists)
-
-	exists, err = ar.ExistsIP(ctx, "203.0.113.99")
+	exists, err = rd.Addresses().ExistsIP(ctx, "203.0.113.99")
 	require.NoError(t, err)
 	assert.False(t, exists)
+	require.NoError(t, rd.Close())
 
-	// Internal address — addresses.internal_subnet_id has an FK to subnets,
-	// so the referenced subnet (and its network) must exist first.
+	// Internal address — addresses.internal_subnet_id has an FK to subnets.
 	net := &domain.Network{
 		ID:       ids.NewUID(),
 		FolderID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-internal-addr"),
 	}
-	_, err = repo.NewNetworkRepo(pool).Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
 		FolderID:     "folder-1",
@@ -231,8 +266,10 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 		ZoneID:       "ru-central1-a",
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	}
-	_, err = repo.NewSubnetRepo(pool).Insert(ctx, sub)
-	require.NoError(t, err)
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Subnets().Insert(ctx, sub)
+		return e
+	}))
 
 	intAddr := &domain.Address{
 		ID:        ids.NewUID(),
@@ -244,8 +281,12 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 			SubnetID: sub.ID,
 		},
 	}
-	created2, err := ar.Insert(ctx, intAddr)
-	require.NoError(t, err)
+	var created2 *kacho.AddressRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created2, e = w.Addresses().Insert(ctx, intAddr)
+		return e
+	}))
 	require.NotNil(t, created2.InternalIpv4)
 	assert.Equal(t, "10.0.0.5", created2.InternalIpv4.Address)
 }
@@ -262,7 +303,8 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	ar := repo.NewAddressRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
 	addr := &domain.Address{
 		ID:        ids.NewUID(),
@@ -275,92 +317,127 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 			ZoneID:  "ru-central1-a",
 		},
 	}
-	created, err := ar.Insert(ctx, addr)
-	require.NoError(t, err)
+	var created *kacho.AddressRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created, e = w.Addresses().Insert(ctx, addr)
+		return e
+	}))
 	assert.False(t, created.Used)
 
-	// No reference yet → NotFound.
-	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, repo.ErrNotFound)
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	_, err = rd.Addresses().GetReference(ctx, addr.ID)
+	require.NoError(t, rd.Close())
+	require.ErrorIs(t, err, helpers.ErrNotFound)
 
 	// SetReference → upsert + used=true.
-	ref, err := ar.SetReference(ctx, &domain.AddressReference{
-		AddressID:    addr.ID,
-		ReferrerType: "compute_instance",
-		ReferrerID:   "epdinstance00000001",
-		ReferrerName: "vm-1",
-	})
-	require.NoError(t, err)
+	var ref *domain.AddressReference
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		ref, e = w.Addresses().SetReference(ctx, &domain.AddressReference{
+			AddressID:    addr.ID,
+			ReferrerType: "compute_instance",
+			ReferrerID:   "epdinstance00000001",
+			ReferrerName: "vm-1",
+		})
+		return e
+	}))
 	assert.Equal(t, "compute_instance", ref.ReferrerType)
 	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
 	assert.Equal(t, "vm-1", ref.ReferrerName)
 	assert.False(t, ref.AttachedAt.IsZero())
 
-	got, err := ar.Get(ctx, addr.ID)
+	rd2, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got, err := rd2.Addresses().Get(ctx, addr.ID)
+	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	assert.True(t, got.Used)
 
-	// KAC-88: re-set с ДРУГИМ referrer → repo.ErrFailedPrecondition (CAS-guard).
-	// До KAC-88 это был silent overwrite — parity-case с инцидентом KAC-52
-	// (NIC-attach race). Теперь нужно явно ClearReference перед сменой owner-а.
-	_, err = ar.SetReference(ctx, &domain.AddressReference{
-		AddressID:    addr.ID,
-		ReferrerType: "compute_instance",
-		ReferrerID:   "epdinstance00000002",
+	// KAC-88: re-set с ДРУГИМ referrer → ErrFailedPrecondition.
+	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Addresses().SetReference(ctx, &domain.AddressReference{
+			AddressID:    addr.ID,
+			ReferrerType: "compute_instance",
+			ReferrerID:   "epdinstance00000002",
+		})
+		return e
 	})
-	require.ErrorIs(t, err, repo.ErrFailedPrecondition,
-		"SetReference к занятому address от чужого referrer → repo.ErrFailedPrecondition")
+	require.ErrorIs(t, err, helpers.ErrFailedPrecondition,
+		"SetReference к занятому address от чужого referrer → helpers.ErrFailedPrecondition")
 
-	// Idempotent re-set с ТЕМ ЖЕ referrer (CAS matches) — допустимо обновить
-	// referrer_name; address.used остаётся true; addr_references row не меняется.
-	ref, err = ar.SetReference(ctx, &domain.AddressReference{
-		AddressID:    addr.ID,
-		ReferrerType: "compute_instance",
-		ReferrerID:   "epdinstance00000001",
-		ReferrerName: "vm-1-renamed",
-	})
-	require.NoError(t, err)
+	// Idempotent re-set с ТЕМ ЖЕ referrer.
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		ref, e = w.Addresses().SetReference(ctx, &domain.AddressReference{
+			AddressID:    addr.ID,
+			ReferrerType: "compute_instance",
+			ReferrerID:   "epdinstance00000001",
+			ReferrerName: "vm-1-renamed",
+		})
+		return e
+	}))
 	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
 	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
 
-	// GetReference returns the (still-original-id) referrer.
-	ref, err = ar.GetReference(ctx, addr.ID)
+	// GetReference.
+	rd3, err := r.Reader(ctx)
+	require.NoError(t, err)
+	ref, err = rd3.Addresses().GetReference(ctx, addr.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "epdinstance00000001", ref.ReferrerID)
 	assert.Equal(t, "vm-1-renamed", ref.ReferrerName)
 
 	// Batch lookup.
-	refs, err := ar.ReferencesForAddresses(ctx, []string{addr.ID, "e9bnonexistent00001"})
+	refs, err := rd3.Addresses().ReferencesForAddresses(ctx, []string{addr.ID, "e9bnonexistent00001"})
+	require.NoError(t, rd3.Close())
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
 	assert.Equal(t, "epdinstance00000001", refs[addr.ID].ReferrerID)
 
-	// ClearReference → used=false, no referrer.
-	require.NoError(t, ar.ClearReference(ctx, addr.ID))
-	got, err = ar.Get(ctx, addr.ID)
+	// ClearReference.
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().ClearReference(ctx, addr.ID)
+	}))
+	rd4, err := r.Reader(ctx)
+	require.NoError(t, err)
+	got, err = rd4.Addresses().Get(ctx, addr.ID)
 	require.NoError(t, err)
 	assert.False(t, got.Used)
-	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, repo.ErrNotFound)
+	_, err = rd4.Addresses().GetReference(ctx, addr.ID)
+	require.NoError(t, rd4.Close())
+	require.ErrorIs(t, err, helpers.ErrNotFound)
 
-	// ClearReference again → no-op (still no error, address still exists).
-	require.NoError(t, ar.ClearReference(ctx, addr.ID))
+	// ClearReference again — no-op.
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().ClearReference(ctx, addr.ID)
+	}))
 
-	// SetReference on a non-existent address → NotFound.
-	_, err = ar.SetReference(ctx, &domain.AddressReference{
-		AddressID: "e9bnonexistent00001", ReferrerType: "compute_instance", ReferrerID: "x",
+	// SetReference on non-existent address → NotFound.
+	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Addresses().SetReference(ctx, &domain.AddressReference{
+			AddressID: "e9bnonexistent00001", ReferrerType: "compute_instance", ReferrerID: "x",
+		})
+		return e
 	})
-	require.ErrorIs(t, err, repo.ErrNotFound)
+	require.ErrorIs(t, err, helpers.ErrNotFound)
 
-	// FK CASCADE: deleting the address removes the reference row too. Set a
-	// referrer, then delete the address, then ensure GetReference → NotFound.
-	_, err = ar.SetReference(ctx, &domain.AddressReference{
-		AddressID: addr.ID, ReferrerType: "compute_instance", ReferrerID: "epdinstance00000003",
-	})
+	// FK CASCADE: deleting the address removes the reference row too.
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Addresses().SetReference(ctx, &domain.AddressReference{
+			AddressID: addr.ID, ReferrerType: "compute_instance", ReferrerID: "epdinstance00000003",
+		})
+		return e
+	}))
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().Delete(ctx, addr.ID)
+	}))
+	rd5, err := r.Reader(ctx)
 	require.NoError(t, err)
-	require.NoError(t, ar.Delete(ctx, addr.ID))
-	_, err = ar.GetReference(ctx, addr.ID)
-	require.ErrorIs(t, err, repo.ErrNotFound)
+	_, err = rd5.Addresses().GetReference(ctx, addr.ID)
+	require.NoError(t, rd5.Close())
+	require.ErrorIs(t, err, helpers.ErrNotFound)
 }
 
 func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
@@ -375,16 +452,18 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	nr := repo.NewNetworkRepo(pool)
-	rtr := repo.NewRouteTableRepo(pool)
+	r := kachopg.New(pool, nil)
+	defer r.Close()
 
 	net := &domain.Network{
 		ID:       ids.NewUID(),
 		FolderID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-rt"),
 	}
-	_, err = nr.Insert(ctx, net)
-	require.NoError(t, err)
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		_, e := w.Networks().Insert(ctx, net)
+		return e
+	}))
 
 	rt := &domain.RouteTable{
 		ID:        ids.NewUID(),
@@ -396,17 +475,25 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 			{DestinationPrefix: "10.0.0.0/8", NextHopAddress: "192.168.0.254"},
 		},
 	}
-	created, err := rtr.Insert(ctx, rt)
-	require.NoError(t, err)
+	var created *kacho.RouteTableRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		created, e = w.RouteTables().Insert(ctx, rt)
+		return e
+	}))
 	require.Len(t, created.StaticRoutes, 2)
 	assert.Equal(t, "0.0.0.0/0", created.StaticRoutes[0].DestinationPrefix)
 
-	// Update static routes
+	// Update static routes.
 	created.StaticRoutes = []domain.StaticRoute{
 		{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "10.10.10.1"},
 	}
-	updated, err := rtr.Update(ctx, &created.RouteTable)
-	require.NoError(t, err)
+	var updated *kacho.RouteTableRecord
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		var e error
+		updated, e = w.RouteTables().Update(ctx, &created.RouteTable)
+		return e
+	}))
 	require.Len(t, updated.StaticRoutes, 1)
 	assert.Equal(t, "10.10.10.1", updated.StaticRoutes[0].NextHopAddress)
 }
