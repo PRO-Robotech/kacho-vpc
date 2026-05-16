@@ -175,6 +175,25 @@ func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*domain.
 	return result, nil
 }
 
+// SetDefaultSGID атомарно проставляет networks.default_security_group_id для
+// конкретной сети. Wave 5 batch 33/34 (KAC-94, skill evgeniy I.9/I.10):
+// узкая UPDATE-операция, чтобы Network.Create мог в одной writer-TX сделать
+// Insert(Network) → Insert(SG) → SetDefaultSGID(network, sg) (+ единый outbox-emit
+// Network.UPDATED). Без перезаписи name/description/labels — те уже сохранены
+// в Insert и менять их в default-SG-link шаге не нужно.
+func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*domain.NetworkRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE networks SET default_security_group_id = $2
+		WHERE id = $1
+		RETURNING %s`, repo.NetworkCols)
+	row := w.tx.QueryRow(ctx, q, id, sgID)
+	result, err := repo.ScanNetwork(row)
+	if err != nil {
+		return nil, repo.WrapPgErr(err, "Network", id)
+	}
+	return result, nil
+}
+
 // SetFolderID меняет folder_id у Network (для :move).
 func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*domain.NetworkRecord, error) {
 	q := fmt.Sprintf(`

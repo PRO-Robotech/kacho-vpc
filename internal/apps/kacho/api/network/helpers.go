@@ -36,6 +36,23 @@ func networkPayloadMap(n *domain.NetworkRecord) map[string]any {
 	return m
 }
 
+// securityGroupPayloadMap — snapshot SecurityGroup для outbox payload.
+// Wave 5 batch 33/34 (KAC-94): atomic default-SG-creation в Network.Create
+// эмитит SecurityGroup.CREATED событие из use-case-кода (а не из legacy
+// SG-репо), поэтому payload-snapshot нужен здесь. Семантика — JSON
+// round-trip, parity с `securityGroupPayload` в `internal/repo/outbox.go`.
+func securityGroupPayloadMap(sg *domain.SecurityGroupRecord) map[string]any {
+	b, err := json.Marshal(sg)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
+}
+
 // mapRepoErr — переводит repo-sentinel в gRPC status. Логика идентична
 // `service.mapRepoErr`; live-копия здесь нужна, потому что та функция лежит в
 // другом пакете и непублична. Wave 3b после переноса всех use-case'ов из

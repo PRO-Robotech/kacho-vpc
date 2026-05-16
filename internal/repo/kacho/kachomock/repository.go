@@ -38,15 +38,17 @@ type OutboxEvent struct {
 // Repository — in-memory mock корневого CQRS-контракта. Потокобезопасный
 // (sync.Mutex на общем state — нужен для concurrent integration-like тестов).
 type Repository struct {
-	mu       sync.Mutex
-	networks map[string]*domain.NetworkRecord
-	outbox   []OutboxEvent
+	mu              sync.Mutex
+	networks        map[string]*domain.NetworkRecord
+	securityGroups  map[string]*domain.SecurityGroupRecord
+	outbox          []OutboxEvent
 }
 
 // NewRepository создаёт пустой mock-Repository.
 func NewRepository() *Repository {
 	return &Repository{
-		networks: make(map[string]*domain.NetworkRecord),
+		networks:       make(map[string]*domain.NetworkRecord),
+		securityGroups: make(map[string]*domain.SecurityGroupRecord),
 	}
 }
 
@@ -71,18 +73,36 @@ func (r *Repository) Networks() []*domain.NetworkRecord {
 	return res
 }
 
+// SecurityGroups возвращает копию state'а (для assertions в тестах).
+// Wave 5 batch 33/34 (KAC-94).
+func (r *Repository) SecurityGroups() []*domain.SecurityGroupRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	res := make([]*domain.SecurityGroupRecord, 0, len(r.securityGroups))
+	for _, sg := range r.securityGroups {
+		res = append(res, sg)
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].CreatedAt.Before(res[j].CreatedAt) })
+	return res
+}
+
 // Reader открывает read-only «TX». Snapshot текущего committed state'а
 // заfreez'ен на момент открытия — параллельный Writer не виден этому Reader'у
 // (read-committed semantics).
 func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snap := make(map[string]*domain.NetworkRecord, len(r.networks))
+	netSnap := make(map[string]*domain.NetworkRecord, len(r.networks))
 	for id, n := range r.networks {
 		cp := *n
-		snap[id] = &cp
+		netSnap[id] = &cp
 	}
-	return &readerImpl{snap: snap}, nil
+	sgSnap := make(map[string]*domain.SecurityGroupRecord, len(r.securityGroups))
+	for id, sg := range r.securityGroups {
+		cp := *sg
+		sgSnap[id] = &cp
+	}
+	return &readerImpl{netSnap: netSnap, sgSnap: sgSnap}, nil
 }
 
 // Writer открывает RW-«TX». Изменения буферизуются в self.local и видны только
@@ -92,14 +112,20 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 	defer r.mu.Unlock()
 	// Скопировать current state в writer'овский «working set» — writer видит
 	// свои writes (G.2) поверх committed-snapshot'а.
-	local := make(map[string]*domain.NetworkRecord, len(r.networks))
+	localNets := make(map[string]*domain.NetworkRecord, len(r.networks))
 	for id, n := range r.networks {
 		cp := *n
-		local[id] = &cp
+		localNets[id] = &cp
+	}
+	localSGs := make(map[string]*domain.SecurityGroupRecord, len(r.securityGroups))
+	for id, sg := range r.securityGroups {
+		cp := *sg
+		localSGs[id] = &cp
 	}
 	return &writerImpl{
-		parent: r,
-		local:  local,
+		parent:   r,
+		local:    localNets,
+		localSGs: localSGs,
 	}, nil
 }
 
@@ -108,11 +134,17 @@ func (r *Repository) Close() {}
 
 // readerImpl — read-only snapshot. Закрытие — no-op (Mock не держит ресурс).
 type readerImpl struct {
-	snap map[string]*domain.NetworkRecord
+	netSnap map[string]*domain.NetworkRecord
+	sgSnap  map[string]*domain.SecurityGroupRecord
 }
 
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
-	return &networkReader{snap: rd.snap}
+	return &networkReader{snap: rd.netSnap}
+}
+
+// SecurityGroups — read-only snapshot SG. Wave 5 batch 33/34 (KAC-94).
+func (rd *readerImpl) SecurityGroups() kacho.SecurityGroupReaderIface {
+	return &securityGroupReader{snap: rd.sgSnap}
 }
 
 func (rd *readerImpl) Close() error { return nil }
@@ -121,15 +153,22 @@ func (rd *readerImpl) Close() error { return nil }
 // parent.networks на Commit. local-outbox — буфер outbox-event'ов, на Commit
 // добавляется в parent.outbox.
 type writerImpl struct {
-	parent      *Repository
-	local       map[string]*domain.NetworkRecord
-	localOutbox []OutboxEvent
-	deletedIDs  map[string]struct{}
-	finalised   bool
+	parent         *Repository
+	local          map[string]*domain.NetworkRecord
+	localSGs       map[string]*domain.SecurityGroupRecord
+	localOutbox    []OutboxEvent
+	deletedIDs     map[string]struct{} // Network deletions
+	deletedSGIDs   map[string]struct{} // SG deletions
+	finalised      bool
 }
 
 func (w *writerImpl) Networks() kacho.NetworkWriterIface {
 	return &networkWriter{w: w}
+}
+
+// SecurityGroups возвращает SG-writer привязанный к этой «TX». Wave 5 batch 33/34 (KAC-94).
+func (w *writerImpl) SecurityGroups() kacho.SecurityGroupWriterIface {
+	return &securityGroupWriter{w: w}
 }
 
 func (w *writerImpl) Outbox() kacho.OutboxEmitter {
@@ -143,15 +182,23 @@ func (w *writerImpl) Commit() error {
 	w.finalised = true
 	w.parent.mu.Lock()
 	defer w.parent.mu.Unlock()
-	// Удалить помеченные на delete (если в local их нет).
+	// Удалить помеченные на delete (Network).
 	for id := range w.deletedIDs {
 		delete(w.parent.networks, id)
 	}
-	// Применить writes.
+	// Применить writes (Network).
 	for id, n := range w.local {
 		// Если id был помечен на удаление и сразу re-added в этом writer'е — упустим
 		// этот edge-case (не используется в pilot'ных тестах).
 		w.parent.networks[id] = n
+	}
+	// Удалить помеченные на delete (SG).
+	for id := range w.deletedSGIDs {
+		delete(w.parent.securityGroups, id)
+	}
+	// Применить writes (SG).
+	for id, sg := range w.localSGs {
+		w.parent.securityGroups[id] = sg
 	}
 	// Перенести outbox-events в общий state.
 	w.parent.outbox = append(w.parent.outbox, w.localOutbox...)
@@ -163,7 +210,7 @@ func (w *writerImpl) Abort() {
 		return
 	}
 	w.finalised = true
-	// Discard local + localOutbox.
+	// Discard local + localSGs + localOutbox.
 }
 
 // ---- Network reader ----
@@ -262,6 +309,20 @@ func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*d
 	return &cp, nil
 }
 
+// SetDefaultSGID — узкая UPDATE-операция (parity с pg-impl). Wave 5 batch 33/34 (KAC-94).
+func (nw *networkWriter) SetDefaultSGID(_ context.Context, id, sgID string) (*domain.NetworkRecord, error) {
+	if _, deleted := nw.w.deletedIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	n, ok := nw.w.local[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	n.DefaultSecurityGroupID = sgID
+	cp := *n
+	return &cp, nil
+}
+
 func (nw *networkWriter) Delete(_ context.Context, id string) error {
 	if _, ok := nw.w.local[id]; !ok {
 		return repo.ErrNotFound
@@ -272,6 +333,184 @@ func (nw *networkWriter) Delete(_ context.Context, id string) error {
 	nw.w.deletedIDs[id] = struct{}{}
 	delete(nw.w.local, id)
 	return nil
+}
+
+// ---- SecurityGroup reader / writer ----
+
+// securityGroupReader — read-only snapshot SG. Wave 5 batch 33/34 (KAC-94).
+type securityGroupReader struct {
+	snap map[string]*domain.SecurityGroupRecord
+}
+
+func (r *securityGroupReader) Get(_ context.Context, id string) (*domain.SecurityGroupRecord, error) {
+	sg, ok := r.snap[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	cp := *sg
+	return &cp, nil
+}
+
+func (r *securityGroupReader) List(_ context.Context, f kacho.SecurityGroupFilter, _ kacho.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+	var result []*domain.SecurityGroupRecord
+	for _, sg := range r.snap {
+		if (f.FolderID == "" || sg.FolderID == f.FolderID) &&
+			(f.NetworkID == "" || sg.NetworkID == f.NetworkID) &&
+			(f.Name == "" || string(sg.Name) == f.Name) {
+			cp := *sg
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
+// securityGroupWriter — write-«TX» SG. Wave 5 batch 33/34 (KAC-94). Writer
+// видит свои writes (G.2) — Get/List поверх localSGs.
+type securityGroupWriter struct {
+	w *writerImpl
+}
+
+func (sw *securityGroupWriter) Get(_ context.Context, id string) (*domain.SecurityGroupRecord, error) {
+	if _, deleted := sw.w.deletedSGIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	sg, ok := sw.w.localSGs[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	cp := *sg
+	return &cp, nil
+}
+
+func (sw *securityGroupWriter) List(_ context.Context, f kacho.SecurityGroupFilter, _ kacho.Pagination) ([]*domain.SecurityGroupRecord, string, error) {
+	var result []*domain.SecurityGroupRecord
+	for id, sg := range sw.w.localSGs {
+		if _, deleted := sw.w.deletedSGIDs[id]; deleted {
+			continue
+		}
+		if (f.FolderID == "" || sg.FolderID == f.FolderID) &&
+			(f.NetworkID == "" || sg.NetworkID == f.NetworkID) &&
+			(f.Name == "" || string(sg.Name) == f.Name) {
+			cp := *sg
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
+func (sw *securityGroupWriter) Insert(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+	rec := &domain.SecurityGroupRecord{SecurityGroup: *sg, CreatedAt: time.Now().UTC()}
+	sw.w.localSGs[sg.ID] = rec
+	cp := *rec
+	return &cp, nil
+}
+
+func (sw *securityGroupWriter) Update(_ context.Context, sg *domain.SecurityGroup) (*domain.SecurityGroupRecord, error) {
+	if _, deleted := sw.w.deletedSGIDs[sg.ID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	existing, ok := sw.w.localSGs[sg.ID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	existing.SecurityGroup = *sg
+	cp := *existing
+	return &cp, nil
+}
+
+func (sw *securityGroupWriter) Delete(_ context.Context, id string) error {
+	if _, ok := sw.w.localSGs[id]; !ok {
+		return repo.ErrNotFound
+	}
+	if sw.w.deletedSGIDs == nil {
+		sw.w.deletedSGIDs = make(map[string]struct{})
+	}
+	sw.w.deletedSGIDs[id] = struct{}{}
+	delete(sw.w.localSGs, id)
+	return nil
+}
+
+func (sw *securityGroupWriter) SetFolderID(_ context.Context, id, folderID string) (*domain.SecurityGroupRecord, error) {
+	if _, deleted := sw.w.deletedSGIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	sg, ok := sw.w.localSGs[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	sg.FolderID = folderID
+	cp := *sg
+	return &cp, nil
+}
+
+// UpdateRules / UpdateRule — упрощённая семантика (без xmin-OCC; mock не
+// моделирует concurrent-conflict). Достаточно для unit-тестов use-case'ов.
+func (sw *securityGroupWriter) UpdateRules(_ context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*domain.SecurityGroupRecord, error) {
+	if _, deleted := sw.w.deletedSGIDs[sgID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	sg, ok := sw.w.localSGs[sgID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	if len(deleteIDs) > 0 {
+		toDel := make(map[string]struct{}, len(deleteIDs))
+		for _, id := range deleteIDs {
+			toDel[id] = struct{}{}
+		}
+		filtered := sg.Rules[:0]
+		for _, r := range sg.Rules {
+			if _, drop := toDel[r.ID]; drop {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		sg.Rules = filtered
+	}
+	sg.Rules = append(sg.Rules, add...)
+	cp := *sg
+	return &cp, nil
+}
+
+func (sw *securityGroupWriter) UpdateRule(_ context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*domain.SecurityGroupRecord, error) {
+	if _, deleted := sw.w.deletedSGIDs[sgID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	sg, ok := sw.w.localSGs[sgID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	applyMask := len(mask) > 0
+	maskSet := map[string]struct{}{}
+	for _, m := range mask {
+		maskSet[m] = struct{}{}
+	}
+	found := false
+	for i := range sg.Rules {
+		if sg.Rules[i].ID != ruleID {
+			continue
+		}
+		found = true
+		if !applyMask {
+			sg.Rules[i].Description = domain.RcDescription(description)
+			sg.Rules[i].Labels = labels
+		} else {
+			if _, ok := maskSet["description"]; ok {
+				sg.Rules[i].Description = domain.RcDescription(description)
+			}
+			if _, ok := maskSet["labels"]; ok {
+				sg.Rules[i].Labels = labels
+			}
+		}
+		break
+	}
+	if !found {
+		return nil, repo.ErrNotFound
+	}
+	cp := *sg
+	return &cp, nil
 }
 
 // ---- Outbox emitter ----

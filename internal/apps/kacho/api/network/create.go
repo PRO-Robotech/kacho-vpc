@@ -28,34 +28,32 @@ type CreateInput struct {
 // fast-fail gRPC-status, а не «200 + операция, упавшая через секунду» (см.
 // kacho-vpc#8). Async-часть (`doCreate`) — атомарный backstop через FK/UNIQUE.
 //
-// Wave 5 pilot (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX
-// явно через `repo.Writer(ctx)`. Insert + outbox-emit идут в одной TX
-// (атомарность гарантирована pgx-уровнем) — никакого dual-write.
+// Wave 5 pilot (KAC-94, skill evgeniy §6 G.5 / §7 I.9 / I.10): worker открывает
+// ОДНУ Writer-TX и делает в ней Insert(Network) → Insert(SG, default) →
+// SetDefaultSGID(Network, sg.ID) с тремя outbox-emit'ами. Либо все три DML
+// видны (Commit), либо ни один (Abort/crash) — orphan-SG window прежней
+// three-TX-схемы закрыт.
 //
-// Default-SG creation остаётся inline в worker'е через явный builder
-// `domain.NewDefaultSecurityGroup` (§4 D.7, §7 I.9). KAC-94 caveat: SG-repo
-// пока не CQRS, поэтому inline default-SG creation идёт через legacy
-// `SecurityGroupRepo.Insert` ВНЕ writer-TX. После Insert(Network) writer
-// коммитится; затем второй writer (закрытый TX-scope) пишет SG через legacy
-// repo (свой TX внутри). Финальный link (`UPDATE networks SET default_sg_id`)
-// — третий writer. Это **известное расхождение** с целью CQRS (atomic emit) —
-// будет решено в replicate-фазе после переноса SG-repo на CQRS.
+// Default-SG creation управляется флагом `defaultSGInline` (раньше — через
+// `if sgRepo != nil`-shim; теперь явный bool, видный в композиции). При
+// `defaultSGInline=false` worker создаёт только Network — admin может
+// досоздать default SG через public API.
 type CreateNetworkUseCase struct {
-	repo         Repo
-	folderClient FolderClient
-	opsRepo      operations.Repo
-	// sgRepo: nil → default-SG inline creation отключена (флаг
-	// `KACHO_VPC_DEFAULT_SG_INLINE=false`). См. composition root в cmd/vpc/main.go.
-	sgRepo SecurityGroupRepo
+	repo            Repo
+	folderClient    FolderClient
+	opsRepo         operations.Repo
+	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 }
 
-// NewCreateNetworkUseCase создаёт CreateNetworkUseCase.
-func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, sgRepo SecurityGroupRepo) *CreateNetworkUseCase {
+// NewCreateNetworkUseCase создаёт CreateNetworkUseCase. defaultSGInline берётся
+// из конфига (`cfg.Network.DefaultSGInline`) — при true в одной writer-TX
+// создаётся default SG и Network.default_security_group_id заполняется.
+func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
-		repo:         r,
-		folderClient: folderClient,
-		opsRepo:      opsRepo,
-		sgRepo:       sgRepo,
+		repo:            r,
+		folderClient:    folderClient,
+		opsRepo:         opsRepo,
+		defaultSGInline: defaultSGInline,
 	}
 }
 
@@ -110,9 +108,24 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*op
 
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
 // folder-exists + Insert (FK ограничения / UNIQUE-нарушения); inline default-SG
-// creation (builder из domain), затем link через UPDATE networks.default_sg_id.
+// creation (builder из domain), затем link через SetDefaultSGID(Network, sg.ID).
 //
-// CQRS Wave 5: Insert + outbox-emit идут в одной TX через writer.
+// Wave 5 batch 33/34 (KAC-94, skill evgeniy I.9 / I.10): ВСЁ в одной writer-TX.
+// Liver предыдущая three-TX-схема (Network commit → SG commit → Network UPDATE
+// commit) ломалась на crash между шагами: либо orphan SG, либо Network без
+// default_sg_id, либо забытый outbox-event. Теперь:
+//
+//	w := u.repo.Writer(ctx)            // открыли единую TX
+//	created := w.Networks().Insert     // Network.CREATED outbox
+//	(if inline) sgRec := w.SGs().Insert + w.Networks().SetDefaultSGID
+//	            + SG.CREATED outbox + Network.UPDATED outbox
+//	w.Commit()                         // либо всё, либо ничего (Abort/crash)
+//
+// FK Network.default_security_group_id → security_groups(id) `ON DELETE SET NULL`
+// (см. squashed initial migration). SG-FK на network_id — RESTRICT, но в одной
+// TX это нормально: Insert(SG) ссылается на только что вставленный Network в
+// той же tx (видимость G.2 + Postgres deferred constraint check на коммите для
+// non-deferrable — INSERT(child) после INSERT(parent) в одной TX проходит).
 func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, n.FolderID)
 	if err != nil {
@@ -124,7 +137,6 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 
 	n.ID = netID
 
-	// CQRS write-TX: Insert + outbox-emit атомарны.
 	w, err := u.repo.Writer(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -138,43 +150,29 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	if err := w.Outbox().Emit(ctx, "Network", created.ID, "CREATED", networkPayloadMap(created)); err != nil {
 		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
 	}
+
+	finalRec := created
+	if u.defaultSGInline {
+		sg := domain.NewDefaultSecurityGroup(created.Network)
+		sgRec, sgErr := w.SecurityGroups().Insert(ctx, &sg)
+		if sgErr != nil {
+			return nil, mapRepoErr(sgErr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "SecurityGroup", sgRec.ID, "CREATED", securityGroupPayloadMap(sgRec)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		upd, uerr := w.Networks().SetDefaultSGID(ctx, created.ID, sgRec.ID)
+		if uerr != nil {
+			return nil, mapRepoErr(uerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "Network", upd.ID, "UPDATED", networkPayloadMap(upd)); oerr != nil {
+			return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
+		finalRec = upd
+	}
+
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
-
-	// Default-SG creation. KAC-94 caveat (см. doc-комментарий на UseCase): SG-repo
-	// — пока legacy non-CQRS, поэтому inline default-SG creation идёт ВНЕ
-	// writer-TX выше. SG-Insert использует свой TX через legacy repo, эмитит
-	// SecurityGroup.CREATED outbox-event сам. Финальный link `UPDATE
-	// networks.default_sg_id` — второй writer-TX ниже. Это **известное
-	// расхождение** с целью atomic emit; решается в replicate-фазе (CQRS для SG).
-	if u.sgRepo != nil {
-		sg := domain.NewDefaultSecurityGroup(created.Network)
-		createdSG, sgErr := u.sgRepo.Insert(ctx, &sg)
-		if sgErr != nil {
-			// SG creation failed — Network уже создан. Log warn, не падаем
-			// (admin может создать default SG руками через public API).
-			return marshalNetworkRecord(created)
-		}
-		// Bind SG как default. Второй CQRS-writer (Update + outbox-emit
-		// атомарны).
-		created.DefaultSecurityGroupID = createdSG.ID
-		w2, werr := u.repo.Writer(ctx)
-		if werr != nil {
-			return marshalNetworkRecord(created)
-		}
-		defer w2.Abort()
-		updated, uerr := w2.Networks().Update(ctx, &created.Network)
-		if uerr != nil {
-			return marshalNetworkRecord(created)
-		}
-		if oerr := w2.Outbox().Emit(ctx, "Network", updated.ID, "UPDATED", networkPayloadMap(updated)); oerr != nil {
-			return marshalNetworkRecord(created)
-		}
-		if cerr := w2.Commit(); cerr != nil {
-			return marshalNetworkRecord(created)
-		}
-		return marshalNetworkRecord(updated)
-	}
-	return marshalNetworkRecord(created)
+	return marshalNetworkRecord(finalRec)
 }

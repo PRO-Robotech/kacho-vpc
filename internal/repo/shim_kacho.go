@@ -84,3 +84,30 @@ type Scannable = scannable
 func ScanNetwork(row Scannable) (*domain.NetworkRecord, error) {
 	return scanNetwork(row)
 }
+
+// ---- SecurityGroup shims (Wave 5 batch 33/34, KAC-94: SG → CQRS-репо) ----
+
+// SGCols — exported security_groups column list; used by kacho/pg/security_group.go.
+const SGCols = sgCols
+
+// ScanSG — exported alias of scanSG; used by kacho/pg/security_group.go.
+func ScanSG(row Scannable) (*domain.SecurityGroupRecord, error) {
+	return scanSG(row)
+}
+
+// WrapSGErr — exported alias of wrapSGErr (verbatim-YC SG not-found text);
+// used by kacho/pg/security_group.go.
+func WrapSGErr(err error, id string) error {
+	return wrapSGErr(err, id)
+}
+
+// SecurityGroupPayload — exported alias of securityGroupPayload (outbox snapshot).
+func SecurityGroupPayload(sg *domain.SecurityGroupRecord) map[string]any {
+	return securityGroupPayload(sg)
+}
+
+// NullableStr — exported alias of nullableStr ("" → SQL NULL). Used by SG-pg-impl
+// to keep network_id NULL-able (SG can be unbound / folder-level).
+func NullableStr(s string) *string {
+	return nullableStr(s)
+}

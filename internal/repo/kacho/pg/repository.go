@@ -70,6 +70,12 @@ func (r *readerImpl) Networks() kacho.NetworkReaderIface {
 	return &networkReader{tx: r.tx}
 }
 
+// SecurityGroups возвращает SecurityGroup-reader, привязанный к этой read-TX.
+// Wave 5 batch 33/34 (KAC-94).
+func (r *readerImpl) SecurityGroups() kacho.SecurityGroupReaderIface {
+	return &securityGroupReader{tx: r.tx}
+}
+
 // Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
 // Идемпотентно. Игнорирует pgx.ErrTxClosed.
 func (r *readerImpl) Close() error {
@@ -95,6 +101,16 @@ func (w *writerImpl) Networks() kacho.NetworkWriterIface {
 	return &networkWriter{
 		networkReader: networkReader{tx: w.tx},
 		emitter:       &outboxEmitter{tx: w.tx},
+	}
+}
+
+// SecurityGroups возвращает SecurityGroup-writer, привязанный к этой write-TX.
+// G.2: writer видит свои writes (reader-методы — поверх той же pgx.Tx).
+// Wave 5 batch 33/34 (KAC-94, skill evgeniy I.9/I.10).
+func (w *writerImpl) SecurityGroups() kacho.SecurityGroupWriterIface {
+	return &securityGroupWriter{
+		securityGroupReader: securityGroupReader{tx: w.tx},
+		emitter:             &outboxEmitter{tx: w.tx},
 	}
 }
 

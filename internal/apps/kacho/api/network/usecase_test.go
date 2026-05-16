@@ -38,7 +38,7 @@ func makeHandler(t *testing.T,
 	sgr *repomock.SecurityGroupRepo,
 	or *repomock.OpsRepo,
 	fc *repomock.FolderClient,
-	defaultSG SecurityGroupRepo,
+	defaultSGInline bool,
 ) *Handler {
 	t.Helper()
 	// Маппим typed-nil-указатель → nil-интерфейс (иначе Go бы создал не-nil
@@ -55,7 +55,7 @@ func makeHandler(t *testing.T,
 	if sgr != nil {
 		sgRepoIface = sgr
 	}
-	create := NewCreateNetworkUseCase(kr, fc, or, defaultSG)
+	create := NewCreateNetworkUseCase(kr, fc, or, defaultSGInline)
 	update := NewUpdateNetworkUseCase(kr, or)
 	deleteUC := NewDeleteNetworkUseCase(kr, sReader, rtReader, sgRepoIface, or)
 	move := NewMoveNetworkUseCase(kr, fc, or)
@@ -69,13 +69,13 @@ func makeHandler(t *testing.T,
 }
 
 // folder ok / ops repo / network repo с минимальной wiring — для тестов где
-// child-reader'ы не требуются.
+// child-reader'ы не требуются. defaultSGInline=false — без default-SG creation.
 func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository) {
 	t.Helper()
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.FolderClient{OK: folderOK}
-	return makeHandler(t, kr, nil, nil, nil, or, fc, nil), or, kr
+	return makeHandler(t, kr, nil, nil, nil, or, fc, false), or, kr
 }
 
 // ---- Handler — sync paths ----
@@ -116,7 +116,7 @@ func TestHandler_Delete_InvalidArg(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
 
 	// folder_id required.
 	_, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{Name: "test"}})
@@ -137,7 +137,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: false}, or, nil)
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: false}, or, false)
 
 	_, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
 		FolderID: "f1",
@@ -151,7 +151,7 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
 
 	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
 		FolderID:    "f1",
@@ -164,6 +164,72 @@ func TestCreateUseCase_OK(t *testing.T) {
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	assert.True(t, saved.Done)
 	assert.Nil(t, saved.Error)
+}
+
+// TestCreateUseCase_DefaultSGInline_Atomic — Wave 5 batch 33/34 (KAC-94, skill
+// evgeniy I.9 / I.10): при defaultSGInline=true Network.Create в одной writer-TX
+// создаёт Network + default-SG + проставляет default_security_group_id. Все три
+// DML и три outbox-event'а commit'ятся атомарно.
+func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, true)
+
+	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+		FolderID: "f1",
+		Name:     domain.RcNameVPC("net-with-sg"),
+	}})
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error)
+
+	// Network виден; default_security_group_id заполнен.
+	nets := kr.Networks()
+	require.Len(t, nets, 1)
+	assert.NotEmpty(t, nets[0].DefaultSecurityGroupID, "default_security_group_id должен быть заполнен")
+
+	// SG виден; default-for-network=true; network_id указывает на новую сеть.
+	sgs := kr.SecurityGroups()
+	require.Len(t, sgs, 1)
+	assert.True(t, sgs[0].DefaultForNetwork)
+	assert.Equal(t, nets[0].ID, sgs[0].NetworkID)
+	assert.Equal(t, sgs[0].ID, nets[0].DefaultSecurityGroupID)
+
+	// Три outbox-события в правильной последовательности: Network.CREATED →
+	// SecurityGroup.CREATED → Network.UPDATED.
+	events := kr.Outbox()
+	require.Len(t, events, 3, "ожидаем 3 outbox-event в одной writer-TX")
+	assert.Equal(t, "Network", events[0].Resource)
+	assert.Equal(t, "CREATED", events[0].Action)
+	assert.Equal(t, "SecurityGroup", events[1].Resource)
+	assert.Equal(t, "CREATED", events[1].Action)
+	assert.Equal(t, "Network", events[2].Resource)
+	assert.Equal(t, "UPDATED", events[2].Action)
+}
+
+// TestCreateUseCase_DefaultSGInline_OFF — defaultSGInline=false: Network есть,
+// SG нет, outbox содержит ровно 1 событие Network.CREATED.
+func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
+
+	op, err := uc.Execute(context.Background(), CreateInput{Network: domain.Network{
+		FolderID: "f1",
+		Name:     domain.RcNameVPC("net-no-sg"),
+	}})
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error)
+
+	assert.Len(t, kr.Networks(), 1)
+	assert.Empty(t, kr.SecurityGroups())
+	events := kr.Outbox()
+	require.Len(t, events, 1)
+	assert.Equal(t, "Network", events[0].Resource)
+	assert.Equal(t, "CREATED", events[0].Action)
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {
@@ -313,7 +379,7 @@ func TestHandler_Update_Happy(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	sr := repomock.NewSubnetRepo()
 	rtr := repomock.NewRouteTableRepo()
-	h := makeHandler(t, kr, sr, rtr, nil, or, &repomock.FolderClient{OK: true}, nil)
+	h := makeHandler(t, kr, sr, rtr, nil, or, &repomock.FolderClient{OK: true}, false)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
 	require.NoError(t, err)

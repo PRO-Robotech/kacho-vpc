@@ -272,5 +272,53 @@ func TestCQRS_Network_UpdateDelete_FullCycle(t *testing.T) {
 	require.Error(t, gerr)
 }
 
+// TestCQRS_Network_SetDefaultSGID_AtomicWithSG — узкий update-помощник
+// SetDefaultSGID работает в той же writer-TX, в которой создан и сам SG (atomic
+// default-SG-creation, Wave 5 batch 33/34, KAC-94). Без SetDefaultSGID пришлось
+// бы делать полноценный Networks().Update(...) — и риск перезаписать
+// name/description/labels чем-то промежуточным.
+func TestCQRS_Network_SetDefaultSGID_AtomicWithSG(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	dsn := setupTestDB(t)
+	pool, err := coredb.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	r := kachopg.New(pool)
+
+	w, err := r.Writer(ctx)
+	require.NoError(t, err)
+
+	n := newNetwork("folder-setdefault", "net-setdefault")
+	created, err := w.Networks().Insert(ctx, n)
+	require.NoError(t, err)
+	originalName := created.Name
+
+	// Insert default SG first (FK Network.default_security_group_id →
+	// security_groups.id), затем SetDefaultSGID.
+	sgDom := domain.NewDefaultSecurityGroup(created.Network)
+	sgRec, err := w.SecurityGroups().Insert(ctx, &sgDom)
+	require.NoError(t, err)
+
+	upd, err := w.Networks().SetDefaultSGID(ctx, created.ID, sgRec.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sgRec.ID, upd.DefaultSecurityGroupID)
+	// SetDefaultSGID — узкий UPDATE; name/description не должны меняться.
+	assert.Equal(t, originalName, upd.Name, "SetDefaultSGID не должен менять name")
+	require.NoError(t, w.Commit())
+
+	// Проверка committed-state.
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	got, err := rd.Networks().Get(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sgRec.ID, got.DefaultSecurityGroupID)
+	assert.Equal(t, originalName, got.Name)
+}
+
 // Assertion: реализация удовлетворяет интерфейсу (compile-time check).
 var _ kacho.Repository = (*kachopg.Repository)(nil)

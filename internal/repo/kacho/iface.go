@@ -39,11 +39,13 @@ type Repository interface {
 // RepositoryReader — read-only проекция репозитория. Все ресурс-специфичные
 // reader'ы возвращаются через свой method.
 //
-// Pilot: только Networks(). Replicate-фаза добавит Subnets() / Addresses() /
-// RouteTables() / SecurityGroups() / Gateways() / PrivateEndpoints() /
-// NetworkInterfaces().
+// Pilot: Networks() + SecurityGroups() (последнее — batch 33/34, KAC-94: SG-CQRS
+// нужен, чтобы Network.Create мог inline создать default-SG в одной writer-TX).
+// Replicate-фаза добавит Subnets() / Addresses() / RouteTables() / Gateways() /
+// PrivateEndpoints() / NetworkInterfaces().
 type RepositoryReader interface {
 	Networks() NetworkReaderIface
+	SecurityGroups() SecurityGroupReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -52,12 +54,13 @@ type RepositoryReader interface {
 // (G.2 — writer extends reader). Outbox-emit живёт здесь же — это
 // гарантирует атомарность DML + outbox в одной TX (skill evgeniy §6 G.5).
 //
-// Pilot: только Networks() + Outbox(). Replicate-фаза добавит остальные resource
-// writer'ы. Сейчас при попытке вызвать неимплементированный resource — паника
-// от nil-method receiver (это сознательно: pilot не пытается покрыть все 8
-// ресурсов одновременно).
+// Pilot: Networks() + SecurityGroups() + Outbox() (batch 33/34, KAC-94).
+// Replicate-фаза добавит остальные resource writer'ы. Сейчас при попытке
+// вызвать неимплементированный resource — паника от nil-method receiver (это
+// сознательно: pilot не пытается покрыть все 8 ресурсов одновременно).
 type RepositoryWriter interface {
 	Networks() NetworkWriterIface
+	SecurityGroups() SecurityGroupWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// Commit финализирует tx. После Commit вызов Abort — no-op.

@@ -244,10 +244,7 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	cloudPoolSelectorRepo := repo.NewCloudPoolSelectorRepo(pool)
 	niRepo := repo.NewNetworkInterfaceRepo(pool)
 
-	var defaultSGRepo repo.SecurityGroupRepoIface
-	if cfg.Network.DefaultSGInline {
-		defaultSGRepo = sgRepo
-	} else {
+	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
@@ -262,9 +259,12 @@ func buildServices(pool *pgxpool.Pool, folderClient repo.FolderClient, geoClient
 	kachoRepo := kachopg.New(pool)
 
 	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
-	// kachoRepo используется только Network'ом; для SG/Subnet/RT — пока legacy.
-	// defaultSGRepo может быть nil при выключенном `network.default-sg-inline`.
-	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, defaultSGRepo)
+	// kachoRepo используется Network'ом + SG (Wave 5 batch 33/34, KAC-94: SG
+	// переехал на CQRS). Subnet/RT — пока legacy.
+	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
+	// создаётся inline default SG и Network.default_security_group_id
+	// заполняется атомарно.
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, cfg.Network.DefaultSGInline)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
 	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
 	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, folderClient, opsRepo)
