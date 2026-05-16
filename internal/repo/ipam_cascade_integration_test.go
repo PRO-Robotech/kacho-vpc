@@ -13,7 +13,7 @@ import (
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
@@ -124,13 +124,12 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	}))
 
 	// ResolverService + AllocateUseCase. Они принимают `kacho.Repository` напрямую.
-	// Legacy подсетный/адресный сервис-параметры (subnetRepo/addrRepo) — пока
-	// нужны для constructor'а; передаём legacy *Repo (они только-чтение через
-	// shim_kacho и инициируются от того же pool'а).
-	subnetRepo := repo.NewSubnetRepo(pool)
-	addrRepo := repo.NewAddressRepo(pool)
-	apResolver := addresspool.NewResolverService(r, addrRepo, subnetRepo, folderClient)
-	addrSvc := addressapp.NewAllocateUseCase(r, subnetRepo, apResolver)
+	// SubnetReader / AddressRepo для constructor'а ResolverService и AllocateUseCase —
+	// тонкие adapter'ы поверх kachoRepo (KAC-94 A.7 ultra-final: legacy *Repo удалены).
+	subnetAdapter := cqrsadapter.NewSubnet(r)
+	addrAdapter := cqrsadapter.NewAddress(r)
+	apResolver := addresspool.NewResolverService(r, addrAdapter, subnetAdapter, folderClient)
+	addrSvc := addressapp.NewAllocateUseCase(r, subnetAdapter, apResolver)
 
 	mkAddr := func(folderID, name string, t domain.AddressType, v domain.IpVersion, ext *domain.ExternalIpv4Spec, intSpec *domain.InternalIpv4Spec) *domain.Address {
 		return &domain.Address{

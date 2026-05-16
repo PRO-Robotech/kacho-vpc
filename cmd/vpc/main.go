@@ -43,6 +43,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
@@ -303,43 +304,38 @@ func runServe(cfg config.Config) error {
 // slavePool — опц. read-replica pool (skill evgeniy §6 G.4); nil → kachopg.New
 // делает fallback и Reader-TX идут на master.
 func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
-	networkRepo := repo.NewNetworkRepo(pool)
-	subnetRepo := repo.NewSubnetRepo(pool)
-	addressRepo := repo.NewAddressRepo(pool)
-	routeTableRepo := repo.NewRouteTableRepo(pool)
-	sgRepo := repo.NewSecurityGroupRepo(pool)
-	gatewayRepo := repo.NewGatewayRepo(pool)
-	_ = gatewayRepo // Wave 5 replicate (KAC-94): Gateway use-case'ы переехали на
-	// CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo оставлен умышленно —
-	// его консьюмеров в текущем main.go больше нет, но удаление откладывается до
-	// общей чистки legacy-репо после миграции всех 7 не-pilot ресурсов.
-	// Wave 5 replicate (KAC-94): PrivateEndpoint use-case'ы работают через
-	// CQRS-Repository (kachoRepo); legacy *PrivateEndpointRepo больше не
-	// инжектируется. Если потребуется admin-tooling на pgxpool напрямую —
-	// раскомментируйте: peRepo := repo.NewPrivateEndpointRepo(pool)
-	niRepo := repo.NewNetworkInterfaceRepo(pool)
-
 	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
-	// Wave 5 pilot (KAC-94, skill evgeniy §6 G.1-G.7): Network use-case'ы
-	// работают через CQRS-Repository (Reader / Writer split). pgxpool-impl —
-	// `internal/repo/kacho/pg`. Wave 5 A.7 sub-PR 1/6: AddressPool / Binding /
-	// CloudPoolSelector тоже переехали на kachoRepo (см. ниже).
+	// CQRS pilot (KAC-94, skill evgeniy §6 G.1-G.7): все 8 VPC-ресурсов
+	// (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
+	// NetworkInterface) работают через `kacho.Repository` (Reader/Writer split).
+	// pgxpool-impl — `internal/repo/kacho/pg`. KAC-94 A.7 ultra-final: legacy
+	// concrete-структуры `*repo.<X>Repo` удалены полностью; admin-сервисы и
+	// peer-port'ы use-case-пакетов получают тонкие adapter'ы поверх kachoRepo
+	// из пакета `internal/repo/cqrsadapter`.
 	kachoRepo := kachopg.New(pool, slavePool)
 
-	// Wave 5 A.7 sub-PR 1/6 (KAC-94): AddressPool — admin-only use-case-
-	// структура (см. `internal/apps/kacho/api/addresspool/`). Composition root
-	// собирает 13 use-case'ов + ResolverService под единый Handler. Все use-
-	// case'ы работают через `kachoRepo` (CQRS-Repository) — каждый mutate
-	// открывает писатель, делает DML + outbox emit в одной TX. Legacy узкие
-	// port'ы `addresspool.AddressPoolRepo` / `AddressPoolBindingRepo` /
-	// `CloudPoolSelectorRepo` удалены — duck-typing'ом подходят только
-	// concrete `*repo.NetworkRepo` / `*repo.AddressRepo` / `*repo.SubnetRepo`
-	// под узкие read-port'ы (NetworkRepo / AddressRepo / SubnetReader).
+	// Adapter'ы под узкие port-интерфейсы admin/peer-сервисов. Каждый adapter
+	// открывает свежую Reader/Writer-TX на каждый вызов (G.4 — read на slave-
+	// pool, если он настроен; write — на master).
+	networkAdapter := cqrsadapter.NewNetwork(kachoRepo)
+	subnetAdapter := cqrsadapter.NewSubnet(kachoRepo)
+	addressAdapter := cqrsadapter.NewAddress(kachoRepo)
+	routeTableAdapter := cqrsadapter.NewRouteTable(kachoRepo)
+	sgAdapter := cqrsadapter.NewSecurityGroup(kachoRepo)
+	niAdapter := cqrsadapter.NewNetworkInterface(kachoRepo)
+
+	// AddressPool — admin-only use-case-структура (см.
+	// `internal/apps/kacho/api/addresspool/`). Composition root собирает 13
+	// use-case'ов + ResolverService под единый Handler. Все use-case'ы работают
+	// через `kachoRepo` (CQRS-Repository) — каждый mutate открывает писатель,
+	// делает DML + outbox emit в одной TX. KAC-94 A.7 ultra-final: узкие
+	// read-port'ы Address/Subnet/Network удовлетворяются adapter'ами поверх
+	// kachoRepo (cqrsadapter.Address / Subnet / Network).
 	addressPoolResolver := addresspoolapp.NewResolverService(
-		kachoRepo, addressRepo, subnetRepo, folderClient,
+		kachoRepo, addressAdapter, subnetAdapter, folderClient,
 	)
 	addressPoolHandler := addresspoolapp.NewHandler(
 		addresspoolapp.NewCreateAddressPoolUseCase(kachoRepo, geoClient),
@@ -348,10 +344,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		addresspoolapp.NewGetAddressPoolUseCase(kachoRepo),
 		addresspoolapp.NewListAddressPoolsUseCase(kachoRepo),
 		addresspoolapp.NewCheckUseCase(kachoRepo),
-		addresspoolapp.NewExplainResolutionUseCase(addressRepo, addressPoolResolver),
-		addresspoolapp.NewBindAsNetworkDefaultUseCase(kachoRepo, networkRepo),
+		addresspoolapp.NewExplainResolutionUseCase(addressAdapter, addressPoolResolver),
+		addresspoolapp.NewBindAsNetworkDefaultUseCase(kachoRepo, networkAdapter),
 		addresspoolapp.NewUnbindNetworkDefaultUseCase(kachoRepo),
-		addresspoolapp.NewBindAsAddressOverrideUseCase(kachoRepo, addressRepo),
+		addresspoolapp.NewBindAsAddressOverrideUseCase(kachoRepo, addressAdapter),
 		addresspoolapp.NewUnbindAddressOverrideUseCase(kachoRepo),
 		addresspoolapp.NewGetPoolUtilizationUseCase(kachoRepo),
 		addresspoolapp.NewListPoolAddressesUseCase(kachoRepo),
@@ -360,38 +356,33 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	cloudSelUnset := addresspoolapp.NewUnsetCloudPoolSelectorUseCase(kachoRepo)
 	cloudSelGet := addresspoolapp.NewGetCloudPoolSelectorUseCase(kachoRepo)
 
-	addressRefSvc := addressref.NewService(addressRepo)
+	addressRefSvc := addressref.NewService(addressAdapter)
 
-	// Wave 3a + Wave 5 pilot: каждый use-case инжектируется в Handler.
-	// kachoRepo используется Network'ом + SG (Wave 5 batch 33/34, KAC-94: SG
-	// переехал на CQRS). Subnet/RT — пока legacy.
+	// Network — use-case-структура (Wave 3a + Wave 5 pilot). Все use-case'ы
+	// работают через kachoRepo (CQRS); checkNetworkEmpty / default-SG cleanup
+	// в Network.Delete получают subnet/RT/SG adapter'ы, отделённые от writer-TX
+	// (так как они каждый открывают свою TX).
 	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
 	// создаётся inline default SG и Network.default_security_group_id
 	// заполняется атомарно.
 	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, cfg.Network.DefaultSGInline)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
-	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetRepo, routeTableRepo, sgRepo, opsRepo)
+	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetAdapter, routeTableAdapter, sgAdapter, opsRepo)
 	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, folderClient, opsRepo)
 	netGetUC := networkapp.NewGetNetworkUseCase(kachoRepo)
 	netListUC := networkapp.NewListNetworksUseCase(kachoRepo)
-	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetRepo)
-	netListSGUC := networkapp.NewListSecurityGroupsUseCase(kachoRepo, sgRepo)
-	netListRTUC := networkapp.NewListRouteTablesUseCase(kachoRepo, routeTableRepo)
+	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetAdapter)
+	netListSGUC := networkapp.NewListSecurityGroupsUseCase(kachoRepo, sgAdapter)
+	netListRTUC := networkapp.NewListRouteTablesUseCase(kachoRepo, routeTableAdapter)
 	netListOpsUC := networkapp.NewListOperationsUseCase(opsRepo)
 	netHandler := networkapp.NewHandler(
 		netCreateUC, netUpdateUC, netDeleteUC, netMoveUC,
 		netGetUC, netListUC, netListSubUC, netListSGUC, netListRTUC, netListOpsUC,
 	)
 
-	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): Gateway use-case'ы
-	// работают через CQRS-Repository (kachoRepo). Legacy *repo.GatewayRepo
-	// продолжает существовать (наследие admin/handler-кода, internal services) —
-	// он не удаляется в этой миграции; replicate-фаза заменила только
-	// use-case-слой Gateway.
-	//
-	// Wave 3b ранее жил на узком port'е `gatewayapp.GatewayRepo`, теперь на
-	// `gatewayapp.Repo = kacho.Repository`. Wiring остался идентичен по сигнатуре
-	// (use-case-конструктор принимает Repository, открывает Reader/Writer внутри).
+	// Gateway use-case'ы работают через CQRS-Repository (kachoRepo) —
+	// конструктор принимает Repository, каждый use-case открывает Reader/Writer
+	// внутри. KAC-94 A.7 ultra-final: legacy *repo.GatewayRepo удалён.
 	gwHandler := gatewayapp.NewHandler(
 		gatewayapp.NewCreateGatewayUseCase(kachoRepo, folderClient, opsRepo),
 		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
@@ -402,13 +393,11 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		gatewayapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): PrivateEndpoint
-	// use-case'ы работают через CQRS-Repository (kachoRepo) вместо legacy
-	// *PrivateEndpointRepo. NetworkReader/SubnetReader для request-path-precheck
-	// — пока legacy repos (network/subnet ещё не на CQRS pilot'е, переедут
-	// отдельной replicate-волной).
+	// PrivateEndpoint use-case'ы работают через CQRS-Repository (kachoRepo).
+	// NetworkReader/SubnetReader для request-path-precheck — adapter'ы поверх
+	// kachoRepo (cqrsadapter.Network / Subnet).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkRepo, subnetRepo, folderClient, opsRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, folderClient, opsRepo),
 		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
@@ -416,10 +405,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		peapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 5 replicate (KAC-94, skill evgeniy §6): RouteTable use-case'ы
-	// переехали на CQRS-Repository (parity с pilot Network). Legacy
-	// `routeTableRepo` оставлен — его всё ещё использует Network.Delete
-	// (subnet/rt children check) и integration-тесты `route_table_*test.go`.
+	// RouteTable use-case'ы работают через CQRS-Repository (parity с pilot
+	// Network). routeTableAdapter передаётся Network.Delete для child-check.
 	rtHandler := routetableapp.NewHandler(
 		routetableapp.NewCreateRouteTableUseCase(kachoRepo, folderClient, opsRepo),
 		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
@@ -430,59 +417,54 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 5 replicate (KAC-94): Subnet переехал на CQRS-Repository вслед за
-	// Network/SG. Use-case'ы Subnet принимают kachoRepo (которое уже сконструировано
-	// для Network/SG); legacy `subnetRepo` остаётся для admin/peer-сервисов
-	// (`addressPoolSvc`, `peapp.NewCreatePrivateEndpointUseCase` etc.).
+	// Subnet use-case'ы работают через CQRS-Repository (kachoRepo). niAdapter
+	// передаётся в Delete для precondition-check «нет привязанных NIC».
 	subnetHandler := subnetapp.NewHandler(
 		subnetapp.NewCreateSubnetUseCase(kachoRepo, folderClient, geoClient, opsRepo),
 		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
-		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niRepo, opsRepo),
+		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niAdapter, opsRepo),
 		subnetapp.NewMoveSubnetUseCase(kachoRepo, folderClient, opsRepo),
 		subnetapp.NewGetSubnetUseCase(kachoRepo),
 		subnetapp.NewListSubnetsUseCase(kachoRepo),
 		subnetapp.NewAddCidrBlocksUseCase(kachoRepo, opsRepo),
 		subnetapp.NewRemoveCidrBlocksUseCase(kachoRepo, opsRepo),
 		subnetapp.NewRelocateUseCase(kachoRepo, geoClient),
-		subnetapp.NewListUsedAddressesUseCase(kachoRepo, addressRepo),
+		subnetapp.NewListUsedAddressesUseCase(kachoRepo, addressAdapter),
 		subnetapp.NewListOperationsUseCase(opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): Address — use-case-структура. Composition с
-	// AddressPoolService для IPAM cascade resolve. Internal Allocate UC отделён —
-	// принимается InternalAddressAllocateHandler через узкий port.
+	// Address — use-case-структура. Composition с AddressPoolService для IPAM
+	// cascade resolve. Internal Allocate UC отделён — принимается
+	// InternalAddressAllocateHandler через узкий port.
 	//
-	// A.7 sub-PR 2 (KAC-94): Address use-cases переехали на CQRS-Repository
-	// (`kachoRepo`). IPAM atomicity (Insert + Allocate + Outbox) гарантируется
-	// одной writer-TX в `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`.
-	// Legacy `addressRepo` остаётся для NIC use-cases, addressref, addresspool
-	// resolver — переезд на CQRS в последующих sub-PR'ах.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetRepo, folderClient, opsRepo, addressPoolResolver)
+	// Все Address use-cases работают через CQRS-Repository (`kachoRepo`). IPAM
+	// atomicity (Insert + Allocate + Outbox) гарантируется одной writer-TX в
+	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter —
+	// peer-port для SubnetReader (Get + AddressesBySubnet), удовлетворяется
+	// тем же kachoRepo через cqrsadapter.
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, folderClient, opsRepo, addressPoolResolver)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, folderClient, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo)
 	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo)
 	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo)
-	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(kachoRepo, subnetRepo)
+	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(kachoRepo, subnetAdapter)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
-	addressAllocateUC := addressapp.NewAllocateUseCase(kachoRepo, subnetRepo, addressPoolResolver)
+	addressAllocateUC := addressapp.NewAllocateUseCase(kachoRepo, subnetAdapter, addressPoolResolver)
 	addressHandler := addressapp.NewHandler(
 		addressCreateUC, addressUpdateUC, addressDeleteUC, addressMoveUC,
 		addressGetUC, addressGetByValueUC, addressListUC, addressListBySubnetUC, addressListOpsUC,
 		nil, // SubnetAuthZ опционален — пока nil
 	)
 
-	// Wave 3 (skill evgeniy §2): SecurityGroup — use-case-структура. Split-endpoint
-	// Update / UpdateRules / UpdateRule (OCC через xmin в repo).
-	// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): use-case'ы SG переехали
-	// на CQRS-Repository (`kachoRepo`). Все DML + outbox-emit идут в одной
-	// writer-TX (G.5). Legacy `sgRepo` остаётся в композиции — он передаётся
-	// в Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
-	// Network.Delete (там CQRS-SG-writer не доступен из Network reader-TX
-	// после Close).
+	// SecurityGroup — use-case-структура. Split-endpoint Update / UpdateRules
+	// / UpdateRule (OCC через xmin в repo). Все DML + outbox-emit идут в одной
+	// writer-TX (G.5). sgAdapter (cqrsadapter поверх kachoRepo) передаётся в
+	// Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
+	// Network.Delete (отдельная TX от Network writer'а).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkRepo, folderClient, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, folderClient, opsRepo),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
@@ -493,18 +475,16 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
 	)
 
-	// Wave 3 (skill evgeniy §2): NetworkInterface — use-case-структура.
-	// Wave 5 replicate (KAC-94, NIC batch): use-case'ы NIC переехали на
-	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к Subnet),
-	// но есть специфические AttachToInstance / DetachFromInstance с atomic CAS
-	// (KAC-52); CAS теперь живёт на DB-уровне через
-	// `writer.NetworkInterfaces().AttachToInstance`. Legacy `niRepo` остаётся
-	// (используется internal admin-сервисами + legacy integration-тестами
-	// `network_interface_attach_race_integration_test.go`).
+	// NetworkInterface — use-case-структура. Все use-case'ы работают через
+	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к
+	// Subnet); AttachToInstance / DetachFromInstance — atomic CAS на DB-уровне
+	// (KAC-52, `writer.NetworkInterfaces().AttachToInstance`).
+	// addressAdapter передаётся в Create/Update/Delete UC — он удовлетворяет
+	// `networkinterface.AddressRepo` port (Get + SetReference + ClearReference).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressRepo, folderClient, opsRepo),
-		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
-		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, folderClient, opsRepo),
+		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
+		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),
 		niapp.NewListNetworkInterfacesUseCase(kachoRepo),
 		niapp.NewAttachToInstanceUseCase(kachoRepo, opsRepo),
@@ -526,7 +506,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 		cloudSelSet:             cloudSelSet,
 		cloudSelUnset:           cloudSelUnset,
 		cloudSelGet:             cloudSelGet,
-		networkInternal:         networkinternal.NewService(networkRepo, sgRepo),
+		networkInternal:         networkinternal.NewService(networkAdapter, sgAdapter),
 		networkInterfaceHandler: niHandler,
 	}
 }
