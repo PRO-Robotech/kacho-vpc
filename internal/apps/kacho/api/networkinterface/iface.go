@@ -17,11 +17,15 @@
 // AttachToInstance CAS на writer-TX закрывает race-window между Get → check →
 // Update в use-case'е.
 //
-// Address-attach при NIC.Create по-прежнему идёт через legacy `AddressRepo`
+// A.7 sub-PR 3/6 (KAC-94): peer-port `SubnetReader` упразднён — parent-Subnet
+// validation в Create идёт через `kachoRepo.Reader().Subnets().Get`. Это удаляет
+// последнюю legacy-зависимость на `*repo.SubnetRepo` из NIC use-case'ов; Reader-TX
+// автоматически уходит на slave-pool, если он настроен (G.4).
+//
+// Address-attach при NIC.Create / Update по-прежнему идёт через legacy `AddressRepo`
 // (отдельная TX в `AddressRepo.SetReference`) — переход на единую writer-TX
 // (Insert(NIC) + SetReference(addr) атомарно) — отдельный шаг следующей итерации
-// (требует CQRS для Address, который частично сделан, но без `SetReference` в
-// writer-iface).
+// (требует CQRS для Address с `SetReference` в writer-iface).
 package networkinterface
 
 import (
@@ -54,13 +58,6 @@ type (
 	NetworkInterfaceWriterIface = kachorepo.NetworkInterfaceWriterIface
 	OutboxEmitter               = kachorepo.OutboxEmitter
 )
-
-// SubnetReader — узкий read-интерфейс для проверки parent Subnet в Create.
-// Subnet ещё не переехал на CQRS-iface (replicate-фаза — следующая итерация);
-// продолжаем использовать legacy port-shape (возвращает `*domain.SubnetRecord`).
-type SubnetReader interface {
-	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
-}
 
 // AddressRepo — узкий интерфейс работы с Address-ресурсами, нужный NIC use-case'ам:
 // валидация cross-resource (Address существует, нужной IP-версии, в той же подсети,

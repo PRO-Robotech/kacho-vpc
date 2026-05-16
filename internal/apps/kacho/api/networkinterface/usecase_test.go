@@ -24,8 +24,12 @@ import (
 //
 // Wave 5 replicate (KAC-94, NIC batch): NIC use-case'ы переехали на CQRS-Repository
 // (skill evgeniy §6 G.1-G.7). NIC-mock — `kachomock.Repository` (in-memory
-// CQRS-impl с TX-семантикой и outbox-буфером); Subnet/Address — пока legacy
-// `repomock.*`.
+// CQRS-impl с TX-семантикой и outbox-буфером); Address — пока legacy
+// `repomock.AddressRepo` (CQRS-writer для Address-SetReference ещё не готов).
+//
+// A.7 sub-PR 3/6 (KAC-94): parent-Subnet validation через CQRS-Reader
+// (`kachoRepo.Reader().Subnets().Get`), `*repomock.SubnetRepo` больше не нужен —
+// fixture-Subnet seed'ится через `kachomock.SeedSubnet`.
 //
 // NIC-specific:
 //   - Нет Move RPC (NIC привязан к Subnet).
@@ -39,13 +43,12 @@ import (
 
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
-	sr *repomock.SubnetRepo,
 	ar *repomock.AddressRepo,
 	or *repomock.OpsRepo,
 	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateNetworkInterfaceUseCase(kr, sr, ar, fc, or)
+	create := NewCreateNetworkInterfaceUseCase(kr, ar, fc, or)
 	update := NewUpdateNetworkInterfaceUseCase(kr, ar, or)
 	deleteUC := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
 	get := NewGetNetworkInterfaceUseCase(kr)
@@ -56,14 +59,13 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, get, list, attach, detach, listOps)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, *repomock.SubnetRepo, *repomock.AddressRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, *repomock.AddressRepo) {
 	t.Helper()
 	kr := kachomock.NewRepository()
-	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.FolderClient{OK: folderOK}
-	return makeHandler(t, kr, sr, ar, or, fc), or, kr, sr, ar
+	return makeHandler(t, kr, ar, or, fc), or, kr, ar
 }
 
 // preloadNIC помещает NIC прямо в state mock-Repository (как если бы он
@@ -84,7 +86,7 @@ func preloadNIC(t *testing.T, kr *kachomock.Repository, rec *kachorepo.NetworkIn
 // ---- Handler — sync paths ----
 
 func TestHandler_Get_InvalidArg(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -92,7 +94,7 @@ func TestHandler_Get_InvalidArg(t *testing.T) {
 }
 
 func TestHandler_Get_NotFound(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkInterfaceRequest{NetworkInterfaceId: ids.NewID(ids.PrefixSubnet)})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -100,49 +102,49 @@ func TestHandler_Get_NotFound(t *testing.T) {
 }
 
 func TestHandler_List_Empty(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	resp, err := h.List(context.Background(), &vpcv1.ListNetworkInterfacesRequest{FolderId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.NetworkInterfaces)
 }
 
 func TestHandler_Create_Validates(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.Create(context.Background(), &vpcv1.CreateNetworkInterfaceRequest{Name: "nic"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Update_RequiresID(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.Update(context.Background(), &vpcv1.UpdateNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Delete_InvalidArg(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Attach_RequiresID(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.AttachToInstance(context.Background(), &vpcv1.AttachNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Detach_RequiresID(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.DetachFromInstance(context.Background(), &vpcv1.DetachNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_ListOperations_RequiresID(t *testing.T) {
-	h, _, _, _, _ := minimalHandler(t, true)
+	h, _, _, _ := minimalHandler(t, true)
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListNetworkInterfaceOperationsRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -152,10 +154,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 
 func TestCreateUseCase_FolderRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
-	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{Name: "nic"}})
 	require.Error(t, err)
@@ -165,10 +166,9 @@ func TestCreateUseCase_FolderRequired(t *testing.T) {
 
 func TestCreateUseCase_SubnetRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
-	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{FolderID: "f1", Name: "nic"}})
 	require.Error(t, err)
@@ -178,10 +178,9 @@ func TestCreateUseCase_SubnetRequired(t *testing.T) {
 
 func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	kr := kachomock.NewRepository()
-	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID:     "f1",
@@ -196,13 +195,13 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
-	sr := repomock.NewSubnetRepo()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	// preset subnet
-	_, err := sr.Insert(context.Background(), &domain.Subnet{ID: "e9bsub1", FolderID: "f1", Name: "sn"})
-	require.NoError(t, err)
-	uc := NewCreateNetworkInterfaceUseCase(kr, sr, ar, &repomock.FolderClient{OK: true}, or)
+	// preset subnet — fixture в kachomock (CQRS-Reader.Subnets().Get).
+	kr.SeedSubnet(&kachorepo.SubnetRecord{
+		Subnet: domain.Subnet{ID: "e9bsub1", FolderID: "f1", Name: domain.RcNameVPC("sn")},
+	})
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		FolderID: "f1",

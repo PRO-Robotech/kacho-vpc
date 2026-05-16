@@ -496,7 +496,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// (используется internal admin-сервисами + legacy integration-тестами
 	// `network_interface_attach_race_integration_test.go`).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, subnetRepo, addressRepo, folderClient, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressRepo, folderClient, opsRepo),
 		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressRepo, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),
