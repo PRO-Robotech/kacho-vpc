@@ -45,7 +45,7 @@ func TestCQRS_PrivateEndpoint_WriterCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Seed parent Network — FK private_endpoints.network_id → networks(id) RESTRICT.
 	w0, err := r.Writer(ctx)
@@ -91,7 +91,7 @@ func TestCQRS_PrivateEndpoint_FKViolation_NetworkMissing(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestCQRS_PrivateEndpoint_UpdateDelete_FullCycle(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Seed parent Network.
 	w0, err := r.Writer(ctx)

@@ -26,12 +26,13 @@ import "context"
 
 // Repository — корневой контракт repo-слоя VPC.
 //
-// Reader(ctx) открывает read-only TX (read-committed) — на slave-реплике, когда
-// та будет; сейчас на той же мастер-pool. Caller обязан вызвать Close() после
+// Reader(ctx) открывает read-only TX (read-committed) на **slave-pool'е**,
+// если он настроен в pg-импл (skill evgeniy §6 G.4 — разгрузка master от
+// чтения); иначе на master (fallback). Caller обязан вызвать Close() после
 // использования (rollback read-only TX).
 //
-// Writer(ctx) открывает RW TX на мастере. Caller обязан вызвать либо Commit(),
-// либо Abort() (Abort идемпотентен — безопасно ставить через defer).
+// Writer(ctx) открывает RW TX на master-pool'е. Caller обязан вызвать либо
+// Commit(), либо Abort() (Abort идемпотентен — безопасно ставить через defer).
 type Repository interface {
 	Reader(ctx context.Context) (RepositoryReader, error)
 	Writer(ctx context.Context) (RepositoryWriter, error)

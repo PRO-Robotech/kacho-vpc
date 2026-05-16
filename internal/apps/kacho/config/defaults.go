@@ -53,6 +53,10 @@ func RegisterDefaults(v *viper.Viper) {
 	// URL по умолчанию покрывает локальный goose / `make test` без values.yaml.
 	// Пароль подставляется из ENV (см. password-from-env ниже).
 	v.SetDefault("repository.postgres.url", "postgres://vpc@localhost:5432/kacho_vpc")
+	// slave-url — опц. DSN read-replica (skill evgeniy §6 G.4). Пустая строка →
+	// Reader-TX идут на master (fallback). Когда деплой добавит реплику —
+	// выставляется через values.yaml / ENV KACHO_VPC_REPOSITORY__POSTGRES__SLAVE_URL.
+	v.SetDefault("repository.postgres.slave-url", "")
 	v.SetDefault("repository.postgres.max-conns", 0)
 	v.SetDefault("repository.postgres.ssl-mode", "disable")
 	v.SetDefault("repository.postgres.password-from-env", "KACHO_VPC_DB_PASSWORD")

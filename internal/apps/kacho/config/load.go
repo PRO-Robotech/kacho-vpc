@@ -47,12 +47,16 @@ func Load(path string) (Config, error) {
 	// Legacy ENV → новые ключи (backward-compat).
 	applyLegacyEnv(v)
 
-	// Подстановка пароля из password-from-env (если задан).
+	// Подстановка пароля из password-from-env (если задан) — и в master URL,
+	// и в slave URL (skill evgeniy §6 G.4). Тот же пароль используется для
+	// обоих pool'ов (master + read-replica на одном Patroni-кластере).
 	if envName := v.GetString("repository.postgres.password-from-env"); envName != "" {
 		if pwd := os.Getenv(envName); pwd != "" {
 			urlStr := v.GetString("repository.postgres.url")
-			urlStr = injectPasswordIntoDSN(urlStr, pwd)
-			v.Set("repository.postgres.url", urlStr)
+			v.Set("repository.postgres.url", injectPasswordIntoDSN(urlStr, pwd))
+			if slaveStr := v.GetString("repository.postgres.slave-url"); slaveStr != "" {
+				v.Set("repository.postgres.slave-url", injectPasswordIntoDSN(slaveStr, pwd))
+			}
 		}
 	}
 

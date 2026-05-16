@@ -81,7 +81,7 @@ func TestCQRS_Network_WriterCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -116,7 +116,7 @@ func TestCQRS_Network_WriterUncommitted_ReaderNotSees(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestCQRS_Network_WriterAbort_RollbacksInsert(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestCQRS_Network_OutboxAtomicityWithDML(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// 1) Insert + Emit + Commit → outbox-row есть.
 	w, err := r.Writer(ctx)
@@ -236,7 +236,7 @@ func TestCQRS_Network_UpdateDelete_FullCycle(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	// Insert.
 	w1, err := r.Writer(ctx)
@@ -287,7 +287,7 @@ func TestCQRS_Network_SetDefaultSGID_AtomicWithSG(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	r := kachopg.New(pool)
+	r := kachopg.New(pool, nil)
 
 	w, err := r.Writer(ctx)
 	require.NoError(t, err)
