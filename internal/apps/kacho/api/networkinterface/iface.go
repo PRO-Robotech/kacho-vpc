@@ -45,7 +45,7 @@ type NetworkInterfaceFilter = kachorepo.NetworkInterfaceFilter
 // Re-export CQRS-Repository типов из `internal/repo/kacho` — use-case-код
 // работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias
 // (не type wrap) — тип взаимозаменяем с источником, никаких shim'ов. Parity с
-// `internal/apps/kacho/api/network/ports.go`.
+// `internal/apps/kacho/api/network/iface.go`.
 type (
 	Repo                        = kachorepo.Repository
 	Reader                      = kachorepo.RepositoryReader

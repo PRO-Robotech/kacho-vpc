@@ -35,7 +35,7 @@ type (
 // работает с ними под коротким именем (`Repo` / `Reader` / `Writer`). Type-alias
 // (не type wrap) — тип взаимозаменяем с источником, никаких shim'ов.
 //
-// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): parity с network/ports.go.
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.1-G.7): parity с network/iface.go.
 type (
 	Repo                       = kacho.Repository
 	Reader                     = kacho.RepositoryReader
