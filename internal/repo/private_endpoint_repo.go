@@ -21,7 +21,10 @@ import (
 // и repomock.PrivateEndpointRepo). Parity с repo.Network / repo.RouteTable / repo.Address.
 type PrivateEndpoint = kachorepo.PrivateEndpointRecord
 
-// PrivateEndpointRepo — реализация PrivateEndpointRepoIface поверх pgxpool.
+// PrivateEndpointRepo — pgxpool-impl репозитория PrivateEndpoints. KAC-94
+// finalize: общий port `PrivateEndpointRepoIface` удалён (skill evgeniy
+// A.7 + G.6); use-case-слой — на CQRS-Repository, эта структура — для
+// integration-тестов (raw-SQL coverage) и duck-typing admin-сервисов.
 type PrivateEndpointRepo struct {
 	pool *pgxpool.Pool
 }

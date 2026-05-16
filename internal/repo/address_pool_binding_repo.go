@@ -9,8 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// AddressPoolBindingRepo — реализация AddressPoolBindingRepoIface
-// (explicit binding pool ↔ network/address).
+// AddressPoolBindingRepo — pgxpool-impl explicit binding pool ↔ network/address.
+// KAC-94 finalize: общий port `AddressPoolBindingRepoIface` удалён (skill evgeniy
+// A.7 + G.6); use-case-пакет `addresspool` описывает узкий port локально.
 type AddressPoolBindingRepo struct {
 	pool *pgxpool.Pool
 }

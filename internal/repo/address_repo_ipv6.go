@@ -1,6 +1,7 @@
 // KAC-60: sparse counter-based IPAM для External IPv6 (миграция 0021).
 // Реализует методы InitIPv6PoolCursor / AllocateExternalIPv6 / FreeExternalIPv6
-// из AddressRepoIface (см. docstrings там).
+// на `*AddressRepo` (исторически часть удалённого общего `AddressRepoIface` —
+// KAC-94 finalize; узкие port'ы use-case'ов сейчас содержат эти методы).
 package repo
 
 import (
@@ -29,8 +30,9 @@ func (r *AddressRepo) InitIPv6PoolCursor(ctx context.Context, poolID string) err
 	return nil
 }
 
-// AllocateExternalIPv6 — sparse counter-based allocator. См. AddressRepoIface
-// для семантики. Возвращает IP-литерал в canonical-форме (`netip.Addr.String()`).
+// AllocateExternalIPv6 — sparse counter-based allocator. Семантика описана в
+// узких port'ах use-case-пакетов (legacy `AddressRepoIface` удалён в KAC-94
+// finalize). Возвращает IP-литерал в canonical-форме (`netip.Addr.String()`).
 // ErrPoolExhausted если cursor превысил host-bits CIDR'а.
 //
 // Транзакционно: все 4 шага (pop released → allocate offset → INSERT allocated →

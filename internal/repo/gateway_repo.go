@@ -18,7 +18,9 @@ import (
 // Wave 2 batch B (KAC-94), parity с repo.Network.
 type Gateway = kacho.GatewayRecord
 
-// GatewayRepo — реализация GatewayRepoIface поверх pgxpool.
+// GatewayRepo — pgxpool-impl репозитория Gateways. KAC-94 finalize: общий
+// port `GatewayRepoIface` удалён (skill evgeniy A.7 + G.6); use-case-слой
+// — на CQRS-Repository, эта структура — для integration-тестов (raw-SQL).
 type GatewayRepo struct {
 	pool *pgxpool.Pool
 }

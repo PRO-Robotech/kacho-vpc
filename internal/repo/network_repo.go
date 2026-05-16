@@ -19,7 +19,13 @@ import (
 // не в domain).
 type Network = kachorepo.NetworkRecord
 
-// NetworkRepo — реализация NetworkRepoIface поверх pgxpool.
+// NetworkRepo — pgxpool-impl репозитория сетей.
+//
+// Wave 5 finalize (KAC-94, skill evgeniy A.7 + G.6): использовался как
+// adapter под удалённый общий port `NetworkRepoIface`. После переезда
+// use-case-слоя на CQRS-Repository (`internal/repo/kacho`) остаётся
+// для integration-тестов (raw-SQL coverage of constraints + indices) и
+// admin-сервисов c узкими локальными port'ами (duck-typing).
 type NetworkRepo struct {
 	pool *pgxpool.Pool
 }

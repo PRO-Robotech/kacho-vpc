@@ -1062,16 +1062,21 @@ func AwaitAllOpsDone(t TestingT, r *OpsRepo) {
 	}
 }
 
-// Compile-time проверки соответствия port-интерфейсам.
+// Compile-time проверки соответствия peer-service port-интерфейсам.
+//
+// Wave 5 finalize (KAC-94, skill evgeniy §6 G.6): legacy resource-repo
+// интерфейсы (`NetworkRepoIface` / `SubnetRepoIface` / …) удалены из
+// `internal/repo/iface.go`. Mock-структуры здесь продолжают существовать как
+// in-memory adapter'ы под **узкие port'ы** use-case-пакетов (skill evgeniy
+// §6 G.2) — каждый use-case-пакет описывает свой Repo-интерфейс локально,
+// mock структура удовлетворяет его duck-typing'ом. Compile-time assertion на
+// удалённый общий интерфейс не нужен.
+//
+// Peer-service порты `FolderClient` / `ZoneRegistry` — кросс-сервисные,
+// общие для всех use-case'ов, поэтому остаются в общем `internal/repo`-пакете
+// и compile-проверяются здесь.
 var (
-	_ repo.NetworkRepoIface         = (*NetworkRepo)(nil)
-	_ repo.SubnetRepoIface          = (*SubnetRepo)(nil)
-	_ repo.AddressRepoIface         = (*AddressRepo)(nil)
-	_ repo.RouteTableRepoIface      = (*RouteTableRepo)(nil)
-	_ repo.SecurityGroupRepoIface   = (*SecurityGroupRepo)(nil)
-	_ repo.GatewayRepoIface         = (*GatewayRepo)(nil)
-	_ repo.PrivateEndpointRepoIface = (*PrivateEndpointRepo)(nil)
-	_ repo.FolderClient             = (*FolderClient)(nil)
-	_ repo.ZoneRegistry             = (*ZoneRegistry)(nil)
-	_ operations.Repo               = (*OpsRepo)(nil)
+	_ repo.FolderClient = (*FolderClient)(nil)
+	_ repo.ZoneRegistry = (*ZoneRegistry)(nil)
+	_ operations.Repo   = (*OpsRepo)(nil)
 )

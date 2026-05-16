@@ -14,10 +14,12 @@
 //   - `internal/repo/kacho/kachomock/` — in-memory implementation для unit-тестов
 //     use-case'ов (replaces repomock.NetworkRepo для Network-кода).
 //
-// Legacy `*repo.NetworkRepo` / `internal/repo/repomock.NetworkRepo` НЕ удаляются
-// — на них завязаны admin-сервисы (networkinternal/addresspool/...) и
-// существующие integration-тесты `internal/repo/network_repo_*test.go`,
-// которые проверяют именно legacy-репо.
+// Legacy `*repo.NetworkRepo` / `internal/repo/repomock.NetworkRepo` НЕ удалены
+// — на них завязаны admin-сервисы (networkinternal/addresspool/addressref) через
+// узкие локальные port'ы (skill evgeniy §6 G.2) и integration-тесты
+// `internal/repo/*_integration_test.go` (raw-SQL coverage of constraints +
+// indices). Общие port-интерфейсы `*RepoIface` из `internal/repo/iface.go`
+// удалены в KAC-94 finalize (skill evgeniy A.7 + G.6).
 package kacho
 
 import "context"

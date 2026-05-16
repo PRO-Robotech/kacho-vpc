@@ -22,7 +22,10 @@ import (
 // — parity с repo.Network / repo.RouteTable.
 type Address = kachorepo.AddressRecord
 
-// AddressRepo — реализация AddressRepoIface поверх pgxpool.
+// AddressRepo — pgxpool-impl репозитория адресов. KAC-94 finalize: общий
+// port `AddressRepoIface` удалён (skill evgeniy A.7 + G.6); use-case-слой —
+// на CQRS-Repository (writer.Addresses()/reader.Addresses()), эта структура
+// для integration-тестов (raw-SQL coverage) и admin-сервисов с узкими port'ами.
 type AddressRepo struct {
 	pool *pgxpool.Pool
 }

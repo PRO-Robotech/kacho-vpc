@@ -8,9 +8,12 @@ import (
 
 // Pagination — постраничная навигация. Wave 5 (KAC-94 D.1) перенесён из
 // `internal/repo/iface.go` в leaf-пакет `kacho`, чтобы избежать import-cycle
-// `repo → repo/kacho → repo` (поскольку `repo.NetworkRepoIface` теперь
-// возвращает `*kacho.NetworkRecord`, и `repo.Network` — alias на него).
-// В `internal/repo/iface.go` остался тонкий type-alias `Pagination = kacho.Pagination`.
+// `repo → repo/kacho → repo` (когда legacy `*Repo`-структуры в `repo`
+// возвращали `*kacho.NetworkRecord` через alias `repo.Network`). После KAC-94
+// finalize общий port `NetworkRepoIface` удалён, но Pagination физически
+// остаётся здесь (его type-alias `Pagination = kacho.Pagination` в
+// `internal/repo/iface.go` всё ещё используют узкие port'ы use-case-пакетов
+// и repomock).
 type Pagination struct {
 	PageToken string
 	PageSize  int64

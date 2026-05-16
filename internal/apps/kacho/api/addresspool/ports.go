@@ -23,14 +23,17 @@
 // синхронный, ответ — `*vpcv1.AddressPool` напрямую. Это сохраняется
 // verbatim относительно legacy `*addresspool.AddressPoolService`.
 //
-// CQRS-Repository extension: AddressPool остаётся на legacy `*repo.AddressPool*Repo`
-// семействе port-интерфейсов (`internal/repo/iface.go`). Объяснение: AP — admin
-// resource (низкая частота write'ов, нет multi-resource atomic-инвариантов
-// внутри одной writer-TX), а pg-репо уже делает own-Begin/emitVPC/Commit и
-// гарантирует DML+outbox-атомарность. Расширять `kacho.Repository` на AddressPool
-// (как сделано для Network/SG/Address) — следующая итерация эпика KAC-94
-// если/когда это потребуется (например, для cross-resource writer-TX с
-// `address_pool_address_override` + `addresses`).
+// CQRS-Repository extension: AddressPool остаётся на concrete-структурах
+// `*repo.AddressPoolRepo` / `*repo.AddressPoolBindingRepo` /
+// `*repo.CloudPoolSelectorRepo` (бывшие реализации удалённых
+// `*RepoIface`). Use-case-слой описывает узкие port'ы у себя
+// (skill evgeniy §6 G.2 — duck-typing). Объяснение: AP — admin resource
+// (низкая частота write'ов, нет multi-resource atomic-инвариантов внутри
+// одной writer-TX), а pg-репо уже делает own-Begin/emitVPC/Commit и
+// гарантирует DML+outbox-атомарность. Расширять `kacho.Repository` на
+// AddressPool (как сделано для Network/SG/Address) — следующая итерация
+// эпика KAC-94 если/когда это потребуется (например, для cross-resource
+// writer-TX с `address_pool_address_override` + `addresses`).
 package addresspool
 
 import (
@@ -59,11 +62,15 @@ var (
 	ErrPoolNotResolved = repo.ErrPoolNotResolved
 )
 
-// AddressPoolRepo — то, что use-case'ам AddressPool нужно от legacy
-// pgxpool-репо (`*repo.AddressPoolRepo`). Локальная декларация (а не type-alias
-// на `repo.AddressPoolRepoIface`) — skill evgeniy §6 G.2: каждый use-case-пакет
-// описывает узкий port. Здесь port совпадает с legacy intent-интерфейсом —
-// это нормально для admin-ресурса (нет резона дробить дальше).
+// AddressPoolRepo — то, что use-case'ам AddressPool нужно от
+// pgxpool-репо (`*repo.AddressPoolRepo`). Локальная декларация (skill evgeniy
+// §6 G.2: каждый use-case-пакет описывает узкий port). В KAC-94 finalize
+// общий `repo.AddressPoolRepoIface` удалён — concrete-структура
+// `*repo.AddressPoolRepo` удовлетворяет этому интерфейсу duck-typing'ом.
+// Расширение CQRS-Repository на AddressPool — отдельная итерация (admin-resource,
+// низкая частота write'ов, нет multi-resource atomic-инвариантов в одной
+// writer-TX; pg-репо уже делает own-Begin/emit/Commit и гарантирует DML+outbox
+// атомарность).
 type AddressPoolRepo interface {
 	Get(ctx context.Context, id string) (*domain.AddressPool, error)
 	List(ctx context.Context, f AddressPoolFilter, p Pagination) ([]*domain.AddressPool, string, error)

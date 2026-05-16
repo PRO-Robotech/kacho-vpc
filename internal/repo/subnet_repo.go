@@ -22,7 +22,10 @@ import (
 // Wave 2 batch A (KAC-94), parity с repo.Network.
 type Subnet = kachorepo.SubnetRecord
 
-// SubnetRepo — реализация SubnetRepoIface поверх pgxpool.
+// SubnetRepo — pgxpool-impl репозитория подсетей. KAC-94 finalize: общий
+// port `SubnetRepoIface` удалён (skill evgeniy A.7 + G.6); use-case-слой
+// работает через CQRS-Repository, эта структура — для integration-тестов
+// и admin-сервисов с узкими локальными port'ами (duck-typing).
 type SubnetRepo struct {
 	pool *pgxpool.Pool
 }
