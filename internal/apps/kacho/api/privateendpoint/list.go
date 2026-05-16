@@ -9,25 +9,33 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // ListPrivateEndpointsUseCase — list PEs. folder_id обязателен.
+//
+// Wave 5 replicate (KAC-94): открывает read-only TX через `repo.Reader(ctx)`
+// (parity с network/list.go).
 type ListPrivateEndpointsUseCase struct {
-	repo PrivateEndpointRepo
+	repo Repo
 }
 
 // NewListPrivateEndpointsUseCase создаёт ListPrivateEndpointsUseCase.
-func NewListPrivateEndpointsUseCase(repo PrivateEndpointRepo) *ListPrivateEndpointsUseCase {
-	return &ListPrivateEndpointsUseCase{repo: repo}
+func NewListPrivateEndpointsUseCase(r Repo) *ListPrivateEndpointsUseCase {
+	return &ListPrivateEndpointsUseCase{repo: r}
 }
 
 // Execute — folder_id required.
-func (u *ListPrivateEndpointsUseCase) Execute(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*domain.PrivateEndpointRecord, string, error) {
+func (u *ListPrivateEndpointsUseCase) Execute(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*kacho.PrivateEndpointRecord, string, error) {
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	return u.repo.List(ctx, f, p)
+	rd, err := u.repo.Reader(ctx)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	defer func() { _ = rd.Close() }()
+	return rd.PrivateEndpoints().List(ctx, f, p)
 }
 
 // ListOperationsUseCase — операции для конкретного PE.

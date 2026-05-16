@@ -4,15 +4,21 @@ import (
 	pepb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// privateEndpoint — receiver-объект под трансфер domain.PrivateEndpointRecord →
-// *pepb.PrivateEndpoint. Wave 2 batch B (KAC-94).
+// privateEndpoint — receiver-объект под трансфер kachorepo.PrivateEndpointRecord →
+// *pepb.PrivateEndpoint.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §4 D.1 / §11 AP-11): repo-entity
+// уехал в repo-leaf (`internal/repo/kacho/entity_private_endpoint.go`); трансфер
+// принимает kacho-leaf тип, type-set generic constraint в `dto/base.go`
+// перерегистрирован параллельно (parity с network/route_table).
 type privateEndpoint struct{}
 
 // toPb формирует *pepb.PrivateEndpoint из repo-entity. CreatedAt — truncate до
 // секунд через time-трансфер.
-func (privateEndpoint) toPb(rec domain.PrivateEndpointRecord) (*pepb.PrivateEndpoint, error) {
+func (privateEndpoint) toPb(rec kachorepo.PrivateEndpointRecord) (*pepb.PrivateEndpoint, error) {
 	ts, err := (timeObj{}).toPb(rec.CreatedAt)
 	if err != nil {
 		return nil, err

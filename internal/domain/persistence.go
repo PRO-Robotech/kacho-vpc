@@ -57,12 +57,10 @@ type GatewayRecord struct {
 	CreatedAt time.Time
 }
 
-// PrivateEndpointRecord — repo-entity для PrivateEndpoint. domain.PrivateEndpoint
-// + CreatedAt (DB-managed). Wave 2 batch B (KAC-94).
-type PrivateEndpointRecord struct {
-	PrivateEndpoint
-	CreatedAt time.Time
-}
+// Wave 5 replicate (KAC-94): PrivateEndpointRecord уехал в repo-leaf
+// `internal/repo/kacho/entity_private_endpoint.go` как
+// `kacho.PrivateEndpointRecord` (parity с NetworkRecord). Здесь его больше нет
+// — все consumer'ы импортируют `kacho.PrivateEndpointRecord` напрямую.
 
 // NetworkInterfaceRecord — repo-entity для NetworkInterface. domain.NetworkInterface
 // + CreatedAt (DB-managed). Wave 2 batch C (KAC-94).

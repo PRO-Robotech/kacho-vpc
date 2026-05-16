@@ -23,8 +23,14 @@ type CreateInput struct {
 }
 
 // CreatePrivateEndpointUseCase инициирует создание PrivateEndpoint.
+//
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX
+// и делает Insert(PE) + Outbox.Emit("PrivateEndpoint", …, "CREATED") в одной
+// pgx.Tx — атомарность DML + outbox гарантирована. FK на Network/Subnet/Address
+// (миграция 0024) проверяются Postgres'ом в момент INSERT, тоже в этой же
+// writer-TX.
 type CreatePrivateEndpointUseCase struct {
-	repo         PrivateEndpointRepo
+	repo         Repo
 	networkRead  NetworkReader
 	subnetRead   SubnetReader
 	folderClient FolderClient
@@ -32,9 +38,9 @@ type CreatePrivateEndpointUseCase struct {
 }
 
 // NewCreatePrivateEndpointUseCase создаёт CreatePrivateEndpointUseCase.
-func NewCreatePrivateEndpointUseCase(repo PrivateEndpointRepo, networkRead NetworkReader, subnetRead SubnetReader, folderClient FolderClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
+func NewCreatePrivateEndpointUseCase(r Repo, networkRead NetworkReader, subnetRead SubnetReader, folderClient FolderClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
 	return &CreatePrivateEndpointUseCase{
-		repo:         repo,
+		repo:         r,
 		networkRead:  networkRead,
 		subnetRead:   subnetRead,
 		folderClient: folderClient,
@@ -88,7 +94,12 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInp
 	}
 	name := string(p.Name)
 	if name != "" {
-		existing, _, lerr := u.repo.List(ctx, PrivateEndpointFilter{FolderID: p.FolderID, Name: name}, Pagination{})
+		rd, err := u.repo.Reader(ctx)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		existing, _, lerr := rd.PrivateEndpoints().List(ctx, PrivateEndpointFilter{FolderID: p.FolderID, Name: name}, Pagination{})
+		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
 		}
@@ -117,6 +128,9 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInp
 	return &op, nil
 }
 
+// doCreate — async-часть Create (внутри Operation worker'а). Атомарный backstop:
+// folder-exists + Insert (FK ограничения / UNIQUE-нарушения); все DML + outbox
+// идут через одну writer-TX (skill evgeniy §6 G.5).
 func (u *CreatePrivateEndpointUseCase) doCreate(ctx context.Context, peID string, p domain.PrivateEndpoint) (*anypb.Any, error) {
 	exists, err := u.folderClient.Exists(ctx, p.FolderID)
 	if err != nil {
@@ -143,8 +157,20 @@ func (u *CreatePrivateEndpointUseCase) doCreate(ctx context.Context, peID string
 	p.ServiceType = stype
 	p.Status = domain.PrivateEndpointStatusAvailable
 
-	created, err := u.repo.Insert(ctx, &p)
+	w, err := u.repo.Writer(ctx)
 	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	created, err := w.PrivateEndpoints().Insert(ctx, &p)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if err := w.Outbox().Emit(ctx, "PrivateEndpoint", created.ID, "CREATED", privateEndpointPayloadMap(created)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return marshalPrivateEndpointRecord(created)

@@ -11,11 +11,15 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/filter"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// PrivateEndpoint — type-alias на domain.PrivateEndpointRecord (repo-entity с
-// DB-managed CreatedAt). Wave 2 batch B (KAC-94), parity с repo.Network.
-type PrivateEndpoint = domain.PrivateEndpointRecord
+// PrivateEndpoint — type-alias на kachorepo.PrivateEndpointRecord (repo-entity с
+// DB-managed CreatedAt). Wave 5 replicate (KAC-94): уехал из
+// `domain.PrivateEndpointRecord` в repo-leaf `internal/repo/kacho/entity_private_endpoint.go`;
+// alias оставлен для совместимости с существующими callers (legacy *PrivateEndpointRepo
+// и repomock.PrivateEndpointRepo). Parity с repo.Network / repo.RouteTable / repo.Address.
+type PrivateEndpoint = kachorepo.PrivateEndpointRecord
 
 // PrivateEndpointRepo — реализация PrivateEndpointRepoIface поверх pgxpool.
 type PrivateEndpointRepo struct {
