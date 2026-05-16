@@ -119,7 +119,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest
 		}
 		rt.StaticRoutes = append(rt.StaticRoutes, route)
 	}
-	op, err := h.create.Execute(ctx, CreateInput{RouteTable: rt})
+	op, err := h.create.Execute(ctx, rt)
 	if err != nil {
 		return nil, err
 	}

@@ -17,11 +17,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreatePrivateEndpointUseCase.Execute.
-type CreateInput struct {
-	PrivateEndpoint domain.PrivateEndpoint // несёт FolderID/NetworkID/SubnetID/Name/...
-}
-
 // CreatePrivateEndpointUseCase инициирует создание PrivateEndpoint.
 //
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): worker открывает Writer-TX
@@ -49,8 +44,12 @@ func NewCreatePrivateEndpointUseCase(r Repo, networkRead NetworkReader, subnetRe
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
-func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	p := in.PrivateEndpoint
+//
+// Принимает `domain.PrivateEndpoint` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{PrivateEndpoint: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `p.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixPrivateEndpoint)`.
+func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, p domain.PrivateEndpoint) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, p.NetworkID); err != nil {
 		return nil, err
 	}

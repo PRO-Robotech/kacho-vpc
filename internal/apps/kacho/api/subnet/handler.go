@@ -118,27 +118,25 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*
 	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
 		return nil, err
 	}
-	in := CreateInput{
-		Subnet: domain.Subnet{
-			FolderID:     req.FolderId,
-			Name:         domain.RcNameVPC(req.Name),
-			Description:  domain.RcDescription(req.Description),
-			Labels:       domain.LabelsFromMap(req.Labels),
-			NetworkID:    req.NetworkId,
-			ZoneID:       req.ZoneId,
-			V4CidrBlocks: req.V4CidrBlocks,
-			V6CidrBlocks: req.V6CidrBlocks,
-			RouteTableID: req.RouteTableId,
-		},
+	s := domain.Subnet{
+		FolderID:     req.FolderId,
+		Name:         domain.RcNameVPC(req.Name),
+		Description:  domain.RcDescription(req.Description),
+		Labels:       domain.LabelsFromMap(req.Labels),
+		NetworkID:    req.NetworkId,
+		ZoneID:       req.ZoneId,
+		V4CidrBlocks: req.V4CidrBlocks,
+		V6CidrBlocks: req.V6CidrBlocks,
+		RouteTableID: req.RouteTableId,
 	}
 	if req.DhcpOptions != nil {
-		in.Subnet.DhcpOptions = &domain.DhcpOptions{
+		s.DhcpOptions = &domain.DhcpOptions{
 			DomainNameServers: req.DhcpOptions.DomainNameServers,
 			DomainName:        req.DhcpOptions.DomainName,
 			NtpServers:        req.DhcpOptions.NtpServers,
 		}
 	}
-	op, err := h.create.Execute(ctx, in)
+	op, err := h.create.Execute(ctx, s)
 	if err != nil {
 		return nil, err
 	}

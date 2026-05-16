@@ -16,14 +16,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreateGatewayUseCase.Execute. Использует
-// `domain.Gateway` как «несущий» носитель данных, как требует skill evgeniy §2
-// B.3 (не плодить параллельные XxxReq, дублирующие domain). Поле `g.ID` на входе
-// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixGateway)`.
-type CreateInput struct {
-	Gateway domain.Gateway
-}
-
 // CreateGatewayUseCase инициирует создание Gateway. Sync-проверки (folder
 // exists) выполняются ДО создания Operation — клиент получает fast-fail
 // gRPC-status, а не «200 + операция, упавшая через секунду» (см. kacho-vpc#8).
@@ -45,8 +37,12 @@ func NewCreateGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operatio
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
 // созданный Operation указателем (caller'у нужен он для `OperationService.Get`).
-func (u *CreateGatewayUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	g := in.Gateway
+//
+// Принимает `domain.Gateway` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{Gateway: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `g.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixGateway)`.
+func (u *CreateGatewayUseCase) Execute(ctx context.Context, g domain.Gateway) (*operations.Operation, error) {
 	if g.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}

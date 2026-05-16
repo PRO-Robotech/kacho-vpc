@@ -113,15 +113,13 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (
 	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
 		return nil, err
 	}
-	in := CreateInput{
-		Network: domain.Network{
-			FolderID:    req.FolderId,
-			Name:        domain.RcNameVPC(req.Name),
-			Description: domain.RcDescription(req.Description),
-			Labels:      domain.LabelsFromMap(req.Labels),
-		},
+	n := domain.Network{
+		FolderID:    req.FolderId,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	op, err := h.create.Execute(ctx, in)
+	op, err := h.create.Execute(ctx, n)
 	if err != nil {
 		return nil, err
 	}

@@ -17,14 +17,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreateSubnetUseCase.Execute. Использует
-// `domain.Subnet` как «несущий» носитель данных (skill evgeniy §2 B.3 — не
-// плодить параллельные XxxReq, дублирующие domain). Поле `s.ID` на входе пустое
-// — назначим внутри use-case'а через `ids.NewID(ids.PrefixSubnet)`.
-type CreateInput struct {
-	Subnet domain.Subnet
-}
-
 // CreateSubnetUseCase инициирует создание Subnet. Sync-проверки (folder exists,
 // parent network exists, name unique, CIDR validity / non-overlap) выполняются
 // ДО создания Operation — клиент получает fast-fail gRPC-status, а не «200 +
@@ -56,8 +48,12 @@ func NewCreateSubnetUseCase(
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
-func (u *CreateSubnetUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	s := in.Subnet
+//
+// Принимает `domain.Subnet` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{Subnet: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `s.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixSubnet)`.
+func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, s.NetworkID); err != nil {
 		return nil, err
 	}

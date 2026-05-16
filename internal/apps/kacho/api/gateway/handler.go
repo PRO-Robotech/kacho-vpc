@@ -106,16 +106,14 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateGatewayRequest) (
 	if _, ok := req.Gateway.(*vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec); ok {
 		gtype = "shared_egress"
 	}
-	in := CreateInput{
-		Gateway: domain.Gateway{
-			FolderID:    req.FolderId,
-			Name:        domain.RcNameVPC(req.Name),
-			Description: domain.RcDescription(req.Description),
-			Labels:      domain.LabelsFromMap(req.Labels),
-			GatewayType: domain.GatewayType(gtype),
-		},
+	g := domain.Gateway{
+		FolderID:    req.FolderId,
+		Name:        domain.RcNameVPC(req.Name),
+		Description: domain.RcDescription(req.Description),
+		Labels:      domain.LabelsFromMap(req.Labels),
+		GatewayType: domain.GatewayType(gtype),
 	}
-	op, err := h.create.Execute(ctx, in)
+	op, err := h.create.Execute(ctx, g)
 	if err != nil {
 		return nil, err
 	}

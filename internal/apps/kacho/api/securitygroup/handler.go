@@ -125,7 +125,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSecurityGroupRequ
 	for _, rs := range req.RuleSpecs {
 		sg.Rules = append(sg.Rules, ruleSpecFromProto(rs))
 	}
-	op, err := h.create.Execute(ctx, CreateInput{SecurityGroup: sg})
+	op, err := h.create.Execute(ctx, sg)
 	if err != nil {
 		return nil, err
 	}

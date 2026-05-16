@@ -30,11 +30,18 @@ const niUsedByReferrerType = "compute_instance"
 // `internal/apps/kacho/shared/macutil`).
 const niMacRetryAttempts = 3
 
-// CreateInput — параметры для CreateNetworkInterfaceUseCase.Execute. Использует
-// `domain.NetworkInterface` как «несущий» носитель данных (skill evgeniy §2 B.3 —
-// не плодить параллельные XxxReq, дублирующие domain). Поле `n.ID` на входе
-// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixSubnet)` (NIC
-// переиспользует Subnet-prefix `e9b`).
+// CreateInput — параметры для CreateNetworkInterfaceUseCase.Execute.
+//
+// Orthogonal: composes `domain.NetworkInterface` + extra request-only context
+// (`InstanceID` / `Index` для immediate-attach к Compute.Instance). Это **не**
+// тривиальная обёртка `{NetworkInterface: …}` — InstanceID/Index — самостоятельные
+// поля запроса (immediate-attach mode), не атрибуты ресурса. Skill evgeniy §2 B.3 /
+// §7 I.1 разрешают композицию domain.X + extra fields; запрет именно на
+// `struct{X domain.X}` без других полей (см. KAC-94: тривиальные обёртки удалены
+// в Network/Subnet/Gateway/RouteTable/SecurityGroup/PrivateEndpoint).
+//
+// Поле `n.ID` на входе пустое — назначим внутри use-case'а через
+// `ids.NewID(ids.PrefixSubnet)` (NIC переиспользует Subnet-prefix `e9b`).
 type CreateInput struct {
 	NetworkInterface domain.NetworkInterface
 	// InstanceID — опц. сразу приаттачить NIC к инстансу после создания.

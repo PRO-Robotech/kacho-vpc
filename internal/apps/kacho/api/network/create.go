@@ -15,14 +15,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CreateInput — параметры для CreateNetworkUseCase.Execute. Использует
-// `domain.Network` как «несущий» носитель данных, как требует skill evgeniy §2
-// B.3 (не плодить параллельные XxxReq, дублирующие domain). Поле `n.ID` на входе
-// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixNetwork)`.
-type CreateInput struct {
-	Network domain.Network
-}
-
 // CreateNetworkUseCase инициирует создание Network. Sync-проверки (folder
 // exists, name unique) выполняются ДО создания Operation — клиент получает
 // fast-fail gRPC-status, а не «200 + операция, упавшая через секунду» (см.
@@ -67,8 +59,12 @@ func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operatio
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
 // созданный Operation указателем (caller'у нужен он для `OperationService.Get`).
-func (u *CreateNetworkUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
-	n := in.Network
+//
+// Принимает `domain.Network` напрямую (KAC-94, skill evgeniy §2 B.3 / §7 I.1):
+// тривиальная `CreateInput{Network: …}`-обёртка удалена — она лишь
+// перепаковывала domain.X без дополнительного контекста. Поле `n.ID` на входе
+// пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixNetwork)`.
+func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*operations.Operation, error) {
 	if n.FolderID == "" {
 		return nil, status.Error(codes.InvalidArgument, "folder_id required")
 	}

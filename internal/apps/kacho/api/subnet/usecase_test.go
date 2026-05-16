@@ -183,47 +183,47 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// folder_id required.
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, err := uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{NetworkID: netID, ZoneID: testZone}})
+	_, err := uc.Execute(context.Background(), domain.Subnet{NetworkID: netID, ZoneID: testZone})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// network_id required (empty + invalid id format).
-	_, err = uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err = uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: "", ZoneID: testZone,
-	}})
+	})
 	require.Error(t, err)
 
 	// zone_id required.
-	_, err = uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err = uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: "",
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// unknown zone.
-	_, err = uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err = uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: "ru-central1-z",
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// host-bits != 0 → InvalidArgument.
-	_, err = uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err = uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
 		V4CidrBlocks: []string{"10.0.0.5/24"},
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
 	// /29 → InvalidArgument "Illegal argument Invalid network prefix /29".
-	_, err = uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err = uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
 		V4CidrBlocks: []string{"10.0.0.0/29"},
-	}})
+	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -243,10 +243,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	netID := ids.NewID(ids.PrefixNetwork)
 	seedNetwork(t, kr, "f1", netID)
 
-	op, err := uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	op, err := uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
 		Name: domain.RcNameVPC("sub1"),
-	}})
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -262,9 +262,9 @@ func TestCreateUseCase_NetworkNotFound(t *testing.T) {
 	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: true},
 		repomock.NewZoneRegistry(testZone), or)
 
-	_, err := uc.Execute(context.Background(), CreateInput{Subnet: domain.Subnet{
+	_, err := uc.Execute(context.Background(), domain.Subnet{
 		FolderID: "f1", NetworkID: ids.NewID(ids.PrefixNetwork), ZoneID: testZone,
-	}})
+	})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
