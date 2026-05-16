@@ -13,13 +13,17 @@ import (
 // GetAddressUseCase — простой read; id-валидация + перевод repo-sentinel в gRPC
 // status + обогащение UsedBy (referrer-tracking). Skill evgeniy §2 B.3: use-case
 // можно было бы вообще опустить, но handler-у удобнее единый шов.
+//
+// A.7 sub-PR 2 (KAC-94, skill evgeniy §6 G.5): открывает Reader-TX явно через
+// `repo.Reader(ctx)` — routing на slave-реплику станет automatic, когда та
+// появится; пока на той же мастер-pool.
 type GetAddressUseCase struct {
-	repo AddressRepo
+	repo Repo
 }
 
 // NewGetAddressUseCase создаёт GetAddressUseCase.
-func NewGetAddressUseCase(repo AddressRepo) *GetAddressUseCase {
-	return &GetAddressUseCase{repo: repo}
+func NewGetAddressUseCase(r Repo) *GetAddressUseCase {
+	return &GetAddressUseCase{repo: r}
 }
 
 // Execute возвращает repo-entity Address. NotFound → mapRepoErr → gRPC NotFound.
@@ -28,11 +32,16 @@ func (u *GetAddressUseCase) Execute(ctx context.Context, id string) (*kachorepo.
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
 		return nil, err
 	}
-	a, err := u.repo.Get(ctx, id)
+	r, err := u.repo.Reader(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, []*kachorepo.AddressRecord{a})
+	defer func() { _ = r.Close() }()
+	a, err := r.Addresses().Get(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	loadUsedBy(ctx, r.Addresses(), []*kachorepo.AddressRecord{a})
 	return a, nil
 }
 
@@ -40,12 +49,12 @@ func (u *GetAddressUseCase) Execute(ctx context.Context, id string) (*kachorepo.
 // internal). Verbatim YC: oneof external_ipv4_address / internal_ipv4_address;
 // optional subnet_id scope.
 type GetByValueUseCase struct {
-	repo AddressRepo
+	repo Repo
 }
 
 // NewGetByValueUseCase создаёт GetByValueUseCase.
-func NewGetByValueUseCase(repo AddressRepo) *GetByValueUseCase {
-	return &GetByValueUseCase{repo: repo}
+func NewGetByValueUseCase(r Repo) *GetByValueUseCase {
+	return &GetByValueUseCase{repo: r}
 }
 
 // Execute — sync-валидация + lookup по IP + загрузка UsedBy.
@@ -53,11 +62,16 @@ func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP,
 	if externalIP == "" && internalIP == "" {
 		return nil, invalidArg("address", "address (external_ipv4_address or internal_ipv4_address) is required")
 	}
-	a, err := u.repo.GetByValue(ctx, externalIP, internalIP, subnetID)
+	r, err := u.repo.Reader(ctx)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, []*kachorepo.AddressRecord{a})
+	defer func() { _ = r.Close() }()
+	a, err := r.Addresses().GetByValue(ctx, externalIP, internalIP, subnetID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	loadUsedBy(ctx, r.Addresses(), []*kachorepo.AddressRecord{a})
 	return a, nil
 }
 
@@ -66,9 +80,9 @@ func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP,
 // address_references → лог + адреса без UsedBy (graceful degradation, не валит
 // чтение). Пустой/nil вход — no-op.
 //
-// Live-копия `service.AddressService.loadUsedBy` (Wave 3 migration; общий
-// helper можно будет вынести после полного переезда use-case'ов).
-func loadUsedBy(ctx context.Context, repo AddressRepo, addrs []*kachorepo.AddressRecord) {
+// A.7 sub-PR 2 (KAC-94): принимает `AddressReaderIface` (writer-iface тоже его
+// embed'ит, G.2) — caller передаёт reader/writer из своей открытой TX.
+func loadUsedBy(ctx context.Context, addrReader AddressReaderIface, addrs []*kachorepo.AddressRecord) {
 	if len(addrs) == 0 {
 		return
 	}
@@ -81,7 +95,7 @@ func loadUsedBy(ctx context.Context, repo AddressRepo, addrs []*kachorepo.Addres
 	if len(idsList) == 0 {
 		return
 	}
-	refs, err := repo.ReferencesForAddresses(ctx, idsList)
+	refs, err := addrReader.ReferencesForAddresses(ctx, idsList)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to load address referrers (used_by); returning addresses without it", "err", err)
 		return

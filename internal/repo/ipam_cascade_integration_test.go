@@ -135,7 +135,9 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	_ = bindRepo
 	_ = cloudSelRepo
 	// Wave 3 (KAC-94): AllocateExternalIP переехал в `addressapp.AllocateUseCase`.
-	addrSvc := addressapp.NewAllocateUseCase(addrRepo, subnetRepo, apResolver)
+	// A.7 sub-PR 2 (KAC-94): AllocateUseCase принимает CQRS-Repository — переиспользуем
+	// `kachoRepo` созданный выше для `ResolverService`.
+	addrSvc := addressapp.NewAllocateUseCase(kachoRepo, subnetRepo, apResolver)
 
 	// --- address fixtures ---
 

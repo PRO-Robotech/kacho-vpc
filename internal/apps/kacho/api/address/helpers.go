@@ -2,6 +2,7 @@ package address
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -123,4 +124,22 @@ func marshalAddressRecord(rec *kachorepo.AddressRecord) (*anypb.Any, error) {
 		return nil, fmt.Errorf("dto.Transfer Address: %w", err)
 	}
 	return anypb.New(dst)
+}
+
+// addressPayloadMap — snapshot Address для outbox payload. A.7 sub-PR 2
+// (KAC-94): CQRS-миграция Address — outbox-emit идёт из use-case-кода через
+// `w.Outbox().Emit(...)`, поэтому payload-snapshot нужен здесь.
+// Семантика — JSON round-trip, parity с `addressPayload` в
+// `internal/repo/outbox.go` для legacy AddressRepo writes (которые остаются
+// до полного переезда NIC/AP/Allocate на CQRS).
+func addressPayloadMap(a *kachorepo.AddressRecord) map[string]any {
+	b, err := json.Marshal(a)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
 }

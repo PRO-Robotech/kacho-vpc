@@ -14,13 +14,15 @@ import (
 
 // ListAddressesUseCase — list addresses with pagination. folder_id обязателен
 // (R10 #C1 closure — закрыт cross-folder enumeration).
+//
+// A.7 sub-PR 2 (KAC-94): использует CQRS Reader.
 type ListAddressesUseCase struct {
-	repo AddressRepo
+	repo Repo
 }
 
 // NewListAddressesUseCase создаёт ListAddressesUseCase.
-func NewListAddressesUseCase(repo AddressRepo) *ListAddressesUseCase {
-	return &ListAddressesUseCase{repo: repo}
+func NewListAddressesUseCase(r Repo) *ListAddressesUseCase {
+	return &ListAddressesUseCase{repo: r}
 }
 
 // Execute — folder_id required + load UsedBy для каждого адреса.
@@ -28,11 +30,16 @@ func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p P
 	if f.FolderID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
 	}
-	addrs, nextToken, err := u.repo.List(ctx, f, p)
+	r, err := u.repo.Reader(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, addrs)
+	defer func() { _ = r.Close() }()
+	addrs, nextToken, err := r.Addresses().List(ctx, f, p)
+	if err != nil {
+		return nil, "", mapRepoErr(err)
+	}
+	loadUsedBy(ctx, r.Addresses(), addrs)
 	return addrs, nextToken, nil
 }
 
@@ -40,13 +47,13 @@ func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p P
 // SubnetReader.AddressesBySubnet (joining через internal_ipv4.subnet_id ИЛИ
 // internal_ipv6.subnet_id — миграция 0013 для v6 parity).
 type ListBySubnetUseCase struct {
-	repo         AddressRepo
+	repo         Repo
 	subnetReader SubnetReader
 }
 
 // NewListBySubnetUseCase создаёт ListBySubnetUseCase.
-func NewListBySubnetUseCase(repo AddressRepo, subnetReader SubnetReader) *ListBySubnetUseCase {
-	return &ListBySubnetUseCase{repo: repo, subnetReader: subnetReader}
+func NewListBySubnetUseCase(r Repo, subnetReader SubnetReader) *ListBySubnetUseCase {
+	return &ListBySubnetUseCase{repo: r, subnetReader: subnetReader}
 }
 
 // Execute — id-валидация → existence-check (Subnet) → AddressesBySubnet → UsedBy.
@@ -64,7 +71,12 @@ func (u *ListBySubnetUseCase) Execute(ctx context.Context, subnetID string, p Pa
 	if err != nil {
 		return nil, "", mapRepoErr(err)
 	}
-	loadUsedBy(ctx, u.repo, addrs)
+	r, err := u.repo.Reader(ctx)
+	if err != nil {
+		return addrs, nextToken, nil
+	}
+	defer func() { _ = r.Close() }()
+	loadUsedBy(ctx, r.Addresses(), addrs)
 	return addrs, nextToken, nil
 }
 

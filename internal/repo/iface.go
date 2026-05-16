@@ -62,14 +62,13 @@ type NetworkFilter = kachorepo.NetworkFilter
 type SubnetFilter = kachorepo.SubnetFilter
 
 // AddressFilter — фильтр для списка адресов.
-type AddressFilter struct {
-	FolderID string
-	Name     string
-	Filter   string
-	// SubnetID — фильтр по подсети: матчит internal_ipv4.subnet_id ИЛИ
-	// internal_ipv6.subnet_id (для ListAddresses?subnet_id=). "" = без фильтра.
-	SubnetID string
-}
+//
+// A.7 sub-PR 2 (KAC-94 D.1): type-alias на `kacho.AddressFilter` (parity с
+// NetworkFilter/SubnetFilter/RouteTableFilter/SecurityGroupFilter — все они
+// уже были type-alias). После CQRS-миграции Address use-cases ходят в
+// `kacho.AddressReaderIface.List(ctx, f kacho.AddressFilter, ...)`, поэтому
+// фильтр в legacy-репо и в CQRS-iface должен быть одним типом.
+type AddressFilter = kachorepo.AddressFilter
 
 // RouteTableFilter — фильтр для списка таблиц маршрутизации. Wave 5
 // replicate (KAC-94 D.1): type-alias на `kacho.RouteTableFilter`.

@@ -15,12 +15,19 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // Тесты Address use-case'ов и handler'а. Wave 3 (KAC-94): сюда переехали
 // прежние тесты `internal/handler/address_handler_test.go`,
 // `internal/service/address_test.go`, плюс Address-блок `coverage*_test.go`.
+//
+// A.7 sub-PR 2 (KAC-94): Address use-cases переехали на CQRS-Repository —
+// mock теперь `kachomock.NewRepository()` (in-memory CQRS-impl с TX-семантикой
+// и outbox-буфером). SubnetReader пока legacy `repomock.SubnetRepo` (Subnet
+// CQRS-миграция использует свою таблицу в kachomock, но Address-UC принимает
+// узкий SubnetReader — `repomock.SubnetRepo` ему удовлетворяет).
 //
 // pools=nil во всех use-case-тестах → AllocateExternalIP/v6 недоступны;
 // проверяем pure-Create / Update / Delete / Move / Get / List paths. Allocate-
@@ -42,31 +49,31 @@ func makeSubnet(sr *repomock.SubnetRepo, networkID string) *domain.Subnet {
 }
 
 func makeHandler(t *testing.T,
-	ar *repomock.AddressRepo,
+	kr *kachomock.Repository,
 	sr *repomock.SubnetRepo,
 	or *repomock.OpsRepo,
 	fc *repomock.FolderClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateAddressUseCase(ar, sr, fc, or, nil)
-	update := NewUpdateAddressUseCase(ar, or)
-	deleteUC := NewDeleteAddressUseCase(ar, or)
-	move := NewMoveAddressUseCase(ar, fc, or)
-	get := NewGetAddressUseCase(ar)
-	getByValue := NewGetByValueUseCase(ar)
-	list := NewListAddressesUseCase(ar)
-	listBySubnet := NewListBySubnetUseCase(ar, sr)
+	create := NewCreateAddressUseCase(kr, sr, fc, or, nil)
+	update := NewUpdateAddressUseCase(kr, or)
+	deleteUC := NewDeleteAddressUseCase(kr, or)
+	move := NewMoveAddressUseCase(kr, fc, or)
+	get := NewGetAddressUseCase(kr)
+	getByValue := NewGetByValueUseCase(kr)
+	list := NewListAddressesUseCase(kr)
+	listBySubnet := NewListBySubnetUseCase(kr, sr)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, getByValue, list, listBySubnet, listOps, nil)
 }
 
-func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *repomock.AddressRepo, *repomock.SubnetRepo) {
+func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, *repomock.SubnetRepo) {
 	t.Helper()
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.FolderClient{OK: folderOK}
-	return makeHandler(t, ar, sr, or, fc), or, ar, sr
+	return makeHandler(t, kr, sr, or, fc), or, kr, sr
 }
 
 // ---- Handler — sync paths ---------------------------------------------------
@@ -141,10 +148,10 @@ func TestHandler_ListBySubnet_RequiresID(t *testing.T) {
 // ---- use-case-level ---------------------------------------------------------
 
 func TestCreateUseCase_NoSpec(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{FolderID: "f1"})
 	require.Error(t, err)
@@ -153,10 +160,10 @@ func TestCreateUseCase_NoSpec(t *testing.T) {
 }
 
 func TestCreateUseCase_RequiresFolder(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
@@ -167,11 +174,11 @@ func TestCreateUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestCreateUseCase_External_OK(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(ar)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -198,11 +205,11 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 // pools=nil → service stays pure (no auto-alloc); используется при load-test
 // конфигурациях / unit-тестах без IPAM.
 func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(ar)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		FolderID:     "f1",
@@ -219,12 +226,12 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 }
 
 func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(ar)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -243,11 +250,11 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 
 // Sync-валидация: explicit IP вне CIDR subnet → InvalidArgument до Operation.
 func TestCreateUseCase_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -262,12 +269,12 @@ func TestCreateUseCase_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
 }
 
 func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(ar)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -284,11 +291,11 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 }
 
 func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(ar, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		FolderID: "f1",
@@ -303,31 +310,35 @@ func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
 }
 
 func TestUpdateUseCase_DeletionProtection(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
+	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
-		ID:                 ids.NewID(ids.PrefixAddress),
+		ID:                 addrID,
 		FolderID:           "f1",
 		Name:               "addr",
 		DeletionProtection: false,
 	}}
-	ar.Seed(rec)
+	kr.SeedAddress(rec)
 
-	uc := NewUpdateAddressUseCase(ar, or)
+	uc := NewUpdateAddressUseCase(kr, or)
 	op, err := uc.Execute(context.Background(), UpdateInput{
-		AddressID:          rec.ID,
+		AddressID:          addrID,
 		DeletionProtection: true,
 		UpdateMask:         []string{"deletion_protection"},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
 
-	got, _ := ar.Get(context.Background(), rec.ID)
+	rd, _ := kr.Reader(context.Background())
+	got, _ := rd.Addresses().Get(context.Background(), addrID)
+	_ = rd.Close()
 	assert.True(t, got.DeletionProtection)
 }
 
 func TestUpdateUseCase_UnknownMask(t *testing.T) {
-	uc := NewUpdateAddressUseCase(repomock.NewAddressRepo(), repomock.NewOpsRepo())
+	kr := kachomock.NewRepository()
+	uc := NewUpdateAddressUseCase(kr, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{
 		AddressID:  ids.NewID(ids.PrefixAddress),
 		UpdateMask: []string{"unknown_field"},
@@ -338,7 +349,8 @@ func TestUpdateUseCase_UnknownMask(t *testing.T) {
 }
 
 func TestDeleteUseCase_NotFound(t *testing.T) {
-	uc := NewDeleteAddressUseCase(repomock.NewAddressRepo(), repomock.NewOpsRepo())
+	kr := kachomock.NewRepository()
+	uc := NewDeleteAddressUseCase(kr, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixAddress))
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -346,23 +358,27 @@ func TestDeleteUseCase_NotFound(t *testing.T) {
 }
 
 func TestDeleteUseCase_DeletionProtection(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
+	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
-		ID:                 ids.NewID(ids.PrefixAddress),
+		ID:                 addrID,
 		FolderID:           "f1",
 		DeletionProtection: true,
 	}}
-	ar.Seed(rec)
-	uc := NewDeleteAddressUseCase(ar, or)
-	_, err := uc.Execute(context.Background(), rec.ID)
+	kr.SeedAddress(rec)
+	uc := NewDeleteAddressUseCase(kr, or)
+	_, err := uc.Execute(context.Background(), addrID)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.FailedPrecondition, st.Code())
 }
 
+// `Used=true` блокирует Delete независимо от того, есть ли referrer-row.
+// kachomock's GetReference возвращает ErrNotFound (stub) — Delete UC всё равно
+// должен вернуть FailedPrecondition "in use" (общий случай).
 func TestDeleteUseCase_InUseByNIC(t *testing.T) {
-	ar := repomock.NewAddressRepo()
+	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
@@ -370,12 +386,8 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 		FolderID: "f1",
 		Used:     true,
 	}}
-	ar.Seed(rec)
-	// Add a referrer row через SetReference (mock-impl) — addresses.used уже true.
-	_, _ = ar.SetReference(context.Background(), &domain.AddressReference{
-		AddressID: addrID, ReferrerType: niReferrerType, ReferrerID: "e9bnic1", ReferrerName: "nic-1",
-	})
-	uc := NewDeleteAddressUseCase(ar, or)
+	kr.SeedAddress(rec)
+	uc := NewDeleteAddressUseCase(kr, or)
 	_, err := uc.Execute(context.Background(), addrID)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -383,7 +395,8 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveAddressUseCase(repomock.NewAddressRepo(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	kr := kachomock.NewRepository()
+	uc := NewMoveAddressUseCase(kr, &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -393,7 +406,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListAddressesUseCase(repomock.NewAddressRepo())
+	kr := kachomock.NewRepository()
+	uc := NewListAddressesUseCase(kr)
 	_, _, err := uc.Execute(context.Background(), AddressFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -401,7 +415,8 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestListBySubnetUseCase_NotFound(t *testing.T) {
-	uc := NewListBySubnetUseCase(repomock.NewAddressRepo(), repomock.NewSubnetRepo())
+	kr := kachomock.NewRepository()
+	uc := NewListBySubnetUseCase(kr, repomock.NewSubnetRepo())
 	_, _, err := uc.Execute(context.Background(), ids.NewID(ids.PrefixSubnet), Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -409,7 +424,8 @@ func TestListBySubnetUseCase_NotFound(t *testing.T) {
 }
 
 func TestGetByValueUseCase_Empty(t *testing.T) {
-	uc := NewGetByValueUseCase(repomock.NewAddressRepo())
+	kr := kachomock.NewRepository()
+	uc := NewGetByValueUseCase(kr)
 	_, err := uc.Execute(context.Background(), "", "", "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)

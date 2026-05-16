@@ -10,10 +10,14 @@ package address
 // Wave 3 (KAC-94): эти методы раньше висели на `*AddressService` (extension
 // methods). Сейчас живут в отдельном `AllocateUseCase`, который инжектируется
 // в `InternalAddressAllocateHandler` (см. composition root в cmd/vpc/main.go).
+//
+// A.7 sub-PR 2 (KAC-94, skill evgeniy §6 G.5 / I.9): каждый AllocateXxx
+// открывает writer-TX (Get + Set/Allocate + Outbox.UPDATED — atomic).
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"strings"
@@ -24,21 +28,26 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // AllocateUseCase — internal-only IPAM allocate (4 family-варианта).
 //
 // Результат allocate-операций — `domain.AllocateResult` (вынесен в domain
 // leaf, чтобы избежать import-cycle с `internal/handler.AddressAllocator`).
+//
+// A.7 sub-PR 2 (KAC-94): принимает CQRS `Repo` (а не legacy `*repo.AddressRepo`).
+// Каждый Allocate-метод открывает writer-TX, делает Get + Set/Allocate +
+// Outbox.UPDATED атомарно.
 type AllocateUseCase struct {
-	repo         AddressRepo
+	repo         Repo
 	subnetReader SubnetReader
 	pools        PoolService // nil → Allocate*ExternalIP* недоступны
 }
 
 // NewAllocateUseCase создаёт AllocateUseCase.
-func NewAllocateUseCase(repo AddressRepo, subnetReader SubnetReader, pools PoolService) *AllocateUseCase {
-	return &AllocateUseCase{repo: repo, subnetReader: subnetReader, pools: pools}
+func NewAllocateUseCase(r Repo, subnetReader SubnetReader, pools PoolService) *AllocateUseCase {
+	return &AllocateUseCase{repo: r, subnetReader: subnetReader, pools: pools}
 }
 
 // AllocateInternalIP — выделяет next-free IPv4 в subnet, который указан
@@ -47,7 +56,13 @@ func NewAllocateUseCase(repo AddressRepo, subnetReader SubnetReader, pools PoolS
 // Iterate по ВСЕМ V4CidrBlocks subnet'а: двухфазный allocator (random pick +
 // deterministic sweep с tried-set) устраняет false-fail на near-full subnet.
 func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID string) (*domain.AllocateResult, error) {
-	addr, err := u.repo.Get(ctx, addressID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	addr, err := w.Addresses().Get(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +115,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 			}
 			tried[ip] = struct{}{}
 			addr.InternalIpv4.Address = ip
-			updated, err := u.repo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			updated, err := w.Addresses().SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
 			if err != nil {
 				if isUniqueViolation(err) {
 					totalConflicts++
@@ -111,7 +126,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
 				return nil, err
 			}
-			return &domain.AllocateResult{IP: updated.InternalIpv4.Address}, nil
+			return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
 		}
 		// Phase 2: deterministic sweep.
 		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
@@ -120,7 +135,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 			}
 			tried[candidate] = struct{}{}
 			addr.InternalIpv4.Address = candidate
-			updated, err := u.repo.SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
+			updated, err := w.Addresses().SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
 			if err != nil {
 				if isUniqueViolation(err) {
 					totalConflicts++
@@ -131,7 +146,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
 				return nil, err
 			}
-			return &domain.AllocateResult{IP: updated.InternalIpv4.Address}, nil
+			return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
 		}
 	}
 	slog.WarnContext(ctx, "allocator: subnet exhausted",
@@ -154,7 +169,13 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 // AllocateInternalIPv6 — выделяет случайный свободный IPv6 внутри
 // subnet.v6_cidr_blocks[0] для Address с заполненным internal_ipv6.subnet_id.
 func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID string) (*domain.AllocateResult, error) {
-	addr, err := u.repo.Get(ctx, addressID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	addr, err := w.Addresses().Get(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +211,7 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 		}
 		tried[ip] = struct{}{}
 		addr.InternalIpv6.Address = ip
-		updated, uerr := u.repo.SetInternalIPv6(ctx, addressID, addr.InternalIpv6)
+		updated, uerr := w.Addresses().SetInternalIPv6(ctx, addressID, addr.InternalIpv6)
 		if uerr != nil {
 			if isUniqueViolation(uerr) {
 				conflicts++
@@ -201,7 +222,7 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 				"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", uerr)
 			return nil, uerr
 		}
-		return &domain.AllocateResult{IP: updated.InternalIpv6.Address}, nil
+		return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv6.Address})
 	}
 	slog.WarnContext(ctx, "v6 allocator: exhausted attempts",
 		"subnet_id", sub.ID, "address_id", addressID, "cidr", prefix.String(), "conflicts", conflicts)
@@ -217,7 +238,13 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 // FROM freelist → UPDATE addresses) на каждую попытку. Нулевая contention
 // между параллельными аллокаторами; каждая аллокация O(1) по числу IP в pool'е.
 func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID string) (*domain.AllocateResult, error) {
-	addr, err := u.repo.Get(ctx, addressID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	addr, err := w.Addresses().Get(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +271,7 @@ func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID stri
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address pool %s has no v4_cidr_blocks", pool.ID)
 	}
-	ip, err := u.repo.AllocateIPFromFreelist(ctx, pool.ID, addressID)
+	ip, err := w.Addresses().AllocateIPFromFreelist(ctx, pool.ID, addressID)
 	if err != nil {
 		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
@@ -254,14 +281,26 @@ func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID stri
 			"pool_id", pool.ID, "address_id", addressID, "err", err)
 		return nil, status.Errorf(codes.Internal, "allocate from freelist: %v", err)
 	}
-	return &domain.AllocateResult{IP: ip, PoolID: pool.ID}, nil
+	// Re-read updated record (AllocateIPFromFreelist пишет в addresses внутри
+	// writer-TX, видим себе) — для outbox-snapshot'а.
+	updated, gerr := w.Addresses().Get(ctx, addressID)
+	if gerr != nil {
+		return nil, mapRepoErr(gerr)
+	}
+	return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: ip, PoolID: pool.ID})
 }
 
 // AllocateExternalIPv6 (KAC-60) — выделяет внешний IPv6 для address через
 // sparse counter-based allocator (миграция 0021). Зеркало AllocateExternalIP
 // для v4: cascade resolve pool → repo.AllocateExternalIPv6 → IP.
 func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID string) (*domain.AllocateResult, error) {
-	addr, err := u.repo.Get(ctx, addressID)
+	w, err := u.repo.Writer(ctx)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	defer w.Abort()
+
+	addr, err := w.Addresses().Get(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +328,7 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 			"address pool %s has no v6_cidr_blocks", pool.ID)
 	}
 
-	ip, err := u.repo.AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
+	ip, err := w.Addresses().AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
 		if errors.Is(err, repo.ErrPoolExhausted) {
 			return nil, status.Errorf(codes.FailedPrecondition,
@@ -303,5 +342,21 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 			"pool_id", pool.ID, "address_id", addressID, "err", err)
 		return nil, status.Errorf(codes.Internal, "allocate external ipv6: %v", err)
 	}
-	return &domain.AllocateResult{IP: ip, PoolID: pool.ID}, nil
+	updated, gerr := w.Addresses().Get(ctx, addressID)
+	if gerr != nil {
+		return nil, mapRepoErr(gerr)
+	}
+	return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: ip, PoolID: pool.ID})
+}
+
+// finishAllocate — общий эпилог: outbox-emit Address.UPDATED + Commit.
+// Атомарно с Set/Allocate в той же writer-TX.
+func (u *AllocateUseCase) finishAllocate(ctx context.Context, w Writer, rec *kachorepo.AddressRecord, res *domain.AllocateResult) (*domain.AllocateResult, error) {
+	if err := w.Outbox().Emit(ctx, "Address", rec.ID, "UPDATED", addressPayloadMap(rec)); err != nil {
+		return nil, mapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
+	}
+	if err := w.Commit(); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return res, nil
 }
