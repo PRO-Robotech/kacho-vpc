@@ -957,6 +957,14 @@ func (r *OpsRepo) Create(_ context.Context, op operations.Operation) error {
 	return nil
 }
 
+func (r *OpsRepo) CreateWithPrincipal(_ context.Context, op operations.Operation, p operations.Principal) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	op.Principal = p
+	r.ops[op.ID] = &op
+	return nil
+}
+
 func (r *OpsRepo) Get(_ context.Context, id string) (*operations.Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
