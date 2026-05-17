@@ -56,9 +56,9 @@ func (r *routeTableReader) List(ctx context.Context, f kacho.RouteTableFilter, p
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.NetworkID != "" {
@@ -165,12 +165,12 @@ func (w *routeTableWriter) Insert(ctx context.Context, rt *domain.RouteTable) (*
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO route_tables (id, folder_id, created_at, name, description, labels, network_id, static_routes)
+		INSERT INTO route_tables (id, project_id, created_at, name, description, labels, network_id, static_routes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING %s`, helpers.RouteTableCols)
 
 	row := w.tx.QueryRow(ctx, q,
-		rt.ID, rt.FolderID, now, string(rt.Name), string(rt.Description), labelsJSON,
+		rt.ID, rt.ProjectID, now, string(rt.Name), string(rt.Description), labelsJSON,
 		rt.NetworkID, routesJSON,
 	)
 	result, err := helpers.ScanRouteTable(row)
@@ -181,7 +181,7 @@ func (w *routeTableWriter) Insert(ctx context.Context, rt *domain.RouteTable) (*
 }
 
 // Update — UPDATE route_tables RETURNING. Мутирует name/description/labels/
-// static_routes (folder_id меняется через SetFolderID для :move; network_id —
+// static_routes (project_id меняется через SetProjectID для :move; network_id —
 // immutable).
 //
 // outbox-write — в use-case'е (см. Insert).
@@ -209,9 +209,9 @@ func (w *routeTableWriter) Update(ctx context.Context, rt *domain.RouteTable) (*
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у RouteTable (для :move). outbox-write — в use-case'е.
-func (w *routeTableWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.RouteTableRecord, error) {
-	q := fmt.Sprintf(`UPDATE route_tables SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.RouteTableCols)
+// SetProjectID меняет project_id у RouteTable (для :move). outbox-write — в use-case'е.
+func (w *routeTableWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.RouteTableRecord, error) {
+	q := fmt.Sprintf(`UPDATE route_tables SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.RouteTableCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	rt, err := helpers.ScanRouteTable(row)
 	if err != nil {

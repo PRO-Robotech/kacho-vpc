@@ -71,8 +71,8 @@ func stripSentinel(err, sentinel error) string {
 // race-prone: между sync-проверкой и async-частью folder может быть удалён
 // peer-сервисом. Verbatim-YC NotFound теперь возвращается через
 // `operation.error` из async-части `doMove`.
-func checkMoveDestination(_ context.Context, _ FolderClient, currentFolderID, destFolderID string) error {
-	if destFolderID == currentFolderID {
+func checkMoveDestination(_ context.Context, _ ProjectClient, currentProjectID, destProjectID string) error {
+	if destProjectID == currentProjectID {
 		return status.Error(codes.InvalidArgument, "Illegal argument Destination folder is the same as the source")
 	}
 	return nil

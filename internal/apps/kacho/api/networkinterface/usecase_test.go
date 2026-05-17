@@ -45,7 +45,7 @@ func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
 	ar *repomock.AddressRepo,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateNetworkInterfaceUseCase(kr, ar, fc, or)
@@ -64,7 +64,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	kr := kachomock.NewRepository()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, ar, or, fc), or, kr, ar
 }
 
@@ -103,7 +103,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListNetworkInterfacesRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListNetworkInterfacesRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.NetworkInterfaces)
 }
@@ -156,7 +156,7 @@ func TestCreateUseCase_FolderRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{Name: "nic"}})
 	require.Error(t, err)
@@ -168,9 +168,9 @@ func TestCreateUseCase_SubnetRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
 
-	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{FolderID: "f1", Name: "nic"}})
+	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{ProjectID: "f1", Name: "nic"}})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -180,10 +180,10 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	kr := kachomock.NewRepository()
 	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
-		FolderID:     "f1",
+		ProjectID:     "f1",
 		Name:         "nic",
 		SubnetID:     "e9bsub1",
 		V4AddressIDs: []string{"e9ba1", "e9ba2"},
@@ -199,12 +199,12 @@ func TestCreateUseCase_OK(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	// preset subnet — fixture в kachomock (CQRS-Reader.Subnets().Get).
 	kr.SeedSubnet(&kachorepo.SubnetRecord{
-		Subnet: domain.Subnet{ID: "e9bsub1", FolderID: "f1", Name: domain.RcNameVPC("sn")},
+		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
 	})
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     "nic",
 		SubnetID: "e9bsub1",
 	}})
@@ -255,7 +255,7 @@ func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			FolderID:   "f1",
+			ProjectID:   "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "other-instance",
@@ -277,7 +277,7 @@ func TestAttachUseCase_OK(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:       nicID,
-			FolderID: "f1",
+			ProjectID: "f1",
 			SubnetID: "e9bsub1",
 			Status:   domain.NIStatusAvailable,
 		},
@@ -297,7 +297,7 @@ func TestDetachUseCase_OK(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			FolderID:   "f1",
+			ProjectID:   "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "my-instance",
@@ -329,7 +329,7 @@ func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			FolderID:   "f1",
+			ProjectID:   "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "my-instance",
@@ -352,7 +352,7 @@ func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:       nicID,
-			FolderID: "f1",
+			ProjectID: "f1",
 			SubnetID: "e9bsub1",
 			Status:   domain.NIStatusAvailable,
 		},
@@ -371,7 +371,7 @@ func TestNetworkInterfaceToPb_Fields(t *testing.T) {
 	rec := &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:               "e9bnic1",
-			FolderID:         "f1",
+			ProjectID:         "f1",
 			Name:             domain.RcNameVPC("nic"),
 			Description:      domain.RcDescription("desc"),
 			Labels:           domain.LabelsFromMap(map[string]string{"env": "test"}),

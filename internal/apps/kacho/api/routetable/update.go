@@ -100,7 +100,7 @@ func validateRouteTableUpdate(in UpdateInput) error {
 	// Hard-immutable поля.
 	for _, field := range in.UpdateMask {
 		switch field {
-		case "network_id", "folder_id":
+		case "network_id", "project_id":
 			return invalidArg(field, field+" is immutable after RouteTable.Create")
 		}
 	}

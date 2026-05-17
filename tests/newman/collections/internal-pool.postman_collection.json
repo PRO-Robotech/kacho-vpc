@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "8ef756f9-db89-441f-a8c1-da8770f22702",
+    "_postman_id": "769e5d1e-c869-4c94-a538-023c8db8f1ee",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,8 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
         ]
       }
     }
@@ -1360,7 +1360,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-expl-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-expl-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2215,7 +2215,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-nb-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-nb-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2740,7 +2740,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2839,7 +2839,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{ovrNetId}}\", \"name\": \"ipl-ovr-sub-{{runId}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.191.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{ovrNetId}}\", \"name\": \"ipl-ovr-sub-{{runId}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.191.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2938,7 +2938,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{ovrSubId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{ovrSubId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4758,7 +4758,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-expl-none-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-expl-none-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4988,7 +4988,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-sel-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-sel-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5180,7 +5180,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-sel-addr-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-sel-addr-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5489,7 +5489,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-addr-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ovr-addr-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5665,7 +5665,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-netdef-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-netdef-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5857,7 +5857,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-netdef-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-netdef-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"ru-central1-b\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6202,7 +6202,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ds-v4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"ru-central1-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ds-v4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"ru-central1-d\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6337,7 +6337,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ds-v6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-ds-v6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"ru-central1-d\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6683,7 +6683,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-bnd-fa-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"ipl-bnd-fa-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"

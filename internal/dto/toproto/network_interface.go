@@ -32,7 +32,7 @@ func (networkInterface) toPb(rec kachorepo.NetworkInterfaceRecord) (*vpcv1.Netwo
 	}
 	p := &vpcv1.NetworkInterface{
 		Id:               rec.ID,
-		FolderId:         rec.FolderID,
+		ProjectId:         rec.ProjectID,
 		CreatedAt:        ts,
 		Name:             string(rec.Name),
 		Description:      string(rec.Description),

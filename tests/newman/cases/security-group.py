@@ -6,7 +6,7 @@ CASES = []
 def _net_steps(suffix="sg"):
     return [
         Step(name="pre-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": f"sg-{suffix}-net-{{{{runId}}}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": f"sg-{suffix}-net-{{{{runId}}}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -34,7 +34,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("cr"),
         Step(name="create", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-cr-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -58,7 +58,7 @@ CASES.append(Case(
     priority="P1",
     steps=[
         Step(name="create-no-net", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "name": "sg-nonet-{{runId}}", "ruleSpecs": []},
+             body={"projectId": "{{_suiteFolderId}}", "name": "sg-nonet-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *assert_operation_envelope(),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -80,7 +80,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("withnet"),
         Step(name="create-with-net", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-withnet-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -105,18 +105,18 @@ CASES.append(Case(
     steps=[
         *_net_steps("fltnet"),
         Step(name="create-bound", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-fltbound-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "boundSgId")]),
         poll_operation_until_done(),
         Step(name="create-unbound", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "name": "sg-fltunbound-{{runId}}", "ruleSpecs": []},
+             body={"projectId": "{{_suiteFolderId}}", "name": "sg-fltunbound-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "unboundSgId")]),
         poll_operation_until_done(),
         Step(name="list-by-network", method="GET",
-             path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1000&filter=network_id%3D%22{{netId}}%22",
+             path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&pageSize=1000&filter=network_id%3D%22{{netId}}%22",
              test_script=[*assert_status(200),
                           "const ids = (pm.response.json().securityGroups || []).map(s => s.id);",
                           "pm.test('bound SG present', () => pm.expect(ids).to.include(pm.environment.get('boundSgId')));",
@@ -154,7 +154,7 @@ CASES.append(Case(
     classes=["CRUD"],
     priority="P1",
     steps=[
-        Step(name="list", method="GET", path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}",
+        Step(name="list", method="GET", path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}",
              test_script=[*assert_status(200),
                           "pm.test('securityGroups array', () => pm.expect(pm.response.json().securityGroups || []).to.be.an('array'));"]),
     ],
@@ -202,7 +202,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("url"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-url-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -237,7 +237,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("lop"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-lop-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -265,7 +265,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("ur"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-ur-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -291,7 +291,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("upd"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-upd-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -314,13 +314,13 @@ CASES.append(Case(
     steps=[
         *_net_steps("mv"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-mv-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
         Step(name="move", method="POST", path="/vpc/v1/securityGroups/{{sgId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+             body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
         Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
@@ -341,7 +341,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                    "name": "sg-confnf-{{runId}}", "ruleSpecs": []},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
@@ -385,7 +385,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="move-nx", method="POST", path="/vpc/v1/securityGroups/{{garbageVpcId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                  "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
@@ -400,7 +400,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("delok"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-delok-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -419,7 +419,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("urok"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-urok-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -500,7 +500,7 @@ CASES.extend(filter_syntax_block("SG", "/vpc/v1/securityGroups"))
 CASES.append(pagination_roundtrip("SG", "/vpc/v1/securityGroups"))
 
 for c in update_happy_per_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
     CASES.append(_sg_wrap("SG", "v7", c))
 
 CASES.extend(perf_baseline_block("SG", "/vpc/v1/securityGroups"))
@@ -509,29 +509,29 @@ CASES.extend(authz_caller_headers_block("SG", "/vpc/v1/securityGroups"))
 
 CASES.append(_sg_wrap("SG", "mvself",
     move_same_folder("SG", "/vpc/v1/securityGroups",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
 
 CASES.append(_sg_wrap("SG", "v8m",
     update_happy_multi_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
 CASES.append(_sg_wrap("SG", "v8f",
     list_filter_match_block("SG", "/vpc/v1/securityGroups",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
 for c in neg_invalid_types_block("SG", "/vpc/v1/securityGroups",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
     CASES.append(_sg_wrap("SG", "v8nt", c))
 CASES.extend(http_method_not_allowed_block("SG", "/vpc/v1/securityGroups"))
 CASES.extend(malformed_body_block("SG", "/vpc/v1/securityGroups"))
 
 CASES.append(_sg_wrap("SG", "v9d",
     alreadyexists_dup_name_for("SG", "/vpc/v1/securityGroups",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
 for c in update_mask_partial_block("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
     CASES.append(_sg_wrap("SG", "v9p", c))
 CASES.append(_sg_wrap("SG", "v9pf",
     perf_baseline_get_block("SG", "/vpc/v1/securityGroups",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
 CASES.extend(list_total_size_check_block("SG", "/vpc/v1/securityGroups"))
 
 # v10: SG-specific rule validation
@@ -552,7 +552,7 @@ for case_id, rule, expect_ok in [
         priority="P1",
         steps=[
             Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
-                 body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                 body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                        "name": f"sg-r-{case_id.lower()[-6:]}-{{{{runId}}}}", "ruleSpecs": []},
                  test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                               *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -577,7 +577,7 @@ CASES.append(Case(
     title="List с pageSize=-1 → 400 или 200",
     classes=["BVA", "VAL"], priority="P2",
     steps=[Step(name="lst-neg", method="GET",
-                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=-1",
+                path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&pageSize=-1",
                 test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -586,7 +586,7 @@ CASES.append(Case(
     title="List с filter содержащим спец-символы → 400 или 200",
     classes=["FILTER", "VAL"], priority="P3",
     steps=[Step(name="lst-fsc", method="GET",
-                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
                 test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -595,7 +595,7 @@ CASES.append(Case(
     title="List с pageSize=1000 (boundary max) → 200",
     classes=["BVA"], priority="P2",
     steps=[Step(name="lst-max", method="GET",
-                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1000",
+                path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&pageSize=1000",
                 test_script=[*assert_status(200)])],
 ))
 
@@ -604,16 +604,16 @@ CASES.append(Case(
     title="List с pageSize=1001 (over max) → 400",
     classes=["BVA", "VAL"], priority="P1",
     steps=[Step(name="lst-1001", method="GET",
-                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&pageSize=1001",
+                path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&pageSize=1001",
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
 CASES.append(Case(
     id="SG-LST-DOUBLE-FOLDER-PARAM",
-    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    title="List с дубликатом projectId param → 200 (last wins) или 400",
     classes=["VAL"], priority="P3",
     steps=[Step(name="lst-dup", method="GET",
-                path="/vpc/v1/securityGroups?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -631,7 +631,7 @@ CASES.append(Case(
     classes=["NEG", "STATE"], priority="P1",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -674,25 +674,25 @@ CASES.append(Case(
     classes=["NEG", "STATE", "CONF"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "sg-nicatt-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "sg-nicatt-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-nicatt-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.249.0.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
         poll_operation_until_done(),
         Step(name="cr-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-nicatt-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
         Step(name="cr-nic", method="POST", path="/vpc/v1/networkInterfaces",
-             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
+             body={"projectId": "{{_suiteFolderId}}", "subnetId": "{{subId}}",
                    "name": "nic-sgatt-{{runId}}", "securityGroupIds": ["{{sgId}}"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
@@ -754,13 +754,13 @@ CASES.append(Case(
 ))
 
 for c in required_fields_matrix("SG", "/vpc/v1/securityGroups",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "name": "sg-req-{{runId}}", "ruleSpecs": []},
-    ["folderId", "networkId", "name"]):
+    ["projectId", "networkId", "name"]):
     CASES.append(_sg_wrap("SG", "req", c))
 CASES.extend(immutable_fields_matrix("SG", "/vpc/v1/securityGroups",
-    ["folder_id", "network_id"]))
+    ["project_id", "network_id"]))
 
 for c in security_injection_block("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
     CASES.append(_sg_wrap("SG", "sec", c))

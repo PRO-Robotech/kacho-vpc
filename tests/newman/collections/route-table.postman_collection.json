@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "aceec675-84e1-4583-a59d-eb69f4547540",
+    "_postman_id": "117ec9d4-229c-4843-aa25-d9918f12183a",
     "name": "kacho-vpc / newman / route-table",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,8 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
         ]
       }
     }
@@ -50,7 +50,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-cr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-cr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -149,7 +149,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-cr-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-cr-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -416,7 +416,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-nn-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-nn-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -469,7 +469,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"name\": \"rt-nn-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"name\": \"rt-nn-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -557,14 +557,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}"
+                "routeTables?projectId={{_suiteFolderId}}"
               ]
             }
           },
@@ -584,7 +584,7 @@
       ]
     },
     {
-      "name": "RT-LST-VAL-FOLDER-REQUIRED — List без folderId → InvalidArgument",
+      "name": "RT-LST-VAL-FOLDER-REQUIRED — List без projectId → InvalidArgument",
       "description": "class:VAL | class:AUTHZ | priority:P0",
       "item": [
         {
@@ -753,7 +753,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lop-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lop-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -852,7 +852,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-lop-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-lop-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1108,14 +1108,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=0",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=0",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=0"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=0"
               ]
             }
           },
@@ -1148,14 +1148,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=10000",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=10000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=10000"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=10000"
               ]
             }
           },
@@ -1192,14 +1192,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
               ]
             }
           },
@@ -1345,7 +1345,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1398,7 +1398,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-mv-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-mv-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1497,7 +1497,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-mv-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-mv-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1597,7 +1597,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderCrossId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderCrossId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1823,7 +1823,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-upd-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-upd-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1922,7 +1922,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-upd-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-upd-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2222,7 +2222,7 @@
       ]
     },
     {
-      "name": "RT-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=folder_id → InvalidArgument (immutable)",
+      "name": "RT-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=project_id → InvalidArgument (immutable)",
       "description": "class:STATE | class:VAL | priority:P1",
       "item": [
         {
@@ -2249,7 +2249,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2272,7 +2272,7 @@
       ]
     },
     {
-      "name": "RT-MV-VAL-NO-DEST — Move без destinationFolderId → InvalidArgument",
+      "name": "RT-MV-VAL-NO-DEST — Move без destinationProjectId → InvalidArgument",
       "description": "class:VAL | priority:P1",
       "item": [
         {
@@ -2336,14 +2336,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=1"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -2389,7 +2389,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"name\": \"rt-confnf-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"name\": \"rt-confnf-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2545,7 +2545,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2599,7 +2599,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-delok-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-delok-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2698,7 +2698,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-delok-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-delok-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2971,7 +2971,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-bvanameempty-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-bvanameempty-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3070,7 +3070,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3159,7 +3159,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-bvanamemax63-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-bvanamemax63-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3258,7 +3258,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3352,7 +3352,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-vanameover64-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-vanameover64-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3451,7 +3451,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3544,7 +3544,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ameuppercase-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ameuppercase-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3643,7 +3643,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3732,7 +3732,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-medigitstart-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-medigitstart-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3831,7 +3831,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3924,7 +3924,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ehyphenstart-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ehyphenstart-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4023,7 +4023,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4116,7 +4116,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-specialchars-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-specialchars-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4215,7 +4215,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4308,7 +4308,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-vadescmax256-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-vadescmax256-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4407,7 +4407,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4501,7 +4501,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-adescover257-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-adescover257-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4600,7 +4600,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4693,7 +4693,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-uppercasekey-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-uppercasekey-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4792,7 +4792,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4885,7 +4885,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-validkeychar-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-validkeychar-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4984,7 +4984,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5077,7 +5077,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-alabelsmax64-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-alabelsmax64-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5176,7 +5176,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5270,7 +5270,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-labelsover65-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-labelsover65-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5369,7 +5369,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}, \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5550,14 +5550,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22"
+                "routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22"
               ]
             }
           },
@@ -5590,14 +5590,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
+                "routeTables?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
               ]
             }
           },
@@ -5630,14 +5630,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
+                "routeTables?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
               ]
             }
           },
@@ -5670,14 +5670,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=1"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -5708,14 +5708,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
               ]
             }
           },
@@ -5760,7 +5760,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tupdcrudname-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tupdcrudname-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5859,7 +5859,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-name-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-name-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6181,7 +6181,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tupdcruddesc-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tupdcruddesc-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6280,7 +6280,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-desc-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-desc-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6602,7 +6602,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-pdcrudlabels-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-pdcrudlabels-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6701,7 +6701,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-labels-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-upd-labels-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7012,14 +7012,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=10"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=10"
               ]
             }
           },
@@ -7200,14 +7200,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}"
+                "routeTables?projectId={{_suiteFolderId}}"
               ]
             }
           },
@@ -7252,7 +7252,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-dmsamefolder-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-dmsamefolder-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7351,7 +7351,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-mv-self-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-mv-self-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7438,7 +7438,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7493,7 +7493,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('folderId unchanged', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderId')));"
+                  "pm.test('projectId unchanged', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderId')));"
                 ]
               }
             }
@@ -7640,7 +7640,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rudmultimask-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rudmultimask-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7739,7 +7739,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-multi-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-multi-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8065,7 +8065,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tfiltermatch-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-tfiltermatch-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8164,7 +8164,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-flt-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-flt-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8238,14 +8238,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22rt-flt-{{runId}}%22",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22rt-flt-{{runId}}%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22rt-flt-{{runId}}%22"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22rt-flt-{{runId}}%22"
               ]
             }
           },
@@ -8404,7 +8404,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rvalnamenull-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rvalnamenull-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8503,7 +8503,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": null}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": null}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8592,7 +8592,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lsstringtype-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lsstringtype-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8691,7 +8691,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8786,7 +8786,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ldescinttype-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ldescinttype-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8885,7 +8885,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-bd-{{runId}}\", \"description\": 12345}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-bd-{{runId}}\", \"description\": 12345}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8980,7 +8980,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9172,7 +9172,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-dupnamecheck-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-dupnamecheck-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9271,7 +9271,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-dupck-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-dupck-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9357,7 +9357,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-dupck-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-dupck-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9523,7 +9523,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-masknameonly-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-masknameonly-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9622,7 +9622,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9947,7 +9947,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-perfbaseline-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-perfbaseline-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10046,7 +10046,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-perf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"rt-perf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10274,14 +10274,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=5",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=5",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=5"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=5"
               ]
             }
           },
@@ -10327,7 +10327,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-crvalrouteok-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-crvalrouteok-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10426,7 +10426,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-ute-ok-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"0.0.0.0/0\", \"nextHopAddress\": \"10.0.0.1\"}]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-ute-ok-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"0.0.0.0/0\", \"nextHopAddress\": \"10.0.0.1\"}]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10656,7 +10656,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-nvalidprefix-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-nvalidprefix-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10755,7 +10755,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-prefix-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"not-a-cidr\", \"nextHopAddress\": \"10.0.0.1\"}]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-prefix-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"not-a-cidr\", \"nextHopAddress\": \"10.0.0.1\"}]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10844,7 +10844,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-teinvalidhop-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-teinvalidhop-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10943,7 +10943,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-id-hop-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"0.0.0.0/0\", \"nextHopAddress\": \"999.999.999.999\"}]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-id-hop-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"0.0.0.0/0\", \"nextHopAddress\": \"999.999.999.999\"}]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11032,7 +11032,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-eemptyprefix-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-eemptyprefix-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11131,7 +11131,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-prefix-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"\", \"nextHopAddress\": \"10.0.0.1\"}]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-prefix-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"\", \"nextHopAddress\": \"10.0.0.1\"}]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11220,7 +11220,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-outeemptyhop-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-outeemptyhop-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11319,7 +11319,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-ty-hop-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"10.0.0.0/24\", \"nextHopAddress\": \"\"}]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-r-ty-hop-{{runId}}\", \"staticRoutes\": [{\"destinationPrefix\": \"10.0.0.0/24\", \"nextHopAddress\": \"\"}]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11396,14 +11396,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=-1",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=-1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=-1"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=-1"
               ]
             }
           },
@@ -11436,14 +11436,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22"
+                "routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22"
               ]
             }
           },
@@ -11476,14 +11476,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1000",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=1000"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=1000"
               ]
             }
           },
@@ -11516,14 +11516,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1001",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1001",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&pageSize=1001"
+                "routeTables?projectId={{_suiteFolderId}}&pageSize=1001"
               ]
             }
           },
@@ -11546,7 +11546,7 @@
       ]
     },
     {
-      "name": "RT-LST-DOUBLE-FOLDER-PARAM — List с дубликатом folderId param → 200 (last wins) или 400",
+      "name": "RT-LST-DOUBLE-FOLDER-PARAM — List с дубликатом projectId param → 200 (last wins) или 400",
       "description": "class:VAL | priority:P3",
       "item": [
         {
@@ -11560,14 +11560,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10"
+                "routeTables?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10"
               ]
             }
           },
@@ -11653,7 +11653,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-autoassoc-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-autoassoc-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11752,7 +11752,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-autoassoc-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.247.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-autoassoc-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.247.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11887,7 +11887,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-autoassoc-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-autoassoc-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12295,7 +12295,7 @@
       ]
     },
     {
-      "name": "RT-CR-VAL-REQ-FOLDERID — Create без required поля 'folderId' → 400 InvalidArgument",
+      "name": "RT-CR-VAL-REQ-PROJECTID — Create без required поля 'projectId' → 400 InvalidArgument",
       "description": "class:VAL | priority:P0",
       "item": [
         {
@@ -12321,7 +12321,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-lreqfolderid-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-reqprojectid-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12398,7 +12398,7 @@
           ]
         },
         {
-          "name": "cr-no-folderId",
+          "name": "cr-no-projectId",
           "request": {
             "method": "POST",
             "header": [
@@ -12509,7 +12509,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-reqnetworkid-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-reqnetworkid-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12608,7 +12608,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-req-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-req-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12697,7 +12697,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-crvalreqname-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-crvalreqname-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12796,7 +12796,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12859,11 +12859,11 @@
       ]
     },
     {
-      "name": "RT-UPD-STATE-IMMUTABLE-FOLDER-ID — Update mask='folder_id' (immutable) → 400 InvalidArgument verbatim",
+      "name": "RT-UPD-STATE-IMMUTABLE-PROJECT-ID — Update mask='project_id' (immutable) → 400 InvalidArgument verbatim",
       "description": "class:STATE | class:VAL | class:CONF | priority:P1",
       "item": [
         {
-          "name": "upd-folder_id",
+          "name": "upd-project_id",
           "request": {
             "method": "PATCH",
             "header": [
@@ -12886,7 +12886,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12993,7 +12993,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecsqli-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecsqli-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13092,7 +13092,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"test' OR 1=1--\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"test' OR 1=1--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13189,7 +13189,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecunion-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecunion-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13288,7 +13288,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"x' UNION SELECT * FROM operations--\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"x' UNION SELECT * FROM operations--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13385,7 +13385,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecxss-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecxss-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13484,7 +13484,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"<script>alert(1)</script>\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"<script>alert(1)</script>\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13581,7 +13581,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrseccmd-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrseccmd-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13680,7 +13680,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"; rm -rf / ;\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"; rm -rf / ;\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13777,7 +13777,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecpath-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rtcrsecpath-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13876,7 +13876,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"../../etc/passwd\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"../../etc/passwd\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -13973,7 +13973,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rsecnullbyte-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-rsecnullbyte-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -14072,7 +14072,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"x y\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"x y\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -14169,7 +14169,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-clongpayload-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-clongpayload-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -14268,7 +14268,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"staticRoutes\": [], \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -14365,7 +14365,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ecfiltersqli-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"rt-ecfiltersqli-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -14452,14 +14452,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
+              "raw": "{{baseUrl}}/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22"
+                "routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22"
               ]
             }
           },

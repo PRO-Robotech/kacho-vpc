@@ -50,7 +50,7 @@ func (r *networkInterfaceReader) Get(ctx context.Context, id string) (*kacho.Net
 	return n, nil
 }
 
-// List — folder_id required + cursor-based pagination + denormalised instance_id
+// List — project_id required + cursor-based pagination + denormalised instance_id
 // filter (used_by_type='compute_instance' AND used_by_id=$instance). NetworkID
 // игнорируется (NIC не хранит network_id; legacy-репо тоже игнорировал — see
 // `internal/repo/network_interface_repo.go::List`).
@@ -60,8 +60,8 @@ func (r *networkInterfaceReader) List(ctx context.Context, f kacho.NetworkInterf
 		return nil, "", err
 	}
 
-	args := []any{f.FolderID}
-	conds := []string{"folder_id = $1"}
+	args := []any{f.ProjectID}
+	conds := []string{"project_id = $1"}
 	add := func(col, val string) {
 		if val == "" {
 			return
@@ -178,12 +178,12 @@ func (w *networkInterfaceWriter) Insert(ctx context.Context, n *domain.NetworkIn
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO network_interfaces (id, folder_id, created_at, name, description, labels, subnet_id,
+		INSERT INTO network_interfaces (id, project_id, created_at, name, description, labels, subnet_id,
 			v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING %s`, helpers.NICCols)
 	row := w.tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, now, string(n.Name), string(n.Description), labelsJSON, n.SubnetID,
+		n.ID, n.ProjectID, now, string(n.Name), string(n.Description), labelsJSON, n.SubnetID,
 		v4IDsJSON, v6IDsJSON, sgJSON,
 		n.UsedByType, n.UsedByID, n.UsedByName, n.MAC, helpers.NIStatusName(n.Status))
 	rec, err := helpers.ScanNIRec(row)
@@ -227,11 +227,11 @@ func (w *networkInterfaceWriter) UpdateMeta(ctx context.Context, n *domain.Netwo
 	return rec, nil
 }
 
-// SetFolderID меняет folder_id у NIC. NIC сейчас не поддерживает Move RPC
+// SetProjectID меняет project_id у NIC. NIC сейчас не поддерживает Move RPC
 // (NIC привязан к Subnet); метод оставлен для parity с другими writer-iface
 // (NetworkWriterIface / SecurityGroupWriterIface), на случай admin-tooling.
-func (w *networkInterfaceWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
-	q := fmt.Sprintf(`UPDATE network_interfaces SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.NICCols)
+func (w *networkInterfaceWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
+	q := fmt.Sprintf(`UPDATE network_interfaces SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.NICCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	rec, err := helpers.ScanNIRec(row)
 	if err != nil {

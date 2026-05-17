@@ -13,11 +13,11 @@ import "go.uber.org/multierr"
 // AP-2). `Rules` хранятся embedded (JSONB в БД); каждое правило — `SecurityGroupRule`
 // с собственными newtype-полями (Description/Labels).
 //
-// `ID` / `FolderID` / `NetworkID` — голый `string` (внешние reference-id;
+// `ID` / `ProjectID` / `NetworkID` — голый `string` (внешние reference-id;
 // валидация — на уровне `corevalidate.ResourceID` в service-слое).
 type SecurityGroup struct {
 	ID                string
-	FolderID          string
+	ProjectID          string
 	NetworkID         string
 	Name              RcNameVPC
 	Description       RcDescription
@@ -52,7 +52,7 @@ func (s SecurityGroup) Validate() error {
 // (порядок rule-id в YC контракте значим). skill evgeniy §4 D.10.
 func (s SecurityGroup) Equal(other SecurityGroup) bool {
 	if s.ID != other.ID ||
-		s.FolderID != other.FolderID ||
+		s.ProjectID != other.ProjectID ||
 		s.NetworkID != other.NetworkID ||
 		s.Name != other.Name ||
 		s.Description != other.Description ||

@@ -40,7 +40,7 @@ func (r *securityGroupReader) Get(_ context.Context, id string) (*kacho.Security
 func (r *securityGroupReader) List(_ context.Context, f kacho.SecurityGroupFilter, _ kacho.Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
 	var result []*kacho.SecurityGroupRecord
 	for _, sg := range r.snap {
-		if (f.FolderID == "" || sg.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || sg.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || sg.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(sg.Name) == f.Name) {
 			cp := *sg
@@ -77,7 +77,7 @@ func (sw *securityGroupWriter) List(_ context.Context, f kacho.SecurityGroupFilt
 		if _, deleted := sw.w.deletedSGIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || sg.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || sg.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || sg.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(sg.Name) == f.Name) {
 			cp := *sg
@@ -120,7 +120,7 @@ func (sw *securityGroupWriter) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (sw *securityGroupWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
+func (sw *securityGroupWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -128,7 +128,7 @@ func (sw *securityGroupWriter) SetFolderID(_ context.Context, id, folderID strin
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	sg.FolderID = folderID
+	sg.ProjectID = folderID
 	cp := *sg
 	return &cp, nil
 }

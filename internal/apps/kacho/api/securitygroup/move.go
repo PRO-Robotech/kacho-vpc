@@ -17,31 +17,31 @@ import (
 
 // MoveSecurityGroupUseCase — перенос SG в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
-// SetFolderID в writer-TX + outbox-emit UPDATED.
+// SetProjectID в writer-TX + outbox-emit UPDATED.
 //
-// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): SetFolderID + outbox в одной
+// Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): SetProjectID + outbox в одной
 // CQRS writer-TX.
 type MoveSecurityGroupUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveSecurityGroupUseCase создаёт MoveSecurityGroupUseCase.
-func NewMoveSecurityGroupUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveSecurityGroupUseCase {
-	return &MoveSecurityGroupUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveSecurityGroupUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *MoveSecurityGroupUseCase {
+	return &MoveSecurityGroupUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
-func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destProjectID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "security_group_id required")
 	}
-	if destFolderID == "" {
-		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	if destProjectID == "" {
+		return nil, invalidArg("destination_project_id", "destination_project_id is required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {
@@ -52,7 +52,7 @@ func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destFolderID
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
+	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}
 
@@ -69,19 +69,19 @@ func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destFolderID
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, ferr := u.folderClient.Exists(ctx, destFolderID)
+		exists, ferr := u.projectClient.Exists(ctx, destProjectID)
 		if ferr != nil {
 			return nil, status.Errorf(codes.Unavailable, "folder check: %v", ferr)
 		}
 		if !exists {
-			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destProjectID)
 		}
 		w, werr := u.repo.Writer(ctx)
 		if werr != nil {
 			return nil, mapRepoErr(werr)
 		}
 		defer w.Abort()
-		updated, uerr := w.SecurityGroups().SetFolderID(ctx, id, destFolderID)
+		updated, uerr := w.SecurityGroups().SetProjectID(ctx, id, destProjectID)
 		if uerr != nil {
 			return nil, mapRepoErr(uerr)
 		}

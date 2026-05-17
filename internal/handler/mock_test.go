@@ -22,9 +22,9 @@ var (
 	newMockOpsRepo          = repomock.NewOpsRepo
 )
 
-// newMockFolderClient — fake FolderClient; exists задаёт результат Exists().
-func newMockFolderClient(exists bool) *repomock.FolderClient {
-	return &repomock.FolderClient{OK: exists}
+// newMockProjectClient — fake ProjectClient; exists задаёт результат Exists().
+func newMockProjectClient(exists bool) *repomock.ProjectClient {
+	return &repomock.ProjectClient{OK: exists}
 }
 
 func awaitOpDone(t testingT, r *mockOpsRepo, opID string) *operations.Operation {

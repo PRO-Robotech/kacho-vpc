@@ -87,17 +87,17 @@ func TestTenantUnary_RequireAdminNonInternalNotFound(t *testing.T) {
 	}
 }
 
-// TestHasFolderAccess_DevAnonymousPasses — empty FolderIDs (dev-mode tenantCtx) даёт full access.
+// TestHasFolderAccess_DevAnonymousPasses — empty ProjectIDs (dev-mode tenantCtx) даёт full access.
 func TestHasFolderAccess_DevAnonymousPasses(t *testing.T) {
 	tc := TenantCtx{}
 	if !tc.HasFolderAccess("any") {
-		t.Fatal("dev-mode anonymous (empty FolderIDs) должен давать full access")
+		t.Fatal("dev-mode anonymous (empty ProjectIDs) должен давать full access")
 	}
 }
 
 // TestHasFolderAccess_FolderMatch — caller'у разрешён только свой folder.
 func TestHasFolderAccess_FolderMatch(t *testing.T) {
-	tc := TenantCtx{FolderIDs: map[string]struct{}{"f1": {}}}
+	tc := TenantCtx{ProjectIDs: map[string]struct{}{"f1": {}}}
 	if !tc.HasFolderAccess("f1") {
 		t.Fatal("свой folder должен пропускаться")
 	}
@@ -123,7 +123,7 @@ func TestIsAnonymous_R9CriticalFix(t *testing.T) {
 	}{
 		{"empty", TenantCtx{}, true},
 		{"actor-only", TenantCtx{Actor: "alice"}, true}, // R10 fix: actor-only = anonymous
-		{"folder", TenantCtx{FolderIDs: map[string]struct{}{"f1": {}}}, false},
+		{"folder", TenantCtx{ProjectIDs: map[string]struct{}{"f1": {}}}, false},
 		{"admin", TenantCtx{Admin: true}, false},
 		{"admin+actor", TenantCtx{Actor: "x", Admin: true}, false},
 	}
@@ -139,7 +139,7 @@ func TestIsAnonymous_R9CriticalFix(t *testing.T) {
 // TestAssertFolderOwnership_RejectsCrossTenant — handler-side AuthZ check.
 func TestAssertFolderOwnership_RejectsCrossTenant(t *testing.T) {
 	ctx := context.WithValue(context.Background(), tenantCtxKey{},
-		TenantCtx{FolderIDs: map[string]struct{}{"f1": {}}})
+		TenantCtx{ProjectIDs: map[string]struct{}{"f1": {}}})
 	if err := AssertFolderOwnership(ctx, "f1"); err != nil {
 		t.Fatalf("свой folder: %v", err)
 	}

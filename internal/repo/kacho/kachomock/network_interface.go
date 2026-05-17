@@ -54,7 +54,7 @@ func (r *networkInterfaceReader) Get(_ context.Context, id string) (*kacho.Netwo
 func (r *networkInterfaceReader) List(_ context.Context, f kacho.NetworkInterfaceFilter, _ kacho.Pagination) ([]*kacho.NetworkInterfaceRecord, string, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for _, n := range r.snap {
-		if (f.FolderID != "" && n.FolderID != f.FolderID) ||
+		if (f.ProjectID != "" && n.ProjectID != f.ProjectID) ||
 			(f.SubnetID != "" && n.SubnetID != f.SubnetID) ||
 			(f.InstanceID != "" && (n.UsedByType != "compute_instance" || n.UsedByID != f.InstanceID)) {
 			continue
@@ -104,7 +104,7 @@ func (nw *networkInterfaceWriter) List(_ context.Context, f kacho.NetworkInterfa
 		if _, deleted := nw.w.deletedNIIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID != "" && n.FolderID != f.FolderID) ||
+		if (f.ProjectID != "" && n.ProjectID != f.ProjectID) ||
 			(f.SubnetID != "" && n.SubnetID != f.SubnetID) ||
 			(f.InstanceID != "" && (n.UsedByType != "compute_instance" || n.UsedByID != f.InstanceID)) {
 			continue
@@ -147,7 +147,7 @@ func (nw *networkInterfaceWriter) UpdateMeta(_ context.Context, n *domain.Networ
 		return nil, repo.ErrNotFound
 	}
 	// Mutate the mutable fields (parity с pg-impl: name/description/labels/
-	// security_group_ids/v4_address_ids/v6_address_ids — immutable: folder_id/
+	// security_group_ids/v4_address_ids/v6_address_ids — immutable: project_id/
 	// subnet_id/mac_address).
 	existing.Name = n.Name
 	existing.Description = n.Description
@@ -159,7 +159,7 @@ func (nw *networkInterfaceWriter) UpdateMeta(_ context.Context, n *domain.Networ
 	return &cp, nil
 }
 
-func (nw *networkInterfaceWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
+func (nw *networkInterfaceWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
 	if _, deleted := nw.w.deletedNIIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -167,7 +167,7 @@ func (nw *networkInterfaceWriter) SetFolderID(_ context.Context, id, folderID st
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	n.FolderID = folderID
+	n.ProjectID = folderID
 	cp := *n
 	return &cp, nil
 }

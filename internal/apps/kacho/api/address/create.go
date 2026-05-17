@@ -55,7 +55,7 @@ type InternalAddrSpec struct {
 // плоского CreateInput чище. См. также KAC-94: тривиальные обёртки удалены в
 // Network/Subnet/Gateway/RouteTable/SecurityGroup/PrivateEndpoint.
 type CreateInput struct {
-	FolderID           string
+	ProjectID           string
 	Name               string
 	Description        string
 	Labels             map[string]string
@@ -93,17 +93,17 @@ type CreateInput struct {
 type CreateAddressUseCase struct {
 	repo         Repo
 	subnetReader SubnetReader
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 	pools        PoolService // nil → external IPAM недоступна (test-only)
 }
 
 // NewCreateAddressUseCase создаёт CreateAddressUseCase.
-func NewCreateAddressUseCase(r Repo, subnetReader SubnetReader, folderClient FolderClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
+func NewCreateAddressUseCase(r Repo, subnetReader SubnetReader, projectClient ProjectClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
 	return &CreateAddressUseCase{
 		repo:         r,
 		subnetReader: subnetReader,
-		folderClient: folderClient,
+		projectClient: projectClient,
 		opsRepo:      opsRepo,
 		pools:        pools,
 	}
@@ -116,8 +116,8 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 			return nil, err
 		}
 	}
-	if in.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if in.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if in.InternalIpv6Spec != nil {
 		if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, in.InternalIpv6Spec.SubnetID); err != nil {
@@ -185,7 +185,7 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		existing, _, lerr := rd.Addresses().List(ctx, AddressFilter{FolderID: in.FolderID, Name: in.Name}, Pagination{})
+		existing, _, lerr := rd.Addresses().List(ctx, AddressFilter{ProjectID: in.ProjectID, Name: in.Name}, Pagination{})
 		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
@@ -272,18 +272,18 @@ func (u *CreateAddressUseCase) validateInternalIPInSubnet(ctx context.Context, s
 // при любой ошибке Insert и Allocate-side-effects откатываются автоматически,
 // orphan-address window закрыт.
 func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in CreateInput) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, in.FolderID)
+	exists, err := u.projectClient.Exists(ctx, in.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
 		// verbatim YC text: "Folder with id <X> not found".
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", in.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", in.ProjectID)
 	}
 
 	a := &domain.Address{
 		ID:                 addrID,
-		FolderID:           in.FolderID,
+		ProjectID:           in.ProjectID,
 		Name:               domain.RcNameVPC(in.Name),
 		Description:        domain.RcDescription(in.Description),
 		Labels:             domain.LabelsFromMap(in.Labels),

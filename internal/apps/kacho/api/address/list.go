@@ -12,7 +12,7 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListAddressesUseCase — list addresses with pagination. folder_id обязателен
+// ListAddressesUseCase — list addresses with pagination. project_id обязателен
 // (R10 #C1 closure — закрыт cross-folder enumeration).
 //
 // A.7 sub-PR 2 (KAC-94): использует CQRS Reader.
@@ -25,10 +25,10 @@ func NewListAddressesUseCase(r Repo) *ListAddressesUseCase {
 	return &ListAddressesUseCase{repo: r}
 }
 
-// Execute — folder_id required + load UsedBy для каждого адреса.
+// Execute — project_id required + load UsedBy для каждого адреса.
 func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	r, err := u.repo.Reader(ctx)
 	if err != nil {

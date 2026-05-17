@@ -57,7 +57,7 @@
 | Priority | Применение |
 |---|---|
 | P0 | Security (AUTHZ), data-integrity (FK, EXCLUDE), allocator (CONC) — must-pass |
-| P1 | CRUD happy, validation P0-полей (folder_id, network_id, CIDR), conformance с YC | 
+| P1 | CRUD happy, validation P0-полей (project_id, network_id, CIDR), conformance с YC | 
 | P2 | BVA, pagination, ECP полей с низким impact | 
 | P3 | Cosmetic (labels, description), редкие state transitions |
 

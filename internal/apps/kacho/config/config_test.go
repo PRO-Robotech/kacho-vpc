@@ -36,9 +36,9 @@ func TestLoad_Defaults(t *testing.T) {
 
 	require.Equal(t, 32, cfg.Watch.MaxStreams)
 	require.True(t, cfg.Network.DefaultSGInline)
-	require.Equal(t, 30*time.Second, cfg.Network.FolderCache.PositiveTTL)
-	require.Equal(t, 5*time.Second, cfg.Network.FolderCache.NegativeTTL)
-	require.Equal(t, 10000, cfg.Network.FolderCache.MaxSize)
+	require.Equal(t, 30*time.Second, cfg.Network.ProjectCache.PositiveTTL)
+	require.Equal(t, 5*time.Second, cfg.Network.ProjectCache.NegativeTTL)
+	require.Equal(t, 10000, cfg.Network.ProjectCache.MaxSize)
 
 	require.Equal(t, "resource-manager.kacho.svc.cluster.local:9090", cfg.ExtAPI.ResourceManager.Endpoint)
 	require.False(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
@@ -103,9 +103,9 @@ extapi:
 
 	require.Equal(t, 17, cfg.Watch.MaxStreams)
 	require.False(t, cfg.Network.DefaultSGInline)
-	require.Equal(t, time.Minute, cfg.Network.FolderCache.PositiveTTL)
-	require.Equal(t, 2*time.Second, cfg.Network.FolderCache.NegativeTTL)
-	require.Equal(t, 555, cfg.Network.FolderCache.MaxSize)
+	require.Equal(t, time.Minute, cfg.Network.ProjectCache.PositiveTTL)
+	require.Equal(t, 2*time.Second, cfg.Network.ProjectCache.NegativeTTL)
+	require.Equal(t, 555, cfg.Network.ProjectCache.MaxSize)
 
 	require.Equal(t, "rm.test:9090", cfg.ExtAPI.ResourceManager.Endpoint)
 	require.True(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
@@ -185,9 +185,9 @@ func TestLoad_LegacyENV(t *testing.T) {
 	require.Equal(t, 16, cfg.Watch.MaxStreams)
 	require.Equal(t, ModeProduction, cfg.AuthN.Mode)
 	require.False(t, cfg.Network.DefaultSGInline)
-	require.Equal(t, 45*time.Second, cfg.Network.FolderCache.PositiveTTL)
-	require.Equal(t, 3*time.Second, cfg.Network.FolderCache.NegativeTTL)
-	require.Equal(t, 9999, cfg.Network.FolderCache.MaxSize)
+	require.Equal(t, 45*time.Second, cfg.Network.ProjectCache.PositiveTTL)
+	require.Equal(t, 3*time.Second, cfg.Network.ProjectCache.NegativeTTL)
+	require.Equal(t, 9999, cfg.Network.ProjectCache.MaxSize)
 
 	require.Equal(t, "rm.legacy:9090", cfg.ExtAPI.ResourceManager.Endpoint)
 	require.True(t, cfg.ExtAPI.ResourceManager.TLS.Enable)

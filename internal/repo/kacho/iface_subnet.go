@@ -13,7 +13,7 @@ import (
 // `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался тонкий
 // type-alias `SubnetFilter = kacho.SubnetFilter`.
 type SubnetFilter struct {
-	FolderID  string
+	ProjectID  string
 	NetworkID string
 	Name      string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`).
@@ -44,8 +44,8 @@ type SubnetWriterIface interface {
 	Insert(ctx context.Context, s *domain.Subnet) (*SubnetRecord, error)
 	Update(ctx context.Context, s *domain.Subnet) (*SubnetRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у Subnet (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*SubnetRecord, error)
+	// SetProjectID меняет project_id у Subnet (для :move).
+	SetProjectID(ctx context.Context, id, folderID string) (*SubnetRecord, error)
 	// SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks
 	// (для AddCidrBlocks/RemoveCidrBlocks). EXCLUDE constraints
 	// subnets_no_overlap_v4 / subnets_no_overlap_v6 проверяют primary CIDR

@@ -58,8 +58,8 @@ type NetworkReader interface {
 	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
 }
 
-// FolderClient — peer-сервис kacho-resource-manager: проверка существования
+// ProjectClient — peer-сервис kacho-resource-manager: проверка существования
 // folder'а на request-path и в worker'е.
-type FolderClient interface {
+type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }

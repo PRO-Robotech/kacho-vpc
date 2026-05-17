@@ -55,7 +55,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	// 1. Пустой labels (default '{}'::jsonb) — CHECK проходит.
 	emptyNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("empty-labels"),
 		Labels:   domain.LabelsFromMap(nil),
 	}
@@ -66,7 +66,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	//    '\', '@' (Go regex `^[a-z][-_./\\@a-z0-9]{0,62}$`).
 	validNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("valid-labels"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"env":              "prod",
@@ -86,7 +86,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	}
 	tooManyNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("too-many"),
 		Labels:   domain.LabelsFromMap(tooMany),
 	}
@@ -98,7 +98,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	// 4. Ключ нарушает regex (uppercase в начале) — CHECK отбивает.
 	badKeyNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("bad-key"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"Bad-Key": "v",
@@ -113,7 +113,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	longVal := strings.Repeat("a", 64)
 	badValNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("bad-val"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"k": longVal,
@@ -127,7 +127,7 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	// 6. Edge: value длиной ровно 63 — OK (boundary).
 	okBoundaryNet := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-labels",
+		ProjectID: "folder-labels",
 		Name:     domain.RcNameVPC("ok-boundary"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"k": strings.Repeat("a", 63),

@@ -16,7 +16,7 @@
 | Get | NEG (garbage→404), CONF, AUTHZ | NET-GET-NEG-NF, NET-GET-NEG-EMPTY-ID | ▣ |
 | List | CRUD, VAL (folder req), AUTHZ, PAGE (4 BVA + token) | NET-LST-* (5) | ▣ |
 | Create | CRUD, VAL (folder req), NEG (folder NF, dup name), CONC | NET-CR-* (4) | ▣ |
-| Update | CRUD (desc patch), STATE (immutable folder_id), AUTHZ (sync-NF) | NET-UPD-* (3) | ▣ |
+| Update | CRUD (desc patch), STATE (immutable project_id), AUTHZ (sync-NF) | NET-UPD-* (3) | ▣ |
 | Delete | NEG (sync-NF) | NET-DEL-AUTHZ-NF-SYNC | ◐ |
 | Move | CRUD-OK, NEG (dest-NF) | NET-MV-* (2) | ■ |
 | ListSubnets | CRUD (empty) | NET-LSUB-CRUD-EMPTY | ◐ |

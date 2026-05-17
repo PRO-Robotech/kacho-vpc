@@ -12,7 +12,7 @@ db:
   name: kacho_vpc
   passwordSecretName: kacho-umbrella-pg-vpc
   passwordSecretKey: password
-resourceManagerAddr: "resource-manager.kacho.svc.cluster.local:9090"
+iamAddr: "kacho-iam.kacho.svc.cluster.local:9090"
 
 # ─── Config sections (KAC-95: viper YAML config) ──────────────────────
 # Все ключи ниже рендерятся в /etc/kacho-vpc/config.yaml через
@@ -35,7 +35,8 @@ repository:
 authn:
   mode: dev
 extapi:
-  resourceManager:
+  # KAC-106 (E1): renamed peer resourceManager -> iam (kacho-iam.ProjectService.Get).
+  iam:
     tls:
       enable: false
     dnsLb: false
@@ -51,7 +52,7 @@ network:
   # +30-40% throughput на load-тесте — это сломало default SG в UI-flow (KAC-54).
   # Если нужен load-test override — `--set network.defaultSgInline=false`.
   defaultSgInline: true
-  folderCache:
+  projectCache:
     positiveTtl: 30s
     negativeTtl: 5s
     maxSize: 10000

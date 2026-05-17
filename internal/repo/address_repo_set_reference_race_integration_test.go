@@ -52,7 +52,7 @@ func TestIntegration_AddressRepo_SetReferenceRace(t *testing.T) {
 
 	addr := &domain.Address{
 		ID:        ids.NewID(ids.PrefixAddress),
-		FolderID:  "folder-setref-race",
+		ProjectID:  "folder-setref-race",
 		Name:      domain.RcNameVPC("addr-setref-race"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
@@ -159,7 +159,7 @@ func TestIntegration_AddressRepo_SetReferenceIdempotent(t *testing.T) {
 
 	addr := &domain.Address{
 		ID:        ids.NewID(ids.PrefixAddress),
-		FolderID:  "folder-setref-idempotent",
+		ProjectID:  "folder-setref-idempotent",
 		Name:      domain.RcNameVPC("addr-setref-idempotent"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,

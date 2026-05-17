@@ -65,19 +65,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetGatewayRequest) (*vpcv1
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, g.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, g.ProjectID); err != nil {
 		return nil, err
 	}
 	return gatewayToPb(g)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListGatewaysRequest) (*vpcv1.ListGatewaysResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	gws, nextToken, err := h.list.Execute(ctx, GatewayFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -99,7 +99,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListGatewaysRequest) (*vp
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateGatewayRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	gtype := ""
@@ -107,7 +107,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateGatewayRequest) (
 		gtype = "shared_egress"
 	}
 	g := domain.Gateway{
-		FolderID:    req.FolderId,
+		ProjectID:    req.ProjectId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),
@@ -129,7 +129,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateGatewayRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, g.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, g.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -166,7 +166,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteGatewayRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, g.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, g.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.GatewayId)
@@ -186,13 +186,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveGatewayRequest) (*ope
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, g.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, g.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.GatewayId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.GatewayId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListGatewayOper
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
 	if g, gerr := h.get.Execute(ctx, req.GatewayId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, g.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, g.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {

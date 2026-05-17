@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListGatewaysUseCase — list gateways с пагинацией. folder_id обязателен.
+// ListGatewaysUseCase — list gateways с пагинацией. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): открывает read-only TX через `repo.Reader(ctx)`.
 type ListGatewaysUseCase struct {
@@ -24,10 +24,10 @@ func NewListGatewaysUseCase(r Repo) *ListGatewaysUseCase {
 	return &ListGatewaysUseCase{repo: r}
 }
 
-// Execute — folder_id required (закрыто cross-folder enumeration #C1).
+// Execute — project_id required (закрыто cross-folder enumeration #C1).
 func (u *ListGatewaysUseCase) Execute(ctx context.Context, f GatewayFilter, p Pagination) ([]*kacho.GatewayRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

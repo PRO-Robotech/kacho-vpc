@@ -24,7 +24,7 @@ type Pagination struct {
 // Wave 5 (KAC-94 D.1): перенесён в leaf-пакет `kacho` вместе с Pagination —
 // см. doc-комментарий на Pagination выше.
 type NetworkFilter struct {
-	FolderID string
+	ProjectID string
 	Name     string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`).
 	// Парсится в repo с whitelist allowedFields=["name"].
@@ -47,7 +47,7 @@ type NetworkWriterIface interface {
 	NetworkReaderIface
 	Insert(ctx context.Context, n *domain.Network) (*NetworkRecord, error)
 	Update(ctx context.Context, n *domain.Network) (*NetworkRecord, error)
-	SetFolderID(ctx context.Context, id, folderID string) (*NetworkRecord, error)
+	SetProjectID(ctx context.Context, id, folderID string) (*NetworkRecord, error)
 	Delete(ctx context.Context, id string) error
 	// SetDefaultSGID атомарно проставляет networks.default_security_group_id для
 	// конкретной сети. Wave 5 batch 33/34 (KAC-94, skill evgeniy I.9/I.10):

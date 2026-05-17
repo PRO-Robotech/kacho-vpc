@@ -138,9 +138,9 @@ func newSubnetRepoAdapter() *subnetRepoAdapter {
 	return &subnetRepoAdapter{SubnetRepo: repomock.NewSubnetRepo()}
 }
 
-// folderClientAdapter — repomock.FolderClient под port `FolderClient`.
-type folderClientAdapter struct {
-	*repomock.FolderClient
+// projectClientAdapter — repomock.ProjectClient под port `ProjectClient`.
+type projectClientAdapter struct {
+	*repomock.ProjectClient
 }
 
 // useCasesFixture — общий набор зависимостей для use-case-тестов AddressPool.
@@ -170,7 +170,7 @@ func newUseCases(t *testing.T) *useCasesFixture {
 	nr := newNetworkRepoAdapter()
 	sr := newSubnetRepoAdapter()
 	zr := repomock.NewZoneRegistry("ru-central1-c", "ru-central1-a", "ru-central1-d")
-	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
+	fc := &projectClientAdapter{ProjectClient: &repomock.ProjectClient{OK: true}}
 
 	resolver := NewResolverService(kr, ar, sr, fc)
 	return &useCasesFixture{
@@ -248,7 +248,7 @@ func (f *useCasesFixture) seedPool(t *testing.T, name string, isDefault bool, zo
 func (f *useCasesFixture) seedAddressV4Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
 	t.Helper()
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		ID: ids.NewID(ids.PrefixAddress), ProjectID: folder,
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{ZoneID: zone},
 	}
@@ -261,7 +261,7 @@ func (f *useCasesFixture) seedAddressV4Req(t *testing.T, folder, zone string) *k
 func (f *useCasesFixture) seedAddressV6Req(t *testing.T, folder, zone string) *kachorepo.AddressRecord {
 	t.Helper()
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: folder,
+		ID: ids.NewID(ids.PrefixAddress), ProjectID: folder,
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: zone},
 	}
@@ -614,7 +614,7 @@ func TestAddressPool_B13_BindNetworkDefault_FamilyAgnostic(t *testing.T) {
 
 	netID := ids.NewID(ids.PrefixNetwork)
 	_, err = f.netRepo.NetworkRepo.Insert(context.Background(), &domain.Network{
-		ID: netID, FolderID: "f1", Name: domain.RcNameVPC("net-v6-bind"),
+		ID: netID, ProjectID: "f1", Name: domain.RcNameVPC("net-v6-bind"),
 	})
 	require.NoError(t, err)
 
@@ -638,7 +638,7 @@ func TestAddressPool_B13_BindAddressOverride_FamilyAgnostic(t *testing.T) {
 
 	addrID := ids.NewID(ids.PrefixAddress)
 	_, err = f.addrRepo.Insert(context.Background(), &domain.Address{
-		ID: addrID, FolderID: "f1",
+		ID: addrID, ProjectID: "f1",
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
 	})
@@ -732,12 +732,12 @@ func TestCascade_D4_ExplainResolution_FallThrough_ReturnsErrPoolNotResolved(t *t
 // --------------------------------------------------------------------------
 
 func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
-	// Кастомный fixture с folderClient.CloudID="cloud-d5".
+	// Кастомный fixture с projectClient.CloudID="cloud-d5".
 	kr := newFreelistRepo()
 	ar := repomock.NewAddressRepo()
 	sr := newSubnetRepoAdapter()
 
-	fc := &folderClientAdapter{FolderClient: &repomock.FolderClient{OK: true}}
+	fc := &projectClientAdapter{ProjectClient: &repomock.ProjectClient{OK: true}}
 	fc.CloudID = "cloud-d5"
 
 	resolver := NewResolverService(kr, ar, sr, fc)
@@ -774,7 +774,7 @@ func TestCascade_D5_LabelSelector_FamilySkip(t *testing.T) {
 	})
 
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-d5",
+		ID: ids.NewID(ids.PrefixAddress), ProjectID: "folder-d5",
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv6,
 		ExternalIpv6: &domain.ExternalIpv6Spec{ZoneID: "ru-central1-c"},
 	}
@@ -819,12 +819,12 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 
 	netID := ids.NewID(ids.PrefixNetwork)
 	_, err := f.netRepo.NetworkRepo.Insert(context.Background(), &domain.Network{
-		ID: netID, FolderID: "f-d7", Name: domain.RcNameVPC("net-bind-mismatch"),
+		ID: netID, ProjectID: "f-d7", Name: domain.RcNameVPC("net-bind-mismatch"),
 	})
 	require.NoError(t, err)
 	subID := ids.NewID(ids.PrefixSubnet)
 	_, err = f.subRepo.SubnetRepo.Insert(context.Background(), &domain.Subnet{
-		ID: subID, FolderID: "f-d7", NetworkID: netID,
+		ID: subID, ProjectID: "f-d7", NetworkID: netID,
 		ZoneID: "ru-central1-c", V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
@@ -832,7 +832,7 @@ func TestCascade_D7_NetworkDefault_FamilySkip(t *testing.T) {
 	f.kr.inner.SeedNetworkDefaultBinding(netID, netDefV6.ID)
 
 	a := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "f-d7",
+		ID: ids.NewID(ids.PrefixAddress), ProjectID: "f-d7",
 		Type:         domain.AddressTypeInternal,
 		IpVersion:    domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: subID},

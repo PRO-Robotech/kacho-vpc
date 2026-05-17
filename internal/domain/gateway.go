@@ -17,7 +17,7 @@ import "go.uber.org/multierr"
 // https://yandex.cloud/ru/docs/vpc/api-ref/Gateway/.
 type Gateway struct {
 	ID          string
-	FolderID    string
+	ProjectID    string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels
@@ -46,7 +46,7 @@ func (g Gateway) Validate() error {
 // §4 D.1). skill evgeniy §4 D.10.
 func (g Gateway) Equal(other Gateway) bool {
 	return g.ID == other.ID &&
-		g.FolderID == other.FolderID &&
+		g.ProjectID == other.ProjectID &&
 		g.Name == other.Name &&
 		g.Description == other.Description &&
 		LabelsEqual(g.Labels, other.Labels) &&

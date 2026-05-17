@@ -298,7 +298,7 @@ CASES.append(Case(
     steps=[
         # Создать throwaway network в существующем folder.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-expl-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-expl-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "explNetId")]),
         poll_operation_until_done(),
@@ -434,7 +434,7 @@ CASES.append(Case(
     classes=["CRUD", "STATE"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-nb-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-nb-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "nbNetId")]),
         poll_operation_until_done(),
@@ -484,19 +484,19 @@ CASES.append(Case(
     steps=[
         # Создать network → subnet → INTERNAL address (получает internal IP, не external).
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-ovr-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-ovr-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "ovrNetId")]),
         poll_operation_until_done(),
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{ovrNetId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{ovrNetId}}",
                    "name": "ipl-ovr-sub-{{runId}}", "zoneId": "ru-central1-a",
                    "v4CidrBlocks": ["10.191.0.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "ovrSubId")]),
         poll_operation_until_done(),
         Step(name="cr-addr", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-ovr-addr-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-ovr-addr-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{ovrSubId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "ovrAddrId")]),
@@ -796,7 +796,7 @@ CASES.append(Case(
         # Для теста создадим throwaway address в network/subnet (используем zone-b как
         # «там точно нет default» — sustainable если data-plane не seedит pools в b).
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-expl-none-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-expl-none-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "explNoneNetId")]),
         poll_operation_until_done(),
@@ -837,7 +837,7 @@ CASES.append(Case(
         # cascade проваливается дальше; если global v6 default отсутствует —
         # Operation done с error.code in {9 (FailedPrecondition), 5 (NotFound)}.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-sel-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-sel-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "selNetId")]),
         poll_operation_until_done(),
@@ -860,7 +860,7 @@ CASES.append(Case(
         # Address в этом network c external_ipv6_spec → cascade Step 3 пропускает
         # v4-only pool по family-фильтру, fall-through; нет v6 pool в zone-b.
         Step(name="cr-addr-v6", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-sel-addr-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-sel-addr-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-b"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "selAddrId")]),
@@ -909,7 +909,7 @@ CASES.append(Case(
         # «cascade резолв не даёт IP и Operation падает», что подтверждает family-skip
         # семантику.
         Step(name="cr-addr-v6", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-ovr-addr-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-ovr-addr-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-b"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "ovrAddrId")]),
@@ -935,7 +935,7 @@ CASES.append(Case(
         # пропускает (v4_cidr_blocks пусто), fall-through. Нет v4 default в zone-b →
         # Operation error code in {5, 9}.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-netdef-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-netdef-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netdefId")]),
         poll_operation_until_done(),
@@ -949,7 +949,7 @@ CASES.append(Case(
              body={"poolId": "{{netdefPoolId}}"},
              test_script=[*assert_status(200)]),
         Step(name="cr-addr-v4", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-netdef-addr-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-netdef-addr-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "ru-central1-b"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "netdefAddrId")]),
@@ -988,7 +988,7 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "dsPoolId")]),
         # Allocate v4.
         Step(name="cr-addr-v4", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-ds-v4-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-ds-v4-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "dsV4AddrId")]),
@@ -998,7 +998,7 @@ CASES.append(Case(
                           "pm.test('v4 IP in pool v4 cidr', () => pm.expect(pm.response.json().externalIpv4Address.address).to.match(/^198\\.51\\.100\\./));"]),
         # Allocate v6.
         Step(name="cr-addr-v6", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-ds-v6-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-ds-v6-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "dsV6AddrId")]),
@@ -1027,7 +1027,7 @@ CASES.append(Case(
         # family-фильтр работает ТОЛЬКО на resolve-этапе. Bind v4-only pool к network
         # → 200 OK; binding записан в address_pool_network_default.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "ipl-bnd-fa-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-bnd-fa-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "bndFaNetId")]),
         poll_operation_until_done(),

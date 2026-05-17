@@ -63,10 +63,10 @@ type SubnetReader interface {
 	AddressesBySubnet(ctx context.Context, subnetID string, p Pagination) ([]*kachorepo.AddressRecord, string, error)
 }
 
-// FolderClient — то, что use-case'ам Address нужно от peer-сервиса
+// ProjectClient — то, что use-case'ам Address нужно от peer-сервиса
 // kacho-resource-manager: проверка существования folder'а на request-path /
 // в worker'е Create/Move.
-type FolderClient interface {
+type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }
 

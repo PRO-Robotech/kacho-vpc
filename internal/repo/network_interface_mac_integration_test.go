@@ -46,14 +46,14 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 		return w.Commit()
 	}
 
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-mac", Name: domain.RcNameVPC("net-mac")}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-mac", Name: domain.RcNameVPC("net-mac")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
 		return e
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-mac", Name: domain.RcNameVPC("sub-mac"), NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.20.0.0/24"},
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-mac", Name: domain.RcNameVPC("sub-mac"), NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.20.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Subnets().Insert(ctx, sub)
@@ -62,7 +62,7 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 
 	mkNIC := func(id, name, mac string) *domain.NetworkInterface {
 		return &domain.NetworkInterface{
-			ID: id, FolderID: "folder-mac",
+			ID: id, ProjectID: "folder-mac",
 			Name: domain.RcNameVPC(name), SubnetID: sub.ID, MAC: mac,
 			Status: domain.NIStatusAvailable,
 		}

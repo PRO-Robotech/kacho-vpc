@@ -51,9 +51,9 @@ func (r *subnetReader) List(ctx context.Context, f kacho.SubnetFilter, p kacho.P
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.NetworkID != "" {
@@ -210,12 +210,12 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO subnets (id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options)
+		INSERT INTO subnets (id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING %s`, helpers.SubnetCols)
 
 	row := w.tx.QueryRow(ctx, q,
-		s.ID, s.FolderID, now, string(s.Name), string(s.Description), labelsJSON,
+		s.ID, s.ProjectID, now, string(s.Name), string(s.Description), labelsJSON,
 		s.NetworkID, s.ZoneID,
 		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
 		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V6CidrBlocks)), LowerBound: 1}}},
@@ -300,9 +300,9 @@ func (w *subnetWriter) SetZoneID(ctx context.Context, id, zoneID string) (*kacho
 	return s, nil
 }
 
-// SetFolderID меняет folder_id у Subnet (для :move). outbox-write — в use-case'е.
-func (w *subnetWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
-	q := fmt.Sprintf(`UPDATE subnets SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
+// SetProjectID меняет project_id у Subnet (для :move). outbox-write — в use-case'е.
+func (w *subnetWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
+	q := fmt.Sprintf(`UPDATE subnets SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	s, err := helpers.ScanSubnet(row)
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListNetworksUseCase — list networks с пагинацией. folder_id обязателен.
+// ListNetworksUseCase — list networks с пагинацией. project_id обязателен.
 //
 // Wave 5 pilot (KAC-94): использует CQRS Reader.
 type ListNetworksUseCase struct {
@@ -24,10 +24,10 @@ func NewListNetworksUseCase(r Repo) *ListNetworksUseCase {
 	return &ListNetworksUseCase{repo: r}
 }
 
-// Execute — folder_id required (закрыто cross-folder enumeration #C1).
+// Execute — project_id required (закрыто cross-folder enumeration #C1).
 func (u *ListNetworksUseCase) Execute(ctx context.Context, f NetworkFilter, p Pagination) ([]*kachorepo.NetworkRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	r, err := u.repo.Reader(ctx)
 	if err != nil {

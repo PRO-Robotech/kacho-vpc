@@ -33,7 +33,7 @@ func makeHandler(
 	sgr *kachomock.Repository,
 	nr *repomock.NetworkRepo,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateSecurityGroupUseCase(sgr, nr, fc, or)
@@ -54,7 +54,7 @@ func minimalHandler(t *testing.T) (*Handler, *repomock.OpsRepo, *kachomock.Repos
 	sgr := kachomock.NewRepository()
 	nr := repomock.NewNetworkRepo()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: true}
+	fc := &repomock.ProjectClient{OK: true}
 	return makeHandler(t, sgr, nr, or, fc), or, sgr
 }
 
@@ -78,13 +78,13 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _ := minimalHandler(t)
-	resp, err := h.List(context.Background(), &vpcv1.ListSecurityGroupsRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListSecurityGroupsRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.SecurityGroups)
 }
 
 func TestHandler_Create_Validates(t *testing.T) {
-	// folder_id отсутствует → InvalidArgument.
+	// project_id отсутствует → InvalidArgument.
 	h, _, _ := minimalHandler(t)
 	_, err := h.Create(context.Background(), &vpcv1.CreateSecurityGroupRequest{Name: "sg"})
 	require.Error(t, err)
@@ -145,9 +145,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: true}, or)
 
-	// folder_id required.
+	// project_id required.
 	_, err := uc.Execute(context.Background(), domain.SecurityGroup{Name: "test"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -155,7 +155,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// invalid name (digit start, NameVPC permissive но цифра в начале — нет).
 	_, err = uc.Execute(context.Background(), domain.SecurityGroup{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("1bad"),
 	})
 	require.Error(t, err)
@@ -171,10 +171,10 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: false}, or)
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: false}, or)
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("sg1"),
 	})
 	require.NoError(t, err)
@@ -190,10 +190,10 @@ func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
 	// network_id пустой → folder-level / unbound SG.
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		Name:        domain.RcNameVPC("sg1"),
 		Description: domain.RcDescription("desc"),
 	})
@@ -214,7 +214,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveSecurityGroupUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveSecurityGroupUseCase(kachomock.NewRepository(), &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -268,7 +268,7 @@ func TestSGToProto_Fields(t *testing.T) {
 	rec := &kacho.SecurityGroupRecord{
 		SecurityGroup: domain.SecurityGroup{
 			ID:                "sg-1",
-			FolderID:          "f1",
+			ProjectID:          "f1",
 			NetworkID:         "net-1",
 			Name:              domain.RcNameVPC("sg"),
 			Description:       domain.RcDescription("desc"),

@@ -33,7 +33,7 @@ func insertTestAddressFreelist(t testing.TB, ctx context.Context, pool *pgxpool.
 	t.Helper()
 	addrID := ids.NewID(ids.PrefixAddress)
 	_, err := pool.Exec(ctx, `
-        INSERT INTO addresses (id, folder_id, addr_type, ip_version, reserved)
+        INSERT INTO addresses (id, project_id, addr_type, ip_version, reserved)
         VALUES ($1, 'b1gtestfolder000000', 1, 1, true)
     `, addrID)
 	require.NoError(t, err)

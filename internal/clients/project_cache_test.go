@@ -12,10 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// stubFolderClient — детерминированный stub upstream-а под unit-тесты.
+// stubProjectClient — детерминированный stub upstream-а под unit-тесты.
 // Считает вызовы Exists по folder-id; программируется ответом per-folder
 // или общим default. -race-safe.
-type stubFolderClient struct {
+type stubProjectClient struct {
 	mu        sync.Mutex
 	calls     map[string]int
 	answer    map[string]stubAnswer
@@ -27,26 +27,26 @@ type stubAnswer struct {
 	err    error
 }
 
-func newStubFolderClient() *stubFolderClient {
-	return &stubFolderClient{
+func newStubProjectClient() *stubProjectClient {
+	return &stubProjectClient{
 		calls:  make(map[string]int),
 		answer: make(map[string]stubAnswer),
 	}
 }
 
-func (s *stubFolderClient) setAnswer(folderID string, a stubAnswer) {
+func (s *stubProjectClient) setAnswer(folderID string, a stubAnswer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.answer[folderID] = a
 }
 
-func (s *stubFolderClient) setDefault(a stubAnswer) {
+func (s *stubProjectClient) setDefault(a stubAnswer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.defaultRe = a
 }
 
-func (s *stubFolderClient) Exists(_ context.Context, folderID string) (bool, error) {
+func (s *stubProjectClient) Exists(_ context.Context, folderID string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls[folderID]++
@@ -56,11 +56,11 @@ func (s *stubFolderClient) Exists(_ context.Context, folderID string) (bool, err
 	return s.defaultRe.exists, s.defaultRe.err
 }
 
-func (s *stubFolderClient) GetCloudID(_ context.Context, _ string) (string, error) {
+func (s *stubProjectClient) GetCloudIDFromProject(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
 
-func (s *stubFolderClient) callCount(folderID string) int {
+func (s *stubProjectClient) callCount(folderID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls[folderID]
@@ -86,14 +86,14 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-func TestCachedFolderClient_PositiveCacheHit(t *testing.T) {
+func TestCachedProjectClient_PositiveCacheHit(t *testing.T) {
 	t.Parallel()
 
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("f1", stubAnswer{exists: true})
 	clk := newFakeClock(time.Unix(1_000_000, 0))
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -128,14 +128,14 @@ func TestCachedFolderClient_PositiveCacheHit(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_PositiveTTLExpiry(t *testing.T) {
+func TestCachedProjectClient_PositiveTTLExpiry(t *testing.T) {
 	t.Parallel()
 
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("f1", stubAnswer{exists: true})
 	clk := newFakeClock(time.Unix(2_000_000, 0))
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -156,14 +156,14 @@ func TestCachedFolderClient_PositiveTTLExpiry(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_NegativeCache(t *testing.T) {
+func TestCachedProjectClient_NegativeCache(t *testing.T) {
 	t.Parallel()
 
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("missing", stubAnswer{exists: false})
 	clk := newFakeClock(time.Unix(3_000_000, 0))
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -195,17 +195,17 @@ func TestCachedFolderClient_NegativeCache(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_NotFoundErrorCachedAsNegative(t *testing.T) {
+func TestCachedProjectClient_NotFoundErrorCachedAsNegative(t *testing.T) {
 	t.Parallel()
 
 	// Если upstream возвращает gRPC codes.NotFound (что normalize-нутый
-	// FolderClient вообще-то не делает, но защищаемся), мы должны
+	// ProjectClient вообще-то не делает, но защищаемся), мы должны
 	// маппить в (false, nil) и кешировать как negative.
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("nf", stubAnswer{err: status.Error(codes.NotFound, "Folder not found")})
 	clk := newFakeClock(time.Unix(4_000_000, 0))
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -225,15 +225,15 @@ func TestCachedFolderClient_NotFoundErrorCachedAsNegative(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_FailOpenOnUnavailable(t *testing.T) {
+func TestCachedProjectClient_FailOpenOnUnavailable(t *testing.T) {
 	t.Parallel()
 
 	// Unavailable — НЕ кешируется. Каждый вызов идёт в upstream.
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("rmdown", stubAnswer{err: status.Error(codes.Unavailable, "rm down")})
 	clk := newFakeClock(time.Unix(5_000_000, 0))
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -260,14 +260,14 @@ func TestCachedFolderClient_FailOpenOnUnavailable(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_FailOpenOnGenericError(t *testing.T) {
+func TestCachedProjectClient_FailOpenOnGenericError(t *testing.T) {
 	t.Parallel()
 
 	// Обычная (не grpc-status) ошибка — тоже не кешируется.
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setAnswer("err1", stubAnswer{err: errors.New("network is unreachable")})
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     10,
@@ -284,13 +284,13 @@ func TestCachedFolderClient_FailOpenOnGenericError(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_LRUEviction(t *testing.T) {
+func TestCachedProjectClient_LRUEviction(t *testing.T) {
 	t.Parallel()
 
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setDefault(stubAnswer{exists: true})
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     3,
@@ -352,14 +352,14 @@ func TestCachedFolderClient_LRUEviction(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_DefaultsApplied(t *testing.T) {
+func TestCachedProjectClient_DefaultsApplied(t *testing.T) {
 	t.Parallel()
 
 	// Все zero-fields → дефолты (30s / 5s / 10000).
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setDefault(stubAnswer{exists: true})
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{})
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{})
 
 	if c.posTTL != 30*time.Second {
 		t.Errorf("posTTL = %v, want 30s", c.posTTL)
@@ -375,15 +375,15 @@ func TestCachedFolderClient_DefaultsApplied(t *testing.T) {
 	}
 }
 
-func TestCachedFolderClient_ParallelAccess(t *testing.T) {
+func TestCachedProjectClient_ParallelAccess(t *testing.T) {
 	t.Parallel()
 
 	// -race-проверка под высокой конкуренцией: много горутин, один folder
 	// → ровно один upstream-вызов после прогрева, кеш не race'ит.
-	stub := newStubFolderClient()
+	stub := newStubProjectClient()
 	stub.setDefault(stubAnswer{exists: true})
 
-	c := NewCachedFolderClient(stub, FolderCacheConfig{
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{
 		PositiveTTL: 30 * time.Second,
 		NegativeTTL: 5 * time.Second,
 		MaxSize:     1000,
@@ -429,14 +429,14 @@ func TestCachedFolderClient_ParallelAccess(t *testing.T) {
 	t.Logf("upstream calls = %d (down from %d without cache)", totalCalls, goroutines*iter)
 }
 
-func TestCachedFolderClient_GetCloudIDPassthrough(t *testing.T) {
+func TestCachedProjectClient_GetCloudIDPassthrough(t *testing.T) {
 	t.Parallel()
 
 	// GetCloudID должен просто проксировать.
 	stub := &cloudIDStub{cloud: "cl-123"}
-	c := NewCachedFolderClient(stub, FolderCacheConfig{})
+	c := NewCachedProjectClient(stub, ProjectCacheConfig{})
 
-	cloudID, err := c.GetCloudID(context.Background(), "f1")
+	cloudID, err := c.GetCloudIDFromProject(context.Background(), "f1")
 	if err != nil || cloudID != "cl-123" {
 		t.Fatalf("GetCloudID: got (%q, %v), want (cl-123, nil)", cloudID, err)
 	}
@@ -451,7 +451,7 @@ type cloudIDStub struct {
 }
 
 func (s *cloudIDStub) Exists(_ context.Context, _ string) (bool, error) { return true, nil }
-func (s *cloudIDStub) GetCloudID(_ context.Context, _ string) (string, error) {
+func (s *cloudIDStub) GetCloudIDFromProject(_ context.Context, _ string) (string, error) {
 	s.cloudCalls++
 	return s.cloud, nil
 }

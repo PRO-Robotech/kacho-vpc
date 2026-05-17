@@ -29,7 +29,7 @@ const testZone = "ru-central1-a"
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 	zr *repomock.ZoneRegistry,
 ) *Handler {
 	t.Helper()
@@ -55,7 +55,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	t.Helper()
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	zr := repomock.NewZoneRegistry(testZone)
 
 	// Seed Network через kachomock writer (committed state, видим Reader'ом).
@@ -71,7 +71,7 @@ func seedNetwork(t *testing.T, kr *kachomock.Repository, folderID, networkID str
 	ctx := context.Background()
 	w, err := kr.Writer(ctx)
 	require.NoError(t, err)
-	_, err = w.Networks().Insert(ctx, &domain.Network{ID: networkID, FolderID: folderID, Name: domain.RcNameVPC("net-for-test")})
+	_, err = w.Networks().Insert(ctx, &domain.Network{ID: networkID, ProjectID: folderID, Name: domain.RcNameVPC("net-for-test")})
 	require.NoError(t, err)
 	require.NoError(t, w.Commit())
 }
@@ -104,14 +104,14 @@ func TestHandler_Get_InvalidIDFormat(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.Subnets)
 }
 
 func TestHandler_List_RequiresFolder(t *testing.T) {
 	h, _, _, _ := minimalHandler(t, true)
-	_, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: ""})
+	_, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{ProjectId: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -178,10 +178,10 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: true},
+	uc := NewCreateSubnetUseCase(kr, &repomock.ProjectClient{OK: true},
 		repomock.NewZoneRegistry(testZone), or)
 
-	// folder_id required.
+	// project_id required.
 	netID := ids.NewID(ids.PrefixNetwork)
 	_, err := uc.Execute(context.Background(), domain.Subnet{NetworkID: netID, ZoneID: testZone})
 	require.Error(t, err)
@@ -190,13 +190,13 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// network_id required (empty + invalid id format).
 	_, err = uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: "", ZoneID: testZone,
+		ProjectID: "f1", NetworkID: "", ZoneID: testZone,
 	})
 	require.Error(t, err)
 
 	// zone_id required.
 	_, err = uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: netID, ZoneID: "",
+		ProjectID: "f1", NetworkID: netID, ZoneID: "",
 	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
@@ -204,7 +204,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// unknown zone.
 	_, err = uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: netID, ZoneID: "ru-central1-z",
+		ProjectID: "f1", NetworkID: netID, ZoneID: "ru-central1-z",
 	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
@@ -212,7 +212,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// host-bits != 0 → InvalidArgument.
 	_, err = uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
+		ProjectID: "f1", NetworkID: netID, ZoneID: testZone,
 		V4CidrBlocks: []string{"10.0.0.5/24"},
 	})
 	require.Error(t, err)
@@ -221,7 +221,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// /29 → InvalidArgument "Illegal argument Invalid network prefix /29".
 	_, err = uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
+		ProjectID: "f1", NetworkID: netID, ZoneID: testZone,
 		V4CidrBlocks: []string{"10.0.0.0/29"},
 	})
 	require.Error(t, err)
@@ -237,14 +237,14 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: false},
+	uc := NewCreateSubnetUseCase(kr, &repomock.ProjectClient{OK: false},
 		repomock.NewZoneRegistry(testZone), or)
 
 	netID := ids.NewID(ids.PrefixNetwork)
 	seedNetwork(t, kr, "f1", netID)
 
 	op, err := uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: netID, ZoneID: testZone,
+		ProjectID: "f1", NetworkID: netID, ZoneID: testZone,
 		Name: domain.RcNameVPC("sub1"),
 	})
 	require.NoError(t, err)
@@ -259,11 +259,11 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 func TestCreateUseCase_NetworkNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSubnetUseCase(kr, &repomock.FolderClient{OK: true},
+	uc := NewCreateSubnetUseCase(kr, &repomock.ProjectClient{OK: true},
 		repomock.NewZoneRegistry(testZone), or)
 
 	_, err := uc.Execute(context.Background(), domain.Subnet{
-		FolderID: "f1", NetworkID: ids.NewID(ids.PrefixNetwork), ZoneID: testZone,
+		ProjectID: "f1", NetworkID: ids.NewID(ids.PrefixNetwork), ZoneID: testZone,
 	})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -274,7 +274,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	h, or, kr, netID := minimalHandler(t, true)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		FolderId:     "f1",
+		ProjectId:     "f1",
 		NetworkId:    netID,
 		Name:         "sub1",
 		ZoneId:       testZone,
@@ -309,7 +309,7 @@ func TestCreateUseCase_DuplicateName(t *testing.T) {
 
 	// Первый Create — OK.
 	op1, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		FolderId: "f1", NetworkId: netID, Name: "dup", ZoneId: testZone,
+		ProjectId: "f1", NetworkId: netID, Name: "dup", ZoneId: testZone,
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
@@ -317,7 +317,7 @@ func TestCreateUseCase_DuplicateName(t *testing.T) {
 
 	// Второй Create с тем же name — sync AlreadyExists.
 	_, err = h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		FolderId: "f1", NetworkId: netID, Name: "dup", ZoneId: testZone,
+		ProjectId: "f1", NetworkId: netID, Name: "dup", ZoneId: testZone,
 		V4CidrBlocks: []string{"10.0.1.0/24"},
 	})
 	require.Error(t, err)
@@ -371,7 +371,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 // ---- use-case-level (Move) ----
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveSubnetUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveSubnetUseCase(kachomock.NewRepository(), &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -442,7 +442,7 @@ func TestRelocateUseCase_AlwaysFailedPrecondition(t *testing.T) {
 	w, err := kr.Writer(ctx)
 	require.NoError(t, err)
 	_, err = w.Subnets().Insert(ctx, &domain.Subnet{
-		ID: subID, FolderID: "f1", NetworkID: netID, ZoneID: testZone,
+		ID: subID, ProjectID: "f1", NetworkID: netID, ZoneID: testZone,
 	})
 	require.NoError(t, err)
 	require.NoError(t, w.Commit())
@@ -473,14 +473,14 @@ func TestHandler_FullFlow(t *testing.T) {
 
 	// Create
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		FolderId: "f1", NetworkId: netID, Name: "sub1", ZoneId: testZone,
+		ProjectId: "f1", NetworkId: netID, Name: "sub1", ZoneId: testZone,
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
 	// List
-	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListSubnetsRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.Subnets)
 	subID := resp.Subnets[0].Id
@@ -526,7 +526,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Move
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveSubnetRequest{SubnetId: subID, DestinationProjectId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, moveOp.Id)
 
@@ -547,13 +547,13 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 	h, or, _, netID := minimalHandler(t, true)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		FolderId: "f1", NetworkId: netID, Name: "del-resp-test", ZoneId: testZone,
+		ProjectId: "f1", NetworkId: netID, Name: "del-resp-test", ZoneId: testZone,
 		V4CidrBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListSubnetsRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListSubnetsRequest{ProjectId: "f1"})
 	require.Len(t, resp.Subnets, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteSubnetRequest{SubnetId: resp.Subnets[0].Id})
@@ -571,7 +571,7 @@ func TestSubnetToPb_RoundTrip(t *testing.T) {
 	rec := &kachorepo.SubnetRecord{
 		Subnet: domain.Subnet{
 			ID:           "s-1",
-			FolderID:     "f1",
+			ProjectID:     "f1",
 			Name:         domain.RcNameVPC("sub1"),
 			Description:  domain.RcDescription("desc"),
 			Labels:       domain.LabelsFromMap(map[string]string{"env": "prod"}),

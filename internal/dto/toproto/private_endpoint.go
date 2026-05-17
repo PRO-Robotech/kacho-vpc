@@ -25,7 +25,7 @@ func (privateEndpoint) toPb(rec kachorepo.PrivateEndpointRecord) (*pepb.PrivateE
 	}
 	out := &pepb.PrivateEndpoint{
 		Id:          rec.ID,
-		FolderId:    rec.FolderID,
+		ProjectId:    rec.ProjectID,
 		CreatedAt:   ts,
 		Name:        string(rec.Name),
 		Description: string(rec.Description),

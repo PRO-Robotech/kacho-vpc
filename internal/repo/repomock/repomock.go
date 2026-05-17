@@ -54,7 +54,7 @@ func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagin
 	defer r.mu.Unlock()
 	var result []*kachorepo.NetworkRecord
 	for _, n := range r.data {
-		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(n.Name) == f.Name) {
 			result = append(result, n)
 		}
@@ -92,14 +92,14 @@ func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *NetworkRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.NetworkRecord, error) {
+func (r *NetworkRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	n.FolderID = folderID
+	n.ProjectID = folderID
 	return n, nil
 }
 
@@ -131,7 +131,7 @@ func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Paginat
 	defer r.mu.Unlock()
 	var result []*kachorepo.SubnetRecord
 	for _, s := range r.data {
-		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || s.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(s.Name) == f.Name) {
 			result = append(result, s)
@@ -170,14 +170,14 @@ func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *SubnetRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.SubnetRecord, error) {
+func (r *SubnetRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	s.FolderID = folderID
+	s.ProjectID = folderID
 	return s, nil
 }
 
@@ -261,7 +261,7 @@ func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagin
 	defer r.mu.Unlock()
 	var result []*kachorepo.AddressRecord
 	for _, a := range r.data {
-		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || a.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(a.Name) == f.Name) {
 			result = append(result, a)
 		}
@@ -329,14 +329,14 @@ func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain
 	return a, nil
 }
 
-func (r *AddressRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.AddressRecord, error) {
+func (r *AddressRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	a.FolderID = folderID
+	a.ProjectID = folderID
 	return a, nil
 }
 
@@ -613,7 +613,7 @@ func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo
 	defer r.mu.Unlock()
 	var result []*kachorepo.RouteTableRecord
 	for _, rt := range r.data {
-		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || rt.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(rt.Name) == f.Name) {
 			result = append(result, rt)
@@ -651,14 +651,14 @@ func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *RouteTableRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.RouteTableRecord, error) {
+func (r *RouteTableRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rt, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	rt.FolderID = folderID
+	rt.ProjectID = folderID
 	return rt, nil
 }
 
@@ -691,7 +691,7 @@ func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, 
 	defer r.mu.Unlock()
 	var out []*kachorepo.SecurityGroupRecord
 	for _, sg := range r.data {
-		if f.FolderID != "" && sg.FolderID != f.FolderID {
+		if f.ProjectID != "" && sg.ProjectID != f.ProjectID {
 			continue
 		}
 		if f.NetworkID != "" && sg.NetworkID != f.NetworkID {
@@ -751,14 +751,14 @@ func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ stri
 	return sg, nil
 }
 
-func (r *SecurityGroupRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error) {
+func (r *SecurityGroupRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sg, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	sg.FolderID = folderID
+	sg.ProjectID = folderID
 	return sg, nil
 }
 
@@ -790,7 +790,7 @@ func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagin
 	defer r.mu.Unlock()
 	var out []*kachorepo.GatewayRecord
 	for _, g := range r.data {
-		if f.FolderID != "" && g.FolderID != f.FolderID {
+		if f.ProjectID != "" && g.ProjectID != f.ProjectID {
 			continue
 		}
 		if f.Name != "" && g.Name != domain.RcNameVPC(f.Name) {
@@ -827,14 +827,14 @@ func (r *GatewayRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (r *GatewayRepo) SetFolderID(_ context.Context, id, folderID string) (*kachorepo.GatewayRecord, error) {
+func (r *GatewayRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	g, ok := r.data[id]
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	g.FolderID = folderID
+	g.ProjectID = folderID
 	return g, nil
 }
 
@@ -867,7 +867,7 @@ func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilt
 	defer r.mu.Unlock()
 	var out []*kachorepo.PrivateEndpointRecord
 	for _, p := range r.data {
-		if f.FolderID != "" && p.FolderID != f.FolderID {
+		if f.ProjectID != "" && p.ProjectID != f.ProjectID {
 			continue
 		}
 		if f.Name != "" && p.Name != domain.RcNameVPC(f.Name) {
@@ -904,18 +904,18 @@ func (r *PrivateEndpointRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// ---- FolderClient ----
+// ---- ProjectClient ----
 
-// FolderClient — fake FolderClient. OK задаёт результат Exists(); CloudID —
-// результат GetCloudID() (по умолчанию "" — NotFound-семантика).
-type FolderClient struct {
+// ProjectClient — fake ProjectClient. OK задаёт результат Exists(); CloudID —
+// результат GetCloudIDFromProject() (по умолчанию "" — NotFound-семантика).
+type ProjectClient struct {
 	OK      bool
 	CloudID string
 }
 
-func (c *FolderClient) Exists(_ context.Context, _ string) (bool, error) { return c.OK, nil }
+func (c *ProjectClient) Exists(_ context.Context, _ string) (bool, error) { return c.OK, nil }
 
-func (c *FolderClient) GetCloudID(_ context.Context, _ string) (string, error) { return c.CloudID, nil }
+func (c *ProjectClient) GetCloudIDFromProject(_ context.Context, _ string) (string, error) { return c.CloudID, nil }
 
 // ---- ZoneRegistry ----
 
@@ -1080,11 +1080,11 @@ func AwaitAllOpsDone(t TestingT, r *OpsRepo) {
 // mock структура удовлетворяет его duck-typing'ом. Compile-time assertion на
 // удалённый общий интерфейс не нужен.
 //
-// Peer-service порты `FolderClient` / `ZoneRegistry` — кросс-сервисные,
+// Peer-service порты `ProjectClient` / `ZoneRegistry` — кросс-сервисные,
 // общие для всех use-case'ов, поэтому остаются в общем `internal/repo`-пакете
 // и compile-проверяются здесь.
 var (
-	_ repo.FolderClient = (*FolderClient)(nil)
+	_ repo.ProjectClient = (*ProjectClient)(nil)
 	_ repo.ZoneRegistry = (*ZoneRegistry)(nil)
 	_ operations.Repo   = (*OpsRepo)(nil)
 )

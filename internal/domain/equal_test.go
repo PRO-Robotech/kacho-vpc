@@ -50,7 +50,7 @@ func TestLabelsEqual_OrderInsensitive(t *testing.T) {
 func newNetwork() domain.Network {
 	return domain.Network{
 		ID:                     "enp1",
-		FolderID:               "fld1",
+		ProjectID:               "fld1",
 		Name:                   domain.RcNameVPC("net1"),
 		Description:            domain.RcDescription("desc"),
 		Labels:                 domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -68,7 +68,7 @@ func TestNetwork_Equal(t *testing.T) {
 		mutate func(*domain.Network)
 	}{
 		{"diff id", func(n *domain.Network) { n.ID = "enpX" }},
-		{"diff folder", func(n *domain.Network) { n.FolderID = "fldX" }},
+		{"diff folder", func(n *domain.Network) { n.ProjectID = "fldX" }},
 		{"diff name", func(n *domain.Network) { n.Name = "netX" }},
 		{"diff description", func(n *domain.Network) { n.Description = "descX" }},
 		{"diff labels", func(n *domain.Network) {
@@ -90,7 +90,7 @@ func TestNetwork_Equal(t *testing.T) {
 func newSubnet() domain.Subnet {
 	return domain.Subnet{
 		ID:           "e9b1",
-		FolderID:     "fld1",
+		ProjectID:     "fld1",
 		Name:         "sub1",
 		Description:  "desc",
 		Labels:       domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -155,7 +155,7 @@ func newAddress() domain.Address {
 	t0 := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
 	return domain.Address{
 		ID:          "e9b2",
-		FolderID:    "fld1",
+		ProjectID:    "fld1",
 		Name:        "addr1",
 		Description: "desc",
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -222,7 +222,7 @@ func TestExternalIpv4Spec_Equal_Nil(t *testing.T) {
 func newRouteTable() domain.RouteTable {
 	return domain.RouteTable{
 		ID:          "enp4",
-		FolderID:    "fld1",
+		ProjectID:    "fld1",
 		Name:        "rt1",
 		Description: "desc",
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -264,7 +264,7 @@ func TestRouteTable_Equal(t *testing.T) {
 func newSecurityGroup() domain.SecurityGroup {
 	return domain.SecurityGroup{
 		ID:                "enp5",
-		FolderID:          "fld1",
+		ProjectID:          "fld1",
 		NetworkID:         "enp1",
 		Name:              "sg1",
 		Description:       "desc",
@@ -327,7 +327,7 @@ func TestSecurityGroup_Equal(t *testing.T) {
 
 func TestGateway_Equal(t *testing.T) {
 	base := domain.Gateway{
-		ID: "enp6", FolderID: "fld1", Name: "gw1", Description: "d",
+		ID: "enp6", ProjectID: "fld1", Name: "gw1", Description: "d",
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	}
@@ -352,7 +352,7 @@ func TestGateway_Equal(t *testing.T) {
 func newPrivateEndpoint() domain.PrivateEndpoint {
 	return domain.PrivateEndpoint{
 		ID:          "enp7",
-		FolderID:    "fld1",
+		ProjectID:    "fld1",
 		Name:        "pe1",
 		Description: "desc",
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -391,7 +391,7 @@ func TestPrivateEndpoint_Equal(t *testing.T) {
 func newNetworkInterface() domain.NetworkInterface {
 	return domain.NetworkInterface{
 		ID:               "e9b9",
-		FolderID:         "fld1",
+		ProjectID:         "fld1",
 		Name:             "nic1",
 		Description:      "desc",
 		Labels:           domain.LabelsFromMap(map[string]string{"env": "prod"}),

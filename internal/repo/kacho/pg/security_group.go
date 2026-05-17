@@ -57,9 +57,9 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.NetworkID != "" {
@@ -158,11 +158,11 @@ func (w *securityGroupWriter) Insert(ctx context.Context, sg *domain.SecurityGro
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO security_groups (id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules)
+		INSERT INTO security_groups (id, project_id, network_id, created_at, name, description, labels, status, default_for_network, rules)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q,
-		sg.ID, sg.FolderID, helpers.NullableStr(sg.NetworkID), now,
+		sg.ID, sg.ProjectID, helpers.NullableStr(sg.NetworkID), now,
 		string(sg.Name), string(sg.Description), labelsJSON,
 		string(sg.Status), sg.DefaultForNetwork, rulesJSON,
 	)
@@ -199,9 +199,9 @@ func (w *securityGroupWriter) Update(ctx context.Context, sg *domain.SecurityGro
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у SG (для :move). outbox-write — в use-case'е.
-func (w *securityGroupWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
-	q := fmt.Sprintf(`UPDATE security_groups SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.SGCols)
+// SetProjectID меняет project_id у SG (для :move). outbox-write — в use-case'е.
+func (w *securityGroupWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
+	q := fmt.Sprintf(`UPDATE security_groups SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.SGCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	sg, err := helpers.ScanSG(row)
 	if err != nil {

@@ -28,7 +28,7 @@ func insertNetworkInTx(t *testing.T, ctx context.Context, w kacho.RepositoryWrit
 }
 
 func newDefaultSG(folderID, networkID string) *domain.SecurityGroup {
-	sg := domain.NewDefaultSecurityGroup(domain.Network{ID: networkID, FolderID: folderID})
+	sg := domain.NewDefaultSecurityGroup(domain.Network{ID: networkID, ProjectID: folderID})
 	sg.ID = ids.NewID(ids.PrefixSecurityGroup)
 	return &sg
 }
@@ -52,7 +52,7 @@ func TestCQRS_SG_InsertCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	net := insertNetworkInTx(t, ctx, w, "folder-sg-1", "net-sg-1")
 	require.NoError(t, w.Outbox().Emit(ctx, "Network", net.ID, "CREATED", map[string]any{"id": net.ID}))
-	sg := newDefaultSG(net.FolderID, net.ID)
+	sg := newDefaultSG(net.ProjectID, net.ID)
 	createdSG, err := w.SecurityGroups().Insert(ctx, sg)
 	require.NoError(t, err)
 	assert.Equal(t, sg.ID, createdSG.ID)
@@ -89,7 +89,7 @@ func TestCQRS_SG_AbortRollback(t *testing.T) {
 	require.NoError(t, err)
 	net := insertNetworkInTx(t, ctx, w, "folder-sg-abort", "net-sg-abort")
 	require.NoError(t, w.Outbox().Emit(ctx, "Network", net.ID, "CREATED", map[string]any{"id": net.ID}))
-	sg := newDefaultSG(net.FolderID, net.ID)
+	sg := newDefaultSG(net.ProjectID, net.ID)
 	_, err = w.SecurityGroups().Insert(ctx, sg)
 	require.NoError(t, err)
 	require.NoError(t, w.Outbox().Emit(ctx, "SecurityGroup", sg.ID, "CREATED", map[string]any{"id": sg.ID}))
@@ -127,7 +127,7 @@ func TestCQRS_Network_AtomicDefaultSGCreate(t *testing.T) {
 	net := insertNetworkInTx(t, ctx, w, "folder-atomic", "net-atomic")
 	require.NoError(t, w.Outbox().Emit(ctx, "Network", net.ID, "CREATED", map[string]any{"id": net.ID}))
 
-	sg := newDefaultSG(net.FolderID, net.ID)
+	sg := newDefaultSG(net.ProjectID, net.ID)
 	createdSG, err := w.SecurityGroups().Insert(ctx, sg)
 	require.NoError(t, err)
 	require.NoError(t, w.Outbox().Emit(ctx, "SecurityGroup", createdSG.ID, "CREATED", map[string]any{"id": createdSG.ID}))
@@ -179,7 +179,7 @@ func TestCQRS_Network_AtomicDefaultSGCreate_AbortOnSG(t *testing.T) {
 	require.NoError(t, err)
 	net := insertNetworkInTx(t, ctx, w, "folder-abort", "net-abort")
 	require.NoError(t, w.Outbox().Emit(ctx, "Network", net.ID, "CREATED", map[string]any{"id": net.ID}))
-	sg := newDefaultSG(net.FolderID, net.ID)
+	sg := newDefaultSG(net.ProjectID, net.ID)
 	_, err = w.SecurityGroups().Insert(ctx, sg)
 	require.NoError(t, err)
 	w.Abort() // имитируем crash после SG.Insert
@@ -210,7 +210,7 @@ func TestCQRS_SG_UpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	net := insertNetworkInTx(t, ctx, w1, "folder-cycle", "net-cycle")
 	require.NoError(t, w1.Outbox().Emit(ctx, "Network", net.ID, "CREATED", map[string]any{"id": net.ID}))
-	sg := newDefaultSG(net.FolderID, net.ID)
+	sg := newDefaultSG(net.ProjectID, net.ID)
 	created, err := w1.SecurityGroups().Insert(ctx, sg)
 	require.NoError(t, err)
 	require.NoError(t, w1.Outbox().Emit(ctx, "SecurityGroup", created.ID, "CREATED", map[string]any{"id": created.ID}))

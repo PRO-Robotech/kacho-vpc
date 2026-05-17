@@ -7,7 +7,7 @@ import (
 )
 
 // AddressPoolFilter — фильтр для списка AddressPool. AddressPool — глобальный
-// infrastructure-ресурс (нет folder_id), фильтрация по (kind, zone_id).
+// infrastructure-ресурс (нет project_id), фильтрация по (kind, zone_id).
 //
 // Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7): parity с
 // NetworkFilter / SubnetFilter / GatewayFilter — единый CQRS-контракт для всех

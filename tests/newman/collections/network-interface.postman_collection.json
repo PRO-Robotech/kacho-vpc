@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "5fff8748-5c35-418e-ad7e-f82f5045547b",
+    "_postman_id": "2beeb659-fd2a-4e48-9464-05753935b3ad",
     "name": "kacho-vpc / newman / network-interface",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,8 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
         ]
       }
     }
@@ -50,7 +50,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-cr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-cr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -149,7 +149,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-cr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-cr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -248,7 +248,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-cr-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-cr-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -360,9 +360,9 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
-                  "pm.test('has id/folderId/subnetId/status', () => {",
+                  "pm.test('has id/projectId/subnetId/status', () => {",
                   "  pm.expect(j.id, 'id').to.be.a('string');",
-                  "  pm.expect(j.folderId, 'folderId').to.be.a('string');",
+                  "  pm.expect(j.projectId, 'projectId').to.be.a('string');",
                   "  pm.expect(j.subnetId, 'subnetId').to.be.a('string');",
                   "  pm.expect(j.status, 'status').to.be.a('string');",
                   "});",
@@ -663,7 +663,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-mac-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-mac-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -762,7 +762,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-mac-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-mac-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -861,7 +861,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-mac-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-mac-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1395,7 +1395,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-dup-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-dup-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1494,7 +1494,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-dup-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-dup-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1593,7 +1593,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dup-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dup-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1692,7 +1692,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dup-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dup-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2088,7 +2088,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{garbageVpcId}}\", \"name\": \"nic-bs-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{garbageVpcId}}\", \"name\": \"nic-bs-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2200,7 +2200,7 @@
       ]
     },
     {
-      "name": "NIC-LIST-OK — List NIC by folderId → 200, массив; созданный NIC присутствует",
+      "name": "NIC-LIST-OK — List NIC by projectId → 200, массив; созданный NIC присутствует",
       "description": "class:CRUD | priority:P1",
       "item": [
         {
@@ -2226,7 +2226,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-lst-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-lst-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2325,7 +2325,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-lst-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-lst-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2424,7 +2424,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-lst-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-lst-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2511,14 +2511,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networkInterfaces?folderId={{_suiteFolderId}}&pageSize=1000",
+              "raw": "{{baseUrl}}/vpc/v1/networkInterfaces?projectId={{_suiteFolderId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networkInterfaces?folderId={{_suiteFolderId}}&pageSize=1000"
+                "networkInterfaces?projectId={{_suiteFolderId}}&pageSize=1000"
               ]
             }
           },
@@ -2862,7 +2862,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-upd-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-upd-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2961,7 +2961,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-upd-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-upd-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3100,7 +3100,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-upd-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-upd-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3597,7 +3597,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-del-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-del-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3696,7 +3696,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-del-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-del-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3795,7 +3795,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-del-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-del-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4231,7 +4231,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-delatt-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-delatt-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4330,7 +4330,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-delatt-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-delatt-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4429,7 +4429,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-delatt-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-delatt-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5105,7 +5105,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-attdet-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-attdet-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5204,7 +5204,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-attdet-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-attdet-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5303,7 +5303,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-attdet-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-attdet-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5936,7 +5936,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-waddr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-waddr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6035,7 +6035,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-waddr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-waddr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6134,7 +6134,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-waddr-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-waddr-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6233,7 +6233,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-waddr-{{runId}}\", \"v4AddressIds\": [\"{{addrId}}\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-waddr-{{runId}}\", \"v4AddressIds\": [\"{{addrId}}\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6752,7 +6752,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-v6addr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-v6addr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6851,7 +6851,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-v6addr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.61.0.0/24\"], \"v6CidrBlocks\": [\"fd00:cafe:f00d::/64\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-v6addr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.61.0.0/24\"], \"v6CidrBlocks\": [\"fd00:cafe:f00d::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6950,7 +6950,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-v6addr-addr-{{runId}}\", \"internalIpv6AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-v6addr-addr-{{runId}}\", \"internalIpv6AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7049,7 +7049,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-v6addr-{{runId}}\", \"v6AddressIds\": [\"{{addrId}}\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-v6addr-{{runId}}\", \"v6AddressIds\": [\"{{addrId}}\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7568,7 +7568,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7667,7 +7667,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-both-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.62.0.0/24\"], \"v6CidrBlocks\": [\"fd00:cafe:b00b::/64\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-both-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.62.0.0/24\"], \"v6CidrBlocks\": [\"fd00:cafe:b00b::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7766,7 +7766,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-v4-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-v4-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7865,7 +7865,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-v6-{{runId}}\", \"internalIpv6AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-both-v6-{{runId}}\", \"internalIpv6AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7964,7 +7964,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-both-{{runId}}\", \"v4AddressIds\": [\"{{v4AddrId}}\"], \"v6AddressIds\": [\"{{v6AddrId}}\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-both-{{runId}}\", \"v4AddressIds\": [\"{{v4AddrId}}\"], \"v6AddressIds\": [\"{{v6AddrId}}\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8571,7 +8571,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-delusedbynic-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-delusedbynic-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8670,7 +8670,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-delusedbynic-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-delusedbynic-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8769,7 +8769,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-dubn-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-dubn-addr-{{runId}}\", \"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8868,7 +8868,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dubn-{{runId}}\", \"v4AddressIds\": [\"{{addrId}}\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-dubn-{{runId}}\", \"v4AddressIds\": [\"{{addrId}}\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9464,7 +9464,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-wsg-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-wsg-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9563,7 +9563,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-wsg-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-wsg-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.60.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9662,7 +9662,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"nic-wsg-sg-{{runId}}\", \"ruleSpecs\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-wsg-sg-{{runId}}\", \"ruleSpecs\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9761,7 +9761,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-wsg-{{runId}}\", \"securityGroupIds\": [\"{{sgId}}\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-wsg-{{runId}}\", \"securityGroupIds\": [\"{{sgId}}\"]}",
               "options": {
                 "raw": {
                   "language": "json"

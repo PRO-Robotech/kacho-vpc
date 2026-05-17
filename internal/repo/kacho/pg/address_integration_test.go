@@ -30,7 +30,7 @@ import (
 func newAddress(folderID, name string, ext bool) *domain.Address {
 	a := &domain.Address{
 		ID:          ids.NewID(ids.PrefixAddress),
-		FolderID:    folderID,
+		ProjectID:    folderID,
 		Name:        domain.RcNameVPC(name),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),
@@ -79,7 +79,7 @@ func TestCQRS_Address_WriterCommit_ReaderSees(t *testing.T) {
 	got, err := rd.Addresses().Get(ctx, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, created.ID, got.ID)
-	assert.Equal(t, "folder-1", got.FolderID)
+	assert.Equal(t, "folder-1", got.ProjectID)
 	assert.Equal(t, "ru-central1-a", got.ExternalIpv4.ZoneID)
 }
 
@@ -142,7 +142,7 @@ func TestCQRS_Address_WriterSeesOwnWrites(t *testing.T) {
 	assert.Equal(t, a.ID, got.ID)
 
 	// List внутри той же TX — Address виден.
-	rows, _, err := w.Addresses().List(ctx, kacho.AddressFilter{FolderID: "folder-self"}, kacho.Pagination{PageSize: 10})
+	rows, _, err := w.Addresses().List(ctx, kacho.AddressFilter{ProjectID: "folder-self"}, kacho.Pagination{PageSize: 10})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, a.ID, rows[0].ID)

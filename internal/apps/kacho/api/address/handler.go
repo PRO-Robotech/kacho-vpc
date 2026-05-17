@@ -48,7 +48,7 @@ type Handler struct {
 
 // NewHandler собирает Handler из готовых use-case'ов. Конструктор намеренно
 // принимает все use-case'ы — composition-root (cmd/vpc/main.go) собирает их
-// с одинаковыми зависимостями (repo / subnetReader / folderClient / opsRepo /
+// с одинаковыми зависимостями (repo / subnetReader / projectClient / opsRepo /
 // pools).
 func NewHandler(
 	create *CreateAddressUseCase,
@@ -85,7 +85,7 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetAddressRequest) (*vpcv1
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 		return nil, err
 	}
 	return addressToPb(a)
@@ -102,7 +102,7 @@ func (h *Handler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRe
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 		return nil, status.Error(codes.NotFound, "Address not found")
 	}
 	return addressToPb(a)
@@ -119,7 +119,7 @@ func (h *Handler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySu
 		if err != nil {
 			return nil, err
 		}
-		if err := handler.AssertFolderOwnership(ctx, sub.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, sub.ProjectID); err != nil {
 			return nil, err
 		}
 	}
@@ -141,13 +141,13 @@ func (h *Handler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySu
 	return resp, nil
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	addrs, nextToken, err := h.list.Execute(ctx, AddressFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 		SubnetID: req.SubnetId,
 	}, Pagination{
@@ -170,11 +170,11 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*v
 
 // Create — AuthZ → proto → CreateInput → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	in := CreateInput{
-		FolderID:           req.FolderId,
+		ProjectID:           req.ProjectId,
 		Name:               req.Name,
 		Description:        req.Description,
 		Labels:             req.Labels,
@@ -232,7 +232,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateAddressRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -262,7 +262,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListAddressOper
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
 	if a, gerr := h.get.Execute(ctx, req.AddressId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {
@@ -292,13 +292,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveAddressRequest) (*ope
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.AddressId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.AddressId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, a.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, a.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.AddressId)

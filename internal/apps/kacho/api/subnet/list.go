@@ -12,7 +12,7 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListSubnetsUseCase — list subnets с пагинацией. folder_id обязателен
+// ListSubnetsUseCase — list subnets с пагинацией. project_id обязателен
 // (R10 #C1 closure).
 //
 // Wave 5 replicate (KAC-94): использует CQRS Reader.
@@ -25,10 +25,10 @@ func NewListSubnetsUseCase(r Repo) *ListSubnetsUseCase {
 	return &ListSubnetsUseCase{repo: r}
 }
 
-// Execute — folder_id required (закрыто cross-folder enumeration #C1).
+// Execute — project_id required (закрыто cross-folder enumeration #C1).
 func (u *ListSubnetsUseCase) Execute(ctx context.Context, f SubnetFilter, p Pagination) ([]*kachorepo.SubnetRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	r, err := u.repo.Reader(ctx)
 	if err != nil {

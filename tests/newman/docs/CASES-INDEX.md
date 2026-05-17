@@ -135,7 +135,7 @@
 | `*-CR-NEG-DUP-NAME` | CONC,NEG | P1 | 2 (net,sub) | Create с duplicate name в folder → async ALREADY_EXISTS (FINDING-005 fixed) |
 | `*-CR-NEG-DUP-NAME-CHECK` | CONC,NEG | P1 | 6 (add,gat,net,rou,sec,sub) | Создать дубль с тем же name → ALREADY_EXISTS (UNIQUE есть для всех ресурсов) |
 | `*-CR-NEG-FOLDER-NF` | CONF,NEG | P0 | 1 (gat) | Create Gateway в несуществующий folder → async NotFound |
-| `*-CR-NEG-FOLDER-NOT-FOUND` | NEG | P0 | 1 (net) | Create с garbage folderId → async NOT_FOUND |
+| `*-CR-NEG-FOLDER-NOT-FOUND` | NEG | P0 | 1 (net) | Create с garbage projectId → async NOT_FOUND |
 | `*-CR-NEG-NETWORK-NF` | NEG | P0 | 2 (pri,rou) | Create в несуществующую network → async NotFound |
 | `*-CR-NEG-NETWORK-NOT-FOUND` | NEG | P0 | 1 (sub) | Create в несуществующей network → async NOT_FOUND |
 | `*-CR-NEG-SUBNET-NF` | NEG,CONF | P1 | 1 (pri) | PE Create с garbage addressSpec.internalIpv4AddressSpec.subnetId → async NotFound 'Subnet ... not found' |
@@ -181,7 +181,7 @@
 | `*-CR-VAL-NAME-SPECIAL-CHARS` | VAL | P1 | 6 (add,gat,net,rou,sec,sub) | Create с спец-символами в name → 400 |
 | `*-CR-VAL-NAME-UPPERCASE` | VAL | P2 | 6 (add,gat,net,rou,sec,sub) | Create с UPPERCASE name → VPC permissive (200) или 400 |
 | `*-CR-VAL-NETWORK-REQUIRED` | NEG,VAL | P0 | 3 (pri,rou,sec) | Create без network_id → InvalidArgument |
-| `*-CR-VAL-REQ-FOLDERID` | VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | Create без required поля 'folderId' → 400 InvalidArgument |
+| `*-CR-VAL-REQ-FOLDERID` | VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | Create без required поля 'projectId' → 400 InvalidArgument |
 | `*-CR-VAL-REQ-NAME` | VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | Create без required поля 'name' → 400 InvalidArgument |
 | `*-CR-VAL-REQ-NETWORKID` | VAL | P0 | 4 (pri,rou,sec,sub) | Create без required поля 'networkId' → 400 InvalidArgument |
 | `*-CR-VAL-REQ-V4CIDRBLOCKS` | VAL | P0 | 1 (sub) | Create без required поля 'v4CidrBlocks' → 400 InvalidArgument |
@@ -279,7 +279,7 @@
 | `*-LST-CRUD-OK` | CRUD | P1 | 7 (add,gat,net,pri,rou,sec,sub) | List subnets в folder → 200 |
 | `NIC-LIST-OK` | CRUD | P1 | 1 (nic) | List NetworkInterfaces в folder → 200; созданный NIC присутствует; в ответе только lean-проекция (нет инфра-полей `vpn_id`/`hv_id`/`sid`/...). Verifies REQ-NIC-06. |
 | `SG-LIST-FILTER-NETWORK-OK` | CRUD,FILTER | P2 | 1 (sec) | List SecurityGroups с фильтром по `network_id` → возвращает только SG этой сети (и не возвращает SG без network / другой сети). Verifies REQ-RES-07. |
-| `*-LST-DOUBLE-FOLDER-PARAM` | VAL | P3 | 5 (add,gat,net,rou,sec) | List с дубликатом folderId param → 200 (last wins) или 400 |
+| `*-LST-DOUBLE-FOLDER-PARAM` | VAL | P3 | 5 (add,gat,net,rou,sec) | List с дубликатом projectId param → 200 (last wins) или 400 |
 | `*-LST-FILTER-CASE-SENSITIVITY` | FILTER | P3 | 1 (gat) | Filter case-sensitivity на name field |
 | `*-LST-FILTER-EMPTY` | CRUD,FILTER | P2 | 1 (gat) | List Gateway с пустым filter expression → 200 (filter optional) |
 | `*-LST-FILTER-GARBAGE` | FILTER,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | List с garbage filter syntax → 400 InvalidArgument |
@@ -299,7 +299,7 @@
 | `*-LST-PERF-BASELINE` | CRUD,PERF | P2 | 7 (add,gat,net,pri,rou,sec,sub) | List response time < 500ms (perf baseline) |
 | `*-LST-ROUNDTRIP` | CRUD,PAGE | P2 | 1 (pri) | Pagination roundtrip PE |
 | `*-LST-SEC-FILTER-SQLI` | NEG,VAL | P0 | 6 (add,gat,net,rou,sec,sub) | Security: SQL injection в filter → не 500 |
-| `*-LST-VAL-FOLDER-REQUIRED` | AUTHZ,VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | List без folderId → InvalidArgument |
+| `*-LST-VAL-FOLDER-REQUIRED` | AUTHZ,VAL | P0 | 7 (add,gat,net,pri,rou,sec,sub) | List без projectId → InvalidArgument |
 
 ### ListBySubnet
 
@@ -365,10 +365,10 @@
 |---|---|---|---|---|
 | `*-MV-AUTHZ-NF-SYNC` | AUTHZ,NEG | P1 | 6 (add,gat,net,rou,sec,sub) | Move несуществующего → sync 404 от AuthZ-Get |
 | `*-MV-CONF-NF-TEXT` | CONF,NEG | P1 | 6 (add,gat,net,rou,sec,sub) | Move несуществующего → verbatim '<Resource> ... not found' text |
-| `*-MV-CRUD-OK` | CRUD | P1 | 6 (add,gat,net,rou,sec,sub) | Move subnet в другой folder → folder_id обновлён |
+| `*-MV-CRUD-OK` | CRUD | P1 | 6 (add,gat,net,rou,sec,sub) | Move subnet в другой folder → project_id обновлён |
 | `*-MV-IDM-SAME-FOLDER` | CRUD,IDM | P2 | 6 (add,gat,net,rou,sec,sub) | Move в текущий folder → ok (idempotent), ресурс остаётся |
 | `*-MV-NEG-DEST-FOLDER-NF` | NEG | P1 | 1 (net) | Move в garbage folder → async NOT_FOUND |
-| `*-MV-VAL-NO-DEST` | VAL | P1 | 6 (add,gat,net,rou,sec,sub) | Move без destinationFolderId → InvalidArgument |
+| `*-MV-VAL-NO-DEST` | VAL | P1 | 6 (add,gat,net,rou,sec,sub) | Move без destinationProjectId → InvalidArgument |
 
 ### Relocate
 
@@ -413,8 +413,8 @@
 | `*-UPD-STATE-IMMUTABLE-ADDRESS-ID` | CONF,STATE,VAL | P1 | 1 (pri) | Update mask='address_id' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-CIDR` | STATE,VAL | P1 | 1 (sub) | Update с mask=v4_cidr_blocks → InvalidArgument (immutable) |
 | `*-UPD-STATE-IMMUTABLE-EXTERNAL-IPV4-ADDRESS-SPEC` | CONF,STATE,VAL | P1 | 1 (add) | Update mask='external_ipv4_address_spec' (immutable) → 400 InvalidArgument verbatim |
-| `*-UPD-STATE-IMMUTABLE-FOLDER` | STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update с mask=folder_id → InvalidArgument (immutable) |
-| `*-UPD-STATE-IMMUTABLE-FOLDER-ID` | CONF,STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update mask='folder_id' (immutable) → 400 InvalidArgument verbatim |
+| `*-UPD-STATE-IMMUTABLE-FOLDER` | STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update с mask=project_id → InvalidArgument (immutable) |
+| `*-UPD-STATE-IMMUTABLE-FOLDER-ID` | CONF,STATE,VAL | P1 | 7 (add,gat,net,pri,rou,sec,sub) | Update mask='project_id' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-INTERNAL-IPV4-ADDRESS-SPEC` | CONF,STATE,VAL | P1 | 1 (add) | Update mask='internal_ipv4_address_spec' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-NETWORK-ID` | CONF,STATE,VAL | P1 | 4 (pri,rou,sec,sub) | Update mask='network_id' (immutable) → 400 InvalidArgument verbatim |
 | `*-UPD-STATE-IMMUTABLE-SERVICE-TYPE` | CONF,STATE,VAL | P1 | 1 (pri) | Update mask='service_type' (immutable) → 400 InvalidArgument verbatim |
@@ -456,7 +456,7 @@
 
 ### NetworkInterface (NIC) — first-class ресурс (эпик KAC-2)
 
-*Публичная проекция NIC — lean: `id`/`folderId`/`subnetId`/`v4AddressIds`/`v6AddressIds`/`securityGroupIds`/`usedBy`/`macAddress`/`status`/`name`/`labels`. Инфра-чувствительные data-plane-поля (`vpnId`/`hvId`/`sid`/`hostIface`/`netns`/`gatewayIp`/`containerId`/`networkId`/`instanceId`/`index`) — только на internal-проекции (`InternalNetworkInterfaceService`), НИКОГДА не на публичной. REST: `/vpc/v1/networkInterfaces`. Кейсы — в `cases/network-interface.py` (app-код `nic`). NIC-кейсы, совпадающие с generic-паттернами по суффиксу, — инстансы (`NIC-CR-CRUD-OK` → `*-CR-CRUD-OK`, `NIC-CR-NEG-DUP-NAME` → `*-CR-NEG-DUP-NAME`, `NIC-GET-*`/`NIC-LST-*`/`NIC-MV-*` и т.п.); ниже — NIC-специфичные паттерны.*
+*Публичная проекция NIC — lean: `id`/`projectId`/`subnetId`/`v4AddressIds`/`v6AddressIds`/`securityGroupIds`/`usedBy`/`macAddress`/`status`/`name`/`labels`. Инфра-чувствительные data-plane-поля (`vpnId`/`hvId`/`sid`/`hostIface`/`netns`/`gatewayIp`/`containerId`/`networkId`/`instanceId`/`index`) — только на internal-проекции (`InternalNetworkInterfaceService`), НИКОГДА не на публичной. REST: `/vpc/v1/networkInterfaces`. Кейсы — в `cases/network-interface.py` (app-код `nic`). NIC-кейсы, совпадающие с generic-паттернами по суффиксу, — инстансы (`NIC-CR-CRUD-OK` → `*-CR-CRUD-OK`, `NIC-CR-NEG-DUP-NAME` → `*-CR-NEG-DUP-NAME`, `NIC-GET-*`/`NIC-LST-*`/`NIC-MV-*` и т.п.); ниже — NIC-специфичные паттерны.*
 
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|

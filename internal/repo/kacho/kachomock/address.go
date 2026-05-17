@@ -36,7 +36,7 @@ func (r *addressReader) Get(_ context.Context, id string) (*kacho.AddressRecord,
 func (r *addressReader) List(_ context.Context, f kacho.AddressFilter, _ kacho.Pagination) ([]*kacho.AddressRecord, string, error) {
 	var result []*kacho.AddressRecord
 	for _, a := range r.snap {
-		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || a.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(a.Name) == f.Name) {
 			cp := *a
 			result = append(result, &cp)
@@ -107,7 +107,7 @@ func (aw *addressWriter) List(_ context.Context, f kacho.AddressFilter, _ kacho.
 		if _, deleted := aw.w.deletedAddrIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || a.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || a.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(a.Name) == f.Name) {
 			cp := *a
 			result = append(result, &cp)
@@ -186,7 +186,7 @@ func (aw *addressWriter) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (aw *addressWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.AddressRecord, error) {
+func (aw *addressWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.AddressRecord, error) {
 	if _, deleted := aw.w.deletedAddrIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -194,7 +194,7 @@ func (aw *addressWriter) SetFolderID(_ context.Context, id, folderID string) (*k
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	a.FolderID = folderID
+	a.ProjectID = folderID
 	cp := *a
 	return &cp, nil
 }

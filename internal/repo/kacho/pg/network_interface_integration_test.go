@@ -41,10 +41,10 @@ func insertSubnetForNIC(t *testing.T, ctx context.Context, dsn string) (folderID
 	subnetID = ids.NewID(ids.PrefixSubnet)
 	// network parent для Subnet FK
 	netID := ids.NewID(ids.PrefixNetwork)
-	_, err = pool.Exec(ctx, `INSERT INTO networks(id, folder_id, name, description, labels) VALUES ($1,$2,$3,$4,'{}'::jsonb)`,
+	_, err = pool.Exec(ctx, `INSERT INTO networks(id, project_id, name, description, labels) VALUES ($1,$2,$3,$4,'{}'::jsonb)`,
 		netID, folderID, "net-nic", "")
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO subnets(id, folder_id, network_id, zone_id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks) VALUES ($1,$2,$3,$4,$5,$6,'{}'::jsonb, ARRAY['10.0.0.0/24']::text[], ARRAY[]::text[])`,
+	_, err = pool.Exec(ctx, `INSERT INTO subnets(id, project_id, network_id, zone_id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks) VALUES ($1,$2,$3,$4,$5,$6,'{}'::jsonb, ARRAY['10.0.0.0/24']::text[], ARRAY[]::text[])`,
 		subnetID, folderID, netID, "ru-central1-a", "sn-nic", "")
 	require.NoError(t, err)
 	return folderID, subnetID
@@ -68,7 +68,7 @@ func TestCQRS_NIC_InsertCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	nic := &domain.NetworkInterface{
 		ID:          ids.NewID(ids.PrefixSubnet),
-		FolderID:    folderID,
+		ProjectID:    folderID,
 		Name:        domain.RcNameVPC("nic-cqrs"),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),
@@ -113,7 +113,7 @@ func TestCQRS_NIC_AttachToInstance_CAS_Race(t *testing.T) {
 		w, err := r.Writer(ctx)
 		require.NoError(t, err)
 		_, err = w.NetworkInterfaces().Insert(ctx, &domain.NetworkInterface{
-			ID: nicID, FolderID: folderID, Name: domain.RcNameVPC("nic-cas"),
+			ID: nicID, ProjectID: folderID, Name: domain.RcNameVPC("nic-cas"),
 			SubnetID: subnetID, MAC: "0e:11:22:33:44:aa", Status: domain.NIStatusAvailable,
 		})
 		require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestCQRS_NIC_AttachToInstance_IdempotentReattach(t *testing.T) {
 		w, err := r.Writer(ctx)
 		require.NoError(t, err)
 		_, err = w.NetworkInterfaces().Insert(ctx, &domain.NetworkInterface{
-			ID: nicID, FolderID: folderID, Name: domain.RcNameVPC("nic-reattach"),
+			ID: nicID, ProjectID: folderID, Name: domain.RcNameVPC("nic-reattach"),
 			SubnetID: subnetID, MAC: "0e:11:22:33:44:bb", Status: domain.NIStatusAvailable,
 		})
 		require.NoError(t, err)

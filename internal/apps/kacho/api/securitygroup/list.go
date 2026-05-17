@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListSecurityGroupsUseCase — список SG с пагинацией. folder_id обязателен
+// ListSecurityGroupsUseCase — список SG с пагинацией. project_id обязателен
 // (закрыто cross-folder enumeration #C1).
 //
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.1): CQRS Reader (read-only TX).
@@ -25,10 +25,10 @@ func NewListSecurityGroupsUseCase(r Repo) *ListSecurityGroupsUseCase {
 	return &ListSecurityGroupsUseCase{repo: r}
 }
 
-// Execute — folder_id required.
+// Execute — project_id required.
 func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

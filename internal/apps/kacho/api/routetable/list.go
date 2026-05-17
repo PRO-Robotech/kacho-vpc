@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListRouteTablesUseCase — list RTs с пагинацией. folder_id обязателен.
+// ListRouteTablesUseCase — list RTs с пагинацией. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): использует CQRS Reader.
 type ListRouteTablesUseCase struct {
@@ -24,10 +24,10 @@ func NewListRouteTablesUseCase(r Repo) *ListRouteTablesUseCase {
 	return &ListRouteTablesUseCase{repo: r}
 }
 
-// Execute — folder_id required.
+// Execute — project_id required.
 func (u *ListRouteTablesUseCase) Execute(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

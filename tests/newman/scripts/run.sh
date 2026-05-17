@@ -10,7 +10,7 @@
 #
 # Per-service коллекции гоняются параллельно (cap --jobs, default 4): каждая
 # коллекция изолирует свои ресурсы по {{runId}}-суффиксам внутри общего
-# existingFolderId, так что параллельный прогон безопасен.
+# existingProjectId, так что параллельный прогон безопасен.
 #
 # Outputs:
 #   out/<service>.json — newman JSON reporter (для агрегации)

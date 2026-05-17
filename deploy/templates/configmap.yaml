@@ -44,11 +44,11 @@ data:
 
     extapi:
       def-dial-duration: 10s
-      resource-manager:
-        endpoint: {{ .Values.resourceManagerAddr | quote }}
+      iam:
+        endpoint: {{ default "kacho-iam.kacho.svc.cluster.local:9090" .Values.iamAddr | quote }}
         tls:
-          enable: {{ default false .Values.extapi.resourceManager.tls.enable }}
-        dns-lb: {{ default false .Values.extapi.resourceManager.dnsLb }}
+          enable: {{ default false .Values.extapi.iam.tls.enable }}
+        dns-lb: {{ default false .Values.extapi.iam.dnsLb }}
       compute:
         endpoint: {{ default "compute.kacho.svc.cluster.local:9090" .Values.extapi.compute.endpoint | quote }}
         tls:
@@ -59,7 +59,7 @@ data:
 
     network:
       default-sg-inline: {{ default true .Values.network.defaultSgInline }}
-      folder-cache:
-        positive-ttl: {{ default "30s" .Values.network.folderCache.positiveTtl | quote }}
-        negative-ttl: {{ default "5s" .Values.network.folderCache.negativeTtl | quote }}
-        max-size: {{ default 10000 .Values.network.folderCache.maxSize }}
+      project-cache:
+        positive-ttl: {{ default "30s" .Values.network.projectCache.positiveTtl | quote }}
+        negative-ttl: {{ default "5s" .Values.network.projectCache.negativeTtl | quote }}
+        max-size: {{ default 10000 .Values.network.projectCache.maxSize }}

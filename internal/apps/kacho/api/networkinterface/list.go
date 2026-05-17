@@ -11,7 +11,7 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListNetworkInterfacesUseCase — list NICs. folder_id обязателен.
+// ListNetworkInterfacesUseCase — list NICs. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94, NIC batch): открывает reader-TX через CQRS-iface.
 type ListNetworkInterfacesUseCase struct {
@@ -23,10 +23,10 @@ func NewListNetworkInterfacesUseCase(r Repo) *ListNetworkInterfacesUseCase {
 	return &ListNetworkInterfacesUseCase{repo: r}
 }
 
-// Execute — folder_id required.
+// Execute — project_id required.
 func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*kachorepo.NetworkInterfaceRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

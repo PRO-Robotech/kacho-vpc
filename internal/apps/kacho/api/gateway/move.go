@@ -17,30 +17,30 @@ import (
 
 // MoveGatewayUseCase — перенос Gateway в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
-// SetFolderID + outbox emit в одной writer-TX.
+// SetProjectID + outbox emit в одной writer-TX.
 //
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.5).
 type MoveGatewayUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveGatewayUseCase создаёт MoveGatewayUseCase.
-func NewMoveGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveGatewayUseCase {
-	return &MoveGatewayUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveGatewayUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *MoveGatewayUseCase {
+	return &MoveGatewayUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
-func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destProjectID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("gateway", ids.PrefixGateway, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
-	if destFolderID == "" {
-		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	if destProjectID == "" {
+		return nil, invalidArg("destination_project_id", "destination_project_id is required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {
@@ -51,7 +51,7 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID strin
 	if gerr != nil {
 		return nil, mapRepoErr(gerr)
 	}
-	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
+	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}
 
@@ -68,12 +68,12 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID strin
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, err := u.folderClient.Exists(ctx, destFolderID)
+		exists, err := u.projectClient.Exists(ctx, destProjectID)
 		if err != nil {
 			return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 		}
 		if !exists {
-			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destProjectID)
 		}
 		w, werr := u.repo.Writer(ctx)
 		if werr != nil {
@@ -81,7 +81,7 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destFolderID strin
 		}
 		defer w.Abort()
 
-		updated, uerr := w.Gateways().SetFolderID(ctx, id, destFolderID)
+		updated, uerr := w.Gateways().SetProjectID(ctx, id, destProjectID)
 		if uerr != nil {
 			return nil, mapRepoErr(uerr)
 		}

@@ -156,28 +156,34 @@ func runServe(cfg config.Config) error {
 
 	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
 	// retries=3 / dialTimeout=10s / keepalive=30s / TLS / опц. dns:///+round_robin (KAC-39).
-	// См. internal/clients/builder.go.
-	rmConn, err := clients.Build(ctx, clients.BuildOptions{
-		Endpoint: cfg.ExtAPI.ResourceManager.Endpoint,
-		TLS:      cfg.ExtAPI.ResourceManager.TLS.Enable,
-		DNSLB:    cfg.ExtAPI.ResourceManager.DNSLB,
+	// KAC-106 (E1): peer switched from kacho-resource-manager to kacho-iam.
+	// Falls back to `extapi.resource-manager` endpoint if `extapi.iam` is empty
+	// (backward-compat with helm-chart in transit).
+	iamPeer := cfg.ExtAPI.IAM
+	if iamPeer.Endpoint == "" {
+		iamPeer = cfg.ExtAPI.ResourceManager
+	}
+	iamConn, err := clients.Build(ctx, clients.BuildOptions{
+		Endpoint: iamPeer.Endpoint,
+		TLS:      iamPeer.TLS.Enable,
+		DNSLB:    iamPeer.DNSLB,
 	})
 	if err != nil {
-		return fmt.Errorf("dial resource-manager: %w", err)
+		return fmt.Errorf("dial iam: %w", err)
 	}
-	defer rmConn.Close()
-	// TTL+LRU кеш (KAC-39): снимает gRPC-hop в RM из hot-path Network.Create
-	// при burst-нагрузке (10k RPS). См. internal/clients/folder_cache.go.
-	rawFolderClient := clients.NewFolderClient(rmConn)
-	folderClient := clients.NewCachedFolderClient(rawFolderClient, clients.FolderCacheConfig{
-		PositiveTTL: cfg.Network.FolderCache.PositiveTTL,
-		NegativeTTL: cfg.Network.FolderCache.NegativeTTL,
-		MaxSize:     cfg.Network.FolderCache.MaxSize,
+	defer iamConn.Close()
+	// TTL+LRU кеш (KAC-39, KAC-106): снимает gRPC-hop в kacho-iam из hot-path
+	// Network.Create при burst-нагрузке (10k RPS). См. internal/clients/project_cache.go.
+	rawProjectClient := clients.NewProjectClient(iamConn)
+	projectClient := clients.NewCachedProjectClient(rawProjectClient, clients.ProjectCacheConfig{
+		PositiveTTL: cfg.Network.ProjectCache.PositiveTTL,
+		NegativeTTL: cfg.Network.ProjectCache.NegativeTTL,
+		MaxSize:     cfg.Network.ProjectCache.MaxSize,
 	})
-	logger.Info("folder existence cache enabled",
-		"positive_ttl", cfg.Network.FolderCache.PositiveTTL,
-		"negative_ttl", cfg.Network.FolderCache.NegativeTTL,
-		"max_size", cfg.Network.FolderCache.MaxSize)
+	logger.Info("project existence cache enabled",
+		"positive_ttl", cfg.Network.ProjectCache.PositiveTTL,
+		"negative_ttl", cfg.Network.ProjectCache.NegativeTTL,
+		"max_size", cfg.Network.ProjectCache.MaxSize)
 
 	// Geography (Region/Zone) — домен kacho-compute (эпик KAC-15): VPC валидирует
 	// zone_id вызовом compute.v1.ZoneService.Get. KAC-97: через clients.Build.
@@ -191,7 +197,7 @@ func runServe(cfg config.Config) error {
 	defer computeConn.Close()
 	geoClient := clients.NewComputeGeographyClient(computeConn)
 
-	svcs := buildServices(pool, slavePool, folderClient, geoClient, opsRepo, cfg, logger)
+	svcs := buildServices(pool, slavePool, projectClient, geoClient, opsRepo, cfg, logger)
 
 	// gRPC servers + tenant-interceptor (scaffold под IAM/AuthZ): сейчас читает
 	// metadata, future — JWT claims; handler'ы делают AssertFolderOwnership.
@@ -303,7 +309,7 @@ func runServe(cfg config.Config) error {
 //
 // slavePool — опц. read-replica pool (skill evgeniy §6 G.4); nil → kachopg.New
 // делает fallback и Reader-TX идут на master.
-func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
@@ -335,7 +341,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// read-port'ы Address/Subnet/Network удовлетворяются adapter'ами поверх
 	// kachoRepo (cqrsadapter.Address / Subnet / Network).
 	addressPoolResolver := addresspoolapp.NewResolverService(
-		kachoRepo, addressAdapter, subnetAdapter, folderClient,
+		kachoRepo, addressAdapter, subnetAdapter, projectClient,
 	)
 	addressPoolHandler := addresspoolapp.NewHandler(
 		addresspoolapp.NewCreateAddressPoolUseCase(kachoRepo, geoClient),
@@ -365,10 +371,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
 	// создаётся inline default SG и Network.default_security_group_id
 	// заполняется атомарно.
-	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, folderClient, opsRepo, cfg.Network.DefaultSGInline)
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
 	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetAdapter, routeTableAdapter, sgAdapter, opsRepo)
-	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, folderClient, opsRepo)
+	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, projectClient, opsRepo)
 	netGetUC := networkapp.NewGetNetworkUseCase(kachoRepo)
 	netListUC := networkapp.NewListNetworksUseCase(kachoRepo)
 	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetAdapter)
@@ -384,10 +390,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// конструктор принимает Repository, каждый use-case открывает Reader/Writer
 	// внутри. KAC-94 A.7 ultra-final: legacy *repo.GatewayRepo удалён.
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo),
 		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
-		gatewayapp.NewMoveGatewayUseCase(kachoRepo, folderClient, opsRepo),
+		gatewayapp.NewMoveGatewayUseCase(kachoRepo, projectClient, opsRepo),
 		gatewayapp.NewGetGatewayUseCase(kachoRepo),
 		gatewayapp.NewListGatewaysUseCase(kachoRepo),
 		gatewayapp.NewListOperationsUseCase(opsRepo),
@@ -397,7 +403,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// NetworkReader/SubnetReader для request-path-precheck — adapter'ы поверх
 	// kachoRepo (cqrsadapter.Network / Subnet).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, folderClient, opsRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, projectClient, opsRepo),
 		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
@@ -408,10 +414,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// RouteTable use-case'ы работают через CQRS-Repository (parity с pilot
 	// Network). routeTableAdapter передаётся Network.Delete для child-check.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo),
 		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
-		routetableapp.NewMoveRouteTableUseCase(kachoRepo, folderClient, opsRepo),
+		routetableapp.NewMoveRouteTableUseCase(kachoRepo, projectClient, opsRepo),
 		routetableapp.NewGetRouteTableUseCase(kachoRepo),
 		routetableapp.NewListRouteTablesUseCase(kachoRepo),
 		routetableapp.NewListOperationsUseCase(opsRepo),
@@ -420,10 +426,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// Subnet use-case'ы работают через CQRS-Repository (kachoRepo). niAdapter
 	// передаётся в Delete для precondition-check «нет привязанных NIC».
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(kachoRepo, folderClient, geoClient, opsRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo),
 		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
 		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niAdapter, opsRepo),
-		subnetapp.NewMoveSubnetUseCase(kachoRepo, folderClient, opsRepo),
+		subnetapp.NewMoveSubnetUseCase(kachoRepo, projectClient, opsRepo),
 		subnetapp.NewGetSubnetUseCase(kachoRepo),
 		subnetapp.NewListSubnetsUseCase(kachoRepo),
 		subnetapp.NewAddCidrBlocksUseCase(kachoRepo, opsRepo),
@@ -442,10 +448,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter —
 	// peer-port для SubnetReader (Get + AddressesBySubnet), удовлетворяется
 	// тем же kachoRepo через cqrsadapter.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, folderClient, opsRepo, addressPoolResolver)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
-	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, folderClient, opsRepo)
+	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, projectClient, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo)
 	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo)
 	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo)
@@ -464,12 +470,12 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
 	// Network.Delete (отдельная TX от Network writer'а).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, folderClient, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
 		sgapp.NewDeleteSecurityGroupUseCase(kachoRepo, opsRepo),
-		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, folderClient, opsRepo),
+		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, projectClient, opsRepo),
 		sgapp.NewGetSecurityGroupUseCase(kachoRepo),
 		sgapp.NewListSecurityGroupsUseCase(kachoRepo),
 		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
@@ -482,7 +488,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, folderClient repo.FolderClient
 	// addressAdapter передаётся в Create/Update/Delete UC — он удовлетворяет
 	// `networkinterface.AddressRepo` port (Get + SetReference + ClearReference).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, folderClient, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo),
 		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),

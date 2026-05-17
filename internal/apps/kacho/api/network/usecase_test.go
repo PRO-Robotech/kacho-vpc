@@ -37,7 +37,7 @@ func makeHandler(t *testing.T,
 	rtr *repomock.RouteTableRepo,
 	sgr *repomock.SecurityGroupRepo,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 	defaultSGInline bool,
 ) *Handler {
 	t.Helper()
@@ -74,7 +74,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	t.Helper()
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, nil, nil, nil, or, fc, false), or, kr
 }
 
@@ -98,7 +98,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListNetworksRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.Networks)
 }
@@ -116,9 +116,9 @@ func TestHandler_Delete_InvalidArg(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false)
 
-	// folder_id required.
+	// project_id required.
 	_, err := uc.Execute(context.Background(), domain.Network{Name: "test"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -126,7 +126,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// invalid name (starts with digit, NameVPC permissive но цифра в начале запрещена).
 	_, err = uc.Execute(context.Background(), domain.Network{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("1bad"),
 	})
 	require.Error(t, err)
@@ -142,10 +142,10 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: false}, or, false)
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: false}, or, false)
 
 	op, err := uc.Execute(context.Background(), domain.Network{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("net1"),
 	})
 	require.NoError(t, err)
@@ -160,10 +160,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false)
 
 	op, err := uc.Execute(context.Background(), domain.Network{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		Name:        domain.RcNameVPC("net1"),
 		Description: domain.RcDescription("desc"),
 	})
@@ -182,10 +182,10 @@ func TestCreateUseCase_OK(t *testing.T) {
 func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, true)
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, true)
 
 	op, err := uc.Execute(context.Background(), domain.Network{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("net-with-sg"),
 	})
 	require.NoError(t, err)
@@ -234,7 +234,7 @@ func TestCreateDefaultSGUseCase_Execute_Composes(t *testing.T) {
 
 	net := domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("net-for-sg"),
 	}
 	created, err := w.Networks().Insert(ctx, &net)
@@ -282,10 +282,10 @@ func TestCreateDefaultSGUseCase_Execute_Composes(t *testing.T) {
 func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkUseCase(kr, &repomock.FolderClient{OK: true}, or, false)
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false)
 
 	op, err := uc.Execute(context.Background(), domain.Network{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("net-no-sg"),
 	})
 	require.NoError(t, err)
@@ -310,7 +310,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveNetworkUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveNetworkUseCase(kachomock.NewRepository(), &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -362,7 +362,7 @@ func TestListRouteTablesUseCase_NetworkNotFound(t *testing.T) {
 func TestHandler_Create_OK(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 	op, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{
-		FolderId: "f1",
+		ProjectId: "f1",
 		Name:     "net1",
 	})
 	require.NoError(t, err)
@@ -376,11 +376,11 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 	// (proto-options contract — защита от регрессии).
 	h, or, _ := minimalHandler(t, true)
 
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "del-resp-test"})
+	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{ProjectId: "f1", Name: "del-resp-test"})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{ProjectId: "f1"})
 	require.Len(t, resp.Networks, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkRequest{NetworkId: resp.Networks[0].Id})
@@ -397,12 +397,12 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 func TestHandler_Update_MaskApplication(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 	// Создаём сеть
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n1"})
+	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{ProjectId: "f1", Name: "n1"})
 	require.NoError(t, err)
 	savedOp := repomock.AwaitOpDone(t, or, createOp.Id)
 	require.NotNil(t, savedOp.Metadata)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{ProjectId: "f1"})
 	require.Len(t, resp.Networks, 1)
 	netID := resp.Networks[0].Id
 
@@ -448,13 +448,13 @@ func TestHandler_Update_Happy(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	sr := repomock.NewSubnetRepo()
 	rtr := repomock.NewRouteTableRepo()
-	h := makeHandler(t, kr, sr, rtr, nil, or, &repomock.FolderClient{OK: true}, false)
+	h := makeHandler(t, kr, sr, rtr, nil, or, &repomock.ProjectClient{OK: true}, false)
 
-	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{FolderId: "f1", Name: "n"})
+	createOp, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{ProjectId: "f1", Name: "n"})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListNetworksRequest{ProjectId: "f1"})
 	require.Len(t, resp.Networks, 1)
 	netID := resp.Networks[0].Id
 
@@ -477,7 +477,7 @@ func TestHandler_Update_Happy(t *testing.T) {
 
 	// Move в другой folder (folder mock возвращает OK)
 	moveOp, err := h.Move(context.Background(), &vpcv1.MoveNetworkRequest{
-		NetworkId: netID, DestinationFolderId: ids.NewID(ids.PrefixFolder),
+		NetworkId: netID, DestinationProjectId: ids.NewID(ids.PrefixFolder),
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, moveOp.Id)

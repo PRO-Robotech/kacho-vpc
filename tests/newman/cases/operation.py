@@ -9,7 +9,7 @@ CASES.append(Case(
     priority="P1",
     steps=[
         Step(name="create-trigger", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "opget-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "opget-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -62,12 +62,12 @@ CASES.append(Case(
     classes=["STATE", "CRUD"], priority="P1",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "oplistdel-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "oplistdel-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "oplistdel-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.249.7.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),

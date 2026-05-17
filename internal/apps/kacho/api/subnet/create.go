@@ -27,7 +27,7 @@ import (
 // Writer-TX и делает Insert(Subnet) + outbox-emit Subnet.CREATED атомарно.
 type CreateSubnetUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	zoneReg      ZoneRegistry
 	opsRepo      operations.Repo
 }
@@ -35,13 +35,13 @@ type CreateSubnetUseCase struct {
 // NewCreateSubnetUseCase создаёт CreateSubnetUseCase.
 func NewCreateSubnetUseCase(
 	r Repo,
-	folderClient FolderClient,
+	projectClient ProjectClient,
 	zoneReg ZoneRegistry,
 	opsRepo operations.Repo,
 ) *CreateSubnetUseCase {
 	return &CreateSubnetUseCase{
 		repo:         r,
-		folderClient: folderClient,
+		projectClient: projectClient,
 		zoneReg:      zoneReg,
 		opsRepo:      opsRepo,
 	}
@@ -57,8 +57,8 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, s.NetworkID); err != nil {
 		return nil, err
 	}
-	if s.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if s.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if s.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
@@ -113,7 +113,7 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 	}
 	name := string(s.Name)
 	if name != "" {
-		existing, _, lerr := rd.Subnets().List(ctx, SubnetFilter{FolderID: s.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.Subnets().List(ctx, SubnetFilter{ProjectID: s.ProjectID, Name: name}, Pagination{})
 		if lerr != nil {
 			_ = rd.Close()
 			return nil, mapRepoErr(lerr)
@@ -123,7 +123,7 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 			return nil, status.Errorf(codes.AlreadyExists, "Subnet with name %s already exists", name)
 		}
 	}
-	if err := u.checkSubnetCIDROverlap(ctx, rd, s.FolderID, s.NetworkID, s.V4CidrBlocks); err != nil {
+	if err := u.checkSubnetCIDROverlap(ctx, rd, s.ProjectID, s.NetworkID, s.V4CidrBlocks); err != nil {
 		_ = rd.Close()
 		return nil, err
 	}
@@ -153,12 +153,12 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 // folder-exists + parent network-exists + Insert (FK ограничения / EXCLUDE для
 // overlap) + outbox-emit Subnet.CREATED — всё в одной writer-TX.
 func (u *CreateSubnetUseCase) doCreate(ctx context.Context, subID string, s domain.Subnet) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, s.FolderID)
+	exists, err := u.projectClient.Exists(ctx, s.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", s.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", s.ProjectID)
 	}
 
 	s.ID = subID
@@ -208,7 +208,7 @@ func (u *CreateSubnetUseCase) checkSubnetCIDROverlap(ctx context.Context, rd Rea
 		}
 		newPrefixes = append(newPrefixes, pr)
 	}
-	existing, _, err := rd.Subnets().List(ctx, SubnetFilter{FolderID: folderID, NetworkID: networkID}, Pagination{})
+	existing, _, err := rd.Subnets().List(ctx, SubnetFilter{ProjectID: folderID, NetworkID: networkID}, Pagination{})
 	if err != nil {
 		return mapRepoErr(err)
 	}

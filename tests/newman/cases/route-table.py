@@ -6,7 +6,7 @@ CASES = []
 def _net_steps(suffix="rt"):
     return [
         Step(name="pre-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": f"rt-{suffix}-net-{{{{runId}}}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": f"rt-{suffix}-net-{{{{runId}}}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -36,7 +36,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("cr"),
         Step(name="create", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-cr-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -58,7 +58,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="create-no-network", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "name": "rt-nn-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "rt-nn-{{runId}}"},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
 ))
@@ -70,7 +70,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                    "name": "rt-nn-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                           "pm.test('mentions network', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('network'));"]),
@@ -100,7 +100,7 @@ CASES.append(Case(
     classes=["CRUD"],
     priority="P1",
     steps=[
-        Step(name="list", method="GET", path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}",
+        Step(name="list", method="GET", path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}",
              test_script=[*assert_status(200),
                           "pm.test('routeTables array', () => pm.expect(pm.response.json().routeTables || []).to.be.an('array'));"]),
     ],
@@ -108,7 +108,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="RT-LST-VAL-FOLDER-REQUIRED",
-    title="List без folderId → InvalidArgument",
+    title="List без projectId → InvalidArgument",
     classes=["VAL", "AUTHZ"],
     priority="P0",
     steps=[
@@ -148,7 +148,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("lop"),
         Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-lop-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -176,13 +176,13 @@ CASES.append(Case(
     steps=[
         *_net_steps("mv"),
         Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-mv-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
         poll_operation_until_done(),
         Step(name="move", method="POST", path="/vpc/v1/routeTables/{{rtId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+             body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
         Step(name="cleanup-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
@@ -199,7 +199,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("upd"),
         Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-upd-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -226,7 +226,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{garbageVpcId}}",
                    "name": "rt-confnf-{{runId}}", "staticRoutes": []},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
@@ -270,7 +270,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="move-nx", method="POST", path="/vpc/v1/routeTables/{{garbageVpcId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                  "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
@@ -285,7 +285,7 @@ CASES.append(Case(
     steps=[
         *_net_steps("delok"),
         Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-delok-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -329,7 +329,7 @@ CASES.extend(filter_syntax_block("RT", "/vpc/v1/routeTables"))
 CASES.append(pagination_roundtrip("RT", "/vpc/v1/routeTables"))
 
 for c in update_happy_per_field("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
     CASES.append(_rt_wrap("RT", "v7", c))
 
 CASES.extend(perf_baseline_block("RT", "/vpc/v1/routeTables"))
@@ -338,29 +338,29 @@ CASES.extend(authz_caller_headers_block("RT", "/vpc/v1/routeTables"))
 
 CASES.append(_rt_wrap("RT", "mvself",
     move_same_folder("RT", "/vpc/v1/routeTables",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
 
 CASES.append(_rt_wrap("RT", "v8m",
     update_happy_multi_field("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
 CASES.append(_rt_wrap("RT", "v8f",
     list_filter_match_block("RT", "/vpc/v1/routeTables",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
 for c in neg_invalid_types_block("RT", "/vpc/v1/routeTables",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
     CASES.append(_rt_wrap("RT", "v8nt", c))
 CASES.extend(http_method_not_allowed_block("RT", "/vpc/v1/routeTables"))
 CASES.extend(malformed_body_block("RT", "/vpc/v1/routeTables"))
 
 CASES.append(_rt_wrap("RT", "v9d",
     alreadyexists_dup_name_for("RT", "/vpc/v1/routeTables",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
 for c in update_mask_partial_block("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
     CASES.append(_rt_wrap("RT", "v9p", c))
 CASES.append(_rt_wrap("RT", "v9pf",
     perf_baseline_get_block("RT", "/vpc/v1/routeTables",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []})))
 CASES.extend(list_total_size_check_block("RT", "/vpc/v1/routeTables"))
 
 # v10: RT-specific static_routes validation
@@ -377,7 +377,7 @@ for case_id, route, expect_ok in [
         priority="P1",
         steps=[
             Step(name="cr-route", method="POST", path="/vpc/v1/routeTables",
-                 body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                 body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                        "name": f"rt-r-{case_id.lower()[-6:]}-{{{{runId}}}}",
                        "staticRoutes": [route]},
                  test_script=[
@@ -398,7 +398,7 @@ CASES.append(Case(
     title="List с pageSize=-1 → 400 или 200",
     classes=["BVA", "VAL"], priority="P2",
     steps=[Step(name="lst-neg", method="GET",
-                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=-1",
+                path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=-1",
                 test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -407,7 +407,7 @@ CASES.append(Case(
     title="List с filter содержащим спец-символы → 400 или 200",
     classes=["FILTER", "VAL"], priority="P3",
     steps=[Step(name="lst-fsc", method="GET",
-                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
                 test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -416,7 +416,7 @@ CASES.append(Case(
     title="List с pageSize=1000 (boundary max) → 200",
     classes=["BVA"], priority="P2",
     steps=[Step(name="lst-max", method="GET",
-                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1000",
+                path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1000",
                 test_script=[*assert_status(200)])],
 ))
 
@@ -425,16 +425,16 @@ CASES.append(Case(
     title="List с pageSize=1001 (over max) → 400",
     classes=["BVA", "VAL"], priority="P1",
     steps=[Step(name="lst-1001", method="GET",
-                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&pageSize=1001",
+                path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}&pageSize=1001",
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
 CASES.append(Case(
     id="RT-LST-DOUBLE-FOLDER-PARAM",
-    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    title="List с дубликатом projectId param → 200 (last wins) или 400",
     classes=["VAL"], priority="P3",
     steps=[Step(name="lst-dup", method="GET",
-                path="/vpc/v1/routeTables?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                path="/vpc/v1/routeTables?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -458,13 +458,13 @@ CASES.append(Case(
     steps=[
         # 1. Network.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "rt-autoassoc-net-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "rt-autoassoc-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         # 2. Subnet (без явного route_table_id).
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-autoassoc-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.247.0.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -476,7 +476,7 @@ CASES.append(Case(
                           "pm.test('subnet.route_table_id empty before RT.Create', () => pm.expect(pm.response.json().routeTableId || '').to.eql(''));"]),
         # 3. RouteTable.
         Step(name="cr-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-autoassoc-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -509,13 +509,13 @@ CASES.append(Case(
 ))
 
 for c in required_fields_matrix("RT", "/vpc/v1/routeTables",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "name": "rt-req-{{runId}}", "staticRoutes": []},
-    ["folderId", "networkId", "name"]):
+    ["projectId", "networkId", "name"]):
     CASES.append(_rt_wrap("RT", "req", c))
 CASES.extend(immutable_fields_matrix("RT", "/vpc/v1/routeTables",
-    ["folder_id", "network_id"]))
+    ["project_id", "network_id"]))
 
 for c in security_injection_block("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
     CASES.append(_rt_wrap("RT", "sec", c))

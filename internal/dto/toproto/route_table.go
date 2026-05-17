@@ -21,7 +21,7 @@ func (routeTable) toPb(rec kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error
 	}
 	p := &vpcv1.RouteTable{
 		Id:          rec.ID,
-		FolderId:    rec.FolderID,
+		ProjectId:    rec.ProjectID,
 		CreatedAt:   ts,
 		Name:        string(rec.Name),
 		Description: string(rec.Description),

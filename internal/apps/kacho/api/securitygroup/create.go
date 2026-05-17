@@ -32,16 +32,16 @@ import (
 type CreateSecurityGroupUseCase struct {
 	repo          Repo
 	networkReader NetworkReader
-	folderClient  FolderClient
+	projectClient  ProjectClient
 	opsRepo       operations.Repo
 }
 
 // NewCreateSecurityGroupUseCase создаёт CreateSecurityGroupUseCase.
-func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, folderClient FolderClient, opsRepo operations.Repo) *CreateSecurityGroupUseCase {
+func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, projectClient ProjectClient, opsRepo operations.Repo) *CreateSecurityGroupUseCase {
 	return &CreateSecurityGroupUseCase{
 		repo:          r,
 		networkReader: networkReader,
-		folderClient:  folderClient,
+		projectClient:  projectClient,
 		opsRepo:       opsRepo,
 	}
 }
@@ -53,8 +53,8 @@ func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, folderCl
 // перепаковывала domain.X без дополнительного контекста. Поле `sg.ID` на входе
 // пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixSecurityGroup)`.
 func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.SecurityGroup) (*operations.Operation, error) {
-	if sg.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if sg.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	// network_id опционален (kacho-proto#8): пустой → folder-level unbound SG.
 	// Если задан — обязан быть well-formed (`enp...`) и существовать.
@@ -103,7 +103,7 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		existing, _, lerr := rd.SecurityGroups().List(ctx, SecurityGroupFilter{FolderID: sg.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.SecurityGroups().List(ctx, SecurityGroupFilter{ProjectID: sg.ProjectID, Name: name}, Pagination{})
 		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
@@ -137,12 +137,12 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 // network-exists повторяются как defensive backstop; затем Insert через CQRS
 // writer-TX + outbox-emit в той же TX (skill evgeniy §6 G.5).
 func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, sg domain.SecurityGroup) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, sg.FolderID)
+	exists, err := u.projectClient.Exists(ctx, sg.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", sg.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", sg.ProjectID)
 	}
 	if sg.NetworkID != "" && u.networkReader != nil {
 		if _, gerr := u.networkReader.Get(ctx, sg.NetworkID); gerr != nil {

@@ -32,7 +32,7 @@ import (
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateGatewayUseCase(kr, fc, or)
@@ -49,7 +49,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	t.Helper()
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, or, fc), or, kr
 }
 
@@ -73,7 +73,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListGatewaysRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.Gateways)
 }
@@ -111,9 +111,9 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
-	// folder_id required.
+	// project_id required.
 	_, err := uc.Execute(context.Background(), domain.Gateway{Name: "gw1", GatewayType: domain.GatewayTypeSharedEgress})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -121,7 +121,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// Bad name (strict NameGateway rejects uppercase).
 	_, err = uc.Execute(context.Background(), domain.Gateway{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		Name:        domain.RcNameVPC("BadCaps"),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	})
@@ -131,7 +131,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// Missing gateway_type.
 	_, err = uc.Execute(context.Background(), domain.Gateway{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     domain.RcNameVPC("gw1"),
 	})
 	require.Error(t, err)
@@ -147,10 +147,10 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: false}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.ProjectClient{OK: false}, or)
 
 	op, err := uc.Execute(context.Background(), domain.Gateway{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	})
@@ -166,10 +166,10 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateGatewayUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateGatewayUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.Gateway{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		Description: domain.RcDescription("desc"),
 		GatewayType: domain.GatewayTypeSharedEgress,
@@ -199,7 +199,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveGatewayUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveGatewayUseCase(kachomock.NewRepository(), &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -229,7 +229,7 @@ func TestListOperationsUseCase_UnknownID_Empty(t *testing.T) {
 func TestHandler_Create_OK(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 	op, err := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
-		FolderId: "f1",
+		ProjectId: "f1",
 		Name:     "gw1",
 		Gateway:  &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
@@ -245,13 +245,13 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
-		FolderId: "f1", Name: "del-resp-test",
+		ProjectId: "f1", Name: "del-resp-test",
 		Gateway: &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{ProjectId: "f1"})
 	require.Len(t, resp.Gateways, 1)
 
 	delOp, err := h.Delete(context.Background(), &vpcv1.DeleteGatewayRequest{GatewayId: resp.Gateways[0].Id})
@@ -269,13 +269,13 @@ func TestHandler_FullFlow(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
-		FolderId: "f1", Name: "gw1",
+		ProjectId: "f1", Name: "gw1",
 		Gateway: &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListGatewaysRequest{ProjectId: "f1"})
 	require.NotEmpty(t, resp.Gateways)
 	gwID := resp.Gateways[0].Id
 
@@ -292,7 +292,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListGatewayOperationsRequest{GatewayId: gwID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveGatewayRequest{GatewayId: gwID, DestinationProjectId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, moveOp.Id)
 
@@ -330,7 +330,7 @@ func TestGatewayToPb_SharedEgress(t *testing.T) {
 	rec := &kacho.GatewayRecord{
 		Gateway: domain.Gateway{
 			ID:          "gw-1",
-			FolderID:    "f1",
+			ProjectID:    "f1",
 			Name:        domain.RcNameVPC("gw1"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),

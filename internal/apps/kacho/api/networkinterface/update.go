@@ -22,7 +22,7 @@ import (
 // `domain.NetworkInterface` как «несущий» носитель данных (skill evgeniy §2 B.3 —
 // не плодить параллельные XxxReq, дублирующие domain). Только потенциально
 // меняемые поля имеют значение (Name/Description/Labels/SecurityGroupIDs/
-// V4AddressIDs/V6AddressIDs); folder_id/subnet_id/mac — immutable.
+// V4AddressIDs/V6AddressIDs); project_id/subnet_id/mac — immutable.
 type UpdateInput struct {
 	NetworkInterfaceID string
 	NetworkInterface   domain.NetworkInterface

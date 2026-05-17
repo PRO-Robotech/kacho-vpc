@@ -27,10 +27,10 @@ type tenantCtxKey struct{}
 // TenantCtx — caller identity. Сейчас populated из gRPC metadata
 // (`x-kacho-folder-id`, `x-kacho-actor`); future — из validated IAM token.
 type TenantCtx struct {
-	// FolderIDs — folders которые caller'у разрешено читать/писать.
+	// ProjectIDs — folders которые caller'у разрешено читать/писать.
 	// Empty = full access (admin / cluster-scoped). Этот семантика
 	// нужна для backward-compat когда AuthN не включён.
-	FolderIDs map[string]struct{}
+	ProjectIDs map[string]struct{}
 	// Actor — для audit log (admin@kacho, или sub-claim из JWT).
 	Actor string
 	// Admin — true если caller имеет cluster-wide read/write.
@@ -40,40 +40,40 @@ type TenantCtx struct {
 
 // HasFolderAccess — может ли caller трогать ресурс из folder'а.
 //
-// Empty FolderIDs БЕЗ admin-claim'а в production-mode — это **anonymous**:
+// Empty ProjectIDs БЕЗ admin-claim'а в production-mode — это **anonymous**:
 // в этом случае возврат false (production-mode interceptor отфильтрует
 // caller'а раньше). Backward-compat (dev-mode) даёт `true` чтобы
 // существующие тесты/CI без AuthN продолжали работать.
 //
 // Эта функция сама не различает dev/production — она возвращает true
-// для (Admin || empty FolderIDs); production-mode guard в interceptor
+// для (Admin || empty ProjectIDs); production-mode guard в interceptor
 // делает fail-closed reject до того, как handler вызовет HasFolderAccess.
 func (t TenantCtx) HasFolderAccess(folderID string) bool {
-	if t.Admin || len(t.FolderIDs) == 0 {
+	if t.Admin || len(t.ProjectIDs) == 0 {
 		return true
 	}
-	_, ok := t.FolderIDs[folderID]
+	_, ok := t.ProjectIDs[folderID]
 	return ok
 }
 
 // IsAnonymous — true если caller не предъявил identity, влияющую на AuthZ
-// решение: ни Admin-claim, ни FolderIDs.
+// решение: ни Admin-claim, ни ProjectIDs.
 //
 // Actor сам по себе **не** делает caller'а authorized — это audit-only
 // поле. Раньше IsAnonymous требовал Actor=="" — это создавало bypass:
 // caller отправляет `x-kacho-actor: anything`, без folder/admin → не
 // anonymous → production-mode guard пропускает → HasFolderAccess
-// (empty FolderIDs) returns true → cross-tenant полный доступ
+// (empty ProjectIDs) returns true → cross-tenant полный доступ
 // (round 9 critical bypass).
 //
 // Сейчас: anonymous = "нет authorization claims" вообще; Actor —
 // orthogonal audit-trail.
 func (t TenantCtx) IsAnonymous() bool {
-	return !t.Admin && len(t.FolderIDs) == 0
+	return !t.Admin && len(t.ProjectIDs) == 0
 }
 
 // TenantFromCtx извлекает TenantCtx из context. Если interceptor не
-// сработал — возвращает empty TenantCtx с FolderIDs=nil → backward-compat
+// сработал — возвращает empty TenantCtx с ProjectIDs=nil → backward-compat
 // "full access" (anonymous mode).
 func TenantFromCtx(ctx context.Context) TenantCtx {
 	if v := ctx.Value(tenantCtxKey{}); v != nil {
@@ -95,7 +95,7 @@ var ErrCrossTenant = errors.New("permission denied")
 //
 //	resource, err := s.repo.Get(ctx, id)
 //	if err != nil { return nil, mapRepoErr(err) }
-//	if err := AssertFolderOwnership(ctx, resource.FolderID); err != nil {
+//	if err := AssertFolderOwnership(ctx, resource.ProjectID); err != nil {
 //	    return nil, err
 //	}
 //	return toProto(resource), nil
@@ -211,10 +211,10 @@ func tenantFromMetadata(ctx context.Context) TenantCtx {
 		t.Admin = true
 	}
 	if folders := md.Get("x-kacho-folder-id"); len(folders) > 0 {
-		t.FolderIDs = make(map[string]struct{}, len(folders))
+		t.ProjectIDs = make(map[string]struct{}, len(folders))
 		for _, f := range folders {
 			if f != "" {
-				t.FolderIDs[f] = struct{}{}
+				t.ProjectIDs[f] = struct{}{}
 			}
 		}
 	}

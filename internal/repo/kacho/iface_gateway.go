@@ -13,7 +13,7 @@ import (
 // В `internal/repo/iface.go` остаётся тонкий type-alias
 // `GatewayFilter = kacho.GatewayFilter`.
 type GatewayFilter struct {
-	FolderID string
+	ProjectID string
 	Name     string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`). Парсится
 	// в repo с whitelist allowedFields=["name"].
@@ -40,6 +40,6 @@ type GatewayWriterIface interface {
 	Insert(ctx context.Context, g *domain.Gateway) (*GatewayRecord, error)
 	Update(ctx context.Context, g *domain.Gateway) (*GatewayRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у Gateway (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*GatewayRecord, error)
+	// SetProjectID меняет project_id у Gateway (для :move).
+	SetProjectID(ctx context.Context, id, folderID string) (*GatewayRecord, error)
 }

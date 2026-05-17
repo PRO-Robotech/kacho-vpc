@@ -13,7 +13,7 @@ import (
 // import-cycle `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался
 // тонкий type-alias `PrivateEndpointFilter = kacho.PrivateEndpointFilter`.
 type PrivateEndpointFilter struct {
-	FolderID string
+	ProjectID string
 	Name     string
 	Filter   string
 }
@@ -41,8 +41,8 @@ type PrivateEndpointWriterIface interface {
 	Insert(ctx context.Context, pe *domain.PrivateEndpoint) (*PrivateEndpointRecord, error)
 	Update(ctx context.Context, pe *domain.PrivateEndpoint) (*PrivateEndpointRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у PrivateEndpoint (parity с другими ресурсами;
+	// SetProjectID меняет project_id у PrivateEndpoint (parity с другими ресурсами;
 	// PE не имеет Move RPC в YC verbatim API, но writer-iface поддерживает метод
 	// на будущее / для admin-tooling).
-	SetFolderID(ctx context.Context, id, folderID string) (*PrivateEndpointRecord, error)
+	SetProjectID(ctx context.Context, id, folderID string) (*PrivateEndpointRecord, error)
 }

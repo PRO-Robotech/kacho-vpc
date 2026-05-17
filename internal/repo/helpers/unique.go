@@ -28,7 +28,7 @@ func IsUniqueViolation(err error) bool {
 const NICMacUniqueConstraint = "network_interfaces_mac_address_key"
 
 // IsNICMacCollision — true если err — это нарушение UNIQUE на
-// network_interfaces.mac_address (а не на (folder_id, name) или другом
+// network_interfaces.mac_address (а не на (project_id, name) или другом
 // constraint таблицы). Используется в NetworkInterfaceRepo.Insert чтобы
 // различить retry-able MAC-collision от настоящего AlreadyExists по имени.
 func IsNICMacCollision(err error) bool {

@@ -21,7 +21,7 @@ import (
 // См. https://yandex.cloud/ru/docs/vpc/api-ref/PrivateEndpoint/.
 type PrivateEndpoint struct {
 	ID          string
-	FolderID    string
+	ProjectID    string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels
@@ -56,7 +56,7 @@ func (p PrivateEndpoint) Validate() error {
 // произвольной структурой. skill evgeniy §4 D.10.
 func (p PrivateEndpoint) Equal(other PrivateEndpoint) bool {
 	return p.ID == other.ID &&
-		p.FolderID == other.FolderID &&
+		p.ProjectID == other.ProjectID &&
 		p.Name == other.Name &&
 		p.Description == other.Description &&
 		LabelsEqual(p.Labels, other.Labels) &&

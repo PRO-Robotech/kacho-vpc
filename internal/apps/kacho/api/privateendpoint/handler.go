@@ -62,23 +62,23 @@ func (h *Handler) Get(ctx context.Context, req *pepb.GetPrivateEndpointRequest) 
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, got.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, got.ProjectID); err != nil {
 		return nil, err
 	}
 	return privateEndpointToPb(got)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *pepb.ListPrivateEndpointsRequest) (*pepb.ListPrivateEndpointsResponse, error) {
 	folderID := ""
-	if c, ok := req.Container.(*pepb.ListPrivateEndpointsRequest_FolderId); ok {
-		folderID = c.FolderId
+	if c, ok := req.Container.(*pepb.ListPrivateEndpointsRequest_ProjectId); ok {
+		folderID = c.ProjectId
 	}
 	if err := handler.AssertFolderOwnership(ctx, folderID); err != nil {
 		return nil, err
 	}
 	endpoints, nextToken, err := h.list.Execute(ctx, PrivateEndpointFilter{
-		FolderID: folderID,
+		ProjectID: folderID,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -100,11 +100,11 @@ func (h *Handler) List(ctx context.Context, req *pepb.ListPrivateEndpointsReques
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *pepb.CreatePrivateEndpointRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	p := domain.PrivateEndpoint{
-		FolderID:    req.FolderId,
+		ProjectID:    req.ProjectId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),
@@ -144,7 +144,7 @@ func (h *Handler) Update(ctx context.Context, req *pepb.UpdatePrivateEndpointReq
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, got.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, got.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -181,7 +181,7 @@ func (h *Handler) Delete(ctx context.Context, req *pepb.DeletePrivateEndpointReq
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, got.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, got.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.PrivateEndpointId)
@@ -197,7 +197,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *pepb.ListPrivateEndpo
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
 	if got, gerr := h.get.Execute(ctx, req.PrivateEndpointId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, got.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, got.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {

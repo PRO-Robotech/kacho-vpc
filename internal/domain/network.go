@@ -9,12 +9,12 @@ import "go.uber.org/multierr"
 // (DEFAULT now()) и живёт в repo-сущности (см. internal/repo/network_repo.go,
 // type repoNetwork) согласно skill evgeniy §4 D.1 / §7 H.1.
 //
-// `ID` / `FolderID` / `DefaultSecurityGroupID` — остаются голым `string`, это
+// `ID` / `ProjectID` / `DefaultSecurityGroupID` — остаются голым `string`, это
 // внешние reference-id (newtype добавит шум без выгоды; их валидация — на уровне
 // `corevalidate.ResourceID` в service-слое перед запросом к репо).
 type Network struct {
 	ID                     string
-	FolderID               string
+	ProjectID               string
 	Name                   RcNameVPC
 	Description            RcDescription
 	Labels                 RcLabels
@@ -42,7 +42,7 @@ func (n Network) Validate() error {
 // в Update-flow и для testing-equality в use-case тестах. skill evgeniy §4 D.10.
 func (n Network) Equal(other Network) bool {
 	return n.ID == other.ID &&
-		n.FolderID == other.FolderID &&
+		n.ProjectID == other.ProjectID &&
 		n.Name == other.Name &&
 		n.Description == other.Description &&
 		LabelsEqual(n.Labels, other.Labels) &&

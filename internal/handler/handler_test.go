@@ -33,7 +33,7 @@ func TestNetworkToProto_Fields(t *testing.T) {
 	rec := kachorepo.NetworkRecord{
 		Network: domain.Network{
 			ID:          "net-123",
-			FolderID:    "folder-1",
+			ProjectID:    "folder-1",
 			Name:        domain.RcNameVPC("my-net"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
@@ -43,7 +43,7 @@ func TestNetworkToProto_Fields(t *testing.T) {
 	require.NoError(t, dto.Transfer(dto.FromTo(rec, &p)))
 	require.NotNil(t, p)
 	assert.Equal(t, "net-123", p.Id)
-	assert.Equal(t, "folder-1", p.FolderId)
+	assert.Equal(t, "folder-1", p.ProjectId)
 	assert.Equal(t, "my-net", p.Name)
 	assert.Equal(t, "desc", p.Description)
 	assert.Equal(t, "test", p.Labels["env"])

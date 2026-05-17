@@ -53,7 +53,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	// 1. Корректное имя проходит.
 	good := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-check",
+		ProjectID: "folder-check",
 		Name:     domain.RcNameVPC("good-name"),
 	}
 	require.NoError(t, insertNet(t, good))
@@ -61,7 +61,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	// 2. Имя начинающееся с цифры — отклоняется DB-CHECK regex.
 	bad := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-check",
+		ProjectID: "folder-check",
 		Name:     domain.RcNameVPC("1bad"),
 	}
 	err = insertNet(t, bad)
@@ -76,7 +76,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	}
 	tooLong := &domain.Network{
 		ID:          ids.NewID(ids.PrefixNetwork),
-		FolderID:    "folder-check",
+		ProjectID:    "folder-check",
 		Name:        domain.RcNameVPC("long-desc"),
 		Description: domain.RcDescription(longDesc),
 	}
@@ -88,7 +88,7 @@ func TestIntegration_NetworkRepo_CheckConstraints(t *testing.T) {
 	// 4. Empty name — OK (verbatim YC permissive allows empty).
 	empty := &domain.Network{
 		ID:       ids.NewID(ids.PrefixNetwork),
-		FolderID: "folder-check",
+		ProjectID: "folder-check",
 		Name:     domain.RcNameVPC(""),
 	}
 	require.NoError(t, insertNet(t, empty), "empty name разрешён permissive YC regex")
