@@ -1,43 +1,32 @@
-// KAC-71: TDD red-phase integration tests для split AddressPool.cidr_blocks
-// → v4_cidr_blocks + v6_cidr_blocks.
+// KAC-71 / chore/squash-migrations: integration-тесты для split-shape AddressPool
+// (v4_cidr_blocks + v6_cidr_blocks). Step-tests миграции 0022 (C1/C2/C3/C5/C6)
+// были удалены вместе со squash'ом 0001..0034 → 0001 — миграция как отдельный
+// шаг больше не существует, её эффект включён в baseline `0001_initial.sql`.
 //
-// Acceptance: docs/specs/sub-phase-1.x-addresspool-split-cidr-family-acceptance.md
-//
-// Покрытие:
-//   - Group C (REQ-MIG-01..06): миграция 0022 — backfill mixed CIDR, idempotent,
-//     binding/freelist/cursor tables не тронуты, defensive RAISE EXCEPTION на
-//     pool с empty cidr_blocks.
-//   - Group H (REQ-IPL-INVARIANT-01..03): UNIQUE constraints
-//     addresses_external_pool_ip_uniq / addresses_external_v6_pool_ip_uniq /
-//     address_pools_zone_kind_default_uniq остаются работоспособны после split.
-//
-// Все тесты — failing на текущей реализации (domain.AddressPool ещё не имеет
-// V4CIDRBlocks/V6CIDRBlocks полей; repo.AddressPoolRepo.Insert по-прежнему
-// пишет в колонку `cidr_blocks` которой нет после миграции 0022). После
-// rpc-implementer KAC-74 — должны позеленеть.
+// Оставлены тесты, проверяющие финальный state (после squash):
+//   - Group C4 — UNIQUE constraints (`addresses_external_pool_ip_uniq`,
+//     `address_pools_zone_kind_default_uniq`) — финальные DB-инварианты, не зависят
+//     от пути миграции.
+//   - Group H (REQ-IPL-INVARIANT-01..03) — UNIQUE invariants под concurrency
+//     поверх split-shape.
 package repo_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/migrations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
@@ -54,229 +43,15 @@ func splitWithTx(t *testing.T, ctx context.Context, r kacho.Repository, fn func(
 	return w.Commit()
 }
 
-// setupTestDBWithMigrationsUpto — поднимает testcontainer Postgres + применяет
-// миграции до указанного version (inclusive). Используется в C-тестах:
-// сначала applied до 0021, затем insert pre-existing row, затем 0022.
-// version=0 — без миграций (только пустая schema).
-func setupTestDBWithMigrationsUpto(t testing.TB, target int64) string {
-	t.Helper()
-	ctx := context.Background()
-
-	pgc, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("kacho_vpc_test"),
-		postgres.WithUsername("vpc"),
-		postgres.WithPassword("vpc"),
-		postgres.BasicWaitStrategies(),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = pgc.Terminate(ctx) })
-
-	dsn, err := pgc.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	goose.SetBaseFS(migrations.FS)
-	require.NoError(t, goose.SetDialect("postgres"))
-	require.NoError(t, goose.UpTo(db, ".", target))
-
-	// KAC-94 (миграция 0034): search_path задаётся даже если target<34 — тогда
-	// схема `kacho_vpc` ещё не существует, Postgres молча пропустит её в
-	// search_path и упадёт на `public` (стандартное поведение). После
-	// applyMigrationUp прыжка >=34 — search_path находит реальную схему.
-	return appendSearchPathOptions(dsn)
-}
-
-// applyMigration — применяет следующую миграцию (один шаг). Возвращает ошибку
-// goose (включая SQLSTATE P0001 от RAISE EXCEPTION) — используется в C6 для
-// проверки fail-closed поведения.
-func applyMigrationUp(t testing.TB, dsn string) error {
-	t.Helper()
-	db, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	defer db.Close()
-	goose.SetBaseFS(migrations.FS)
-	require.NoError(t, goose.SetDialect("postgres"))
-	return goose.UpByOne(db, ".")
-}
-
-// gooseCurrentVersion — текущая applied версия. Используется для проверки
-// rollback в C6.
-func gooseCurrentVersion(t testing.TB, dsn string) int64 {
-	t.Helper()
-	db, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	defer db.Close()
-	goose.SetBaseFS(migrations.FS)
-	require.NoError(t, goose.SetDialect("postgres"))
-	v, err := goose.GetDBVersion(db)
-	require.NoError(t, err)
-	return v
-}
-
-// --------------------------------------------------------------------------
-// Group C — миграция 0022 (REQ-MIG-01..06)
-// --------------------------------------------------------------------------
-
-// C1: Backfill из mixed `cidr_blocks` сохраняет данные по family.
-//
-// Given: applied до 0021 (включительно), в address_pools 3 row с разными
-// семействами CIDR.
-// When: apply 0022.
-// Then: v4_cidr_blocks / v6_cidr_blocks правильно заполнены, cidr_blocks
-// колонки нет.
-func TestMigration0022_C1_BackfillMixedCidrBlocks(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	ctx := context.Background()
-	dsn := setupTestDBWithMigrationsUpto(t, 21)
-
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
-
-	// Pre-existing rows: insert напрямую через SQL (до миграции 0022 колонка
-	// cidr_blocks ещё существует). NB: zone_id оставляем NULL — после 0004
-	// FK на zones нет, любая строка-zone_id допустима.
-	type seedPool struct {
-		id    string
-		name  string
-		cidrs []string
-	}
-	seeds := []seedPool{
-		{ids.NewID("apl"), "pool-v4-mixed", []string{"203.0.113.0/24", "198.51.100.0/24"}},
-		{ids.NewID("apl"), "pool-v6-only", []string{"2001:db8::/64"}},
-		{ids.NewID("apl"), "pool-dual-stack", []string{"172.16.0.0/16", "fd12:3456:789a::/48"}},
-	}
-	for _, s := range seeds {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO address_pools (id, name, cidr_blocks, kind)
-			VALUES ($1, $2, $3::text[], 1)
-		`, s.id, s.name, s.cidrs)
-		require.NoError(t, err, "seed pool %s", s.name)
-	}
-
-	// Apply 0022.
-	require.NoError(t, applyMigrationUp(t, dsn), "0022 must apply successfully")
-
-	// Then: cidr_blocks column dropped.
-	var has bool
-	err = pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema = 'public'
-		   AND table_name   = 'address_pools'
-		   AND column_name  = 'cidr_blocks')
-	`).Scan(&has)
-	require.NoError(t, err)
-	assert.False(t, has, "cidr_blocks column must be dropped after 0022")
-
-	// Then: per-pool backfill split correctly.
-	type backfilled struct {
-		v4 []string
-		v6 []string
-	}
-	want := map[string]backfilled{
-		"pool-v4-mixed":   {[]string{"203.0.113.0/24", "198.51.100.0/24"}, nil},
-		"pool-v6-only":    {nil, []string{"2001:db8::/64"}},
-		"pool-dual-stack": {[]string{"172.16.0.0/16"}, []string{"fd12:3456:789a::/48"}},
-	}
-	for _, s := range seeds {
-		var got4, got6 []string
-		err := pool.QueryRow(ctx, `
-			SELECT v4_cidr_blocks, v6_cidr_blocks FROM address_pools WHERE id = $1
-		`, s.id).Scan(&got4, &got6)
-		require.NoError(t, err, "select split for %s", s.name)
-		exp := want[s.name]
-		assert.ElementsMatch(t, exp.v4, got4, "v4_cidr_blocks for %s", s.name)
-		assert.ElementsMatch(t, exp.v6, got6, "v6_cidr_blocks for %s", s.name)
-	}
-}
-
-// C2: Backfill идемпотентен на пустой БД.
-func TestMigration0022_C2_EmptyDBIdempotent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	ctx := context.Background()
-	dsn := setupTestDBWithMigrationsUpto(t, 21)
-
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
-
-	// Address_pools пуст. Apply 0022.
-	require.NoError(t, applyMigrationUp(t, dsn))
-
-	// Then: новые колонки добавлены, старая удалена.
-	var has4, has6, hasOld bool
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='v4_cidr_blocks')
-	`).Scan(&has4))
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='v6_cidr_blocks')
-	`).Scan(&has6))
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='cidr_blocks')
-	`).Scan(&hasOld))
-	assert.True(t, has4, "v4_cidr_blocks must be added")
-	assert.True(t, has6, "v6_cidr_blocks must be added")
-	assert.False(t, hasOld, "cidr_blocks must be dropped")
-}
-
-// C3: Single-family pool (v4-only или v6-only) — backfill корректен;
-// другое поле пустое.
-func TestMigration0022_C3_SingleFamilyBackfill(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	ctx := context.Background()
-	dsn := setupTestDBWithMigrationsUpto(t, 21)
-
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
-
-	v4ID := ids.NewID("apl")
-	v6ID := ids.NewID("apl")
-	_, err = pool.Exec(ctx, `INSERT INTO address_pools (id, name, cidr_blocks, kind)
-		VALUES ($1, 'v4-only', ARRAY['10.0.0.0/24','10.1.0.0/24']::text[], 1)`, v4ID)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO address_pools (id, name, cidr_blocks, kind)
-		VALUES ($1, 'v6-only', ARRAY['2001:db8:a::/64','2001:db8:b::/64']::text[], 1)`, v6ID)
-	require.NoError(t, err)
-
-	require.NoError(t, applyMigrationUp(t, dsn))
-
-	var v4Got4, v4Got6, v6Got4, v6Got6 []string
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT v4_cidr_blocks, v6_cidr_blocks FROM address_pools WHERE id=$1`, v4ID).
-		Scan(&v4Got4, &v4Got6))
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT v4_cidr_blocks, v6_cidr_blocks FROM address_pools WHERE id=$1`, v6ID).
-		Scan(&v6Got4, &v6Got6))
-
-	assert.ElementsMatch(t, []string{"10.0.0.0/24", "10.1.0.0/24"}, v4Got4)
-	assert.Empty(t, v4Got6, "v6 side must be empty for v4-only pool")
-	assert.Empty(t, v6Got4, "v4 side must be empty for v6-only pool")
-	assert.ElementsMatch(t, []string{"2001:db8:a::/64", "2001:db8:b::/64"}, v6Got6)
-}
-
-// C4: Existing UNIQUE constraints (`addresses_external_pool_ip_uniq`,
+// C4: existing UNIQUE constraints (`addresses_external_pool_ip_uniq`,
 // partial UNIQUE `address_pools_zone_kind_default_uniq` WHERE is_default)
-// после миграции остаются работоспособны.
+// работают на split-shape baseline.
 func TestMigration0022_C4_UniqueConstraintsIntact(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 	ctx := context.Background()
-	dsn := setupTestDB(t) // applies ALL migrations including 0022
+	dsn := setupTestDB(t) // applies the squashed baseline
 
 	pool, err := coredb.NewPool(ctx, dsn)
 	require.NoError(t, err)
@@ -322,130 +97,6 @@ func TestMigration0022_C4_UniqueConstraintsIntact(t *testing.T) {
 	require.Error(t, err, "duplicate (pool_id, ip) must violate addresses_external_pool_ip_uniq")
 	require.True(t, errors.As(err, &pgErr))
 	assert.Equal(t, "23505", pgErr.Code)
-}
-
-// C5: Re-apply миграции (manual goose down + up) — идемпотентность.
-//
-// Применяем все миграции -> down 0022 -> up 0022 -> финальное состояние
-// эквивалентно первому apply (idempotent через ADD/DROP COLUMN IF [NOT] EXISTS
-// + guarded backfill).
-func TestMigration0022_C5_GooseDownUpIdempotent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	ctx := context.Background()
-	dsn := setupTestDB(t) // all migrations applied
-
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
-
-	// Seed: insert pool через split-shape (после 0022).
-	poolID := ids.NewID("apl")
-	_, err = pool.Exec(ctx, `
-		INSERT INTO address_pools (id, name, v4_cidr_blocks, v6_cidr_blocks, kind)
-		VALUES ($1, 'roundtrip', ARRAY['10.0.0.0/24']::text[], ARRAY['2001:db8::/64']::text[], 1)
-	`, poolID)
-	require.NoError(t, err)
-
-	// goose down (rollback 0022). DownTo(21) — потому что в репо могут быть
-	// миграции выше 22 (например, 0023 post-kube-ovn drop vpn_id, KAC-79/KAC-36):
-	// в этом случае single-step goose.Down откатит только 0023, не 0022.
-	db, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	defer db.Close()
-	goose.SetBaseFS(migrations.FS)
-	require.NoError(t, goose.SetDialect("postgres"))
-	require.NoError(t, goose.DownTo(db, ".", 21))
-
-	// После down — cidr_blocks снова есть, v4_/v6_ удалены, данные слиты.
-	var hasOld bool
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='cidr_blocks')
-	`).Scan(&hasOld))
-	assert.True(t, hasOld, "down must restore cidr_blocks column")
-
-	var merged []string
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT cidr_blocks FROM address_pools WHERE id=$1`, poolID).Scan(&merged))
-	assert.ElementsMatch(t, []string{"10.0.0.0/24", "2001:db8::/64"}, merged,
-		"down rollback must merge v4+v6 back into cidr_blocks")
-
-	// goose up — 0022 снова применяется, split восстанавливается.
-	require.NoError(t, goose.Up(db, "."))
-
-	var got4, got6 []string
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT v4_cidr_blocks, v6_cidr_blocks FROM address_pools WHERE id=$1`, poolID).
-		Scan(&got4, &got6))
-	assert.ElementsMatch(t, []string{"10.0.0.0/24"}, got4)
-	assert.ElementsMatch(t, []string{"2001:db8::/64"}, got6)
-}
-
-// C6 (defensive): INSERT row с cidr_blocks = ARRAY[]::text[] → 0022 RAISES
-// EXCEPTION SQLSTATE P0001 → миграция падает → goose_db_version=21 (rollback).
-func TestMigration0022_C6_DefensiveEmptyCidrBlocksRaisesException(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	ctx := context.Background()
-	dsn := setupTestDBWithMigrationsUpto(t, 21)
-
-	pool, err := coredb.NewPool(ctx, dsn)
-	require.NoError(t, err)
-	defer pool.Close()
-
-	// Pre-existing row с empty cidr_blocks (теоретически невозможно через
-	// service-слой; пробрасываем напрямую как pre-fix bug / data import).
-	badID := ids.NewID("apl")
-	_, err = pool.Exec(ctx, `
-		INSERT INTO address_pools (id, name, cidr_blocks, kind)
-		VALUES ($1, 'bad-empty', ARRAY[]::text[], 1)
-	`, badID)
-	require.NoError(t, err, "seed empty-cidr pool")
-
-	// Apply 0022 — должно падать.
-	upErr := applyMigrationUp(t, dsn)
-	require.Error(t, upErr, "0022 must fail on pre-existing empty-cidr pool")
-	// SQLSTATE P0001 (RAISE EXCEPTION).
-	var pgErr *pgconn.PgError
-	if errors.As(upErr, &pgErr) {
-		assert.Equal(t, "P0001", pgErr.Code,
-			"expected raise_exception SQLSTATE P0001")
-		assert.Contains(t, pgErr.Message, "empty cidr_blocks",
-			"error message must explain the cause")
-		assert.Contains(t, pgErr.Message, badID,
-			"error message must mention offending pool id")
-	} else {
-		// goose может обернуть pg error; в этом случае хотя бы текст должен
-		// содержать упоминание.
-		assert.Contains(t, strings.ToLower(upErr.Error()), "empty cidr",
-			"wrapped error must mention empty cidr_blocks (got: %v)", upErr)
-	}
-
-	// goose_db_version остался на 21 (rollback).
-	v := gooseCurrentVersion(t, dsn)
-	assert.Equal(t, int64(21), v, "goose_db_version must remain at 21 after failed migration")
-
-	// Структурные изменения должны быть откатаны: v4_cidr_blocks / v6_cidr_blocks
-	// не добавлены, cidr_blocks не удалена.
-	var has4, has6, hasOld bool
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='v4_cidr_blocks')
-	`).Scan(&has4))
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='v6_cidr_blocks')
-	`).Scan(&has6))
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='address_pools' AND column_name='cidr_blocks')
-	`).Scan(&hasOld))
-	assert.False(t, has4, "v4_cidr_blocks must NOT be added when migration aborted")
-	assert.False(t, has6, "v6_cidr_blocks must NOT be added when migration aborted")
-	assert.True(t, hasOld, "cidr_blocks must NOT be dropped when migration aborted")
 }
 
 // --------------------------------------------------------------------------
