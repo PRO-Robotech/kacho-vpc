@@ -15,6 +15,7 @@ import (
 //	healthcheck:   { enable }
 //	repository:    { type, postgres }
 //	authn:         { mode, tls }
+//	authz:         { iam-endpoint, breakglass, ... }   ← E3 / KAC-108
 //	extapi:        { def-dial-duration, resource-manager, compute }
 //	watch:         { max-streams }
 //	network:       { default-sg-inline, folder-cache }
@@ -28,9 +29,37 @@ type Config struct {
 	Healthcheck HealthcheckConfig `mapstructure:"healthcheck"`
 	Repository  RepositoryConfig  `mapstructure:"repository"`
 	AuthN       AuthNConfig       `mapstructure:"authn"`
+	AuthZ       AuthZConfig       `mapstructure:"authz"`
 	ExtAPI      ExtAPIConfig      `mapstructure:"extapi"`
 	Watch       WatchConfig       `mapstructure:"watch"`
 	Network     NetworkConfig     `mapstructure:"network"`
+}
+
+// AuthZConfig — секция authz (E3 / KAC-108). Если IAMEndpoint пуст и
+// Breakglass=false — interceptor НЕ навешивается (graceful start без kacho-iam
+// в dev). См. internal/apps/kacho/check/factory.go.
+type AuthZConfig struct {
+	// IAMEndpoint — gRPC адрес kacho-iam internal-port'а (обычно
+	// `kacho-iam.kacho.svc.cluster.local:9091`). Пустая строка → interceptor
+	// не навешивается, если только Breakglass=true.
+	IAMEndpoint string `mapstructure:"iam-endpoint"`
+
+	// IAMTLS — TLS на peer-вызов в kacho-iam.
+	IAMTLS TLSClient `mapstructure:"iam-tls"`
+
+	// Breakglass — если true, interceptor пропускает все RPC без Check
+	// (dev / emergency). Source: env `KACHO_VPC_AUTHZ__BREAKGLASS=true`.
+	Breakglass bool `mapstructure:"breakglass"`
+
+	// CheckTimeout — таймаут на один Check-вызов (default 2s).
+	CheckTimeout time.Duration `mapstructure:"check-timeout"`
+
+	// DenyRateLimitPerSec — token-bucket per-Principal на denied-storm
+	// (default 100).
+	DenyRateLimitPerSec float64 `mapstructure:"deny-rate-limit-per-sec"`
+
+	// CacheTTL — TTL positive-results кеша (default 5s).
+	CacheTTL time.Duration `mapstructure:"cache-ttl"`
 }
 
 // LoggerConfig — секция logger.

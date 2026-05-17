@@ -31,6 +31,7 @@ import (
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	addresspoolapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
 	peapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint"
@@ -199,12 +200,62 @@ func runServe(cfg config.Config) error {
 
 	svcs := buildServices(pool, slavePool, projectClient, geoClient, opsRepo, cfg, logger)
 
-	// gRPC servers + tenant-interceptor (scaffold под IAM/AuthZ): сейчас читает
-	// metadata, future — JWT claims; handler'ы делают AssertFolderOwnership.
+	// authz (E3 / KAC-108): per-RPC OpenFGA Check на public listener'е.
+	//
+	// IAMEndpoint пуст → interceptor НЕ навешивается (graceful start без
+	// kacho-iam в dev; production-deploy выставит authz.iam-endpoint в
+	// values.yaml). Breakglass=true → interceptor навешивается, но всё
+	// пропускает + emit'ит WARN-метрику (dev / emergency).
+	//
+	// internal :9091 listener — БЕЗ authz-interceptor'а: на нём admin/RC-only
+	// сервисы (запрет #6), которые либо ходят cluster-internal cross-service
+	// (sidecar / impl-controller), либо проксируются api-gateway'ем на
+	// admin-UI (там auth-z делается на api-gw слое).
 	productionMode := cfg.AuthN.Mode.IsProduction()
+	publicUnary := []grpc.UnaryServerInterceptor{handler.TenantUnaryInterceptor(false, productionMode)}
+	publicStream := []grpc.StreamServerInterceptor{handler.TenantStreamInterceptor(false, productionMode)}
+
+	var authzConn clients.Conn
+	if cfg.AuthZ.IAMEndpoint != "" {
+		authzConn, err = clients.Build(ctx, clients.BuildOptions{
+			Endpoint: cfg.AuthZ.IAMEndpoint,
+			TLS:      cfg.AuthZ.IAMTLS.Enable,
+		})
+		if err != nil {
+			return fmt.Errorf("dial kacho-iam (authz): %w", err)
+		}
+		defer authzConn.Close()
+	}
+	authzIntr, err := check.NewInterceptor(check.Options{
+		ServiceName:         "kacho-vpc",
+		IAMConn:             authzConn,
+		Breakglass:          cfg.AuthZ.Breakglass,
+		Logger:              logger,
+		CheckTimeout:        cfg.AuthZ.CheckTimeout,
+		DenyRateLimitPerSec: cfg.AuthZ.DenyRateLimitPerSec,
+		CacheTTL:            cfg.AuthZ.CacheTTL,
+	})
+	switch {
+	case err == nil && authzIntr != nil:
+		publicUnary = append(publicUnary, authzIntr.Unary())
+		publicStream = append(publicStream, authzIntr.Stream())
+		logger.Info("authz interceptor enabled",
+			"iam_endpoint", cfg.AuthZ.IAMEndpoint,
+			"breakglass", cfg.AuthZ.Breakglass,
+			"cache_ttl", cfg.AuthZ.CacheTTL,
+		)
+	case errors.Is(err, check.ErrIAMConnNotConfigured):
+		// Dev-стенд без kacho-iam — продолжаем без authz-interceptor'а
+		// (scope-guard KAC-108). В production cfg.AuthZ.IAMEndpoint обязан
+		// быть выставлен — это проверяется на стороне deploy/values.
+		logger.Warn("authz interceptor NOT enabled — authz.iam-endpoint not configured (dev mode)")
+	case err != nil:
+		return fmt.Errorf("build authz interceptor: %w", err)
+	}
+
 	grpcSrv := grpcsrv.NewServer(
-		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(false, productionMode)),
-		grpc.ChainStreamInterceptor(handler.TenantStreamInterceptor(false, productionMode)),
+		grpc.ChainUnaryInterceptor(publicUnary...),
+		grpc.ChainStreamInterceptor(publicStream...),
 	)
 	internalSrv := grpcsrv.NewServer(
 		grpc.ChainUnaryInterceptor(handler.TenantUnaryInterceptor(true, productionMode)),
