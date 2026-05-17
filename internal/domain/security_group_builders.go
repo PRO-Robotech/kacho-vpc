@@ -48,7 +48,7 @@ func NewDefaultSecurityGroupRules() []SecurityGroupRule {
 func NewDefaultSecurityGroup(net Network) SecurityGroup {
 	return SecurityGroup{
 		ID:                ids.NewID(ids.PrefixSecurityGroup),
-		FolderID:          net.FolderID,
+		ProjectID:          net.ProjectID,
 		NetworkID:         net.ID,
 		Name:              RcNameVPC(DefaultSGName(net.ID)),
 		Description:       RcDescription(DefaultSGDescription),

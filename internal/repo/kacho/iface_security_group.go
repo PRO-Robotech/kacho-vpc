@@ -11,7 +11,7 @@ import (
 // import-cycle `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался
 // тонкий type-alias `SecurityGroupFilter = kacho.SecurityGroupFilter`.
 type SecurityGroupFilter struct {
-	FolderID  string
+	ProjectID  string
 	NetworkID string
 	Name      string
 	Filter    string
@@ -38,8 +38,8 @@ type SecurityGroupWriterIface interface {
 	Insert(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroupRecord, error)
 	Update(ctx context.Context, sg *domain.SecurityGroup) (*SecurityGroupRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у SG (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*SecurityGroupRecord, error)
+	// SetProjectID меняет project_id у SG (для :move).
+	SetProjectID(ctx context.Context, id, folderID string) (*SecurityGroupRecord, error)
 	// UpdateRules атомарно заменяет набор правил SG (xmin-OCC).
 	// Concurrent-modification → ErrFailedPrecondition.
 	UpdateRules(ctx context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*SecurityGroupRecord, error)

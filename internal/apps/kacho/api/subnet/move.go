@@ -17,30 +17,30 @@ import (
 
 // MoveSubnetUseCase — перенос Subnet в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
-// SetFolderID.
+// SetProjectID.
 //
 // Wave 5 replicate (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveSubnetUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveSubnetUseCase создаёт MoveSubnetUseCase.
-func NewMoveSubnetUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveSubnetUseCase {
-	return &MoveSubnetUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveSubnetUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *MoveSubnetUseCase {
+	return &MoveSubnetUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
-func (u *MoveSubnetUseCase) Execute(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+func (u *MoveSubnetUseCase) Execute(ctx context.Context, id, destProjectID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("subnet", ids.PrefixSubnet, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
-	if destFolderID == "" {
-		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	if destProjectID == "" {
+		return nil, invalidArg("destination_project_id", "destination_project_id is required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {
@@ -51,7 +51,7 @@ func (u *MoveSubnetUseCase) Execute(ctx context.Context, id, destFolderID string
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
+	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}
 
@@ -68,19 +68,19 @@ func (u *MoveSubnetUseCase) Execute(ctx context.Context, id, destFolderID string
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		return u.doMove(ctx, id, destFolderID)
+		return u.doMove(ctx, id, destProjectID)
 	})
 
 	return &op, nil
 }
 
-func (u *MoveSubnetUseCase) doMove(ctx context.Context, id, destFolderID string) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, destFolderID)
+func (u *MoveSubnetUseCase) doMove(ctx context.Context, id, destProjectID string) (*anypb.Any, error) {
+	exists, err := u.projectClient.Exists(ctx, destProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destProjectID)
 	}
 
 	w, err := u.repo.Writer(ctx)
@@ -89,7 +89,7 @@ func (u *MoveSubnetUseCase) doMove(ctx context.Context, id, destFolderID string)
 	}
 	defer w.Abort()
 
-	updated, err := w.Subnets().SetFolderID(ctx, id, destFolderID)
+	updated, err := w.Subnets().SetProjectID(ctx, id, destProjectID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}

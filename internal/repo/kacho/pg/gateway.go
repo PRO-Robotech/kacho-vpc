@@ -50,9 +50,9 @@ func (r *gatewayReader) List(ctx context.Context, f kacho.GatewayFilter, p kacho
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.Name != "" {
@@ -142,12 +142,12 @@ func (w *gatewayWriter) Insert(ctx context.Context, g *domain.Gateway) (*kacho.G
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO gateways (id, folder_id, created_at, name, description, labels, gateway_type)
+		INSERT INTO gateways (id, project_id, created_at, name, description, labels, gateway_type)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING %s`, helpers.GatewayCols)
 
 	row := w.tx.QueryRow(ctx, q,
-		g.ID, g.FolderID, now, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
+		g.ID, g.ProjectID, now, string(g.Name), string(g.Description), labelsJSON, string(g.GatewayType),
 	)
 	result, err := helpers.ScanGateway(row)
 	if err != nil {
@@ -157,7 +157,7 @@ func (w *gatewayWriter) Insert(ctx context.Context, g *domain.Gateway) (*kacho.G
 }
 
 // Update — UPDATE gateways RETURNING name/description/labels/gateway_type.
-// folder_id меняется через SetFolderID (для :move action).
+// project_id меняется через SetProjectID (для :move action).
 //
 // outbox-write — в use-case-е (см. Insert).
 func (w *gatewayWriter) Update(ctx context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
@@ -181,9 +181,9 @@ func (w *gatewayWriter) Update(ctx context.Context, g *domain.Gateway) (*kacho.G
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у Gateway (для :move). outbox-write — в use-case-е.
-func (w *gatewayWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
-	q := fmt.Sprintf(`UPDATE gateways SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.GatewayCols)
+// SetProjectID меняет project_id у Gateway (для :move). outbox-write — в use-case-е.
+func (w *gatewayWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
+	q := fmt.Sprintf(`UPDATE gateways SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.GatewayCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	g, err := helpers.ScanGateway(row)
 	if err != nil {

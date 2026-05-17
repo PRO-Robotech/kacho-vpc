@@ -40,7 +40,7 @@ type Handler struct {
 
 // NewHandler собирает Handler из готовых use-case'ов. Конструктор намеренно
 // принимает все use-case'ы — composition-root (cmd/vpc/main.go) собирает их
-// с одинаковыми zависимостями (repo / folderClient / opsRepo).
+// с одинаковыми zависимостями (repo / projectClient / opsRepo).
 func NewHandler(
 	create *CreateNetworkUseCase,
 	update *UpdateNetworkUseCase,
@@ -76,19 +76,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) (*vpcv1
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	return networkToPb(n)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	nets, nextToken, err := h.list.Execute(ctx, NetworkFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -110,11 +110,11 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vp
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	n := domain.Network{
-		FolderID:    req.FolderId,
+		ProjectID:    req.ProjectId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),
@@ -135,7 +135,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateNetworkRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -167,7 +167,7 @@ func (h *Handler) ListSubnets(ctx context.Context, req *vpcv1.ListNetworkSubnets
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	subs, nextToken, err := h.listSubnets.Execute(ctx, req.NetworkId, Pagination{
@@ -197,7 +197,7 @@ func (h *Handler) ListSecurityGroups(ctx context.Context, req *vpcv1.ListNetwork
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	sgs, nextToken, err := h.listSecurityGroup.Execute(ctx, req.NetworkId, Pagination{
@@ -227,7 +227,7 @@ func (h *Handler) ListRouteTables(ctx context.Context, req *vpcv1.ListNetworkRou
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	rts, nextToken, err := h.listRouteTables.Execute(ctx, req.NetworkId, Pagination{
@@ -256,7 +256,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkOper
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
 	if n, gerr := h.get.Execute(ctx, req.NetworkId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {
@@ -286,13 +286,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveNetworkRequest) (*ope
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.NetworkId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.NetworkId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.NetworkId)

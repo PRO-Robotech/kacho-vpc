@@ -103,10 +103,10 @@ type SubnetReader interface {
 	Get(ctx context.Context, id string) (*kachorepo.SubnetRecord, error)
 }
 
-// FolderClient — то, что use-case'ам AddressPool нужно от peer-сервиса
-// kacho-resource-manager (для cascade-resolve Step 3: folder_id → cloud_id).
-type FolderClient interface {
-	GetCloudID(ctx context.Context, folderID string) (string, error)
+// ProjectClient — то, что use-case'ам AddressPool нужно от peer-сервиса
+// kacho-resource-manager (для cascade-resolve Step 3: project_id → cloud_id).
+type ProjectClient interface {
+	GetCloudIDFromProject(ctx context.Context, folderID string) (string, error)
 }
 
 // ZoneRegistry — port для проверки существования zone_id (compute domain после

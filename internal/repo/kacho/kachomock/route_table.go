@@ -35,7 +35,7 @@ func (r *routeTableReader) Get(_ context.Context, id string) (*kacho.RouteTableR
 func (r *routeTableReader) List(_ context.Context, f kacho.RouteTableFilter, _ kacho.Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	var result []*kacho.RouteTableRecord
 	for _, rt := range r.snap {
-		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || rt.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(rt.Name) == f.Name) {
 			cp := *rt
@@ -74,7 +74,7 @@ func (rw *routeTableWriter) List(_ context.Context, f kacho.RouteTableFilter, _ 
 		if _, deleted := rw.w.deletedRTIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || rt.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || rt.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || rt.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(rt.Name) == f.Name) {
 			cp := *rt
@@ -109,7 +109,7 @@ func (rw *routeTableWriter) Update(_ context.Context, rt *domain.RouteTable) (*k
 	return &cp, nil
 }
 
-func (rw *routeTableWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.RouteTableRecord, error) {
+func (rw *routeTableWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.RouteTableRecord, error) {
 	if _, deleted := rw.w.deletedRTIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -117,7 +117,7 @@ func (rw *routeTableWriter) SetFolderID(_ context.Context, id, folderID string) 
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	rt.FolderID = folderID
+	rt.ProjectID = folderID
 	cp := *rt
 	return &cp, nil
 }

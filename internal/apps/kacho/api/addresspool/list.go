@@ -7,7 +7,7 @@ import (
 )
 
 // ListAddressPoolsUseCase — admin-only list. AddressPool — глобальный
-// infrastructure-ресурс (нет folder_id), фильтрация по (zone_id, kind).
+// infrastructure-ресурс (нет project_id), фильтрация по (zone_id, kind).
 //
 // Wave 5 A.7 sub-PR 1/6: открывает Reader-TX kacho.Repository.
 type ListAddressPoolsUseCase struct {

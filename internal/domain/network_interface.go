@@ -32,7 +32,7 @@ import (
 // своей data-plane-проекции).
 type NetworkInterface struct {
 	ID          string
-	FolderID    string
+	ProjectID    string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels
@@ -94,7 +94,7 @@ func (n NetworkInterface) Validate() error {
 // фиксируем для consistency. skill evgeniy §4 D.10.
 func (n NetworkInterface) Equal(other NetworkInterface) bool {
 	return n.ID == other.ID &&
-		n.FolderID == other.FolderID &&
+		n.ProjectID == other.ProjectID &&
 		n.Name == other.Name &&
 		n.Description == other.Description &&
 		LabelsEqual(n.Labels, other.Labels) &&

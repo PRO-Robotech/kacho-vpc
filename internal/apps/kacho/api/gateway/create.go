@@ -26,13 +26,13 @@ import (
 // видно, либо ничего — orphan-Gateway / forgotten outbox-event window закрыт.
 type CreateGatewayUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateGatewayUseCase создаёт CreateGatewayUseCase.
-func NewCreateGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *CreateGatewayUseCase {
-	return &CreateGatewayUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewCreateGatewayUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *CreateGatewayUseCase {
+	return &CreateGatewayUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
@@ -43,8 +43,8 @@ func NewCreateGatewayUseCase(r Repo, folderClient FolderClient, opsRepo operatio
 // перепаковывала domain.X без дополнительного контекста. Поле `g.ID` на входе
 // пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixGateway)`.
 func (u *CreateGatewayUseCase) Execute(ctx context.Context, g domain.Gateway) (*operations.Operation, error) {
-	if g.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if g.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	name := string(g.Name)
 	// Gateway.Name — strict regex (lowercase, без uppercase/underscore — verbatim YC).
@@ -96,12 +96,12 @@ func (u *CreateGatewayUseCase) Execute(ctx context.Context, g domain.Gateway) (*
 // Insert(Gateway) + outbox emit Gateway.CREATED — оба ходят через ту же pgx.Tx
 // writer'а, поэтому либо оба видны (Commit), либо ни один (Abort/crash).
 func (u *CreateGatewayUseCase) doCreate(ctx context.Context, gwID string, g domain.Gateway) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, g.FolderID)
+	exists, err := u.projectClient.Exists(ctx, g.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", g.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", g.ProjectID)
 	}
 
 	gtype := g.GatewayType

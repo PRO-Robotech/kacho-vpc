@@ -10,7 +10,7 @@ import (
 //
 // Wave 5 replicate (KAC-94 A.7 sub-PR 1/6, skill evgeniy §6 G.1-G.7): admin-
 // controlled routing-labels на уровне Cloud. Используется cascade-resolve
-// Step 3 (label_selector match): folder_id → cloud_id (peer-call к
+// Step 3 (label_selector match): project_id → cloud_id (peer-call к
 // resource-manager) → selector через этот port → FindBySelectorMatch.
 //
 // Возвращает ErrNotFound если selector не задан (cascade-resolver fall-through).

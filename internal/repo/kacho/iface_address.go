@@ -11,7 +11,7 @@ import (
 // SecurityGroupFilter — см. doc-комментарий на Pagination. В
 // `internal/repo/iface.go` остался type-alias `AddressFilter = kacho.AddressFilter`.
 type AddressFilter struct {
-	FolderID string
+	ProjectID string
 	Name     string
 	Filter   string
 	// SubnetID — фильтр по подсети: матчит internal_ipv4.subnet_id ИЛИ
@@ -67,8 +67,8 @@ type AddressWriterIface interface {
 	Insert(ctx context.Context, a *domain.Address) (*AddressRecord, error)
 	Update(ctx context.Context, a *domain.Address) (*AddressRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у Address (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*AddressRecord, error)
+	// SetProjectID меняет project_id у Address (для :move).
+	SetProjectID(ctx context.Context, id, folderID string) (*AddressRecord, error)
 	// SetIPSpec атомарно обновляет external_ipv4 / internal_ipv4 JSONB-spec.
 	// nil-spec — поле не меняется; оба nil — no-op.
 	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*AddressRecord, error)

@@ -115,8 +115,14 @@ type TLSServer struct {
 }
 
 // ExtAPIConfig — секция extapi (peer-сервисы).
+//
+// KAC-106 (E1): renamed `resource-manager` peer to `iam`. The `ResourceManager`
+// struct field is retained as alias backed by the same `IAM` peer for backward-
+// compat during transition — both `extapi.iam` and `extapi.resource-manager`
+// YAML keys are accepted.
 type ExtAPIConfig struct {
 	DefDialDuration time.Duration `mapstructure:"def-dial-duration"`
+	IAM             PeerConfig    `mapstructure:"iam"`
 	ResourceManager PeerConfig    `mapstructure:"resource-manager"`
 	Compute         PeerConfig    `mapstructure:"compute"`
 }
@@ -150,12 +156,12 @@ type WatchConfig struct {
 // NetworkConfig — секция network (VPC-domain бизнес-настройки).
 type NetworkConfig struct {
 	// DefaultSGInline — создавать ли default SecurityGroup inline при Network.Create.
-	DefaultSGInline bool                    `mapstructure:"default-sg-inline"`
-	FolderCache     FolderCacheConfigStruct `mapstructure:"folder-cache"`
+	DefaultSGInline bool                     `mapstructure:"default-sg-inline"`
+	ProjectCache    ProjectCacheConfigStruct `mapstructure:"project-cache"`
 }
 
-// FolderCacheConfigStruct — TTL+LRU кеш FolderClient.Exists (KAC-39).
-type FolderCacheConfigStruct struct {
+// ProjectCacheConfigStruct — TTL+LRU кеш ProjectClient.Exists (KAC-39).
+type ProjectCacheConfigStruct struct {
 	PositiveTTL time.Duration `mapstructure:"positive-ttl"`
 	NegativeTTL time.Duration `mapstructure:"negative-ttl"`
 	MaxSize     int           `mapstructure:"max-size"`

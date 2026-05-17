@@ -44,7 +44,7 @@ type Handler struct {
 
 // NewHandler собирает Handler из готовых use-case'ов. Конструктор намеренно
 // принимает все use-case'ы — composition-root (cmd/vpc/main.go) собирает их
-// с одинаковыми зависимостями (repo / networkReader / folderClient / opsRepo).
+// с одинаковыми зависимостями (repo / networkReader / projectClient / opsRepo).
 func NewHandler(
 	create *CreateSecurityGroupUseCase,
 	update *UpdateSecurityGroupUseCase,
@@ -78,19 +78,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetSecurityGroupRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	return securityGroupToPb(sg)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	sgs, nextToken, err := h.list.Execute(ctx, SecurityGroupFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -112,11 +112,11 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSecurityGroupRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	sg := domain.SecurityGroup{
-		FolderID:    req.FolderId,
+		ProjectID:    req.ProjectId,
 		NetworkID:   req.NetworkId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
@@ -143,7 +143,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateSecurityGroupRequ
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -179,7 +179,7 @@ func (h *Handler) UpdateRules(ctx context.Context, req *vpcv1.UpdateSecurityGrou
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	in := UpdateRulesInput{
@@ -206,7 +206,7 @@ func (h *Handler) UpdateRule(ctx context.Context, req *vpcv1.UpdateSecurityGroup
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -235,7 +235,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteSecurityGroupRequ
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.SecurityGroupId)
@@ -255,13 +255,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveSecurityGroupRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.SecurityGroupId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.SecurityGroupId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListSecurityGro
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, sg.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, sg.ProjectID); err != nil {
 		return nil, err
 	}
 	ops, nextToken, err := h.listOperations.Execute(ctx, req.SecurityGroupId, Pagination{

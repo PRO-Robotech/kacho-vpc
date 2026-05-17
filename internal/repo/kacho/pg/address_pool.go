@@ -309,7 +309,7 @@ func (r *addressPoolReader) ListAddressesByPool(ctx context.Context, poolID, fol
 	conds := []string{"external_ipv4 ->> 'address_pool_id' = $1"}
 	idx := 2
 	if folderFilter != "" {
-		conds = append(conds, fmt.Sprintf("folder_id = $%d", idx))
+		conds = append(conds, fmt.Sprintf("project_id = $%d", idx))
 		args = append(args, folderFilter)
 		idx++
 	}

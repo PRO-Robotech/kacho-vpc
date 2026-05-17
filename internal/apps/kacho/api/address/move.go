@@ -17,30 +17,30 @@ import (
 
 // MoveAddressUseCase — перенос Address в другой folder. Sync: dest required +
 // different + existence. Async: повторная folder-existence-проверка +
-// SetFolderID.
+// SetProjectID.
 //
 // A.7 sub-PR 2 (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveAddressUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveAddressUseCase создаёт MoveAddressUseCase.
-func NewMoveAddressUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveAddressUseCase {
-	return &MoveAddressUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveAddressUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *MoveAddressUseCase {
+	return &MoveAddressUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
-func (u *MoveAddressUseCase) Execute(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+func (u *MoveAddressUseCase) Execute(ctx context.Context, id, destProjectID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("address", ids.PrefixAddress, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
-	if destFolderID == "" {
-		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	if destProjectID == "" {
+		return nil, invalidArg("destination_project_id", "destination_project_id is required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {
@@ -51,7 +51,7 @@ func (u *MoveAddressUseCase) Execute(ctx context.Context, id, destFolderID strin
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
+	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}
 
@@ -68,19 +68,19 @@ func (u *MoveAddressUseCase) Execute(ctx context.Context, id, destFolderID strin
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		return u.doMove(ctx, id, destFolderID)
+		return u.doMove(ctx, id, destProjectID)
 	})
 
 	return &op, nil
 }
 
-func (u *MoveAddressUseCase) doMove(ctx context.Context, id, destFolderID string) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, destFolderID)
+func (u *MoveAddressUseCase) doMove(ctx context.Context, id, destProjectID string) (*anypb.Any, error) {
+	exists, err := u.projectClient.Exists(ctx, destProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destProjectID)
 	}
 
 	w, err := u.repo.Writer(ctx)
@@ -89,7 +89,7 @@ func (u *MoveAddressUseCase) doMove(ctx context.Context, id, destFolderID string
 	}
 	defer w.Abort()
 
-	updated, err := w.Addresses().SetFolderID(ctx, id, destFolderID)
+	updated, err := w.Addresses().SetProjectID(ctx, id, destProjectID)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}

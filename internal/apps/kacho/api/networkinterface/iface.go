@@ -41,7 +41,7 @@ type Pagination = kachorepo.Pagination
 
 // NetworkInterfaceFilter — фильтр для List. Wave 5 replicate (KAC-94, NIC batch):
 // alias на CQRS-iface `kacho.NetworkInterfaceFilter`. Поля идентичны legacy
-// `repo.NetworkInterfaceFilter` (FolderID/InstanceID/SubnetID/NetworkID) — обе
+// `repo.NetworkInterfaceFilter` (ProjectID/InstanceID/SubnetID/NetworkID) — обе
 // структуры по сути одно и то же, после полной CQRS-миграции legacy `repo`-тип
 // уберём.
 type NetworkInterfaceFilter = kachorepo.NetworkInterfaceFilter
@@ -71,8 +71,8 @@ type AddressRepo interface {
 	ClearReference(ctx context.Context, addressID string) error
 }
 
-// FolderClient — то, что use-case'ам NIC нужно от peer-сервиса
+// ProjectClient — то, что use-case'ам NIC нужно от peer-сервиса
 // kacho-resource-manager: проверка существования folder'а.
-type FolderClient interface {
+type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }

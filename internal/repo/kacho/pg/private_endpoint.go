@@ -50,9 +50,9 @@ func (r *privateEndpointReader) List(ctx context.Context, f kacho.PrivateEndpoin
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.Name != "" {
@@ -155,13 +155,13 @@ func (w *privateEndpointWriter) Insert(ctx context.Context, pe *domain.PrivateEn
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
 		INSERT INTO private_endpoints
-		(id, folder_id, created_at, name, description, labels,
+		(id, project_id, created_at, name, description, labels,
 		 network_id, subnet_id, address_id, ip_address, service_type, dns_options, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10, $11, $12, $13)
 		RETURNING %s`, helpers.PECols)
 
 	row := w.tx.QueryRow(ctx, q,
-		pe.ID, pe.FolderID, now, string(pe.Name), string(pe.Description), labelsJSON,
+		pe.ID, pe.ProjectID, now, string(pe.Name), string(pe.Description), labelsJSON,
 		pe.NetworkID, pe.SubnetID, pe.AddressID, pe.IPAddress,
 		string(pe.ServiceType), dnsJSON, string(pe.Status),
 	)
@@ -206,10 +206,10 @@ func (w *privateEndpointWriter) Update(ctx context.Context, pe *domain.PrivateEn
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у PrivateEndpoint. PE не имеет Move RPC в YC
+// SetProjectID меняет project_id у PrivateEndpoint. PE не имеет Move RPC в YC
 // verbatim API, но writer-iface поддерживает метод parity с другими ресурсами.
-func (w *privateEndpointWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.PrivateEndpointRecord, error) {
-	q := fmt.Sprintf(`UPDATE private_endpoints SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.PECols)
+func (w *privateEndpointWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.PrivateEndpointRecord, error) {
+	q := fmt.Sprintf(`UPDATE private_endpoints SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.PECols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	pe, err := helpers.ScanPrivateEndpoint(row)
 	if err != nil {

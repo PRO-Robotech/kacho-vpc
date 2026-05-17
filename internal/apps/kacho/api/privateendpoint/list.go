@@ -12,7 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// ListPrivateEndpointsUseCase — list PEs. folder_id обязателен.
+// ListPrivateEndpointsUseCase — list PEs. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): открывает read-only TX через `repo.Reader(ctx)`
 // (parity с network/list.go).
@@ -25,10 +25,10 @@ func NewListPrivateEndpointsUseCase(r Repo) *ListPrivateEndpointsUseCase {
 	return &ListPrivateEndpointsUseCase{repo: r}
 }
 
-// Execute — folder_id required.
+// Execute — project_id required.
 func (u *ListPrivateEndpointsUseCase) Execute(ctx context.Context, f PrivateEndpointFilter, p Pagination) ([]*kacho.PrivateEndpointRecord, string, error) {
-	if f.FolderID == "" {
-		return nil, "", status.Error(codes.InvalidArgument, "folder_id required")
+	if f.ProjectID == "" {
+		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {

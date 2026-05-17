@@ -39,7 +39,7 @@ func (r *privateEndpointReader) Get(_ context.Context, id string) (*kacho.Privat
 func (r *privateEndpointReader) List(_ context.Context, f kacho.PrivateEndpointFilter, _ kacho.Pagination) ([]*kacho.PrivateEndpointRecord, string, error) {
 	var result []*kacho.PrivateEndpointRecord
 	for _, pe := range r.snap {
-		if (f.FolderID == "" || pe.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || pe.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(pe.Name) == f.Name) {
 			cp := *pe
 			result = append(result, &cp)
@@ -75,7 +75,7 @@ func (pw *privateEndpointWriter) List(_ context.Context, f kacho.PrivateEndpoint
 		if _, deleted := pw.w.deletedPEIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || pe.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || pe.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(pe.Name) == f.Name) {
 			cp := *pe
 			result = append(result, &cp)
@@ -105,7 +105,7 @@ func (pw *privateEndpointWriter) Update(_ context.Context, pe *domain.PrivateEnd
 	return &cp, nil
 }
 
-func (pw *privateEndpointWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.PrivateEndpointRecord, error) {
+func (pw *privateEndpointWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.PrivateEndpointRecord, error) {
 	if _, deleted := pw.w.deletedPEIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -113,7 +113,7 @@ func (pw *privateEndpointWriter) SetFolderID(_ context.Context, id, folderID str
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	pe.FolderID = folderID
+	pe.ProjectID = folderID
 	cp := *pe
 	return &cp, nil
 }

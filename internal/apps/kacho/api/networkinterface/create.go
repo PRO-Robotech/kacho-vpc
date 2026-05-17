@@ -68,16 +68,16 @@ type CreateInput struct {
 type CreateNetworkInterfaceUseCase struct {
 	repo         Repo
 	addressRepo  AddressRepo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateNetworkInterfaceUseCase создаёт CreateNetworkInterfaceUseCase.
-func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, folderClient FolderClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
+func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, projectClient ProjectClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
 	return &CreateNetworkInterfaceUseCase{
 		repo:         r,
 		addressRepo:  addressRepo,
-		folderClient: folderClient,
+		projectClient: projectClient,
 		opsRepo:      opsRepo,
 	}
 }
@@ -85,8 +85,8 @@ func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, folderCli
 // Execute — sync-валидация + create Operation + запуск worker'а.
 func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateInput) (*operations.Operation, error) {
 	n := in.NetworkInterface
-	if n.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if n.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if n.SubnetID == "" {
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
@@ -137,12 +137,12 @@ func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateIn
 // best-effort через `detachAddresses`.
 func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID string, in CreateInput) (*anypb.Any, error) {
 	n := in.NetworkInterface
-	exists, err := u.folderClient.Exists(ctx, n.FolderID)
+	exists, err := u.projectClient.Exists(ctx, n.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", n.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", n.ProjectID)
 	}
 	// A.7 sub-PR 3/6 (KAC-94): parent-Subnet check через CQRS-Reader (G.4 — на
 	// slave-pool, если он настроен). DB-уровень backstop остаётся: FK
@@ -173,7 +173,7 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	}
 	rec := &domain.NetworkInterface{
 		ID:               niID,
-		FolderID:         n.FolderID,
+		ProjectID:         n.ProjectID,
 		Name:             n.Name,
 		Description:      n.Description,
 		Labels:           n.Labels,

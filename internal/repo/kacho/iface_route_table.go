@@ -11,7 +11,7 @@ import (
 // leaf-пакет `kacho`. В `internal/repo/iface.go` остался type-alias
 // `RouteTableFilter = kacho.RouteTableFilter`.
 type RouteTableFilter struct {
-	FolderID  string
+	ProjectID  string
 	NetworkID string
 	Name      string
 	Filter    string
@@ -38,6 +38,6 @@ type RouteTableWriterIface interface {
 	Insert(ctx context.Context, rt *domain.RouteTable) (*RouteTableRecord, error)
 	Update(ctx context.Context, rt *domain.RouteTable) (*RouteTableRecord, error)
 	Delete(ctx context.Context, id string) error
-	// SetFolderID меняет folder_id у RouteTable (для :move).
-	SetFolderID(ctx context.Context, id, folderID string) (*RouteTableRecord, error)
+	// SetProjectID меняет project_id у RouteTable (для :move).
+	SetProjectID(ctx context.Context, id, folderID string) (*RouteTableRecord, error)
 }

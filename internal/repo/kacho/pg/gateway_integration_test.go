@@ -25,7 +25,7 @@ import (
 func newGateway(folderID, name string) *domain.Gateway {
 	return &domain.Gateway{
 		ID:          ids.NewID(ids.PrefixGateway),
-		FolderID:    folderID,
+		ProjectID:    folderID,
 		Name:        domain.RcNameVPC(name),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),

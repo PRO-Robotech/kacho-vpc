@@ -28,17 +28,17 @@ type CreatePrivateEndpointUseCase struct {
 	repo         Repo
 	networkRead  NetworkReader
 	subnetRead   SubnetReader
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewCreatePrivateEndpointUseCase создаёт CreatePrivateEndpointUseCase.
-func NewCreatePrivateEndpointUseCase(r Repo, networkRead NetworkReader, subnetRead SubnetReader, folderClient FolderClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
+func NewCreatePrivateEndpointUseCase(r Repo, networkRead NetworkReader, subnetRead SubnetReader, projectClient ProjectClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
 	return &CreatePrivateEndpointUseCase{
 		repo:         r,
 		networkRead:  networkRead,
 		subnetRead:   subnetRead,
-		folderClient: folderClient,
+		projectClient: projectClient,
 		opsRepo:      opsRepo,
 	}
 }
@@ -60,8 +60,8 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, p domain.Pri
 			return nil, err
 		}
 	}
-	if p.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if p.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if p.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
@@ -98,7 +98,7 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, p domain.Pri
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		existing, _, lerr := rd.PrivateEndpoints().List(ctx, PrivateEndpointFilter{FolderID: p.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.PrivateEndpoints().List(ctx, PrivateEndpointFilter{ProjectID: p.ProjectID, Name: name}, Pagination{})
 		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
@@ -132,12 +132,12 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, p domain.Pri
 // folder-exists + Insert (FK ограничения / UNIQUE-нарушения); все DML + outbox
 // идут через одну writer-TX (skill evgeniy §6 G.5).
 func (u *CreatePrivateEndpointUseCase) doCreate(ctx context.Context, peID string, p domain.PrivateEndpoint) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, p.FolderID)
+	exists, err := u.projectClient.Exists(ctx, p.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", p.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", p.ProjectID)
 	}
 
 	if _, err := u.networkRead.Get(ctx, p.NetworkID); err != nil {

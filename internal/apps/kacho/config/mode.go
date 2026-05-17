@@ -23,7 +23,7 @@ import (
 //	                       без AuthN-headers как admin); insecure dev-defaults
 //	                       (TLS off, sslmode=disable) только логируются.
 //	ModeProduction       — fail-closed: каждый запрос обязан иметь не-пустой
-//	                       TenantCtx (Actor + (Admin или FolderIDs)). Anonymous →
+//	                       TenantCtx (Actor + (Admin или ProjectIDs)). Anonymous →
 //	                       PermissionDenied.
 //	ModeProductionStrict — production + дополнительно валидирует extapi.*.tls.*
 //	                       и repository.postgres.ssl-mode (require|verify-ca|verify-full).

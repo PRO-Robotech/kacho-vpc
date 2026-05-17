@@ -85,13 +85,13 @@ func TestMigration0022_C4_UniqueConstraintsIntact(t *testing.T) {
 	addr1 := ids.NewID(ids.PrefixAddress)
 	addr2 := ids.NewID(ids.PrefixAddress)
 	_, err = pool.Exec(ctx, `
-		INSERT INTO addresses (id, folder_id, addr_type, ip_version, external_ipv4)
+		INSERT INTO addresses (id, project_id, addr_type, ip_version, external_ipv4)
 		VALUES ($1, 'f1', 1, 1, jsonb_build_object('address','203.0.113.5','address_pool_id',$2::text))
 	`, addr1, first)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `
-		INSERT INTO addresses (id, folder_id, addr_type, ip_version, external_ipv4)
+		INSERT INTO addresses (id, project_id, addr_type, ip_version, external_ipv4)
 		VALUES ($1, 'f1', 1, 1, jsonb_build_object('address','203.0.113.5','address_pool_id',$2::text))
 	`, addr2, first)
 	require.Error(t, err, "duplicate (pool_id, ip) must violate addresses_external_pool_ip_uniq")
@@ -212,13 +212,13 @@ func TestAddressPoolSplit_H2_ExternalPoolIPUniqueAfterSplit(t *testing.T) {
 	addr1 := ids.NewID(ids.PrefixAddress)
 	addr2 := ids.NewID(ids.PrefixAddress)
 	_, err = pool.Exec(ctx, `
-		INSERT INTO addresses (id, folder_id, addr_type, ip_version, external_ipv4)
+		INSERT INTO addresses (id, project_id, addr_type, ip_version, external_ipv4)
 		VALUES ($1, 'f1', 1, 1, jsonb_build_object('address','203.0.113.42','address_pool_id',$2::text))
 	`, addr1, poolID)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, `
-		INSERT INTO addresses (id, folder_id, addr_type, ip_version, external_ipv4)
+		INSERT INTO addresses (id, project_id, addr_type, ip_version, external_ipv4)
 		VALUES ($1, 'f1', 1, 1, jsonb_build_object('address','203.0.113.42','address_pool_id',$2::text))
 	`, addr2, poolID)
 	require.Error(t, err)
@@ -278,7 +278,7 @@ func TestAddressPoolSplit_H3_FreelistAllocateConcurrentNoDup(t *testing.T) {
 	for i := range addrIDs {
 		addrIDs[i] = ids.NewID(ids.PrefixAddress)
 		_, err = pool.Exec(ctx, `
-			INSERT INTO addresses (id, folder_id, addr_type, ip_version, reserved)
+			INSERT INTO addresses (id, project_id, addr_type, ip_version, reserved)
 			VALUES ($1, 'f1', 1, 1, true)
 		`, addrIDs[i])
 		require.NoError(t, err)

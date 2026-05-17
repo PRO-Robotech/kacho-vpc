@@ -35,7 +35,7 @@ func makeNetwork(t *testing.T, kr *kachomock.Repository) *kachorepo.NetworkRecor
 	w, err := kr.Writer(ctx)
 	require.NoError(t, err)
 	netID := ids.NewID(ids.PrefixNetwork)
-	rec, ierr := w.Networks().Insert(ctx, &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
+	rec, ierr := w.Networks().Insert(ctx, &domain.Network{ID: netID, ProjectID: "f1", Name: "net"})
 	require.NoError(t, ierr)
 	require.NoError(t, w.Commit())
 	return rec
@@ -44,7 +44,7 @@ func makeNetwork(t *testing.T, kr *kachomock.Repository) *kachorepo.NetworkRecor
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateRouteTableUseCase(kr, fc, or)
@@ -61,7 +61,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	t.Helper()
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, or, fc), or, kr
 }
 
@@ -85,7 +85,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.RouteTables)
 }
@@ -123,10 +123,10 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	// network_id required.
-	_, err := uc.Execute(context.Background(), domain.RouteTable{FolderID: "f1", Name: "rt1"})
+	_, err := uc.Execute(context.Background(), domain.RouteTable{ProjectID: "f1", Name: "rt1"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -136,10 +136,10 @@ func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	net := makeNetwork(t, kr)
-	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.RouteTable{
-		FolderID:  "f1",
+		ProjectID:  "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt1"),
 		StaticRoutes: []domain.StaticRoute{
@@ -168,10 +168,10 @@ func TestCreateUseCase_BadStaticRoute(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	net := makeNetwork(t, kr)
-	uc := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), domain.RouteTable{
-		FolderID:  "f1",
+		ProjectID:  "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt-bad"),
 		StaticRoutes: []domain.StaticRoute{
@@ -187,17 +187,17 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
 	net := makeNetwork(t, kr)
-	createUC := NewCreateRouteTableUseCase(kr, &repomock.FolderClient{OK: true}, or)
+	createUC := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 	updateUC := NewUpdateRouteTableUseCase(kr, or)
 	getUC := NewGetRouteTableUseCase(kr)
 	listUC := NewListRouteTablesUseCase(kr)
 
 	createOp, _ := createUC.Execute(context.Background(), domain.RouteTable{
-		FolderID: "f1", NetworkID: net.ID, Name: domain.RcNameVPC("rt1"),
+		ProjectID: "f1", NetworkID: net.ID, Name: domain.RcNameVPC("rt1"),
 	})
 	repomock.AwaitOpDone(t, or, createOp.ID)
 
-	rts, _, _ := listUC.Execute(context.Background(), RouteTableFilter{FolderID: "f1"}, Pagination{})
+	rts, _, _ := listUC.Execute(context.Background(), RouteTableFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, rts, 1)
 	rtID := rts[0].ID
 
@@ -249,7 +249,7 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestMoveUseCase_Validates(t *testing.T) {
-	uc := NewMoveRouteTableUseCase(kachomock.NewRepository(), &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveRouteTableUseCase(kachomock.NewRepository(), &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -273,12 +273,12 @@ func TestHandler_FullFlow(t *testing.T) {
 	net := makeNetwork(t, kr)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateRouteTableRequest{
-		FolderId: "f1", Name: "rt", NetworkId: net.ID,
+		ProjectId: "f1", Name: "rt", NetworkId: net.ID,
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListRouteTablesRequest{ProjectId: "f1"})
 	require.Len(t, resp.RouteTables, 1)
 	rtID := resp.RouteTables[0].Id
 
@@ -295,7 +295,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	_, err = h.ListOperations(context.Background(), &vpcv1.ListRouteTableOperationsRequest{RouteTableId: rtID})
 	require.NoError(t, err)
 
-	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationFolderId: ids.NewID(ids.PrefixFolder)})
+	moveOp, err := h.Move(context.Background(), &vpcv1.MoveRouteTableRequest{RouteTableId: rtID, DestinationProjectId: ids.NewID(ids.PrefixFolder)})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, moveOp.Id)
 
@@ -312,7 +312,7 @@ func TestRouteTableToPb_StaticRoutes(t *testing.T) {
 	rec := &kachorepo.RouteTableRecord{
 		RouteTable: domain.RouteTable{
 			ID:        "rt-1",
-			FolderID:  "f1",
+			ProjectID:  "f1",
 			NetworkID: "net-1",
 			StaticRoutes: []domain.StaticRoute{
 				{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},

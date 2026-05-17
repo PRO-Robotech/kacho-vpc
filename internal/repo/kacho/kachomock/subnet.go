@@ -41,7 +41,7 @@ func (r *subnetReader) Get(_ context.Context, id string) (*kacho.SubnetRecord, e
 func (r *subnetReader) List(_ context.Context, f kacho.SubnetFilter, _ kacho.Pagination) ([]*kacho.SubnetRecord, string, error) {
 	var result []*kacho.SubnetRecord
 	for _, s := range r.snap {
-		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || s.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(s.Name) == f.Name) {
 			cp := *s
@@ -98,7 +98,7 @@ func (sw *subnetWriter) List(_ context.Context, f kacho.SubnetFilter, _ kacho.Pa
 		if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || s.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || s.ProjectID == f.ProjectID) &&
 			(f.NetworkID == "" || s.NetworkID == f.NetworkID) &&
 			(f.Name == "" || string(s.Name) == f.Name) {
 			cp := *s
@@ -158,7 +158,7 @@ func (sw *subnetWriter) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (sw *subnetWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
+func (sw *subnetWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -166,7 +166,7 @@ func (sw *subnetWriter) SetFolderID(_ context.Context, id, folderID string) (*ka
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	s.FolderID = folderID
+	s.ProjectID = folderID
 	cp := *s
 	return &cp, nil
 }

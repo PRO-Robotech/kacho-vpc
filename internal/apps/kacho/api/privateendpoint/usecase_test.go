@@ -29,7 +29,7 @@ import (
 func makeNetworkRecord(t *testing.T, nr *repomock.NetworkRepo) *kacho.NetworkRecord {
 	t.Helper()
 	netID := ids.NewID(ids.PrefixNetwork)
-	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, FolderID: "f1", Name: "net"})
+	rec, err := nr.Insert(context.Background(), &domain.Network{ID: netID, ProjectID: "f1", Name: "net"})
 	require.NoError(t, err)
 	return rec
 }
@@ -39,7 +39,7 @@ func makeHandler(t *testing.T,
 	nr *repomock.NetworkRepo,
 	sr *repomock.SubnetRepo,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreatePrivateEndpointUseCase(kr, nr, sr, fc, or)
@@ -57,7 +57,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	nr := repomock.NewNetworkRepo()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, nr, sr, or, fc), or, kr, nr, sr
 }
 
@@ -82,7 +82,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _, _, _ := minimalHandler(t, true)
 	resp, err := h.List(context.Background(), &pepb.ListPrivateEndpointsRequest{
-		Container: &pepb.ListPrivateEndpointsRequest_FolderId{FolderId: "f1"},
+		Container: &pepb.ListPrivateEndpointsRequest_ProjectId{ProjectId: "f1"},
 	})
 	require.NoError(t, err)
 	assert.Empty(t, resp.PrivateEndpoints)
@@ -123,10 +123,10 @@ func TestCreateUseCase_NetworkIDRequired(t *testing.T) {
 	nr := repomock.NewNetworkRepo()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.ProjectClient{OK: true}, or)
 
 	// network_id required.
-	_, err := uc.Execute(context.Background(), domain.PrivateEndpoint{FolderID: "f1", Name: "pe1"})
+	_, err := uc.Execute(context.Background(), domain.PrivateEndpoint{ProjectID: "f1", Name: "pe1"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -138,10 +138,10 @@ func TestCreateUseCase_OK(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	net := makeNetworkRecord(t, nr)
-	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.FolderClient{OK: true}, or)
+	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.PrivateEndpoint{
-		FolderID:    "f1",
+		ProjectID:    "f1",
 		NetworkID:   net.ID,
 		Name:        domain.RcNameVPC("pe1"),
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -156,7 +156,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	// Resource записан в kacho-mock через writer-TX (after Commit).
 	got := kr.PrivateEndpoints()
 	require.Len(t, got, 1)
-	assert.Equal(t, "f1", got[0].FolderID)
+	assert.Equal(t, "f1", got[0].ProjectID)
 	assert.Equal(t, domain.RcNameVPC("pe1"), got[0].Name)
 
 	// Outbox-event PrivateEndpoint.CREATED — атомарно с DML.
@@ -201,7 +201,7 @@ func TestHandler_Delete_ResponseIsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	peID := ids.NewID(ids.PrefixPrivateEndpoint)
 	_, err = w.PrivateEndpoints().Insert(ctx, &domain.PrivateEndpoint{
-		ID: peID, FolderID: "f1", Name: domain.RcNameVPC("pe-del"),
+		ID: peID, ProjectID: "f1", Name: domain.RcNameVPC("pe-del"),
 		NetworkID: "net-1", ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
 		Status: domain.PrivateEndpointStatusAvailable,
 	})
@@ -231,7 +231,7 @@ func TestPrivateEndpointToPb_Fields(t *testing.T) {
 	rec := &kacho.PrivateEndpointRecord{
 		PrivateEndpoint: domain.PrivateEndpoint{
 			ID:          "pe-1",
-			FolderID:    "f1",
+			ProjectID:    "f1",
 			Name:        domain.RcNameVPC("pe"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),

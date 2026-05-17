@@ -45,9 +45,9 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.Name != "" {
@@ -136,12 +136,12 @@ func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.N
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO networks (id, folder_id, created_at, name, description, labels, default_security_group_id)
+		INSERT INTO networks (id, project_id, created_at, name, description, labels, default_security_group_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING %s`, helpers.NetworkCols)
 
 	row := w.tx.QueryRow(ctx, q,
-		n.ID, n.FolderID, now, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
+		n.ID, n.ProjectID, now, string(n.Name), string(n.Description), labelsJSON, n.DefaultSecurityGroupID,
 	)
 	result, err := helpers.ScanNetwork(row)
 	if err != nil {
@@ -151,7 +151,7 @@ func (w *networkWriter) Insert(ctx context.Context, n *domain.Network) (*kacho.N
 }
 
 // Update — UPDATE networks RETURNING. Мутирует name/description/labels/default_sg_id
-// (folder_id меняется через SetFolderID — для :move action).
+// (project_id меняется через SetProjectID — для :move action).
 //
 // outbox-write — в use-case'е (см. Insert).
 func (w *networkWriter) Update(ctx context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
@@ -194,10 +194,10 @@ func (w *networkWriter) SetDefaultSGID(ctx context.Context, id, sgID string) (*k
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у Network (для :move).
-func (w *networkWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
+// SetProjectID меняет project_id у Network (для :move).
+func (w *networkWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE networks SET folder_id = $2
+		UPDATE networks SET project_id = $2
 		WHERE id = $1
 		RETURNING %s`, helpers.NetworkCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)

@@ -30,15 +30,15 @@ import (
 // tx-области — это часть Commit'а единой writer-TX.
 type CreateRouteTableUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewCreateRouteTableUseCase создаёт CreateRouteTableUseCase.
-func NewCreateRouteTableUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *CreateRouteTableUseCase {
+func NewCreateRouteTableUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *CreateRouteTableUseCase {
 	return &CreateRouteTableUseCase{
 		repo:         r,
-		folderClient: folderClient,
+		projectClient: projectClient,
 		opsRepo:      opsRepo,
 	}
 }
@@ -53,8 +53,8 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTa
 	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, rt.NetworkID); err != nil {
 		return nil, err
 	}
-	if rt.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if rt.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if rt.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
@@ -86,11 +86,11 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTa
 		}
 		return nil, mapRepoErr(gerr)
 	}
-	// Uniqueness (folder_id, name) — partial UNIQUE WHERE name<>'' покрывает на
+	// Uniqueness (project_id, name) — partial UNIQUE WHERE name<>'' покрывает на
 	// DB-уровне (миграция 0002). Sync-precheck для fast-fail UX.
 	name := string(rt.Name)
 	if name != "" {
-		existing, _, lerr := rd.RouteTables().List(ctx, RouteTableFilter{FolderID: rt.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.RouteTables().List(ctx, RouteTableFilter{ProjectID: rt.ProjectID, Name: name}, Pagination{})
 		if lerr != nil {
 			_ = rd.Close()
 			return nil, mapRepoErr(lerr)
@@ -132,12 +132,12 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTa
 // сопутствующие `Subnet.UPDATED` события записываются в outbox триггером —
 // всё в одной БД-TX, commit'ится атомарно с нашим Insert + outbox-emit.
 func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt domain.RouteTable) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, rt.FolderID)
+	exists, err := u.projectClient.Exists(ctx, rt.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", rt.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", rt.ProjectID)
 	}
 
 	rt.ID = rtID

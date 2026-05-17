@@ -244,7 +244,7 @@ func (h *Handler) ExplainResolution(ctx context.Context, req *vpcv1.ExplainResol
 // -- Admin observability --
 
 func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolAddressesRequest) (*vpcv1.ListAddressPoolAddressesResponse, error) {
-	addrs, next, err := h.listAddresses.Execute(ctx, req.GetPoolId(), req.GetFolderId(), Pagination{
+	addrs, next, err := h.listAddresses.Execute(ctx, req.GetPoolId(), req.GetProjectId(), Pagination{
 		PageToken: req.GetPageToken(),
 		PageSize:  req.GetPageSize(),
 	})
@@ -261,7 +261,7 @@ func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolA
 		}
 		out = append(out, &vpcv1.AddressPoolAddressEntry{
 			Id:        a.ID,
-			FolderId:  a.FolderID,
+			ProjectId:  a.ProjectID,
 			Name:      string(a.Name),
 			Ipv4:      ip,
 			ZoneId:    zone,

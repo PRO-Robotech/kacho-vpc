@@ -154,7 +154,7 @@ func TestIntegration_AddressRepo_IPv6_AllocateAndFree(t *testing.T) {
 func makeAddrShell(folderID string, _ time.Time, name string) *domain.Address {
 	return &domain.Address{
 		ID:        ids.NewID(ids.PrefixAddress),
-		FolderID:  folderID,
+		ProjectID:  folderID,
 		Name:      domain.RcNameVPC(name),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv6,

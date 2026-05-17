@@ -8,12 +8,12 @@ CASES = []
 def _make_net_sub(suffix="a", cidr="10.100.0.0/24"):
     return [
         Step(name="pre-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": f"adr-{suffix}-net-{{{{runId}}}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": f"adr-{suffix}-net-{{{{runId}}}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="pre-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": f"adr-{suffix}-sub-{{{{runId}}}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": [cidr]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -40,7 +40,7 @@ CASES.append(Case(
     steps=[
         *_make_net_sub("cri"),
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-cri-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-cri-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -62,7 +62,7 @@ CASES.append(Case(
     priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-cre-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-cre-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -84,7 +84,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="create-no-spec", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-no-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-no-{{runId}}"},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
 ))
@@ -100,7 +100,7 @@ CASES.append(Case(
         # отдаёт plain-text, наш api-gateway — JSON {code,message} (kacho-vpc#10,
         # 07-known-divergences.md). Кейс defensive — 400 + непустое тело.
         Step(name="create-both", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-bo-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-bo-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"},
                    "internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
              test_script=[*assert_transcode_error()]),
@@ -115,7 +115,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-snf-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-snf-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
              test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                           "pm.test('mentions subnet', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('subnet'));"]),
@@ -145,7 +145,7 @@ CASES.append(Case(
     classes=["CRUD"],
     priority="P1",
     steps=[
-        Step(name="list", method="GET", path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=10",
+        Step(name="list", method="GET", path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&pageSize=10",
              test_script=[*assert_status(200),
                           "pm.test('addresses array', () => pm.expect(pm.response.json().addresses || []).to.be.an('array'));"]),
     ],
@@ -153,7 +153,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="ADR-LST-VAL-FOLDER-REQUIRED",
-    title="List без folderId → InvalidArgument",
+    title="List без projectId → InvalidArgument",
     classes=["VAL", "AUTHZ"],
     priority="P0",
     steps=[
@@ -217,7 +217,7 @@ CASES.append(Case(
     priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-lop-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-lop-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -243,18 +243,18 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-mv-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-mv-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
         poll_operation_until_done(),
         Step(name="move", method="POST", path="/vpc/v1/addresses/{{addrId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+             body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
         Step(name="verify", method="GET", path="/vpc/v1/addresses/{{addrId}}",
              test_script=[*assert_status(200),
-                          "pm.test('folder updated', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderCrossId')));"]),
+                          "pm.test('folder updated', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderCrossId')));"]),
         Step(name="cleanup", method="DELETE", path="/vpc/v1/addresses/{{addrId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -267,7 +267,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-upd-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-upd-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -296,7 +296,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-confnf-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-confnf-{{runId}}",
                    "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
@@ -311,7 +311,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{garbageId}}", "name": "adr-fnf-{{runId}}",
+             body={"projectId": "{{garbageId}}", "name": "adr-fnf-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
              # (race-prone). Verbatim text проверяется через operation.error.
@@ -367,7 +367,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="move-nx", method="POST", path="/vpc/v1/addresses/{{garbageVpcId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                  "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
@@ -381,7 +381,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-delok-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-delok-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -400,7 +400,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-gbv-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-gbv-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -451,33 +451,33 @@ CASES.extend(filter_syntax_block("ADR", "/vpc/v1/addresses"))
 CASES.append(pagination_roundtrip("ADR", "/vpc/v1/addresses"))
 
 CASES.extend(update_happy_per_field("ADR", "/vpc/v1/addresses", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(perf_baseline_block("ADR", "/vpc/v1/addresses"))
 CASES.append(move_same_folder("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(verbatim_text_pack("ADR", "Address", "/vpc/v1/addresses"))
 CASES.extend(authz_caller_headers_block("ADR", "/vpc/v1/addresses"))
 
 CASES.append(update_happy_multi_field("ADR", "/vpc/v1/addresses", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.append(cross_folder_resource_block("ADR", "/vpc/v1/addresses",
     {"externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.append(list_filter_match_block("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(neg_invalid_types_block("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(http_method_not_allowed_block("ADR", "/vpc/v1/addresses"))
 CASES.extend(malformed_body_block("ADR", "/vpc/v1/addresses"))
 
 CASES.append(alreadyexists_dup_name_for("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(update_mask_partial_block("ADR", "/vpc/v1/addresses", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.append(perf_baseline_get_block("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.extend(list_total_size_check_block("ADR", "/vpc/v1/addresses"))
 CASES.extend(headers_content_type_block("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 
 # v10 Address-specific
 CASES.append(Case(
@@ -486,7 +486,7 @@ CASES.append(Case(
     classes=["VAL", "NEG"], priority="P1",
     steps=[
         Step(name="create-bad-combo", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-combo-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-combo-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"},
                    "internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
@@ -499,7 +499,7 @@ CASES.append(Case(
     classes=["VAL"], priority="P2",
     steps=[
         Step(name="cr-flags", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-flg-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-flg-{{runId}}",
                    "reserved": True, "used": False,
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
@@ -527,7 +527,7 @@ CASES.append(Case(
     classes=["CONF", "AUTHZ"], priority="P0",
     steps=[
         Step(name="cr-in-A", method="POST", path="/vpc/v1/addresses",
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-leak-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-leak-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -552,7 +552,7 @@ CASES.append(Case(
     title="List с pageSize=-1 → 400 или 200",
     classes=["BVA", "VAL"], priority="P2",
     steps=[Step(name="lst-neg", method="GET",
-                path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=-1",
+                path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&pageSize=-1",
                 test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -561,7 +561,7 @@ CASES.append(Case(
     title="List с filter содержащим спец-символы → 400 или 200",
     classes=["FILTER", "VAL"], priority="P3",
     steps=[Step(name="lst-fsc", method="GET",
-                path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
                 test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -570,7 +570,7 @@ CASES.append(Case(
     title="List с pageSize=1000 (boundary max) → 200",
     classes=["BVA"], priority="P2",
     steps=[Step(name="lst-max", method="GET",
-                path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=1000",
+                path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&pageSize=1000",
                 test_script=[*assert_status(200)])],
 ))
 
@@ -579,16 +579,16 @@ CASES.append(Case(
     title="List с pageSize=1001 (over max) → 400",
     classes=["BVA", "VAL"], priority="P1",
     steps=[Step(name="lst-1001", method="GET",
-                path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&pageSize=1001",
+                path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&pageSize=1001",
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
 CASES.append(Case(
     id="ADR-LST-DOUBLE-FOLDER-PARAM",
-    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    title="List с дубликатом projectId param → 200 (last wins) или 400",
     classes=["VAL"], priority="P3",
     steps=[Step(name="lst-dup", method="GET",
-                path="/vpc/v1/addresses?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                path="/vpc/v1/addresses?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -602,16 +602,16 @@ CASES.append(Case(
 
 # === Required + Immutable для Address ===
 CASES.extend(required_fields_matrix("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "name": "adr-req-{{runId}}",
+    {"projectId": "{{_suiteFolderId}}", "name": "adr-req-{{runId}}",
      "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
-    ["folderId", "name"]))  # ipv4 spec — oneof, не required
+    ["projectId", "name"]))  # ipv4 spec — oneof, не required
 CASES.extend(immutable_fields_matrix("ADR", "/vpc/v1/addresses",
-    ["folder_id", "external_ipv4_address_spec", "internal_ipv4_address_spec"]))
+    ["project_id", "external_ipv4_address_spec", "internal_ipv4_address_spec"]))
 
 CASES.extend(security_injection_block("ADR", "/vpc/v1/addresses", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 CASES.append(conformance_lifecycle_pack("ADR", "/vpc/v1/addresses",
-    {"folderId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
+    {"projectId": "{{_suiteFolderId}}", "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}}))
 
 
 # ─── KAC-58 / KAC-63: External IPv6 regression coverage ─────────────────────
@@ -666,7 +666,7 @@ CASES.append(Case(
     steps=[
         *_make_v6_pool("crv6", zone="ru-central1-d", cidr="2001:db8:cafe::/64"),
         Step(name="create", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-crv6-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-crv6-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -697,7 +697,7 @@ CASES.append(Case(
     classes=["NEG"], priority="P0",
     steps=[
         Step(name="create", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-nv6-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-nv6-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-b"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -728,7 +728,7 @@ CASES.append(Case(
         *_make_v6_pool("rru", zone="ru-central1-d", cidr="2001:db8:bee::/64"),
         # 1) Create + remember the IP.
         Step(name="cr-1", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-rru1-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-rru1-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -743,7 +743,7 @@ CASES.append(Case(
         poll_operation_until_done(),
         # 3) Allocate again — should pick up the released offset → same IP.
         Step(name="cr-2", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-rru2-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-rru2-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -773,7 +773,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P0",
     steps=[
         Step(name="create", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-fal-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-fal-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-a"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -812,7 +812,7 @@ CASES.append(Case(
                           *save_from_response("j.id", "falV4PoolId")]),
         # Allocate v4 → cascade falls through (нет v4 default в zone-d).
         Step(name="create", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-falv4-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-falv4-{{runId}}",
                    "externalIpv4AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
@@ -847,7 +847,7 @@ CASES.append(Case(
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "falV6PoolId")]),
         Step(name="create", method="POST", path=ADDRS,
-             body={"folderId": "{{_suiteFolderId}}", "name": "adr-falv6-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "adr-falv6-{{runId}}",
                    "externalIpv6AddressSpec": {"zoneId": "ru-central1-d"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),

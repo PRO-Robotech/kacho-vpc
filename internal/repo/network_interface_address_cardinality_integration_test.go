@@ -47,14 +47,14 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 	}
 
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-card", Name: domain.RcNameVPC("net-card"),
+		ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-card", Name: domain.RcNameVPC("net-card"),
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card", Name: domain.RcNameVPC("sub-card"), NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-card", Name: domain.RcNameVPC("sub-card"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.40.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -64,7 +64,7 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 
 	mkNIC := func(suffix string, v4 []string, v6 []string) *domain.NetworkInterface {
 		return &domain.NetworkInterface{
-			ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-card",
+			ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-card",
 			Name: domain.RcNameVPC("nic-" + suffix), SubnetID: sub.ID, MAC: "0e:55:55:55:55:" + suffix,
 			Status:       domain.NIStatusAvailable,
 			V4AddressIDs: v4,

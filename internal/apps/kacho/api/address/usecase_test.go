@@ -39,7 +39,7 @@ import (
 func makeSubnet(sr *repomock.SubnetRepo, networkID string) *domain.Subnet {
 	s := &domain.Subnet{
 		ID:           ids.NewID(ids.PrefixSubnet),
-		FolderID:     "f1",
+		ProjectID:     "f1",
 		NetworkID:    networkID,
 		Name:         domain.RcNameVPC("test-subnet"),
 		V4CidrBlocks: []string{"10.0.0.0/24"},
@@ -52,7 +52,7 @@ func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
 	sr *repomock.SubnetRepo,
 	or *repomock.OpsRepo,
-	fc *repomock.FolderClient,
+	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
 	create := NewCreateAddressUseCase(kr, sr, fc, or, nil)
@@ -72,7 +72,7 @@ func minimalHandler(t *testing.T, folderOK bool) (*Handler, *repomock.OpsRepo, *
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	fc := &repomock.FolderClient{OK: folderOK}
+	fc := &repomock.ProjectClient{OK: folderOK}
 	return makeHandler(t, kr, sr, or, fc), or, kr, sr
 }
 
@@ -96,7 +96,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_List_Empty(t *testing.T) {
 	h, _, _, _ := minimalHandler(t, true)
-	resp, err := h.List(context.Background(), &vpcv1.ListAddressesRequest{FolderId: "f1"})
+	resp, err := h.List(context.Background(), &vpcv1.ListAddressesRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.Addresses)
 }
@@ -151,9 +151,9 @@ func TestCreateUseCase_NoSpec(t *testing.T) {
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 
-	_, err := uc.Execute(context.Background(), CreateInput{FolderID: "f1"})
+	_, err := uc.Execute(context.Background(), CreateInput{ProjectID: "f1"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -163,7 +163,7 @@ func TestCreateUseCase_RequiresFolder(t *testing.T) {
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
@@ -177,11 +177,11 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
-		FolderID: "f1",
+		ProjectID: "f1",
 		Name:     "addr1",
 		ExternalSpec: &ExternalAddrSpec{
 			Address: "203.0.113.10",
@@ -195,7 +195,7 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
-	addrs, _, err := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
+	addrs, _, err := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.NoError(t, err)
 	require.Len(t, addrs, 1)
 	assert.Equal(t, domain.AddressTypeExternal, addrs[0].Type)
@@ -208,17 +208,17 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
-		FolderID:     "f1",
+		ProjectID:     "f1",
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
 
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, "", addrs[0].ExternalIpv4.Address,
 		"with pools=nil use-case must NOT auto-allocate")
@@ -230,11 +230,11 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
-		FolderID: "f1",
+		ProjectID: "f1",
 		InternalSpec: &InternalAddrSpec{
 			SubnetID: sub.ID,
 		},
@@ -242,7 +242,7 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
 
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, domain.AddressTypeInternal, addrs[0].Type)
 	assert.Equal(t, sub.ID, addrs[0].InternalIpv4.SubnetID)
@@ -254,10 +254,10 @@ func TestCreateUseCase_Internal_ExplicitIP_OutOfCIDR(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
-		FolderID: "f1",
+		ProjectID: "f1",
 		InternalSpec: &InternalAddrSpec{
 			SubnetID: sub.ID,
 			Address:  "192.168.1.5", // вне 10.0.0.0/24
@@ -273,11 +273,11 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
-		FolderID: "f1",
+		ProjectID: "f1",
 		InternalSpec: &InternalAddrSpec{
 			SubnetID: sub.ID,
 			Address:  "10.0.0.5",
@@ -285,7 +285,7 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{FolderID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, "10.0.0.5", addrs[0].InternalIpv4.Address)
 }
@@ -295,10 +295,10 @@ func TestCreateUseCase_Internal_ExplicitIP_BadFormat(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
-	uc := NewCreateAddressUseCase(kr, sr, &repomock.FolderClient{OK: true}, or, nil)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
 
 	_, err := uc.Execute(context.Background(), CreateInput{
-		FolderID: "f1",
+		ProjectID: "f1",
 		InternalSpec: &InternalAddrSpec{
 			SubnetID: sub.ID,
 			Address:  "not-an-ip",
@@ -315,7 +315,7 @@ func TestUpdateUseCase_DeletionProtection(t *testing.T) {
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 addrID,
-		FolderID:           "f1",
+		ProjectID:           "f1",
 		Name:               "addr",
 		DeletionProtection: false,
 	}}
@@ -363,7 +363,7 @@ func TestDeleteUseCase_DeletionProtection(t *testing.T) {
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 addrID,
-		FolderID:           "f1",
+		ProjectID:           "f1",
 		DeletionProtection: true,
 	}}
 	kr.SeedAddress(rec)
@@ -383,7 +383,7 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:       addrID,
-		FolderID: "f1",
+		ProjectID: "f1",
 		Used:     true,
 	}}
 	kr.SeedAddress(rec)
@@ -396,7 +396,7 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 
 func TestMoveUseCase_Validates(t *testing.T) {
 	kr := kachomock.NewRepository()
-	uc := NewMoveAddressUseCase(kr, &repomock.FolderClient{OK: true}, repomock.NewOpsRepo())
+	uc := NewMoveAddressUseCase(kr, &repomock.ProjectClient{OK: true}, repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), "", "f2")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -446,7 +446,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	h, or, _, _ := minimalHandler(t, true)
 
 	createOp, err := h.Create(context.Background(), &vpcv1.CreateAddressRequest{
-		FolderId: "f1", Name: "addr",
+		ProjectId: "f1", Name: "addr",
 		AddressSpec: &vpcv1.CreateAddressRequest_ExternalIpv4AddressSpec{
 			ExternalIpv4AddressSpec: &vpcv1.ExternalIpv4AddressSpec{
 				Address: "203.0.113.10",
@@ -457,7 +457,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, createOp.Id)
 
-	resp, _ := h.List(context.Background(), &vpcv1.ListAddressesRequest{FolderId: "f1"})
+	resp, _ := h.List(context.Background(), &vpcv1.ListAddressesRequest{ProjectId: "f1"})
 	require.Len(t, resp.Addresses, 1)
 	addrID := resp.Addresses[0].Id
 
@@ -475,7 +475,7 @@ func TestHandler_FullFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	moveOp, err := h.Move(context.Background(), &vpcv1.MoveAddressRequest{
-		AddressId: addrID, DestinationFolderId: "f2",
+		AddressId: addrID, DestinationProjectId: "f2",
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, moveOp.Id)
@@ -493,7 +493,7 @@ func TestAddressToPb_External(t *testing.T) {
 	rec := &kachorepo.AddressRecord{
 		Address: domain.Address{
 			ID:       "e9b-test",
-			FolderID: "f1",
+			ProjectID: "f1",
 			Type:     domain.AddressTypeExternal,
 			ExternalIpv4: &domain.ExternalIpv4Spec{
 				Address: "203.0.113.5",

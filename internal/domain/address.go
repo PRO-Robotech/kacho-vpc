@@ -147,7 +147,7 @@ func (r *AddressReference) Equal(other *AddressReference) bool {
 // skill evgeniy §4 D.1 / §7 H.1.
 type Address struct {
 	ID                 string
-	FolderID           string
+	ProjectID           string
 	Name               RcNameVPC
 	Description        RcDescription
 	Labels             RcLabels
@@ -192,7 +192,7 @@ func (a Address) Validate() error {
 // of *AddressReference. skill evgeniy §4 D.10.
 func (a Address) Equal(other Address) bool {
 	if a.ID != other.ID ||
-		a.FolderID != other.FolderID ||
+		a.ProjectID != other.ProjectID ||
 		a.Name != other.Name ||
 		a.Description != other.Description ||
 		a.Type != other.Type ||

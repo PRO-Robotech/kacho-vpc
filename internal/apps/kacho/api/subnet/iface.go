@@ -61,10 +61,10 @@ type NetworkInterfaceRepo interface {
 	ListBySubnet(ctx context.Context, subnetID string) ([]*kachorepo.NetworkInterfaceRecord, error)
 }
 
-// FolderClient — то, что use-case'ам Subnet нужно от peer-сервиса
+// ProjectClient — то, что use-case'ам Subnet нужно от peer-сервиса
 // kacho-resource-manager: проверка существования folder'а на request-path / в
 // worker'е.
-type FolderClient interface {
+type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }
 

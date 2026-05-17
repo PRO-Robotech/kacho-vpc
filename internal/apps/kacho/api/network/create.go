@@ -37,7 +37,7 @@ import (
 // composing use-case вызывается ВНУТРИ writer-TX `doCreate`, перед `Commit()`.
 type CreateNetworkUseCase struct {
 	repo            Repo
-	folderClient    FolderClient
+	projectClient    ProjectClient
 	opsRepo         operations.Repo
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 	createDefaultSG *CreateDefaultSGUseCase
@@ -47,10 +47,10 @@ type CreateNetworkUseCase struct {
 // из конфига (`cfg.Network.DefaultSGInline`) — при true в одной writer-TX
 // создаётся default SG (через композицию с `CreateDefaultSGUseCase`) и
 // `Network.default_security_group_id` заполняется атомарно с Insert(Network).
-func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
+func NewCreateNetworkUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
 		repo:            r,
-		folderClient:    folderClient,
+		projectClient:    projectClient,
 		opsRepo:         opsRepo,
 		defaultSGInline: defaultSGInline,
 		createDefaultSG: NewCreateDefaultSGUseCase(),
@@ -65,8 +65,8 @@ func NewCreateNetworkUseCase(r Repo, folderClient FolderClient, opsRepo operatio
 // перепаковывала domain.X без дополнительного контекста. Поле `n.ID` на входе
 // пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixNetwork)`.
 func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*operations.Operation, error) {
-	if n.FolderID == "" {
-		return nil, status.Error(codes.InvalidArgument, "folder_id required")
+	if n.ProjectID == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
 	if err := n.Validate(); err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		existing, _, lerr := rd.Networks().List(ctx, NetworkFilter{FolderID: n.FolderID, Name: name}, Pagination{})
+		existing, _, lerr := rd.Networks().List(ctx, NetworkFilter{ProjectID: n.ProjectID, Name: name}, Pagination{})
 		_ = rd.Close()
 		if lerr != nil {
 			return nil, mapRepoErr(lerr)
@@ -137,12 +137,12 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 // той же tx (видимость G.2 + Postgres deferred constraint check на коммите для
 // non-deferrable — INSERT(child) после INSERT(parent) в одной TX проходит).
 func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network) (*anypb.Any, error) {
-	exists, err := u.folderClient.Exists(ctx, n.FolderID)
+	exists, err := u.projectClient.Exists(ctx, n.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
 	}
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", n.FolderID)
+		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", n.ProjectID)
 	}
 
 	n.ID = netID

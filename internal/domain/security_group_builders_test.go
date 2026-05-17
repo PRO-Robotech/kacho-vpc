@@ -42,11 +42,11 @@ func TestNewDefaultSecurityGroupRules(t *testing.T) {
 func TestNewDefaultSecurityGroup(t *testing.T) {
 	net := domain.Network{
 		ID:       "enpabcdefghij",
-		FolderID: "folder-1",
+		ProjectID: "folder-1",
 	}
 	sg := domain.NewDefaultSecurityGroup(net)
 	assert.NotEmpty(t, sg.ID, "ID generated")
-	assert.Equal(t, "folder-1", sg.FolderID)
+	assert.Equal(t, "folder-1", sg.ProjectID)
 	assert.Equal(t, "enpabcdefghij", sg.NetworkID)
 	assert.Equal(t, domain.RcNameVPC("default-sg-enpabcde"), sg.Name)
 	assert.Equal(t, domain.SecurityGroupStatusActive, sg.Status)

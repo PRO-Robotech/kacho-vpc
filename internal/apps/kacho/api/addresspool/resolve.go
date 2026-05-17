@@ -29,7 +29,7 @@ type ResolverService struct {
 	repo         Repo
 	addrRepo     AddressRepo
 	subnetRepo   SubnetReader
-	folderClient FolderClient // nil → step 3 (label-selector) пропускается
+	projectClient ProjectClient // nil → step 3 (label-selector) пропускается
 }
 
 // NewResolverService собирает cascade-resolve движок.
@@ -37,11 +37,11 @@ func NewResolverService(
 	r Repo,
 	addrRepo AddressRepo,
 	subnetRepo SubnetReader,
-	folderClient FolderClient,
+	projectClient ProjectClient,
 ) *ResolverService {
 	return &ResolverService{
 		repo: r, addrRepo: addrRepo, subnetRepo: subnetRepo,
-		folderClient: folderClient,
+		projectClient: projectClient,
 	}
 }
 
@@ -120,7 +120,7 @@ func (s *ResolverService) doResolve(
 		}
 	}
 
-	// Resolve network_id, zone_id, folder_id из address-spec.
+	// Resolve network_id, zone_id, project_id из address-spec.
 	networkID := networkIDOverride
 	zoneID := ""
 	folderID := ""
@@ -133,7 +133,7 @@ func (s *ResolverService) doResolve(
 			}
 			a = &fetched.Address
 		}
-		folderID = a.FolderID
+		folderID = a.ProjectID
 		if a.ExternalIpv4 != nil && a.ExternalIpv4.ZoneID != "" {
 			zoneID = a.ExternalIpv4.ZoneID
 		}
@@ -164,8 +164,8 @@ func (s *ResolverService) doResolve(
 	}
 
 	// Step 3: label-selector match через CloudPoolSelector.
-	if folderID != "" && s.folderClient != nil {
-		if cloudID, gerr := s.folderClient.GetCloudID(ctx, folderID); gerr == nil && cloudID != "" {
+	if folderID != "" && s.projectClient != nil {
+		if cloudID, gerr := s.projectClient.GetCloudIDFromProject(ctx, folderID); gerr == nil && cloudID != "" {
 			if sel, gerr := rd.CloudPoolSelectors().Get(ctx, cloudID); gerr == nil && !sel.IsEmpty() {
 				// Берём по 4 на каждый match чтобы после family-фильтра остался
 				// шанс выбрать non-trivial pool.

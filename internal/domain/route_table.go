@@ -25,7 +25,7 @@ func (r StaticRoute) Equal(other StaticRoute) bool {
 // skill evgeniy §4 D.1 / §7 H.1.
 type RouteTable struct {
 	ID           string
-	FolderID     string
+	ProjectID     string
 	Name         RcNameVPC
 	Description  RcDescription
 	Labels       RcLabels
@@ -51,7 +51,7 @@ func (rt RouteTable) Validate() error {
 // matching priority). skill evgeniy §4 D.10.
 func (rt RouteTable) Equal(other RouteTable) bool {
 	if rt.ID != other.ID ||
-		rt.FolderID != other.FolderID ||
+		rt.ProjectID != other.ProjectID ||
 		rt.Name != other.Name ||
 		rt.Description != other.Description ||
 		rt.NetworkID != other.NetworkID {

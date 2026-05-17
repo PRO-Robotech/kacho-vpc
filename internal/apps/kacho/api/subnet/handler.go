@@ -42,7 +42,7 @@ type Handler struct {
 
 // NewHandler собирает Handler из готовых use-case'ов. Конструктор намеренно
 // принимает все use-case'ы — composition-root (cmd/vpc/main.go) собирает их
-// с одинаковыми зависимостями (repo / networkReader / folderClient / zoneReg /
+// с одинаковыми зависимостями (repo / networkReader / projectClient / zoneReg /
 // opsRepo / addrRefRepo / nicRepo).
 func NewHandler(
 	create *CreateSubnetUseCase,
@@ -81,19 +81,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*vpcv1.
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	return subnetToPb(s)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	subs, nextToken, err := h.list.Execute(ctx, SubnetFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -115,11 +115,11 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpc
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	s := domain.Subnet{
-		FolderID:     req.FolderId,
+		ProjectID:     req.ProjectId,
 		Name:         domain.RcNameVPC(req.Name),
 		Description:  domain.RcDescription(req.Description),
 		Labels:       domain.LabelsFromMap(req.Labels),
@@ -152,7 +152,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateSubnetRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -193,7 +193,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.SubnetId)
@@ -213,13 +213,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveSubnetRequest) (*oper
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.SubnetId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.SubnetId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func (h *Handler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetCidrBlo
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.addCidrBlocks.Execute(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
@@ -254,7 +254,7 @@ func (h *Handler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveSubnetC
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.removeCidrBlocks.Execute(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
@@ -273,7 +273,7 @@ func (h *Handler) Relocate(ctx context.Context, req *vpcv1.RelocateSubnetRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.relocate.Execute(ctx, req.SubnetId, req.DestinationZoneId)
@@ -292,7 +292,7 @@ func (h *Handler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUsedAddr
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 		return nil, err
 	}
 	addrs, refs, nextToken, err := h.listUsedAddresses.Execute(ctx, req.SubnetId, Pagination{
@@ -332,7 +332,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListSubnetOpera
 		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
 	}
 	if s, gerr := h.get.Execute(ctx, req.SubnetId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, s.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, s.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {

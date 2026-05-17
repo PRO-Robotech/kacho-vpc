@@ -92,7 +92,7 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 
 	n := &domain.Network{
 		ID:          ids.NewUID(),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("test-network"),
 		Description: domain.RcDescription("test"),
 		Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),
@@ -119,7 +119,7 @@ func TestIntegration_NetworkRepo_CRUD(t *testing.T) {
 	// List
 	rd2, err := r.Reader(ctx)
 	require.NoError(t, err)
-	nets, nextToken, err := rd2.Networks().List(ctx, kacho.NetworkFilter{FolderID: "folder-1"}, kacho.Pagination{})
+	nets, nextToken, err := rd2.Networks().List(ctx, kacho.NetworkFilter{ProjectID: "folder-1"}, kacho.Pagination{})
 	require.NoError(t, rd2.Close())
 	require.NoError(t, err)
 	assert.Len(t, nets, 1)
@@ -165,7 +165,7 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 
 	net := &domain.Network{
 		ID:       ids.NewUID(),
-		FolderID: "folder-1",
+		ProjectID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-subnet"),
 	}
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
@@ -175,7 +175,7 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
-		FolderID:     "folder-1",
+		ProjectID:     "folder-1",
 		Name:         domain.RcNameVPC("test-subnet"),
 		NetworkID:    net.ID,
 		ZoneID:       "ru-central1-a",
@@ -217,7 +217,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	// External address.
 	extAddr := &domain.Address{
 		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
+		ProjectID:  "folder-1",
 		Name:      domain.RcNameVPC("my-external-ip"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
@@ -251,7 +251,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	// Internal address — addresses.internal_subnet_id has an FK to subnets.
 	net := &domain.Network{
 		ID:       ids.NewUID(),
-		FolderID: "folder-1",
+		ProjectID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-internal-addr"),
 	}
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
@@ -260,7 +260,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 	}))
 	sub := &domain.Subnet{
 		ID:           ids.NewUID(),
-		FolderID:     "folder-1",
+		ProjectID:     "folder-1",
 		Name:         domain.RcNameVPC("sub-for-internal-addr"),
 		NetworkID:    net.ID,
 		ZoneID:       "ru-central1-a",
@@ -273,7 +273,7 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 
 	intAddr := &domain.Address{
 		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
+		ProjectID:  "folder-1",
 		Type:      domain.AddressTypeInternal,
 		IpVersion: domain.IpVersionIPv4,
 		InternalIpv4: &domain.InternalIpv4Spec{
@@ -308,7 +308,7 @@ func TestIntegration_AddressRepo_References(t *testing.T) {
 
 	addr := &domain.Address{
 		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
+		ProjectID:  "folder-1",
 		Name:      domain.RcNameVPC("ref-tracked-ip"),
 		Type:      domain.AddressTypeExternal,
 		IpVersion: domain.IpVersionIPv4,
@@ -457,7 +457,7 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 
 	net := &domain.Network{
 		ID:       ids.NewUID(),
-		FolderID: "folder-1",
+		ProjectID: "folder-1",
 		Name:     domain.RcNameVPC("net-for-rt"),
 	}
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
@@ -467,7 +467,7 @@ func TestIntegration_RouteTableRepo_StaticRoutes(t *testing.T) {
 
 	rt := &domain.RouteTable{
 		ID:        ids.NewUID(),
-		FolderID:  "folder-1",
+		ProjectID:  "folder-1",
 		Name:      domain.RcNameVPC("test-rt"),
 		NetworkID: net.ID,
 		StaticRoutes: []domain.StaticRoute{

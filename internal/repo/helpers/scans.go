@@ -17,28 +17,28 @@ type Scannable interface {
 // ---------- Column-list константы ----------
 
 // NetworkCols — список колонок таблицы networks в порядке, ожидаемом ScanNetwork.
-const NetworkCols = `id, folder_id, created_at, name, description, labels, default_security_group_id`
+const NetworkCols = `id, project_id, created_at, name, description, labels, default_security_group_id`
 
 // SubnetCols — список колонок таблицы subnets в порядке, ожидаемом ScanSubnet.
-const SubnetCols = `id, folder_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options`
+const SubnetCols = `id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options`
 
 // AddressCols — список колонок таблицы addresses в порядке, ожидаемом ScanAddress.
-const AddressCols = `id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
+const AddressCols = `id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
 
 // RouteTableCols — список колонок таблицы route_tables в порядке, ожидаемом ScanRouteTable.
-const RouteTableCols = `id, folder_id, created_at, name, description, labels, network_id, static_routes`
+const RouteTableCols = `id, project_id, created_at, name, description, labels, network_id, static_routes`
 
 // SGCols — список колонок таблицы security_groups в порядке, ожидаемом ScanSG.
-const SGCols = `id, folder_id, network_id, created_at, name, description, labels, status, default_for_network, rules`
+const SGCols = `id, project_id, network_id, created_at, name, description, labels, status, default_for_network, rules`
 
 // GatewayCols — список колонок таблицы gateways в порядке, ожидаемом ScanGateway.
-const GatewayCols = `id, folder_id, created_at, name, description, labels, gateway_type`
+const GatewayCols = `id, project_id, created_at, name, description, labels, gateway_type`
 
 // PECols — список колонок таблицы private_endpoints в порядке, ожидаемом ScanPrivateEndpoint.
-const PECols = `id, folder_id, created_at, name, description, labels, network_id, subnet_id, address_id, ip_address, service_type, dns_options, status`
+const PECols = `id, project_id, created_at, name, description, labels, network_id, subnet_id, address_id, ip_address, service_type, dns_options, status`
 
 // NICCols — список колонок таблицы network_interfaces в порядке, ожидаемом ScanNI.
-const NICCols = `id, folder_id, created_at, name, description, labels, subnet_id,
+const NICCols = `id, project_id, created_at, name, description, labels, subnet_id,
 	v4_address_ids, v6_address_ids, security_group_ids, used_by_type, used_by_id, used_by_name, mac_address, status`
 
 // AddressPoolCols — список колонок address_pools в порядке, ожидаемом ScanAddressPool.
@@ -54,7 +54,7 @@ func ScanNetwork(row Scannable) (*kachorepo.NetworkRecord, error) {
 	var description string
 
 	err := row.Scan(
-		&n.ID, &n.FolderID, &n.CreatedAt, &name, &description, &labelsJSON,
+		&n.ID, &n.ProjectID, &n.CreatedAt, &name, &description, &labelsJSON,
 		&n.DefaultSecurityGroupID,
 	)
 	if err != nil {
@@ -80,7 +80,7 @@ func ScanSubnet(row Scannable) (*kachorepo.SubnetRecord, error) {
 	var description string
 
 	err := row.Scan(
-		&s.ID, &s.FolderID, &s.CreatedAt, &name, &description, &labelsJSON,
+		&s.ID, &s.ProjectID, &s.CreatedAt, &name, &description, &labelsJSON,
 		&s.NetworkID, &s.ZoneID, &v4, &v6, &routeTableID, &dhcpJSON,
 	)
 	if err != nil {
@@ -121,7 +121,7 @@ func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
 	var description string
 
 	err := row.Scan(
-		&a.ID, &a.FolderID, &a.CreatedAt, &name, &description, &labelsJSON,
+		&a.ID, &a.ProjectID, &a.CreatedAt, &name, &description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
 		&extJSON, &intJSON, &int6JSON, &ext6JSON,
 	)
@@ -177,7 +177,7 @@ func ScanRouteTable(row Scannable) (*kachorepo.RouteTableRecord, error) {
 	var description string
 
 	err := row.Scan(
-		&rt.ID, &rt.FolderID, &rt.CreatedAt, &name, &description, &labelsJSON,
+		&rt.ID, &rt.ProjectID, &rt.CreatedAt, &name, &description, &labelsJSON,
 		&rt.NetworkID, &routesJSON,
 	)
 	if err != nil {
@@ -205,7 +205,7 @@ func ScanSG(row Scannable) (*kachorepo.SecurityGroupRecord, error) {
 	var name, description, statusStr string
 
 	err := row.Scan(
-		&sg.ID, &sg.FolderID, &networkID, &sg.CreatedAt, &name, &description, &labelsJSON, &statusStr, &sg.DefaultForNetwork, &rulesJSON,
+		&sg.ID, &sg.ProjectID, &networkID, &sg.CreatedAt, &name, &description, &labelsJSON, &statusStr, &sg.DefaultForNetwork, &rulesJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func ScanGateway(row Scannable) (*kachorepo.GatewayRecord, error) {
 	var name, description, gatewayType string
 
 	err := row.Scan(
-		&g.ID, &g.FolderID, &g.CreatedAt, &name, &description, &labelsJSON,
+		&g.ID, &g.ProjectID, &g.CreatedAt, &name, &description, &labelsJSON,
 		&gatewayType,
 	)
 	if err != nil {
@@ -259,7 +259,7 @@ func ScanPrivateEndpoint(row Scannable) (*kachorepo.PrivateEndpointRecord, error
 	var name, description, statusStr string
 
 	err := row.Scan(
-		&pe.ID, &pe.FolderID, &pe.CreatedAt, &name, &description, &labelsJSON,
+		&pe.ID, &pe.ProjectID, &pe.CreatedAt, &name, &description, &labelsJSON,
 		&networkID, &subnetID, &addressID, &ipAddress, &serviceType, &dnsJSON, &statusStr,
 	)
 	if err != nil {
@@ -305,7 +305,7 @@ func ScanNI(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
 	var labelsJSON, sgJSON, v4IDsJSON, v6IDsJSON []byte
 	var statusName, name, description string
 	if err := row.Scan(
-		&rec.ID, &rec.FolderID, &rec.CreatedAt, &name, &description, &labelsJSON, &rec.SubnetID,
+		&rec.ID, &rec.ProjectID, &rec.CreatedAt, &name, &description, &labelsJSON, &rec.SubnetID,
 		&v4IDsJSON, &v6IDsJSON, &sgJSON, &rec.UsedByType, &rec.UsedByID, &rec.UsedByName, &rec.MAC, &statusName,
 	); err != nil {
 		return nil, err

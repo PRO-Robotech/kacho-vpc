@@ -1,5 +1,5 @@
 // iface.go — value-объекты (Pagination, *Filter) и peer-service port-интерфейсы
-// (FolderClient / ZoneRegistry / SubnetExistsChecker), используемые use-case
+// (ProjectClient / ZoneRegistry / SubnetExistsChecker), используемые use-case
 // слоем kacho-vpc.
 //
 // KAC-94 A.7 ultra-final (skill evgeniy §1 A.7 + §6 G.6): legacy port-
@@ -16,7 +16,7 @@
 //
 // Этот файл оставлен только под Filter-type-alias'ы (`SubnetFilter` /
 // `NetworkFilter` / `AddressFilter` / …) — они проксируются на leaf-пакет
-// `internal/repo/kacho` (D.1), и peer-service port'ы (FolderClient /
+// `internal/repo/kacho` (D.1), и peer-service port'ы (ProjectClient /
 // SubnetExistsChecker / ZoneRegistry).
 
 package repo
@@ -71,7 +71,7 @@ type SecurityGroupFilter = kachorepo.SecurityGroupFilter
 
 // GatewayFilter — фильтр для списка NAT Gateways.
 type GatewayFilter struct {
-	FolderID string
+	ProjectID string
 	Name     string
 	Filter   string
 }
@@ -93,7 +93,7 @@ type AddressPoolFilter = kachorepo.AddressPoolFilter
 // use-case-пакет `internal/apps/kacho/api/networkinterface` экспортирует
 // type-alias на него.
 type NetworkInterfaceFilter struct {
-	FolderID   string
+	ProjectID   string
 	InstanceID string
 	SubnetID   string
 	// NetworkID — не поддерживается фильтром (NIC не хранит network_id), поле
@@ -101,14 +101,14 @@ type NetworkInterfaceFilter struct {
 	NetworkID string
 }
 
-// FolderClient — port для проверки существования Folder и lookup'а cloud_id.
-type FolderClient interface {
+// ProjectClient — port для проверки существования Folder и lookup'а cloud_id.
+type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 	// GetCloudID возвращает cloud_id для Folder. Используется в IPAM-cascade
 	// (cloud-pool-selector lookup). Empty string + nil error если folder не
 	// существует на стороне backend (NotFound пропускается, т.к. caller сам
 	// решает что делать).
-	GetCloudID(ctx context.Context, folderID string) (string, error)
+	GetCloudIDFromProject(ctx context.Context, folderID string) (string, error)
 }
 
 // SubnetExistsChecker — port для проверки существования Subnet (используется другими сервисами).

@@ -21,7 +21,7 @@ CASES.append(Case(
     priority="P0",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
                    "networkId": "{{garbageVpcId}}",
                    "objectStorage": {}},
              test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
@@ -52,7 +52,7 @@ CASES.append(Case(
     classes=["CRUD"],
     priority="P1",
     steps=[
-        Step(name="list", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}",
+        Step(name="list", method="GET", path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}",
              test_script=[*assert_status(200),
                           "pm.test('privateEndpoints array', () => pm.expect(pm.response.json().privateEndpoints || []).to.be.an('array'));"]),
     ],
@@ -114,12 +114,12 @@ CASES.append(Case(
 def _pe_net_sub(suffix="pe", cidr="10.130.0.0/24"):
     return [
         Step(name="pre-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": f"pe-{suffix}-net-{{{{runId}}}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": f"pe-{suffix}-net-{{{{runId}}}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="pre-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": f"pe-{suffix}-sub-{{{{runId}}}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": [cidr]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -134,7 +134,7 @@ CASES.append(Case(
     steps=[
         *_pe_net_sub("cr"),
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-cr-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-cr-{{runId}}",
                    "networkId": "{{netId}}", "subnetId": "{{subId}}",
                    "objectStorage": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -165,7 +165,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-confnf-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-confnf-{{runId}}",
                    "networkId": "{{garbageVpcId}}", "objectStorage": {}},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
@@ -210,7 +210,7 @@ CASES.append(Case(
     steps=[
         *_pe_net_sub("updok", "10.131.0.0/24"),
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-updok-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-updok-{{runId}}",
                    "networkId": "{{netId}}", "subnetId": "{{subId}}",
                    "objectStorage": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -238,7 +238,7 @@ CASES.append(Case(
     steps=[
         *_pe_net_sub("delok", "10.132.0.0/24"),
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-delok-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-delok-{{runId}}",
                    "networkId": "{{netId}}", "subnetId": "{{subId}}",
                    "objectStorage": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -262,7 +262,7 @@ CASES.append(Case(
     steps=[
         *_pe_net_sub("lop", "10.133.0.0/24"),
         Step(name="create", method="POST", path="/vpc/v1/endpoints",
-             body={"folderId": "{{_suiteFolderId}}", "name": "pe-lop-{{runId}}",
+             body={"projectId": "{{_suiteFolderId}}", "name": "pe-lop-{{runId}}",
                    "networkId": "{{netId}}", "subnetId": "{{subId}}",
                    "objectStorage": {}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -307,7 +307,7 @@ CASES.append(pagination_roundtrip("PE", "/vpc/v1/endpoints"))
 
 # PE: update-per-field — добавляем только description+labels (name тяжелее)
 for c in update_happy_per_field("PE", "/vpc/v1/endpoints", "/vpc/v1/endpoints",
-    {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+    {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
      "subnetId": "{{subId}}", "objectStorage": {}})[1:]:  # skip NAME (PE имеет особый Update)
     CASES.append(_pe_wrap("PE", "v7", c))
 
@@ -317,7 +317,7 @@ CASES.extend(authz_caller_headers_block("PE", "/vpc/v1/endpoints"))
 
 CASES.append(_pe_wrap("PE", "v8m",
     update_happy_multi_field("PE", "/vpc/v1/endpoints", "/vpc/v1/endpoints",
-        {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
          "subnetId": "{{subId}}", "objectStorage": {}})))
 CASES.extend(http_method_not_allowed_block("PE", "/vpc/v1/endpoints"))
 CASES.extend(malformed_body_block("PE", "/vpc/v1/endpoints"))
@@ -332,7 +332,7 @@ CASES.append(Case(
     # networkId={{garbageVpcId}} → sync existence-check сети отрабатывает раньше проверки service-поля →
     # 404 NOT_FOUND (verbatim YC, kacho-vpc#8). 400 — если service-валидация впереди; 200 — если permissive.
     steps=[Step(name="cr-no-service", method="POST", path="/vpc/v1/endpoints",
-                body={"folderId": "{{_suiteFolderId}}", "name": "pe-noserv-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "pe-noserv-{{runId}}",
                       "networkId": "{{garbageVpcId}}"},
                 test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"])],
 ))
@@ -342,7 +342,7 @@ CASES.append(Case(
     title="List PE с фильтром по status (если поддерживается)",
     classes=["FILTER"], priority="P3",
     steps=[Step(name="lst-status", method="GET",
-                path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22",
+                path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -352,7 +352,7 @@ CASES.append(Case(
     title="Create PE без networkId → 400",
     classes=["VAL", "NEG"], priority="P1",
     steps=[Step(name="cr-no-net", method="POST", path="/vpc/v1/endpoints",
-                body={"folderId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "pe-nn-{{runId}}",
                       "objectStorage": {}},
                 test_script=["pm.test('rejected', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
@@ -363,7 +363,7 @@ CASES.append(Case(
     classes=["VAL"], priority="P2",
     # subnetId опционален; networkId={{garbageVpcId}} → sync network-check → 404 NOT_FOUND (verbatim YC, kacho-vpc#8).
     steps=[Step(name="cr-no-sub", method="POST", path="/vpc/v1/endpoints",
-                body={"folderId": "{{_suiteFolderId}}", "name": "pe-ns-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "pe-ns-{{runId}}",
                       "networkId": "{{garbageVpcId}}", "objectStorage": {}},
                 test_script=["pm.test('200/400/404', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"])],
 ))
@@ -376,7 +376,7 @@ CASES.append(Case(
            # addressSpec.internalIpv4AddressSpec.subnetId — verbatim YC oneof-форма
            # (плоский subnetId не существует в proto и тихо отбрасывается gateway'ом).
            Step(name="cr-bad-sub", method="POST", path="/vpc/v1/endpoints",
-                body={"folderId": "{{_suiteFolderId}}", "name": "pe-nsnf-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "pe-nsnf-{{runId}}",
                       "networkId": "{{netId}}",
                       "addressSpec": {"internalIpv4AddressSpec": {"subnetId": "{{garbageVpcId}}"}},
                       "objectStorage": {}},
@@ -397,7 +397,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P2",
     steps=[*_pe_net_sub("wsub", "10.137.0.0/24"),
            Step(name="create", method="POST", path="/vpc/v1/endpoints",
-                body={"folderId": "{{_suiteFolderId}}", "name": "pe-wsub-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "pe-wsub-{{runId}}",
                       "networkId": "{{netId}}",
                       "addressSpec": {"internalIpv4AddressSpec": {"subnetId": "{{subId}}"}},
                       "objectStorage": {}},
@@ -424,7 +424,7 @@ CASES.append(Case(
     id="PE-LST-PAGE-ZERO",
     title="List PE с pageSize=0 → default applied",
     classes=["BVA"], priority="P2",
-    steps=[Step(name="lst-0", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=0",
+    steps=[Step(name="lst-0", method="GET", path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=0",
                 test_script=[*assert_status(200)])],
 ))
 
@@ -432,7 +432,7 @@ CASES.append(Case(
     id="PE-LST-PAGE-OVER",
     title="List PE с pageSize=10000 → 400",
     classes=["BVA", "VAL"], priority="P2",
-    steps=[Step(name="lst-over", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10000",
+    steps=[Step(name="lst-over", method="GET", path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=10000",
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
@@ -444,11 +444,11 @@ CASES.append(Case(
     title="Pagination roundtrip PE",
     classes=["PAGE", "CRUD"], priority="P2",
     steps=[
-        Step(name="p1", method="GET", path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1",
+        Step(name="p1", method="GET", path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1",
              test_script=[*assert_status(200),
                           "pm.environment.set('peTok', pm.response.json().nextPageToken || '');"]),
         Step(name="p2", method="GET",
-             path="/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}",
+             path="/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}",
              test_script=[*assert_status(200)]),
     ],
 ))
@@ -480,8 +480,8 @@ CASES.append(Case(
 
 # PE required + immutable
 CASES.extend(required_fields_matrix("PE", "/vpc/v1/endpoints",
-    {"folderId": "{{_suiteFolderId}}", "name": "pe-req-{{runId}}",
+    {"projectId": "{{_suiteFolderId}}", "name": "pe-req-{{runId}}",
      "networkId": "{{garbageVpcId}}", "objectStorage": {}},
-    ["folderId", "name", "networkId"]))
+    ["projectId", "name", "networkId"]))
 CASES.extend(immutable_fields_matrix("PE", "/vpc/v1/endpoints",
-    ["folder_id", "network_id", "subnet_id", "address_id", "service_type"]))
+    ["project_id", "network_id", "subnet_id", "address_id", "service_type"]))

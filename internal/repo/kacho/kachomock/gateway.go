@@ -38,7 +38,7 @@ func (r *gatewayReader) Get(_ context.Context, id string) (*kacho.GatewayRecord,
 func (r *gatewayReader) List(_ context.Context, f kacho.GatewayFilter, _ kacho.Pagination) ([]*kacho.GatewayRecord, string, error) {
 	var result []*kacho.GatewayRecord
 	for _, g := range r.snap {
-		if (f.FolderID == "" || g.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || g.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(g.Name) == f.Name) {
 			cp := *g
 			result = append(result, &cp)
@@ -74,7 +74,7 @@ func (gw *gatewayWriter) List(_ context.Context, f kacho.GatewayFilter, _ kacho.
 		if _, deleted := gw.w.deletedGWIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || g.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || g.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(g.Name) == f.Name) {
 			cp := *g
 			result = append(result, &cp)
@@ -104,7 +104,7 @@ func (gw *gatewayWriter) Update(_ context.Context, g *domain.Gateway) (*kacho.Ga
 	return &cp, nil
 }
 
-func (gw *gatewayWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
+func (gw *gatewayWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
 	if _, deleted := gw.w.deletedGWIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -112,7 +112,7 @@ func (gw *gatewayWriter) SetFolderID(_ context.Context, id, folderID string) (*k
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	g.FolderID = folderID
+	g.ProjectID = folderID
 	cp := *g
 	return &cp, nil
 }

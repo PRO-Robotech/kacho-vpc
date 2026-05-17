@@ -72,19 +72,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetNetworkInterfaceRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, n.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, n.ProjectID); err != nil {
 		return nil, err
 	}
 	return networkInterfaceToPb(n)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworkInterfacesRequest) (*vpcv1.ListNetworkInterfacesResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	out, next, err := h.list.Execute(ctx, NetworkInterfaceFilter{
-		FolderID:   req.FolderId,
+		ProjectID:   req.ProjectId,
 		InstanceID: req.InstanceId,
 		SubnetID:   req.SubnetId,
 		NetworkID:  req.NetworkId,
@@ -108,12 +108,12 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworkInterfacesRequ
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkInterfaceRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	in := CreateInput{
 		NetworkInterface: domain.NetworkInterface{
-			FolderID:         req.FolderId,
+			ProjectID:         req.ProjectId,
 			Name:             domain.RcNameVPC(req.Name),
 			Description:      domain.RcDescription(req.Description),
 			Labels:           domain.LabelsFromMap(req.Labels),
@@ -141,7 +141,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateNetworkInterfaceR
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, cur.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -176,7 +176,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteNetworkInterfaceR
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, cur.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.NetworkInterfaceId)
@@ -195,7 +195,7 @@ func (h *Handler) AttachToInstance(ctx context.Context, req *vpcv1.AttachNetwork
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, cur.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.attach.Execute(ctx, req.NetworkInterfaceId, req.InstanceId, req.Index)
@@ -214,7 +214,7 @@ func (h *Handler) DetachFromInstance(ctx context.Context, req *vpcv1.DetachNetwo
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, cur.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.detach.Execute(ctx, req.NetworkInterfaceId)
@@ -232,7 +232,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListNetworkInte
 		return nil, status.Error(codes.InvalidArgument, "network_interface_id required")
 	}
 	if cur, gerr := h.get.Execute(ctx, req.NetworkInterfaceId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, cur.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, cur.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {

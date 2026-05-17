@@ -16,7 +16,7 @@ import (
 // `repository.go` отдельно — parity с `address.go` / `route_table.go` и др.
 //
 // Network-specific operations:
-//   - SetFolderID — Move (NetworkService.Move).
+//   - SetProjectID — Move (NetworkService.Move).
 //   - SetDefaultSGID — узкая UPDATE-операция: устанавливает Network.default_security_group_id.
 //     Используется inline в Network.Create при `KACHO_VPC_DEFAULT_SG_INLINE=true`,
 //     когда default SG создаётся в той же writer-TX (см. CreateDefaultSGUseCase
@@ -40,7 +40,7 @@ func (r *networkReader) Get(_ context.Context, id string) (*kacho.NetworkRecord,
 func (r *networkReader) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
 	var result []*kacho.NetworkRecord
 	for _, n := range r.snap {
-		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(n.Name) == f.Name) {
 			cp := *n
 			result = append(result, &cp)
@@ -75,7 +75,7 @@ func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.
 		if _, deleted := nw.w.deletedIDs[id]; deleted {
 			continue
 		}
-		if (f.FolderID == "" || n.FolderID == f.FolderID) &&
+		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&
 			(f.Name == "" || string(n.Name) == f.Name) {
 			cp := *n
 			result = append(result, &cp)
@@ -105,7 +105,7 @@ func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*kacho.Ne
 	return &cp, nil
 }
 
-func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
+func (nw *networkWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
 	}
@@ -113,7 +113,7 @@ func (nw *networkWriter) SetFolderID(_ context.Context, id, folderID string) (*k
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
-	n.FolderID = folderID
+	n.ProjectID = folderID
 	cp := *n
 	return &cp, nil
 }

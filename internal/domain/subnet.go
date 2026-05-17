@@ -28,12 +28,12 @@ func (d *DhcpOptions) Equal(other *DhcpOptions) bool {
 // DB-managed, живёт в `SubnetRecord` (см. `domain/persistence.go`) согласно
 // skill evgeniy §4 D.1 / §7 H.1.
 //
-// `ID` / `FolderID` / `NetworkID` / `ZoneID` / `RouteTableID` — голый `string`
+// `ID` / `ProjectID` / `NetworkID` / `ZoneID` / `RouteTableID` — голый `string`
 // (внешние reference-id, валидация — на уровне `corevalidate.ResourceID` в
 // service-слое перед запросом к репо).
 type Subnet struct {
 	ID           string
-	FolderID     string
+	ProjectID     string
 	Name         RcNameVPC
 	Description  RcDescription
 	Labels       RcLabels
@@ -64,7 +64,7 @@ func (s Subnet) Validate() error {
 // корректно). skill evgeniy §4 D.10.
 func (s Subnet) Equal(other Subnet) bool {
 	return s.ID == other.ID &&
-		s.FolderID == other.FolderID &&
+		s.ProjectID == other.ProjectID &&
 		s.Name == other.Name &&
 		s.Description == other.Description &&
 		LabelsEqual(s.Labels, other.Labels) &&

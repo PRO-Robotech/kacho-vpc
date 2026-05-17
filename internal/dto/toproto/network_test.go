@@ -24,7 +24,7 @@ func TestDTO_TransferNetworkRecord(t *testing.T) {
 	rec := kachorepo.NetworkRecord{
 		Network: domain.Network{
 			ID:                     "enp1",
-			FolderID:               "folder-x",
+			ProjectID:               "folder-x",
 			Name:                   domain.RcNameVPC("my-net"),
 			Description:            domain.RcDescription("desc"),
 			Labels:                 domain.LabelsFromMap(map[string]string{"env": "prod"}),
@@ -36,7 +36,7 @@ func TestDTO_TransferNetworkRecord(t *testing.T) {
 	require.NoError(t, dto.Transfer(dto.FromTo(rec, &dst)))
 	require.NotNil(t, dst)
 	assert.Equal(t, "enp1", dst.Id)
-	assert.Equal(t, "folder-x", dst.FolderId)
+	assert.Equal(t, "folder-x", dst.ProjectId)
 	assert.Equal(t, "my-net", dst.Name)
 	assert.Equal(t, "desc", dst.Description)
 	assert.Equal(t, "prod", dst.Labels["env"])

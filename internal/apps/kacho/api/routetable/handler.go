@@ -63,19 +63,19 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetRouteTableRequest) (*vp
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, rt.ProjectID); err != nil {
 		return nil, err
 	}
 	return routeTableToPb(rt)
 }
 
-// List — folder_id required + AuthZ.
+// List — project_id required + AuthZ.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (*vpcv1.ListRouteTablesResponse, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	rts, nextToken, err := h.list.Execute(ctx, RouteTableFilter{
-		FolderID: req.FolderId,
+		ProjectID: req.ProjectId,
 		Filter:   req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
@@ -97,11 +97,11 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (
 
 // Create — AuthZ → proto → domain → use-case.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest) (*operationpb.Operation, error) {
-	if err := handler.AssertFolderOwnership(ctx, req.FolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
 	rt := domain.RouteTable{
-		FolderID:    req.FolderId,
+		ProjectID:    req.ProjectId,
 		NetworkID:   req.NetworkId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
@@ -135,7 +135,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateRouteTableRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, rt.ProjectID); err != nil {
 		return nil, err
 	}
 	var mask []string
@@ -179,7 +179,7 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteRouteTableRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, rt.ProjectID); err != nil {
 		return nil, err
 	}
 	op, err := h.delete.Execute(ctx, req.RouteTableId)
@@ -199,13 +199,13 @@ func (h *Handler) Move(ctx context.Context, req *vpcv1.MoveRouteTableRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, rt.ProjectID); err != nil {
 		return nil, err
 	}
-	if err := handler.AssertFolderOwnership(ctx, req.DestinationFolderId); err != nil {
+	if err := handler.AssertFolderOwnership(ctx, req.DestinationProjectId); err != nil {
 		return nil, err
 	}
-	op, err := h.move.Execute(ctx, req.RouteTableId, req.DestinationFolderId)
+	op, err := h.move.Execute(ctx, req.RouteTableId, req.DestinationProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListRouteTableO
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
 	if rt, gerr := h.get.Execute(ctx, req.RouteTableId); gerr == nil {
-		if err := handler.AssertFolderOwnership(ctx, rt.FolderID); err != nil {
+		if err := handler.AssertFolderOwnership(ctx, rt.ProjectID); err != nil {
 			return nil, err
 		}
 	} else if status.Code(gerr) != codes.NotFound {

@@ -57,7 +57,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	}
 
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-attach-race", Name: domain.RcNameVPC("net-attach-race"),
+		ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-attach-race", Name: domain.RcNameVPC("net-attach-race"),
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
@@ -65,7 +65,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race", Name: domain.RcNameVPC("sub-attach-race"), NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-attach-race", Name: domain.RcNameVPC("sub-attach-race"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.30.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -74,7 +74,7 @@ func TestIntegration_NICRepo_AttachRace(t *testing.T) {
 	}))
 
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-attach-race",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-attach-race",
 		Name: domain.RcNameVPC("nic-race"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:55",
 		Status: domain.NIStatusAvailable,
 	}
@@ -166,13 +166,13 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 		return w.Commit()
 	}
 
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-idempotent", Name: domain.RcNameVPC("net-idempotent")}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-idempotent", Name: domain.RcNameVPC("net-idempotent")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent", Name: domain.RcNameVPC("sub-idempotent"), NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-idempotent", Name: domain.RcNameVPC("sub-idempotent"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.31.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -180,7 +180,7 @@ func TestIntegration_NICRepo_AttachIdempotent(t *testing.T) {
 		return e
 	}))
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-idempotent",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-idempotent",
 		Name: domain.RcNameVPC("nic-idempotent"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:66",
 		Status: domain.NIStatusAvailable,
 	}
@@ -236,13 +236,13 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 		return w.Commit()
 	}
 
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-detach", Name: domain.RcNameVPC("net-detach")}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-detach", Name: domain.RcNameVPC("net-detach")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach", Name: domain.RcNameVPC("sub-detach"), NetworkID: net.ID, ZoneID: "ru-central1-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-detach", Name: domain.RcNameVPC("sub-detach"), NetworkID: net.ID, ZoneID: "ru-central1-a",
 		V4CidrBlocks: []string{"10.32.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -250,7 +250,7 @@ func TestIntegration_NICRepo_DetachIdempotent(t *testing.T) {
 		return e
 	}))
 	nic := &domain.NetworkInterface{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-detach",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-detach",
 		Name: domain.RcNameVPC("nic-detach"), SubnetID: sub.ID, MAC: "0e:11:22:33:44:77",
 		Status: domain.NIStatusAvailable,
 	}

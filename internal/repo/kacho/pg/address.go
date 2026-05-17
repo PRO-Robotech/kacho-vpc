@@ -54,9 +54,9 @@ func (r *addressReader) List(ctx context.Context, f kacho.AddressFilter, p kacho
 	conditions := []string{}
 	argIdx := 1
 
-	if f.FolderID != "" {
-		conditions = append(conditions, fmt.Sprintf("folder_id = $%d", argIdx))
-		args = append(args, f.FolderID)
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
 		argIdx++
 	}
 	if f.Name != "" {
@@ -253,11 +253,11 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO addresses (id, folder_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
+		INSERT INTO addresses (id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q,
-		a.ID, a.FolderID, now, string(a.Name), string(a.Description), labelsJSON,
+		a.ID, a.ProjectID, now, string(a.Name), string(a.Description), labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
 		extJSON, intJSON, int6JSON, ext6JSON,
 	)
@@ -289,9 +289,9 @@ func (w *addressWriter) Update(ctx context.Context, a *domain.Address) (*kacho.A
 	return result, nil
 }
 
-// SetFolderID меняет folder_id у Address (для :move).
-func (w *addressWriter) SetFolderID(ctx context.Context, id, folderID string) (*kacho.AddressRecord, error) {
-	q := fmt.Sprintf(`UPDATE addresses SET folder_id = $2 WHERE id = $1 RETURNING %s`, helpers.AddressCols)
+// SetProjectID меняет project_id у Address (для :move).
+func (w *addressWriter) SetProjectID(ctx context.Context, id, folderID string) (*kacho.AddressRecord, error) {
+	q := fmt.Sprintf(`UPDATE addresses SET project_id = $2 WHERE id = $1 RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q, id, folderID)
 	a, err := helpers.ScanAddress(row)
 	if err != nil {

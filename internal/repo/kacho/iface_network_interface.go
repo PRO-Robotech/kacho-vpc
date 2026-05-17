@@ -14,7 +14,7 @@ import (
 // игнорируется (NIC не хранит network_id; вычисляется транзитивно через
 // subnet — но фильтрация по этому полю в legacy-репо тоже была no-op).
 type NetworkInterfaceFilter struct {
-	FolderID   string
+	ProjectID   string
 	InstanceID string
 	SubnetID   string
 	NetworkID  string
@@ -56,17 +56,17 @@ type NetworkInterfaceWriterIface interface {
 	// — WrapPgErr → ErrAlreadyExists.
 	Insert(ctx context.Context, n *domain.NetworkInterface) (*NetworkInterfaceRecord, error)
 	// UpdateMeta мутирует name/description/labels/security_group_ids/v4_address_ids/
-	// v6_address_ids. immutable: folder_id/subnet_id/mac_address (handler maskcheck).
+	// v6_address_ids. immutable: project_id/subnet_id/mac_address (handler maskcheck).
 	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*NetworkInterfaceRecord, error)
 	// Delete — DELETE network_interfaces WHERE id = $1. row not affected →
 	// ErrNotFound. NIC не имеет children FK, но имеет parent FK на subnets
 	// (ON DELETE RESTRICT — миграция 0012, KAC-33). outbox-write — в use-case'е.
 	Delete(ctx context.Context, id string) error
-	// SetFolderID — не используется (NIC не поддерживает Move RPC; NIC привязан
+	// SetProjectID — не используется (NIC не поддерживает Move RPC; NIC привязан
 	// к Subnet и не перемещается между folder'ами). Но iface объявляет для
 	// parity с другими ресурсами — если потребуется в будущем (admin-move),
 	// pg-impl уже есть.
-	SetFolderID(ctx context.Context, id, folderID string) (*NetworkInterfaceRecord, error)
+	SetProjectID(ctx context.Context, id, folderID string) (*NetworkInterfaceRecord, error)
 	// AttachToInstance — атомарный CAS на used_by_* + status=ACTIVE.
 	//
 	// **Race-safety (KAC-52, workspace CLAUDE.md §«Within-service refs —

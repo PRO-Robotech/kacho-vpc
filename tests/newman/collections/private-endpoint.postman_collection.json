@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "db33f222-76fe-4885-bdd7-d756714ebb70",
+    "_postman_id": "bf2952b1-bbe8-47d4-ac24-178fd82f5ac8",
     "name": "kacho-vpc / newman / private-endpoint",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,8 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
         ]
       }
     }
@@ -103,7 +103,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nn-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nn-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -191,14 +191,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}"
+                "endpoints?projectId={{_suiteFolderId}}"
               ]
             }
           },
@@ -375,14 +375,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=0",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=0",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=0"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=0"
               ]
             }
           },
@@ -415,14 +415,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10000",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=10000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=10000"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=10000"
               ]
             }
           },
@@ -459,14 +459,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
               ]
             }
           },
@@ -653,7 +653,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-cr-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-cr-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -752,7 +752,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-cr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.130.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-cr-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.130.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -851,7 +851,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-cr-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-cr-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1129,7 +1129,7 @@
       ]
     },
     {
-      "name": "PE-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=folder_id → InvalidArgument (immutable)",
+      "name": "PE-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=project_id → InvalidArgument (immutable)",
       "description": "class:STATE | class:VAL | priority:P1",
       "item": [
         {
@@ -1156,7 +1156,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1193,14 +1193,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=1"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -1246,7 +1246,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-confnf-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-confnf-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1401,7 +1401,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-updok-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-updok-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1500,7 +1500,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-updok-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.131.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-updok-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.131.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1599,7 +1599,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-updok-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-updok-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1962,7 +1962,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-delok-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-delok-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2061,7 +2061,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-delok-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.132.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-delok-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.132.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2160,7 +2160,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-delok-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-delok-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2475,7 +2475,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-lop-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-lop-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2574,7 +2574,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-lop-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.133.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-lop-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.133.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2673,7 +2673,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-lop-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-lop-{{runId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2977,7 +2977,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-bvanameempty-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-bvanameempty-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3076,7 +3076,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-bvanameempty-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-bvanameempty-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3175,7 +3175,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3348,7 +3348,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-bvanamemax63-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-bvanamemax63-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3447,7 +3447,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-bvanamemax63-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-bvanamemax63-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3546,7 +3546,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3724,7 +3724,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-vanameover64-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-vanameover64-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3823,7 +3823,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-vanameover64-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-vanameover64-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3922,7 +3922,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4187,14 +4187,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22"
+                "endpoints?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22"
               ]
             }
           },
@@ -4227,14 +4227,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
+                "endpoints?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
               ]
             }
           },
@@ -4267,14 +4267,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
+                "endpoints?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
               ]
             }
           },
@@ -4307,14 +4307,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=1"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -4345,14 +4345,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
               ]
             }
           },
@@ -4397,7 +4397,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-eupdcruddesc-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-eupdcruddesc-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4496,7 +4496,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-eupdcruddesc-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-eupdcruddesc-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4595,7 +4595,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-upd-desc-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-upd-desc-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5001,7 +5001,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-pdcrudlabels-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-pdcrudlabels-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5100,7 +5100,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-pdcrudlabels-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-pdcrudlabels-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5199,7 +5199,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-upd-labels-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-upd-labels-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5594,14 +5594,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=10"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=10"
               ]
             }
           },
@@ -5782,14 +5782,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}"
+                "endpoints?projectId={{_suiteFolderId}}"
               ]
             }
           },
@@ -5834,7 +5834,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-rudmultimask-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-rudmultimask-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5933,7 +5933,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-rudmultimask-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-rudmultimask-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.190.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6032,7 +6032,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-multi-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"subnetId\": \"{{subId}}\", \"objectStorage\": {}, \"name\": \"pe-multi-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6442,7 +6442,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6622,14 +6622,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=5",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=5",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=5"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=5"
               ]
             }
           },
@@ -6675,7 +6675,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-noserv-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-noserv-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6712,14 +6712,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22"
+                "endpoints?projectId={{_suiteFolderId}}&filter=status%3D%22AVAILABLE%22"
               ]
             }
           },
@@ -6764,7 +6764,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nn-{{runId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nn-{{runId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6813,7 +6813,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-ns-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-ns-{{runId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6862,7 +6862,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nsnf-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nsnf-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6961,7 +6961,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-nsnf-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.135.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-nsnf-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.135.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7060,7 +7060,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nsnf-{{runId}}\", \"networkId\": \"{{netId}}\", \"addressSpec\": {\"internalIpv4AddressSpec\": {\"subnetId\": \"{{garbageVpcId}}\"}}, \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-nsnf-{{runId}}\", \"networkId\": \"{{netId}}\", \"addressSpec\": {\"internalIpv4AddressSpec\": {\"subnetId\": \"{{garbageVpcId}}\"}}, \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7238,7 +7238,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-wsub-net-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-wsub-net-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7337,7 +7337,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-wsub-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.137.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"pe-wsub-sub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.137.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7436,7 +7436,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-wsub-{{runId}}\", \"networkId\": \"{{netId}}\", \"addressSpec\": {\"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}, \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-wsub-{{runId}}\", \"networkId\": \"{{netId}}\", \"addressSpec\": {\"internalIpv4AddressSpec\": {\"subnetId\": \"{{subId}}\"}}, \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7774,14 +7774,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=0",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=0",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=0"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=0"
               ]
             }
           },
@@ -7814,14 +7814,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=10000",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=10000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=10000"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=10000"
               ]
             }
           },
@@ -7858,14 +7858,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=1"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -7893,14 +7893,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}",
+              "raw": "{{baseUrl}}/vpc/v1/endpoints?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "endpoints?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}"
+                "endpoints?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{peTok}}"
               ]
             }
           },
@@ -8055,11 +8055,11 @@
       ]
     },
     {
-      "name": "PE-CR-VAL-REQ-FOLDERID — Create без required поля 'folderId' → 400 InvalidArgument",
+      "name": "PE-CR-VAL-REQ-PROJECTID — Create без required поля 'projectId' → 400 InvalidArgument",
       "description": "class:VAL | priority:P0",
       "item": [
         {
-          "name": "cr-no-folderId",
+          "name": "cr-no-projectId",
           "request": {
             "method": "POST",
             "header": [
@@ -8130,7 +8130,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{garbageVpcId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8179,7 +8179,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"pe-req-{{runId}}\", \"objectStorage\": {}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"pe-req-{{runId}}\", \"objectStorage\": {}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8202,11 +8202,11 @@
       ]
     },
     {
-      "name": "PE-UPD-STATE-IMMUTABLE-FOLDER-ID — Update mask='folder_id' (immutable) → 400 InvalidArgument verbatim",
+      "name": "PE-UPD-STATE-IMMUTABLE-PROJECT-ID — Update mask='project_id' (immutable) → 400 InvalidArgument verbatim",
       "description": "class:STATE | class:VAL | class:CONF | priority:P1",
       "item": [
         {
-          "name": "upd-folder_id",
+          "name": "upd-project_id",
           "request": {
             "method": "PATCH",
             "header": [
@@ -8229,7 +8229,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"

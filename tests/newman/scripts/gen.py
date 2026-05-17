@@ -61,8 +61,8 @@ PRE_GLOBAL = [
     "  const r = Math.floor(Math.random() * 1e9).toString(36);",
     "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
     "}",
-    "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-    "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));",
+    "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+    "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));",
 ]
 
 
@@ -139,7 +139,7 @@ def crud_list_bva_block(prefix, list_path):
             title="List pageSize=0 → default applied (200)",
             classes=["BVA"], priority="P2",
             steps=[Step(name="list-ps0", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=0",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=0",
                         test_script=[*assert_status(200)])],
         ),
         Case(
@@ -147,7 +147,7 @@ def crud_list_bva_block(prefix, list_path):
             title="List pageSize=10000 → InvalidArgument",
             classes=["BVA", "VAL"], priority="P2",
             steps=[Step(name="list-ps-huge", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10000",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=10000",
                         test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
         ),
         Case(
@@ -155,7 +155,7 @@ def crud_list_bva_block(prefix, list_path):
             title="List с garbage page_token → InvalidArgument",
             classes=["PAGE", "VAL"], priority="P1",
             steps=[Step(name="list-bad-token", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10&pageToken=not-a-real-token",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=10&pageToken=not-a-real-token",
                         test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
         ),
     ]
@@ -203,16 +203,16 @@ def authz_move_nf(prefix, move_base_path):
         classes=["NEG", "AUTHZ"], priority="P1",
         steps=[Step(name="move-nx", method="POST",
                     path=f"{move_base_path}/{{{{garbageVpcId}}}}:move",
-                    body={"destinationFolderId": "{{_suiteFolderId}}"},
+                    body={"destinationProjectId": "{{_suiteFolderId}}"},
                     test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")])],
     )
 
 
 def val_move_no_dest(prefix, move_base_path):
-    """Move без destinationFolderId → InvalidArgument."""
+    """Move без destinationProjectId → InvalidArgument."""
     return Case(
         id=f"{prefix}-MV-VAL-NO-DEST",
-        title="Move без destinationFolderId → InvalidArgument",
+        title="Move без destinationProjectId → InvalidArgument",
         classes=["VAL"], priority="P1",
         steps=[Step(name="move-no-dest", method="POST",
                     path=f"{move_base_path}/{{{{garbageVpcId}}}}:move",
@@ -224,14 +224,14 @@ def val_move_no_dest(prefix, move_base_path):
 
 
 def state_immutable_folder(prefix, update_base_path):
-    """Update с mask=folder_id → InvalidArgument (immutable)."""
+    """Update с mask=project_id → InvalidArgument (immutable)."""
     return Case(
         id=f"{prefix}-UPD-STATE-IMMUTABLE-FOLDER",
-        title="Update с mask=folder_id → InvalidArgument (immutable)",
+        title="Update с mask=project_id → InvalidArgument (immutable)",
         classes=["STATE", "VAL"], priority="P1",
         steps=[Step(name="upd-folder-via-mask", method="PATCH",
                     path=f"{update_base_path}/{{{{garbageVpcId}}}}",
-                    body={"updateMask": "folder_id", "folderId": "x"},
+                    body={"updateMask": "project_id", "projectId": "x"},
                     test_script=[
                         # mask immutable должен отвергнуть с 400.
                         # Если AuthZ-Get срабатывает раньше (404), тоже OK.
@@ -247,7 +247,7 @@ def list_pagesize_1_bva(prefix, list_path):
         title="List pageSize=1 → ≤1 item",
         classes=["BVA", "PAGE"], priority="P2",
         steps=[Step(name="list-ps1", method="GET",
-                    path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1",
+                    path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=1",
                     test_script=[*assert_status(200),
                                  "pm.test('at most 1 item', () => {"
                                  "  const j = pm.response.json();"
@@ -260,10 +260,10 @@ def list_pagesize_1_bva(prefix, list_path):
 def ecp_name_block(prefix, create_path, body_extra=None):
     """ECP/BVA по полю name: пустое, max, over-max, invalid regex.
 
-    body_extra — обязательные поля кроме folderId/name (например для Subnet: networkId+zoneId+cidr).
+    body_extra — обязательные поля кроме projectId/name (например для Subnet: networkId+zoneId+cidr).
     """
     body_extra = body_extra or {}
-    base = lambda name: {"folderId": "{{_suiteFolderId}}", "name": name, **body_extra}
+    base = lambda name: {"projectId": "{{_suiteFolderId}}", "name": name, **body_extra}
     cases = []
     # BVA name length: 0, 63 (max), 64 (over)
     cases.append(Case(
@@ -328,7 +328,7 @@ def ecp_name_block(prefix, create_path, body_extra=None):
 def ecp_description_block(prefix, create_path, body_extra=None):
     """BVA по description: 256 (max), 257 (over)."""
     body_extra = body_extra or {}
-    base = lambda name, desc: {"folderId": "{{_suiteFolderId}}", "name": name, "description": desc, **body_extra}
+    base = lambda name, desc: {"projectId": "{{_suiteFolderId}}", "name": name, "description": desc, **body_extra}
     return [
         Case(
             id=f"{prefix}-CR-BVA-DESC-MAX-256",
@@ -352,7 +352,7 @@ def ecp_description_block(prefix, create_path, body_extra=None):
 def ecp_labels_block(prefix, create_path, body_extra=None):
     """ECP по labels: invalid key regex, too many pairs (>64), uppercase key."""
     body_extra = body_extra or {}
-    base = lambda name, labels: {"folderId": "{{_suiteFolderId}}", "name": name, "labels": labels, **body_extra}
+    base = lambda name, labels: {"projectId": "{{_suiteFolderId}}", "name": name, "labels": labels, **body_extra}
     return [
         Case(
             id=f"{prefix}-CR-VAL-LABELS-UPPERCASE-KEY",
@@ -423,7 +423,7 @@ def filter_syntax_block(prefix, list_path):
             title="List с filter name=\"foo\" → 200",
             classes=["FILTER", "CRUD"], priority="P2",
             steps=[Step(name="list-filter", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=name%3D%22foo%22",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&filter=name%3D%22foo%22",
                         test_script=[*assert_status(200)])],
         ),
         Case(
@@ -431,7 +431,7 @@ def filter_syntax_block(prefix, list_path):
             title="List с garbage filter syntax → 400 InvalidArgument",
             classes=["FILTER", "VAL"], priority="P1",
             steps=[Step(name="list-bad-filter", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=this%20is%20not%20valid%20syntax",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&filter=this%20is%20not%20valid%20syntax",
                         test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
         ),
         Case(
@@ -439,7 +439,7 @@ def filter_syntax_block(prefix, list_path):
             title="List с filter на unsupported field → 400 InvalidArgument",
             classes=["FILTER", "VAL"], priority="P2",
             steps=[Step(name="list-unknown-field", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=nonexistent_field%3D%22x%22",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&filter=nonexistent_field%3D%22x%22",
                         test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
         ),
     ]
@@ -453,14 +453,14 @@ def pagination_roundtrip(prefix, list_path):
         classes=["PAGE", "BVA", "CRUD"], priority="P2",
         steps=[
             Step(name="list-p1", method="GET",
-                 path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1",
+                 path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=1",
                  test_script=[*assert_status(200),
                               "const j = pm.response.json();",
                               "const tok = j.nextPageToken || '';",
                               "pm.environment.set('nextToken', tok);",
                               "pm.test('token is string', () => pm.expect(tok).to.be.a('string'));"]),
             Step(name="list-p2", method="GET",
-                 path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1&pageToken={{{{nextToken}}}}",
+                 path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=1&pageToken={{{{nextToken}}}}",
                  test_script=[*assert_status(200)]),
         ],
     )
@@ -478,13 +478,13 @@ def idempotency_block(prefix, create_path, name_template, body_extra=None):
         classes=["IDM", "CONC", "NEG"], priority="P1",
         steps=[
             Step(name="cr-1", method="POST", path=create_path,
-                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 body={"projectId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
                  test_script=[*assert_status(200), *save_from_response("j.id", "opId1"),
                               *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "idmCreatedId")]),
             Step(name="poll-1", method="GET", path="/operations/{{opId1}}",
                  test_script=["pm.test('done eventually', () => { const j = pm.response.json(); pm.expect([true,false]).to.include(j.done); });"]),
             Step(name="cr-2", method="POST", path=create_path,
-                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 body={"projectId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
                  test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
                               "pm.test('mentions already exists', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('already exists'));"]),
             Step(name="cleanup", method="DELETE", path=f"{create_path}/{{{{idmCreatedId}}}}",
@@ -539,7 +539,7 @@ def update_happy_per_field(prefix, create_path, update_base_path, body_create):
 def perf_baseline_block(prefix, list_path, get_path=None):
     """Performance baseline: response time для Get/List ниже бюджета.
 
-    list_path — путь List endpoint (с folderId query param).
+    list_path — путь List endpoint (с projectId query param).
     """
     cases = [
         Case(
@@ -547,7 +547,7 @@ def perf_baseline_block(prefix, list_path, get_path=None):
             title="List response time < 500ms (perf baseline)",
             classes=["PERF", "CRUD"], priority="P2",
             steps=[Step(name="list-timed", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=10",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=10",
                         test_script=[*assert_status(200),
                                      "pm.test('response time < 500ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"])],
         ),
@@ -571,13 +571,13 @@ def move_same_folder(prefix, resource_base_path, body_create):
                  test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
             Step(name="move-self", method="POST",
                  path=f"{resource_base_path}/{{{{createdId}}}}:move",
-                 body={"destinationFolderId": "{{_suiteFolderId}}"},
+                 body={"destinationProjectId": "{{_suiteFolderId}}"},
                  test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
                               "pm.test('verbatim text', () => pm.expect(pm.response.json().message).to.eql('Illegal argument Destination folder is the same as the source'));"]),
             Step(name="verify-unchanged", method="GET",
                  path=f"{resource_base_path}/{{{{createdId}}}}",
                  test_script=[*assert_status(200),
-                              "pm.test('folderId unchanged', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderId')));"]),
+                              "pm.test('projectId unchanged', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderId')));"]),
             Step(name="cleanup", method="DELETE",
                  path=f"{resource_base_path}/{{{{createdId}}}}",
                  test_script=[*save_from_response("j.id", "opId")]),
@@ -685,14 +685,14 @@ def cross_folder_resource_block(prefix, create_path, body_create, name_field="na
         classes=["AUTHZ", "CRUD"], priority="P0",
         steps=[
             Step(name="create-in-A", method="POST", path=create_path,
-                 body={**body_create, "folderId": "{{_suiteFolderId}}",
+                 body={**body_create, "projectId": "{{_suiteFolderId}}",
                        name_field: f"{prefix.lower()}-iso-{{{{runId}}}}"},
                  test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                               *save_from_response("(j.metadata && Object.keys(j.metadata).filter(k => k.endsWith('Id')).map(k => j.metadata[k])[0]) || ''", "isoId")]),
             Step(name="poll", method="GET", path="/operations/{{opId}}",
                  test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
             Step(name="list-in-B", method="GET",
-                 path=f"{create_path}?folderId={{{{_suiteFolderCrossId}}}}&pageSize=100",
+                 path=f"{create_path}?projectId={{{{_suiteFolderCrossId}}}}&pageSize=100",
                  test_script=[*assert_status(200),
                               "const ids = (Object.values(pm.response.json()).find(v => Array.isArray(v)) || []).map(x => x.id);",
                               "pm.test('isolated — not in folderB list', () => pm.expect(ids).to.not.include(pm.environment.get('isoId')));"]),
@@ -718,7 +718,7 @@ def list_filter_match_block(prefix, create_path, body_create):
             Step(name="poll", method="GET", path="/operations/{{opId}}",
                  test_script=["pm.test('done', () => pm.expect(pm.response.json().done).to.eql(true));"]),
             Step(name="list-filtered", method="GET",
-                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=100&filter=name%3D%22{prefix.lower()}-flt-{{{{runId}}}}%22",
+                 path=f"{create_path}?projectId={{{{_suiteFolderId}}}}&pageSize=100&filter=name%3D%22{prefix.lower()}-flt-{{{{runId}}}}%22",
                  test_script=[*assert_status(200),
                               "const ids = (Object.values(pm.response.json()).find(v => Array.isArray(v)) || []).map(x => x.id);",
                               "pm.test('filtered list contains', () => pm.expect(ids).to.include(pm.environment.get('fltId')));"]),
@@ -768,7 +768,7 @@ def http_method_not_allowed_block(prefix, base_path):
             title="PUT на List endpoint → 405 или 404",
             classes=["VAL", "NEG"], priority="P3",
             steps=[Step(name="put-list", method="PUT", path=base_path,
-                        body={"folderId": "{{_suiteFolderId}}"},
+                        body={"projectId": "{{_suiteFolderId}}"},
                         test_script=["pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
         ),
         Case(
@@ -903,7 +903,7 @@ def list_total_size_check_block(prefix, list_path):
             title="List с pageSize=5 → не более 5 элементов в response",
             classes=["PAGE", "CRUD"], priority="P2",
             steps=[Step(name="list-5", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&pageSize=5",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&pageSize=5",
                         test_script=[*assert_status(200),
                                      "pm.test('at most 5 items', () => {"
                                      "  const j = pm.response.json();"
@@ -1213,7 +1213,7 @@ def pairwise_subnet_pack():
     cases = []
     for i, (zone, prefix, with_dhcp) in enumerate(combos):
         ipbase = f"10.{170+i}.0.0"
-        body = {"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+        body = {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                 "name": f"sub-pw-{i}-{{{{runId}}}}", "zoneId": zone,
                 "v4CidrBlocks": [f"{ipbase}{prefix}"]}
         if with_dhcp:
@@ -1277,7 +1277,7 @@ def security_injection_block(prefix, create_path, list_path, body_create):
         title="Security: SQL injection в filter → не 500",
         classes=["VAL", "NEG"], priority="P0",
         steps=[Step(name="lst-sqli", method="GET",
-                    path=f"{list_path}?folderId={{{{_suiteFolderId}}}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
+                    path=f"{list_path}?projectId={{{{_suiteFolderId}}}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
                     test_script=[
                         "pm.test('not 500', () => pm.expect(pm.response.code).to.not.eql(500));",
                         "pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
@@ -1302,7 +1302,7 @@ def conformance_lifecycle_pack(prefix, create_path, body_create):
                  test_script=[*assert_status(200),
                               "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('lifeId')));"]),
             Step(name="lst-includes", method="GET",
-                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1000",
+                 path=f"{create_path}?projectId={{{{_suiteFolderId}}}}&pageSize=1000",
                  test_script=[*assert_status(200),
                               "const items = Object.values(pm.response.json()).find(v => Array.isArray(v)) || [];",
                               "pm.test('list contains', () => pm.expect(items.map(x => x.id)).to.include(pm.environment.get('lifeId')));"]),
@@ -1317,7 +1317,7 @@ def conformance_lifecycle_pack(prefix, create_path, body_create):
                  test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
             poll_operation_until_done(),
             Step(name="lst-excludes", method="GET",
-                 path=f"{create_path}?folderId={{{{_suiteFolderId}}}}&pageSize=1000",
+                 path=f"{create_path}?projectId={{{{_suiteFolderId}}}}&pageSize=1000",
                  test_script=[*assert_status(200),
                               "const items = Object.values(pm.response.json()).find(v => Array.isArray(v)) || [];",
                               "pm.test('list does not contain', () => pm.expect(items.map(x => x.id)).to.not.include(pm.environment.get('lifeId')));"]),
@@ -1335,7 +1335,7 @@ def authz_caller_headers_block(prefix, list_path):
             title="List с пустым x-kacho-folder-id header → текущее: 200 (dev mode)",
             classes=["AUTHZ"], priority="P1",
             steps=[Step(name="list-with-empty-header", method="GET",
-                        path=f"{list_path}?folderId={{{{_suiteFolderId}}}}",
+                        path=f"{list_path}?projectId={{{{_suiteFolderId}}}}",
                         test_script=[
                             "pm.test('OK in dev or PermissionDenied in production', () => pm.expect(pm.response.code).to.be.oneOf([200, 403, 401]));",
                         ])],
@@ -1352,12 +1352,12 @@ def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None
         classes=["CONF", "NEG"], priority="P1",
         steps=[
             Step(name="create-first", method="POST", path=create_path,
-                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 body={"projectId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
                  test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                               *save_from_response("j.metadata && Object.values(j.metadata).find(v => typeof v === 'string' && v.length > 10)", "createdId")]),
             poll_operation_until_done(),
             Step(name="create-dup", method="POST", path=create_path,
-                 body={"folderId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
+                 body={"projectId": "{{_suiteFolderId}}", "name": name_template, **body_extra},
                  test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS"),
                               "pm.test('verbatim with name ... already exists', () => pm.expect(pm.response.json().message).to.match(/ with name .* already exists$/));"]),
             Step(name="cleanup-first", method="DELETE", path=f"{create_path}/{{{{createdId}}}}",

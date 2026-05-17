@@ -12,8 +12,8 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
-// CachedFolderClient — TTL+LRU декоратор поверх любого
-// repo.FolderClient (port-интерфейс). Цель — убрать gRPC RTT к
+// CachedProjectClient — TTL+LRU декоратор поверх любого
+// repo.ProjectClient (port-интерфейс). Цель — убрать gRPC RTT к
 // resource-manager из hot-path Network.Create/Subnet.Create/... при
 // burst-нагрузке (на ~10k RPS Network.Create без кеша каждый запрос
 // делал hop в RM → потолок ~3K Create/sec).
@@ -40,11 +40,11 @@ import (
 // с -race).
 //
 // GetCloudID — НЕ декорируется здесь (уже есть отдельный TTL-кеш в
-// FolderClient под другую TTL-семантику folder→cloud-id immutable
-// binding); CachedFolderClient проксирует GetCloudID к upstream без
+// ProjectClient под другую TTL-семантику folder→cloud-id immutable
+// binding); CachedProjectClient проксирует GetCloudID к upstream без
 // доп. кеша.
-type CachedFolderClient struct {
-	upstream repo.FolderClient
+type CachedProjectClient struct {
+	upstream repo.ProjectClient
 	posTTL   time.Duration
 	negTTL   time.Duration
 	maxSize  int
@@ -55,20 +55,20 @@ type CachedFolderClient struct {
 	lruLst *list.List
 }
 
-// folderCacheEntry — одна запись кеша.
-type folderCacheEntry struct {
+// projectCacheEntry — одна запись кеша.
+type projectCacheEntry struct {
 	folderID string
 	exists   bool
 	exp      time.Time
 }
 
-// Compile-time проверка: CachedFolderClient реализует port-интерфейс.
-var _ repo.FolderClient = (*CachedFolderClient)(nil)
+// Compile-time проверка: CachedProjectClient реализует port-интерфейс.
+var _ repo.ProjectClient = (*CachedProjectClient)(nil)
 
-// FolderCacheConfig — параметры кеша. Все поля опциональны; нулевые
+// ProjectCacheConfig — параметры кеша. Все поля опциональны; нулевые
 // значения заменяются на дефолты (positiveTTL=30s, negativeTTL=5s,
 // maxSize=10000).
-type FolderCacheConfig struct {
+type ProjectCacheConfig struct {
 	PositiveTTL time.Duration
 	NegativeTTL time.Duration
 	MaxSize     int
@@ -77,19 +77,19 @@ type FolderCacheConfig struct {
 	Clock func() time.Time
 }
 
-// NewCachedFolderClient оборачивает upstream FolderClient TTL+LRU кешем
+// NewCachedProjectClient оборачивает upstream ProjectClient TTL+LRU кешем
 // для метода Exists. GetCloudID проксируется без изменений.
 //
-// Применять как drop-in замену folderClient в composition root
+// Применять как drop-in замену projectClient в composition root
 // (`cmd/vpc/main.go`):
 //
-//	rawFolderClient := clients.NewFolderClient(rmConn)
-//	folderClient := clients.NewCachedFolderClient(rawFolderClient, clients.FolderCacheConfig{
-//	    PositiveTTL: cfg.FolderCacheTTL,
-//	    NegativeTTL: cfg.FolderCacheNegativeTTL,
-//	    MaxSize:     cfg.FolderCacheSize,
+//	rawProjectClient := clients.NewProjectClient(rmConn)
+//	projectClient := clients.NewCachedProjectClient(rawProjectClient, clients.ProjectCacheConfig{
+//	    PositiveTTL: cfg.ProjectCacheTTL,
+//	    NegativeTTL: cfg.ProjectCacheNegativeTTL,
+//	    MaxSize:     cfg.ProjectCacheSize,
 //	})
-func NewCachedFolderClient(upstream repo.FolderClient, cfg FolderCacheConfig) *CachedFolderClient {
+func NewCachedProjectClient(upstream repo.ProjectClient, cfg ProjectCacheConfig) *CachedProjectClient {
 	if cfg.PositiveTTL <= 0 {
 		cfg.PositiveTTL = 30 * time.Second
 	}
@@ -102,7 +102,7 @@ func NewCachedFolderClient(upstream repo.FolderClient, cfg FolderCacheConfig) *C
 	if cfg.Clock == nil {
 		cfg.Clock = time.Now
 	}
-	return &CachedFolderClient{
+	return &CachedProjectClient{
 		upstream: upstream,
 		posTTL:   cfg.PositiveTTL,
 		negTTL:   cfg.NegativeTTL,
@@ -114,7 +114,7 @@ func NewCachedFolderClient(upstream repo.FolderClient, cfg FolderCacheConfig) *C
 }
 
 // Exists проверяет существование folder через кеш + upstream.
-func (c *CachedFolderClient) Exists(ctx context.Context, folderID string) (bool, error) {
+func (c *CachedProjectClient) Exists(ctx context.Context, folderID string) (bool, error) {
 	// Cache hit?
 	if exists, ok := c.lookup(folderID); ok {
 		return exists, nil
@@ -125,7 +125,7 @@ func (c *CachedFolderClient) Exists(ctx context.Context, folderID string) (bool,
 	if err != nil {
 		// Различаем семантически:
 		//   - codes.NotFound внутри err: но fortсуществующий upstream
-		//     (наш FolderClient) уже маппит NotFound → (false, nil),
+		//     (наш ProjectClient) уже маппит NotFound → (false, nil),
 		//     поэтому сюда NotFound обычно не доходит. На всякий случай
 		//     обработаем — кешируем negative.
 		//   - Unavailable / Internal / DeadlineExceeded / любая другая
@@ -146,15 +146,15 @@ func (c *CachedFolderClient) Exists(ctx context.Context, folderID string) (bool,
 }
 
 // GetCloudID проксирует к upstream без дополнительного кеша. Upstream
-// FolderClient (см. resourcemanager_client.go) уже держит собственный
+// ProjectClient (см. resourcemanager_client.go) уже держит собственный
 // TTL-кеш для cloud-id привязки.
-func (c *CachedFolderClient) GetCloudID(ctx context.Context, folderID string) (string, error) {
-	return c.upstream.GetCloudID(ctx, folderID)
+func (c *CachedProjectClient) GetCloudIDFromProject(ctx context.Context, folderID string) (string, error) {
+	return c.upstream.GetCloudIDFromProject(ctx, folderID)
 }
 
 // lookup возвращает (exists, true) если кеш hit и не expired, иначе
 // (_, false). Также промотирует entry в head LRU.
-func (c *CachedFolderClient) lookup(folderID string) (bool, bool) {
+func (c *CachedProjectClient) lookup(folderID string) (bool, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -162,7 +162,7 @@ func (c *CachedFolderClient) lookup(folderID string) (bool, bool) {
 	if !ok {
 		return false, false
 	}
-	e := el.Value.(*folderCacheEntry)
+	e := el.Value.(*projectCacheEntry)
 	if c.clock().After(e.exp) {
 		// Expired → evict.
 		c.lruLst.Remove(el)
@@ -176,14 +176,14 @@ func (c *CachedFolderClient) lookup(folderID string) (bool, bool) {
 
 // store записывает entry в кеш с указанным TTL; вытесняет LRU-tail
 // если перешагнули maxSize.
-func (c *CachedFolderClient) store(folderID string, exists bool, ttl time.Duration) {
+func (c *CachedProjectClient) store(folderID string, exists bool, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	exp := c.clock().Add(ttl)
 	if el, ok := c.cache[folderID]; ok {
 		// Обновляем существующую запись.
-		e := el.Value.(*folderCacheEntry)
+		e := el.Value.(*projectCacheEntry)
 		e.exists = exists
 		e.exp = exp
 		c.lruLst.MoveToFront(el)
@@ -191,7 +191,7 @@ func (c *CachedFolderClient) store(folderID string, exists bool, ttl time.Durati
 	}
 
 	// Insert new.
-	e := &folderCacheEntry{folderID: folderID, exists: exists, exp: exp}
+	e := &projectCacheEntry{folderID: folderID, exists: exists, exp: exp}
 	el := c.lruLst.PushFront(e)
 	c.cache[folderID] = el
 
@@ -201,14 +201,14 @@ func (c *CachedFolderClient) store(folderID string, exists bool, ttl time.Durati
 		if tail == nil {
 			break
 		}
-		te := tail.Value.(*folderCacheEntry)
+		te := tail.Value.(*projectCacheEntry)
 		c.lruLst.Remove(tail)
 		delete(c.cache, te.folderID)
 	}
 }
 
 // Len возвращает текущее число entries (для тестов / observability).
-func (c *CachedFolderClient) Len() int {
+func (c *CachedProjectClient) Len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.lruLst.Len()

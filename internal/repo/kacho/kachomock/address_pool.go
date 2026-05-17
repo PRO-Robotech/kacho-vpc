@@ -15,7 +15,7 @@ import (
 // + bindings + cloud-selector kachomock-ом — единый CQRS-mock для всех admin-
 // only ресурсов IPAM.
 //
-// AddressPool — admin-only global ресурс (без folder_id), но в остальном
+// AddressPool — admin-only global ресурс (без project_id), но в остальном
 // parity с гавайки CRUD-pattern Gateway/Network.
 
 // ---- AddressPool reader ----

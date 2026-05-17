@@ -18,18 +18,18 @@ import (
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
-// stubFolderClient maps folder_id -> cloud_id for IPAM cascade step-3.
-type stubFolderClient struct {
+// stubProjectClient maps project_id -> cloud_id for IPAM cascade step-3.
+type stubProjectClient struct {
 	clouds map[string]string
 }
 
-func (s stubFolderClient) Exists(_ context.Context, _ string) (bool, error) { return true, nil }
-func (s stubFolderClient) GetCloudID(_ context.Context, folderID string) (string, error) {
+func (s stubProjectClient) Exists(_ context.Context, _ string) (bool, error) { return true, nil }
+func (s stubProjectClient) GetCloudIDFromProject(_ context.Context, folderID string) (string, error) {
 	return s.clouds[folderID], nil
 }
 
 // TestIntegration_IPAM_Cascade_FiveSteps wires real pgxpool + CQRS repo + a stub
-// FolderClient, then drives the 5-step AddressPool resolve cascade end-to-end.
+// ProjectClient, then drives the 5-step AddressPool resolve cascade end-to-end.
 //
 // KAC-94 A.7 sub-PR 5/6: переписан полностью на CQRS Writer/Reader (раньше
 // часть setup'а шла через legacy *_repo.go).
@@ -94,13 +94,13 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 		}))
 	}
 
-	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-step2", Name: domain.RcNameVPC("net-step2")}
+	net := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-step2", Name: domain.RcNameVPC("net-step2")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-step2",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-step2",
 		Name: domain.RcNameVPC("sub-step2"), NetworkID: net.ID, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -111,7 +111,7 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 		return w.AddressPoolBindings().SetNetworkDefault(ctx, net.ID, networkBindingPool.ID)
 	}))
 
-	folderClient := stubFolderClient{clouds: map[string]string{
+	projectClient := stubProjectClient{clouds: map[string]string{
 		"folder-step1": "cloud-step1",
 		"folder-step3": "cloud-step3",
 		"folder-edge":  "cloud-edge",
@@ -128,12 +128,12 @@ func TestIntegration_IPAM_Cascade_FiveSteps(t *testing.T) {
 	// тонкие adapter'ы поверх kachoRepo (KAC-94 A.7 ultra-final: legacy *Repo удалены).
 	subnetAdapter := cqrsadapter.NewSubnet(r)
 	addrAdapter := cqrsadapter.NewAddress(r)
-	apResolver := addresspool.NewResolverService(r, addrAdapter, subnetAdapter, folderClient)
+	apResolver := addresspool.NewResolverService(r, addrAdapter, subnetAdapter, projectClient)
 	addrSvc := addressapp.NewAllocateUseCase(r, subnetAdapter, apResolver)
 
 	mkAddr := func(folderID, name string, t domain.AddressType, v domain.IpVersion, ext *domain.ExternalIpv4Spec, intSpec *domain.InternalIpv4Spec) *domain.Address {
 		return &domain.Address{
-			ID: ids.NewID(ids.PrefixAddress), FolderID: folderID, Name: domain.RcNameVPC(name),
+			ID: ids.NewID(ids.PrefixAddress), ProjectID: folderID, Name: domain.RcNameVPC(name),
 			Type: t, IpVersion: v, ExternalIpv4: ext, InternalIpv4: intSpec,
 		}
 	}

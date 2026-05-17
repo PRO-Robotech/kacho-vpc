@@ -20,7 +20,7 @@ func (subnet) toPb(rec kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	}
 	p := &vpcv1.Subnet{
 		Id:           rec.ID,
-		FolderId:     rec.FolderID,
+		ProjectId:     rec.ProjectID,
 		CreatedAt:    ts,
 		Name:         string(rec.Name),
 		Description:  string(rec.Description),

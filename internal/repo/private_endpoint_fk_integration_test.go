@@ -61,7 +61,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	// --- setup: Network + Subnet + Address + PE ---
 	net := &domain.Network{
-		ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-pe-fk"),
+		ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-1", Name: domain.RcNameVPC("net-pe-fk"),
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
@@ -69,7 +69,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), FolderID: "folder-1", Name: domain.RcNameVPC("sub-pe-fk"),
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "folder-1", Name: domain.RcNameVPC("sub-pe-fk"),
 		NetworkID: net.ID, ZoneID: "ru-central1-a", V4CidrBlocks: []string{"10.0.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -78,7 +78,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	}))
 
 	addr := &domain.Address{
-		ID: ids.NewID(ids.PrefixAddress), FolderID: "folder-1", Name: domain.RcNameVPC("addr-pe-fk"),
+		ID: ids.NewID(ids.PrefixAddress), ProjectID: "folder-1", Name: domain.RcNameVPC("addr-pe-fk"),
 		Type: domain.AddressTypeExternal, IpVersion: domain.IpVersionIPv4,
 		ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.42", ZoneID: "ru-central1-a"},
 	}
@@ -89,7 +89,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	pe := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-1"),
 		NetworkID:   net.ID,
 		SubnetID:    sub.ID,
@@ -131,7 +131,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 4. INSERT PE с несуществующим network_id → FK violation (via writer) ---
 	bad := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-net"),
 		NetworkID:   ids.NewID(ids.PrefixNetwork),
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -149,7 +149,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 5. INSERT PE с несуществующим subnet_id → FK violation ---
 	bad2 := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-sub"),
 		NetworkID:   net.ID,
 		SubnetID:    ids.NewID(ids.PrefixSubnet),
@@ -168,7 +168,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 6. INSERT PE с несуществующим address_id → FK violation ---
 	bad3 := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-addr"),
 		NetworkID:   net.ID,
 		AddressID:   ids.NewID(ids.PrefixAddress),
@@ -196,14 +196,14 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	// --- 7b. Изолированно проверяем private_endpoints_network_id_fkey ---
-	netIso := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-iso-pe")}
+	netIso := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-1", Name: domain.RcNameVPC("net-iso-pe")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, netIso)
 		return e
 	}))
 	peIso := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-iso"),
 		NetworkID:   netIso.ID,
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -228,7 +228,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	require.NoError(t, err)
 
 	// --- 8. Optional refs могут быть пустыми → NULL → FK не проверяется ---
-	net2 := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), FolderID: "folder-1", Name: domain.RcNameVPC("net-pe-fk-2")}
+	net2 := &domain.Network{ID: ids.NewID(ids.PrefixNetwork), ProjectID: "folder-1", Name: domain.RcNameVPC("net-pe-fk-2")}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net2)
 		return e
@@ -236,7 +236,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	peNoOpt := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		FolderID:    "folder-1",
+		ProjectID:    "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-no-opt"),
 		NetworkID:   net2.ID,
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,

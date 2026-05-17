@@ -10,7 +10,7 @@
 ### Tenant isolation (folder ownership) на public-handler'ах
 
 Каждый public RPC, читающий/мутирующий конкретный ресурс, проверяет, что
-`resource.folder_id` принадлежит caller'у. Tenant-context извлекается
+`resource.project_id` принадлежит caller'у. Tenant-context извлекается
 interceptor'ом (`internal/handler/tenant_interceptor.go`), проверка —
 `AssertFolderOwnership` в handler'ах (address/network/subnet/route_table/
 security_group/gateway/private_endpoint). Cross-tenant `Get` и `Get`
@@ -57,7 +57,7 @@ hostname/db/query-fragment в тексте. Прямых `status.Errorf(codes.In
   `AssertFolderOwnership` спроектирован так, чтобы interceptor можно было
   заменить без правок handler'ов. (`kacho-iam` ещё не реализован.)
 - **`OperationService.Get(operation_id)` без folder-ownership-check** —
-  единственный public RPC без проверки. Требует `folder_id` на таблице `operations`
+  единственный public RPC без проверки. Требует `project_id` на таблице `operations`
   (она в `kacho-corelib`, shared) либо резолва через `metadata.resource_id` →
   ресурс → folder; делается в IAM-фазе.
 - **mTLS на `:9091`** — 4-й слой поверх NetworkPolicy + admin-check + prod-mode;

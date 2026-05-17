@@ -26,7 +26,7 @@ CASES.append(Case(
             method="POST",
             path="/vpc/v1/networks",
             body={
-                "folderId": "{{_suiteFolderId}}",
+                "projectId": "{{_suiteFolderId}}",
                 "name": "net-cr-{{runId}}",
                 "description": "newman CRUD-OK",
                 "labels": {"suite": "newman"},
@@ -47,7 +47,7 @@ CASES.append(Case(
                 *assert_status(200),
                 "const j = pm.response.json();",
                 "pm.test('id matches', () => pm.expect(j.id).to.eql(pm.environment.get('createdNetworkId')));",
-                "pm.test('folderId matches', () => pm.expect(j.folderId).to.eql(pm.environment.get('_suiteFolderId')));",
+                "pm.test('projectId matches', () => pm.expect(j.projectId).to.eql(pm.environment.get('_suiteFolderId')));",
                 "pm.test('name matches', () => pm.expect(j.name).to.match(/^net-cr-/));",
             ],
         ),
@@ -71,7 +71,7 @@ CASES.append(Case(
     priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-novpn-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-novpn-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "createdNetworkId")]),
         poll_operation_until_done(),
@@ -86,7 +86,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-VAL-FOLDER-REQUIRED",
-    title="Create без folderId → InvalidArgument (folder_id required)",
+    title="Create без projectId → InvalidArgument (project_id required)",
     classes=["VAL"],
     priority="P0",
     steps=[
@@ -105,7 +105,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-NEG-FOLDER-NOT-FOUND",
-    title="Create с garbage folderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+    title="Create с garbage projectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -113,7 +113,7 @@ CASES.append(Case(
             name="create-bad-folder",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{garbageId}}", "name": "net-bf-{{runId}}"},
+            body={"projectId": "{{garbageId}}", "name": "net-bf-{{runId}}"},
             # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
             # (race-prone). Operation создаётся (200), затем worker падает с
             # NotFound — проверяем через poll-operation.
@@ -149,7 +149,7 @@ CASES.append(Case(
             name="create-first",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *assert_operation_envelope(),
@@ -162,7 +162,7 @@ CASES.append(Case(
             name="create-second-same-name",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-dup-{{runId}}"},
             test_script=[
                 *assert_status(409),
                 *assert_grpc_code(6, "ALREADY_EXISTS"),
@@ -233,7 +233,7 @@ CASES.append(Case(
         Step(
             name="list",
             method="GET",
-            path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10",
+            path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10",
             test_script=[
                 *assert_status(200),
                 "const j = pm.response.json();",
@@ -247,7 +247,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-LST-VAL-FOLDER-REQUIRED",
-    title="List без folderId → InvalidArgument (no cross-folder enum)",
+    title="List без projectId → InvalidArgument (no cross-folder enum)",
     classes=["VAL", "AUTHZ"],
     priority="P0",
     steps=[
@@ -272,7 +272,7 @@ CASES.append(Case(
         Step(
             name="list-pagesize-0",
             method="GET",
-            path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=0",
+            path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=0",
             test_script=[
                 *assert_status(200),
                 "const j = pm.response.json();",
@@ -291,7 +291,7 @@ CASES.append(Case(
         Step(
             name="list-pagesize-huge",
             method="GET",
-            path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10000",
+            path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10000",
             test_script=[
                 *assert_status(400),
                 *assert_grpc_code(3, "INVALID_ARGUMENT"),
@@ -309,7 +309,7 @@ CASES.append(Case(
         Step(
             name="list-bad-token",
             method="GET",
-            path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
+            path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
             test_script=[
                 *assert_status(400),
                 *assert_grpc_code(3, "INVALID_ARGUMENT"),
@@ -332,7 +332,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-upd-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-upd-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -465,7 +465,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-MV-CRUD-OK",
-    title="Move network в другой folder → success + folder_id обновлён",
+    title="Move network в другой folder → success + project_id обновлён",
     classes=["CRUD"],
     priority="P1",
     steps=[
@@ -473,7 +473,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-mv-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-mv-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -485,7 +485,7 @@ CASES.append(Case(
             name="move",
             method="POST",
             path="/vpc/v1/networks/{{netId}}:move",
-            body={"destinationFolderId": "{{_suiteFolderCrossId}}"},
+            body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -498,7 +498,7 @@ CASES.append(Case(
             path="/vpc/v1/networks/{{netId}}",
             test_script=[
                 *assert_status(200),
-                "pm.test('folder updated', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderCrossId')));",
+                "pm.test('folder updated', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderCrossId')));",
             ],
         ),
         Step(
@@ -512,7 +512,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-MV-NEG-DEST-FOLDER-NF",
-    title="Move в несуществующий destinationFolderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+    title="Move в несуществующий destinationProjectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
     classes=["NEG"],
     priority="P1",
     steps=[
@@ -520,7 +520,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-mv-nf-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-mv-nf-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -532,7 +532,7 @@ CASES.append(Case(
             name="move-to-garbage",
             method="POST",
             path="/vpc/v1/networks/{{netId}}:move",
-            body={"destinationFolderId": "{{garbageId}}"},
+            body={"destinationProjectId": "{{garbageId}}"},
             # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
             # (race-prone). Operation создаётся (200), затем worker падает с
             # NotFound — проверяем через poll-operation.
@@ -578,7 +578,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-lsub-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-lsub-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -614,7 +614,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-lsg-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-lsg-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -653,7 +653,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-lrt-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-lrt-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -689,7 +689,7 @@ CASES.append(Case(
             name="create",
             method="POST",
             path="/vpc/v1/networks",
-            body={"folderId": "{{_suiteFolderId}}", "name": "net-lop-{{runId}}"},
+            body={"projectId": "{{_suiteFolderId}}", "name": "net-lop-{{runId}}"},
             test_script=[
                 *assert_status(200),
                 *save_from_response("j.id", "opId"),
@@ -734,7 +734,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
+             body={"projectId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
              # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
              # (race-prone). Verbatim text проверяется через operation.error.
              test_script=[
@@ -781,7 +781,7 @@ CASES.append(Case(
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="move-nx", method="POST", path="/vpc/v1/networks/{{garbageVpcId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
              test_script=[
                  *assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
                  "pm.test('non-empty error text', () => pm.expect(pm.response.json().message).to.be.a('string').and.length.greaterThan(0));",
@@ -796,7 +796,7 @@ CASES.append(Case(
     classes=["CRUD"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-delok-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-delok-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -814,7 +814,7 @@ CASES.append(Case(
     classes=["NEG", "AUTHZ"], priority="P1",
     steps=[
         Step(name="move-nx", method="POST", path="/vpc/v1/networks/{{garbageVpcId}}:move",
-             body={"destinationFolderId": "{{_suiteFolderId}}"},
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
              test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
     ],
 ))
@@ -852,26 +852,26 @@ CASES.append(pagination_roundtrip("NET", "/vpc/v1/networks"))
 CASES.append(idempotency_block("NET", "/vpc/v1/networks", "net-idm-{{runId}}", {}))
 
 # === v7: Финальное добивание к 100+ кейсов ===
-CASES.extend(update_happy_per_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(update_happy_per_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 CASES.extend(perf_baseline_block("NET", "/vpc/v1/networks"))
-CASES.append(move_same_folder("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(move_same_folder("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 CASES.extend(verbatim_text_pack("NET", "Network", "/vpc/v1/networks"))
 CASES.extend(authz_caller_headers_block("NET", "/vpc/v1/networks"))
 
 # v8: cross-folder + multi-field + filter-match + invalid types + methods + malformed
-CASES.append(update_happy_multi_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(update_happy_multi_field("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 CASES.append(cross_folder_resource_block("NET", "/vpc/v1/networks", {}))
-CASES.append(list_filter_match_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
-CASES.extend(neg_invalid_types_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(list_filter_match_block("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
+CASES.extend(neg_invalid_types_block("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 CASES.extend(http_method_not_allowed_block("NET", "/vpc/v1/networks"))
 CASES.extend(malformed_body_block("NET", "/vpc/v1/networks"))
 
 # v9
-CASES.append(alreadyexists_dup_name_for("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
-CASES.extend(update_mask_partial_block("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
-CASES.append(perf_baseline_get_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.append(alreadyexists_dup_name_for("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
+CASES.extend(update_mask_partial_block("NET", "/vpc/v1/networks", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
+CASES.append(perf_baseline_get_block("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 CASES.extend(list_total_size_check_block("NET", "/vpc/v1/networks"))
-CASES.extend(headers_content_type_block("NET", "/vpc/v1/networks", {"folderId": "{{_suiteFolderId}}"}))
+CASES.extend(headers_content_type_block("NET", "/vpc/v1/networks", {"projectId": "{{_suiteFolderId}}"}))
 
 # v10 Network-specific
 CASES.append(Case(
@@ -879,7 +879,7 @@ CASES.append(Case(
     title="Create Network с unknown полем в body → silent ignore (200) или 400",
     classes=["VAL"], priority="P3",
     steps=[Step(name="cr-extra", method="POST", path="/vpc/v1/networks",
-                body={"folderId": "{{_suiteFolderId}}", "name": "net-x-{{runId}}",
+                body={"projectId": "{{_suiteFolderId}}", "name": "net-x-{{runId}}",
                       "unknownField": "ignored", "anotherUnknown": 123},
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
                              *save_from_response("j.id", "opId"),
@@ -894,7 +894,7 @@ CASES.append(Case(
     title="List с filter из несколько условий — современный YC pattern",
     classes=["FILTER"], priority="P3",
     steps=[Step(name="lst-multi", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -904,7 +904,7 @@ CASES.append(Case(
     title="List с pageSize=-1 → 400 или 200",
     classes=["BVA", "VAL"], priority="P2",
     steps=[Step(name="lst-neg", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=-1",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=-1",
                 test_script=["pm.test('rejected or default', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -913,7 +913,7 @@ CASES.append(Case(
     title="List с filter содержащим спец-символы → 400 или 200",
     classes=["FILTER", "VAL"], priority="P3",
     steps=[Step(name="lst-fsc", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
                 test_script=["pm.test('handled', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -922,7 +922,7 @@ CASES.append(Case(
     title="List с pageSize=1000 (boundary max) → 200",
     classes=["BVA"], priority="P2",
     steps=[Step(name="lst-max", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1000",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1000",
                 test_script=[*assert_status(200)])],
 ))
 
@@ -931,16 +931,16 @@ CASES.append(Case(
     title="List с pageSize=1001 (over max) → 400",
     classes=["BVA", "VAL"], priority="P1",
     steps=[Step(name="lst-1001", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1001",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1001",
                 test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")])],
 ))
 
 CASES.append(Case(
     id="NET-LST-DOUBLE-FOLDER-PARAM",
-    title="List с дубликатом folderId param → 200 (last wins) или 400",
+    title="List с дубликатом projectId param → 200 (last wins) или 400",
     classes=["VAL"], priority="P3",
     steps=[Step(name="lst-dup", method="GET",
-                path="/vpc/v1/networks?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+                path="/vpc/v1/networks?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
                 test_script=["pm.test('200 or 400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"])],
 ))
 
@@ -960,12 +960,12 @@ CASES.append(Case(
     classes=["NEG", "CONF", "STATE"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-hasub-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-hasub-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sub-hasub-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.250.1.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
@@ -992,12 +992,12 @@ CASES.append(Case(
     classes=["NEG", "CONF", "STATE"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-hart-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-hart-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="cr-rt", method="POST", path="/vpc/v1/routeTables",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "rt-hart-{{runId}}", "staticRoutes": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
@@ -1022,13 +1022,13 @@ CASES.append(Case(
     classes=["NEG", "CONF", "STATE"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-hasg-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-hasg-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         # Создаём дополнительный (non-default) SG
         Step(name="cr-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sg-hasg-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
@@ -1054,7 +1054,7 @@ CASES.append(Case(
     steps=[
         # Создаём network — default SG создается inline в doCreate автоматически
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-defsg-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -1089,7 +1089,7 @@ CASES.append(Case(
     classes=["CRUD", "STATE"], priority="P1",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-defsgrm-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-defsgrm-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -1123,19 +1123,19 @@ CASES.append(Case(
     classes=["NEG", "STATE"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-subnic-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-subnic-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
         Step(name="cr-sub", method="POST", path="/vpc/v1/subnets",
-             body={"folderId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
                    "name": "sub-subnic-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.248.3.0/24"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
         poll_operation_until_done(),
         Step(name="cr-nic", method="POST", path="/vpc/v1/networkInterfaces",
-             body={"folderId": "{{_suiteFolderId}}", "subnetId": "{{subId}}", "name": "nic-subnic-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "subnetId": "{{subId}}", "name": "nic-subnic-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkInterfaceId", "nicId")]),
         poll_operation_until_done(),
@@ -1165,7 +1165,7 @@ CASES.append(Case(
     classes=["STATE", "CRUD"], priority="P1",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
-             body={"folderId": "{{_suiteFolderId}}", "name": "net-listops-{{runId}}"},
+             body={"projectId": "{{_suiteFolderId}}", "name": "net-listops-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.networkId", "netId")]),
         poll_operation_until_done(),
@@ -1185,13 +1185,13 @@ CASES.append(Case(
 
 # === Required-field matrix + Immutable matrix для Network ===
 CASES.extend(required_fields_matrix("NET", "/vpc/v1/networks",
-    {"folderId": "{{_suiteFolderId}}", "name": "net-req-{{runId}}"},
-    ["folderId", "name"]))
+    {"projectId": "{{_suiteFolderId}}", "name": "net-req-{{runId}}"},
+    ["projectId", "name"]))
 CASES.extend(immutable_fields_matrix("NET", "/vpc/v1/networks",
-    ["folder_id"]))
+    ["project_id"]))
 
 # v14 — security probes + lifecycle conformance
 CASES.extend(security_injection_block("NET", "/vpc/v1/networks", "/vpc/v1/networks",
-    {"folderId": "{{_suiteFolderId}}"}))
+    {"projectId": "{{_suiteFolderId}}"}))
 CASES.append(conformance_lifecycle_pack("NET", "/vpc/v1/networks",
-    {"folderId": "{{_suiteFolderId}}"}))
+    {"projectId": "{{_suiteFolderId}}"}))

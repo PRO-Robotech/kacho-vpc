@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "c5a45ac9-7d7b-479d-872b-6f56082bf85c",
+    "_postman_id": "27d83215-42ce-47eb-be97-e73773b4d728",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,8 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteFolderId', pm.environment.get('existingFolderId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingFolderCrossId'));"
+          "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
         ]
       }
     }
@@ -50,7 +50,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-cr-{{runId}}\", \"description\": \"newman CRUD-OK\", \"labels\": {\"suite\": \"newman\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-cr-{{runId}}\", \"description\": \"newman CRUD-OK\", \"labels\": {\"suite\": \"newman\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -163,7 +163,7 @@
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "pm.test('id matches', () => pm.expect(j.id).to.eql(pm.environment.get('createdNetworkId')));",
-                  "pm.test('folderId matches', () => pm.expect(j.folderId).to.eql(pm.environment.get('_suiteFolderId')));",
+                  "pm.test('projectId matches', () => pm.expect(j.projectId).to.eql(pm.environment.get('_suiteFolderId')));",
                   "pm.test('name matches', () => pm.expect(j.name).to.match(/^net-cr-/));"
                 ]
               }
@@ -234,7 +234,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-novpn-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-novpn-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -385,7 +385,7 @@
       ]
     },
     {
-      "name": "NET-CR-VAL-FOLDER-REQUIRED — Create без folderId → InvalidArgument (folder_id required)",
+      "name": "NET-CR-VAL-FOLDER-REQUIRED — Create без projectId → InvalidArgument (project_id required)",
       "description": "class:VAL | priority:P0",
       "item": [
         {
@@ -438,7 +438,7 @@
       ]
     },
     {
-      "name": "NET-CR-NEG-FOLDER-NOT-FOUND — Create с garbage folderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+      "name": "NET-CR-NEG-FOLDER-NOT-FOUND — Create с garbage projectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -464,7 +464,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{garbageId}}\", \"name\": \"net-bf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{garbageId}}\", \"name\": \"net-bf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -602,7 +602,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-dup-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-dup-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -706,7 +706,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-dup-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-dup-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -869,14 +869,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=10"
+                "networks?projectId={{_suiteFolderId}}&pageSize=10"
               ]
             }
           },
@@ -898,7 +898,7 @@
       ]
     },
     {
-      "name": "NET-LST-VAL-FOLDER-REQUIRED — List без folderId → InvalidArgument (no cross-folder enum)",
+      "name": "NET-LST-VAL-FOLDER-REQUIRED — List без projectId → InvalidArgument (no cross-folder enum)",
       "description": "class:VAL | class:AUTHZ | priority:P0",
       "item": [
         {
@@ -956,14 +956,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=0",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=0",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=0"
+                "networks?projectId={{_suiteFolderId}}&pageSize=0"
               ]
             }
           },
@@ -998,14 +998,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10000",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=10000"
+                "networks?projectId={{_suiteFolderId}}&pageSize=10000"
               ]
             }
           },
@@ -1042,14 +1042,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
+                "networks?projectId={{_suiteFolderId}}&pageSize=10&pageToken=not-a-real-token"
               ]
             }
           },
@@ -1098,7 +1098,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1543,7 +1543,7 @@
       ]
     },
     {
-      "name": "NET-MV-CRUD-OK — Move network в другой folder → success + folder_id обновлён",
+      "name": "NET-MV-CRUD-OK — Move network в другой folder → success + project_id обновлён",
       "description": "class:CRUD | priority:P1",
       "item": [
         {
@@ -1569,7 +1569,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1669,7 +1669,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderCrossId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderCrossId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1770,7 +1770,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('folder updated', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderCrossId')));"
+                  "pm.test('folder updated', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderCrossId')));"
                 ]
               }
             }
@@ -1814,7 +1814,7 @@
       ]
     },
     {
-      "name": "NET-MV-NEG-DEST-FOLDER-NF — Move в несуществующий destinationFolderId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+      "name": "NET-MV-NEG-DEST-FOLDER-NF — Move в несуществующий destinationProjectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
       "description": "class:NEG | priority:P1",
       "item": [
         {
@@ -1840,7 +1840,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-nf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-nf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1940,7 +1940,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{garbageId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{garbageId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2113,7 +2113,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lsub-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lsub-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2290,7 +2290,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lsg-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lsg-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2470,7 +2470,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lrt-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lrt-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2647,7 +2647,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lop-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lop-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2902,7 +2902,7 @@
       ]
     },
     {
-      "name": "NET-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=folder_id → InvalidArgument (immutable)",
+      "name": "NET-UPD-STATE-IMMUTABLE-FOLDER — Update с mask=project_id → InvalidArgument (immutable)",
       "description": "class:STATE | class:VAL | priority:P1",
       "item": [
         {
@@ -2929,7 +2929,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2952,7 +2952,7 @@
       ]
     },
     {
-      "name": "NET-MV-VAL-NO-DEST — Move без destinationFolderId → InvalidArgument",
+      "name": "NET-MV-VAL-NO-DEST — Move без destinationProjectId → InvalidArgument",
       "description": "class:VAL | priority:P1",
       "item": [
         {
@@ -3016,14 +3016,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -3069,7 +3069,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{garbageId}}\", \"name\": \"net-confnf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{garbageId}}\", \"name\": \"net-confnf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3380,7 +3380,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3434,7 +3434,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-delok-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-delok-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3665,7 +3665,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3819,7 +3819,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3868,7 +3868,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n63abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3922,7 +3922,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"n64abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3975,7 +3975,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"InvalidUpperCase-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4024,7 +4024,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"9invalid-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4077,7 +4077,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"-bad-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4130,7 +4130,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"name!@#-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4183,7 +4183,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-desc-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4237,7 +4237,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-d2-{{runId}}\", \"description\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4290,7 +4290,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblup-{{runId}}\", \"labels\": {\"BADKEY\": \"v\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4343,7 +4343,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblbad-{{runId}}\", \"labels\": {\"bad key!\": \"v\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4396,7 +4396,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblm-{{runId}}\", \"labels\": {\"key0\": \"v0\", \"key1\": \"v1\", \"key2\": \"v2\", \"key3\": \"v3\", \"key4\": \"v4\", \"key5\": \"v5\", \"key6\": \"v6\", \"key7\": \"v7\", \"key8\": \"v8\", \"key9\": \"v9\", \"key10\": \"v10\", \"key11\": \"v11\", \"key12\": \"v12\", \"key13\": \"v13\", \"key14\": \"v14\", \"key15\": \"v15\", \"key16\": \"v16\", \"key17\": \"v17\", \"key18\": \"v18\", \"key19\": \"v19\", \"key20\": \"v20\", \"key21\": \"v21\", \"key22\": \"v22\", \"key23\": \"v23\", \"key24\": \"v24\", \"key25\": \"v25\", \"key26\": \"v26\", \"key27\": \"v27\", \"key28\": \"v28\", \"key29\": \"v29\", \"key30\": \"v30\", \"key31\": \"v31\", \"key32\": \"v32\", \"key33\": \"v33\", \"key34\": \"v34\", \"key35\": \"v35\", \"key36\": \"v36\", \"key37\": \"v37\", \"key38\": \"v38\", \"key39\": \"v39\", \"key40\": \"v40\", \"key41\": \"v41\", \"key42\": \"v42\", \"key43\": \"v43\", \"key44\": \"v44\", \"key45\": \"v45\", \"key46\": \"v46\", \"key47\": \"v47\", \"key48\": \"v48\", \"key49\": \"v49\", \"key50\": \"v50\", \"key51\": \"v51\", \"key52\": \"v52\", \"key53\": \"v53\", \"key54\": \"v54\", \"key55\": \"v55\", \"key56\": \"v56\", \"key57\": \"v57\", \"key58\": \"v58\", \"key59\": \"v59\", \"key60\": \"v60\", \"key61\": \"v61\", \"key62\": \"v62\", \"key63\": \"v63\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4450,7 +4450,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-lblo-{{runId}}\", \"labels\": {\"k0\": \"v0\", \"k1\": \"v1\", \"k2\": \"v2\", \"k3\": \"v3\", \"k4\": \"v4\", \"k5\": \"v5\", \"k6\": \"v6\", \"k7\": \"v7\", \"k8\": \"v8\", \"k9\": \"v9\", \"k10\": \"v10\", \"k11\": \"v11\", \"k12\": \"v12\", \"k13\": \"v13\", \"k14\": \"v14\", \"k15\": \"v15\", \"k16\": \"v16\", \"k17\": \"v17\", \"k18\": \"v18\", \"k19\": \"v19\", \"k20\": \"v20\", \"k21\": \"v21\", \"k22\": \"v22\", \"k23\": \"v23\", \"k24\": \"v24\", \"k25\": \"v25\", \"k26\": \"v26\", \"k27\": \"v27\", \"k28\": \"v28\", \"k29\": \"v29\", \"k30\": \"v30\", \"k31\": \"v31\", \"k32\": \"v32\", \"k33\": \"v33\", \"k34\": \"v34\", \"k35\": \"v35\", \"k36\": \"v36\", \"k37\": \"v37\", \"k38\": \"v38\", \"k39\": \"v39\", \"k40\": \"v40\", \"k41\": \"v41\", \"k42\": \"v42\", \"k43\": \"v43\", \"k44\": \"v44\", \"k45\": \"v45\", \"k46\": \"v46\", \"k47\": \"v47\", \"k48\": \"v48\", \"k49\": \"v49\", \"k50\": \"v50\", \"k51\": \"v51\", \"k52\": \"v52\", \"k53\": \"v53\", \"k54\": \"v54\", \"k55\": \"v55\", \"k56\": \"v56\", \"k57\": \"v57\", \"k58\": \"v58\", \"k59\": \"v59\", \"k60\": \"v60\", \"k61\": \"v61\", \"k62\": \"v62\", \"k63\": \"v63\", \"k64\": \"v64\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4591,14 +4591,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=name%3D%22foo%22"
+                "networks?projectId={{_suiteFolderId}}&filter=name%3D%22foo%22"
               ]
             }
           },
@@ -4631,14 +4631,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
+                "networks?projectId={{_suiteFolderId}}&filter=this%20is%20not%20valid%20syntax"
               ]
             }
           },
@@ -4671,14 +4671,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
+                "networks?projectId={{_suiteFolderId}}&filter=nonexistent_field%3D%22x%22"
               ]
             }
           },
@@ -4711,14 +4711,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1"
               ]
             }
           },
@@ -4749,14 +4749,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1&pageToken={{nextToken}}"
               ]
             }
           },
@@ -4801,7 +4801,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-idm-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-idm-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4887,7 +4887,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-idm-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-idm-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4976,7 +4976,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-name-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-name-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5258,7 +5258,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-desc-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-desc-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5540,7 +5540,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-labels-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-upd-labels-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5811,14 +5811,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=10"
+                "networks?projectId={{_suiteFolderId}}&pageSize=10"
               ]
             }
           },
@@ -5864,7 +5864,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-self-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-mv-self-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5951,7 +5951,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"destinationFolderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"destinationProjectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6006,7 +6006,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "pm.test('folderId unchanged', () => pm.expect(pm.response.json().folderId).to.eql(pm.environment.get('_suiteFolderId')));"
+                  "pm.test('projectId unchanged', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderId')));"
                 ]
               }
             }
@@ -6248,14 +6248,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}"
+                "networks?projectId={{_suiteFolderId}}"
               ]
             }
           },
@@ -6300,7 +6300,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-multi-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-multi-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6586,7 +6586,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-iso-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-iso-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6660,14 +6660,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderCrossId}}&pageSize=100",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderCrossId}}&pageSize=100",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderCrossId}}&pageSize=100"
+                "networks?projectId={{_suiteFolderCrossId}}&pageSize=100"
               ]
             }
           },
@@ -6786,7 +6786,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-flt-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-flt-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6860,14 +6860,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22net-flt-{{runId}}%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22net-flt-{{runId}}%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22net-flt-{{runId}}%22"
+                "networks?projectId={{_suiteFolderId}}&pageSize=100&filter=name%3D%22net-flt-{{runId}}%22"
               ]
             }
           },
@@ -6986,7 +6986,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": null}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": null}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7035,7 +7035,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-bt-{{runId}}\", \"labels\": \"not-an-object\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7090,7 +7090,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-bd-{{runId}}\", \"description\": 12345}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-bd-{{runId}}\", \"description\": 12345}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7145,7 +7145,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7337,7 +7337,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-dupck-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-dupck-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7423,7 +7423,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-dupck-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-dupck-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7549,7 +7549,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-mn-{{runId}}\", \"description\": \"init\", \"labels\": {\"orig\": \"1\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -7834,7 +7834,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-perf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-perf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8022,14 +8022,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=5",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=5",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=5"
+                "networks?projectId={{_suiteFolderId}}&pageSize=5"
               ]
             }
           },
@@ -8075,7 +8075,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-noct-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-noct-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8133,7 +8133,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-x-{{runId}}\", \"unknownField\": \"ignored\", \"anotherUnknown\": 123}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-x-{{runId}}\", \"unknownField\": \"ignored\", \"anotherUnknown\": 123}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8261,14 +8261,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22"
+                "networks?projectId={{_suiteFolderId}}&filter=name%3D%22x%22%20AND%20name%3D%22y%22"
               ]
             }
           },
@@ -8301,14 +8301,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=-1",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=-1",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=-1"
+                "networks?projectId={{_suiteFolderId}}&pageSize=-1"
               ]
             }
           },
@@ -8341,14 +8341,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22"
+                "networks?projectId={{_suiteFolderId}}&filter=name%3D%22%21%40%23%24%25%22"
               ]
             }
           },
@@ -8381,14 +8381,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1000",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1000"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1000"
               ]
             }
           },
@@ -8421,14 +8421,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1001",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1001",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1001"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1001"
               ]
             }
           },
@@ -8451,7 +8451,7 @@
       ]
     },
     {
-      "name": "NET-LST-DOUBLE-FOLDER-PARAM — List с дубликатом folderId param → 200 (last wins) или 400",
+      "name": "NET-LST-DOUBLE-FOLDER-PARAM — List с дубликатом projectId param → 200 (last wins) или 400",
       "description": "class:VAL | priority:P3",
       "item": [
         {
@@ -8465,14 +8465,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&folderId={{_suiteFolderCrossId}}&pageSize=10"
+                "networks?projectId={{_suiteFolderId}}&projectId={{_suiteFolderCrossId}}&pageSize=10"
               ]
             }
           },
@@ -8558,7 +8558,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-hasub-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-hasub-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8657,7 +8657,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-hasub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.250.1.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-hasub-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.250.1.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -8972,7 +8972,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-hart-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-hart-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9071,7 +9071,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-hart-{{runId}}\", \"staticRoutes\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"rt-hart-{{runId}}\", \"staticRoutes\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9386,7 +9386,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-hasg-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-hasg-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9485,7 +9485,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sg-hasg-{{runId}}\", \"ruleSpecs\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sg-hasg-{{runId}}\", \"ruleSpecs\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9800,7 +9800,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-defsg-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-defsg-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10103,7 +10103,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-defsgrm-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-defsgrm-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10446,7 +10446,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-subnic-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-subnic-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10545,7 +10545,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-subnic-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.248.3.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-subnic-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.248.3.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10644,7 +10644,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-subnic-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"subnetId\": \"{{subId}}\", \"name\": \"nic-subnic-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11047,7 +11047,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-listops-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-listops-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11288,11 +11288,11 @@
       ]
     },
     {
-      "name": "NET-CR-VAL-REQ-FOLDERID — Create без required поля 'folderId' → 400 InvalidArgument",
+      "name": "NET-CR-VAL-REQ-PROJECTID — Create без required поля 'projectId' → 400 InvalidArgument",
       "description": "class:VAL | priority:P0",
       "item": [
         {
-          "name": "cr-no-folderId",
+          "name": "cr-no-projectId",
           "request": {
             "method": "POST",
             "header": [
@@ -11363,7 +11363,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11386,11 +11386,11 @@
       ]
     },
     {
-      "name": "NET-UPD-STATE-IMMUTABLE-FOLDER-ID — Update mask='folder_id' (immutable) → 400 InvalidArgument verbatim",
+      "name": "NET-UPD-STATE-IMMUTABLE-PROJECT-ID — Update mask='project_id' (immutable) → 400 InvalidArgument verbatim",
       "description": "class:STATE | class:VAL | class:CONF | priority:P1",
       "item": [
         {
-          "name": "upd-folder_id",
+          "name": "upd-project_id",
           "request": {
             "method": "PATCH",
             "header": [
@@ -11413,7 +11413,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"updateMask\": \"folder_id\", \"folderId\": \"x\"}",
+              "raw": "{\"updateMask\": \"project_id\", \"projectId\": \"x\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11466,7 +11466,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"test' OR 1=1--\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"test' OR 1=1--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11523,7 +11523,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"x' UNION SELECT * FROM operations--\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"x' UNION SELECT * FROM operations--\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11580,7 +11580,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"<script>alert(1)</script>\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"<script>alert(1)</script>\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11637,7 +11637,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"; rm -rf / ;\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"; rm -rf / ;\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11694,7 +11694,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"../../etc/passwd\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"../../etc/passwd\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11751,7 +11751,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"x y\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"x y\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11808,7 +11808,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11853,14 +11853,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22"
+                "networks?projectId={{_suiteFolderId}}&filter=name%3D%22a%27%20OR%201%3D1--%22"
               ]
             }
           },
@@ -11906,7 +11906,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"folderId\": \"{{_suiteFolderId}}\", \"name\": \"net-life-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"net-life-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -12029,14 +12029,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1000",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1000"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1000"
               ]
             }
           },
@@ -12282,14 +12282,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/networks?folderId={{_suiteFolderId}}&pageSize=1000",
+              "raw": "{{baseUrl}}/vpc/v1/networks?projectId={{_suiteFolderId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "networks?folderId={{_suiteFolderId}}&pageSize=1000"
+                "networks?projectId={{_suiteFolderId}}&pageSize=1000"
               ]
             }
           },

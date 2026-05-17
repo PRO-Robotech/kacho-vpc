@@ -18,28 +18,28 @@ import (
 
 // MoveRouteTableUseCase — перенос RouteTable в другой folder.
 //
-// Wave 5 replicate (KAC-94): writer-TX явный, SetFolderID + outbox UPDATED атомарны.
+// Wave 5 replicate (KAC-94): writer-TX явный, SetProjectID + outbox UPDATED атомарны.
 type MoveRouteTableUseCase struct {
 	repo         Repo
-	folderClient FolderClient
+	projectClient ProjectClient
 	opsRepo      operations.Repo
 }
 
 // NewMoveRouteTableUseCase создаёт MoveRouteTableUseCase.
-func NewMoveRouteTableUseCase(r Repo, folderClient FolderClient, opsRepo operations.Repo) *MoveRouteTableUseCase {
-	return &MoveRouteTableUseCase{repo: r, folderClient: folderClient, opsRepo: opsRepo}
+func NewMoveRouteTableUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *MoveRouteTableUseCase {
+	return &MoveRouteTableUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и старт worker'а.
-func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID string) (*operations.Operation, error) {
+func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destProjectID string) (*operations.Operation, error) {
 	if err := corevalidate.ResourceID("route table", ids.PrefixRouteTable, id); err != nil {
 		return nil, err
 	}
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
-	if destFolderID == "" {
-		return nil, invalidArg("destination_folder_id", "destination_folder_id is required")
+	if destProjectID == "" {
+		return nil, invalidArg("destination_project_id", "destination_project_id is required")
 	}
 	rd, err := u.repo.Reader(ctx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 	if gerr != nil {
 		return nil, mapRepoErr(gerr)
 	}
-	if err := checkMoveDestination(ctx, u.folderClient, cur.FolderID, destFolderID); err != nil {
+	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}
 
@@ -67,12 +67,12 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 	}
 
 	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		exists, ferr := u.folderClient.Exists(ctx, destFolderID)
+		exists, ferr := u.projectClient.Exists(ctx, destProjectID)
 		if ferr != nil {
 			return nil, status.Errorf(codes.Unavailable, "folder check: %v", ferr)
 		}
 		if !exists {
-			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destFolderID)
+			return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", destProjectID)
 		}
 
 		w, werr := u.repo.Writer(ctx)
@@ -81,7 +81,7 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destFolderID st
 		}
 		defer w.Abort()
 
-		updated, uerr := w.RouteTables().SetFolderID(ctx, id, destFolderID)
+		updated, uerr := w.RouteTables().SetProjectID(ctx, id, destProjectID)
 		if uerr != nil {
 			return nil, mapRepoErr(uerr)
 		}
