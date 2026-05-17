@@ -26,8 +26,10 @@ lint:
 	golangci-lint run ./...
 
 sync-migrations:
-	cp ../kacho-corelib/migrations/common/*.sql migrations/
-	cp ../kacho-corelib/migrations/common/*.sql internal/migrations/
+	@echo "sync-migrations is a no-op after the migration squash (chore/squash-migrations)."
+	@echo "The operations table is now inline in internal/migrations/0001_initial.sql,"
+	@echo "schema kacho_vpc. Re-copying corelib's common/0001_operations.sql would"
+	@echo "create a conflicting unqualified 'operations' table in public schema."
 
 docker:
 	cd .. && docker build -f kacho-vpc/Dockerfile -t $(IMAGE) .
