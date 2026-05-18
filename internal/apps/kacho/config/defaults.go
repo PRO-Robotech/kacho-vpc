@@ -87,7 +87,7 @@ func RegisterDefaults(v *viper.Viper) {
 
 	// network (VPC-domain)
 	v.SetDefault("network.default-sg-inline", true)
-	v.SetDefault("network.folder-cache.positive-ttl", 30*time.Second)
-	v.SetDefault("network.folder-cache.negative-ttl", 5*time.Second)
-	v.SetDefault("network.folder-cache.max-size", 10000)
+	v.SetDefault("network.project-cache.positive-ttl", 30*time.Second)
+	v.SetDefault("network.project-cache.negative-ttl", 5*time.Second)
+	v.SetDefault("network.project-cache.max-size", 10000)
 }
