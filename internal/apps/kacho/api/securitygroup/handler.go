@@ -91,7 +91,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest
 	}
 	sgs, nextToken, err := h.list.Execute(ctx, SecurityGroupFilter{
 		ProjectID: req.ProjectId,
-		Filter:   req.Filter,
+		Filter:    req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -116,7 +116,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSecurityGroupRequ
 		return nil, err
 	}
 	sg := domain.SecurityGroup{
-		ProjectID:    req.ProjectId,
+		ProjectID:   req.ProjectId,
 		NetworkID:   req.NetworkId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),

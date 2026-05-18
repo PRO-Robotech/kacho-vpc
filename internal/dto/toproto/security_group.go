@@ -21,7 +21,7 @@ func (securityGroup) toPb(rec kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGro
 	}
 	p := &vpcv1.SecurityGroup{
 		Id:                rec.ID,
-		ProjectId:          rec.ProjectID,
+		ProjectId:         rec.ProjectID,
 		NetworkId:         rec.NetworkID,
 		CreatedAt:         ts,
 		Name:              string(rec.Name),

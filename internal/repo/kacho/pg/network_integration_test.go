@@ -80,7 +80,7 @@ func appendSearchPathOptions(dsn string) string {
 func newNetwork(folderID, name string) *domain.Network {
 	return &domain.Network{
 		ID:          ids.NewID(ids.PrefixNetwork),
-		ProjectID:    folderID,
+		ProjectID:   folderID,
 		Name:        domain.RcNameVPC(name),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),

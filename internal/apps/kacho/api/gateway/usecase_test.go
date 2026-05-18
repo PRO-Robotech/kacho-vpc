@@ -121,7 +121,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 
 	// Bad name (strict NameGateway rejects uppercase).
 	_, err = uc.Execute(context.Background(), domain.Gateway{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("BadCaps"),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	})
@@ -132,7 +132,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	// Missing gateway_type.
 	_, err = uc.Execute(context.Background(), domain.Gateway{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("gw1"),
+		Name:      domain.RcNameVPC("gw1"),
 	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
@@ -150,7 +150,7 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	uc := NewCreateGatewayUseCase(kr, &repomock.ProjectClient{OK: false}, or)
 
 	op, err := uc.Execute(context.Background(), domain.Gateway{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		GatewayType: domain.GatewayTypeSharedEgress,
 	})
@@ -169,7 +169,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	uc := NewCreateGatewayUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.Gateway{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("gw1"),
 		Description: domain.RcDescription("desc"),
 		GatewayType: domain.GatewayTypeSharedEgress,
@@ -230,8 +230,8 @@ func TestHandler_Create_OK(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 	op, err := h.Create(context.Background(), &vpcv1.CreateGatewayRequest{
 		ProjectId: "f1",
-		Name:     "gw1",
-		Gateway:  &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
+		Name:      "gw1",
+		Gateway:   &vpcv1.CreateGatewayRequest_SharedEgressGatewaySpec{SharedEgressGatewaySpec: &vpcv1.SharedEgressGatewaySpec{}},
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)
@@ -330,7 +330,7 @@ func TestGatewayToPb_SharedEgress(t *testing.T) {
 	rec := &kacho.GatewayRecord{
 		Gateway: domain.Gateway{
 			ID:          "gw-1",
-			ProjectID:    "f1",
+			ProjectID:   "f1",
 			Name:        domain.RcNameVPC("gw1"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "prod"}),

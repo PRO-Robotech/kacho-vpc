@@ -11,7 +11,7 @@ import (
 // leaf-пакет `kacho`. В `internal/repo/iface.go` остался type-alias
 // `RouteTableFilter = kacho.RouteTableFilter`.
 type RouteTableFilter struct {
-	ProjectID  string
+	ProjectID string
 	NetworkID string
 	Name      string
 	Filter    string

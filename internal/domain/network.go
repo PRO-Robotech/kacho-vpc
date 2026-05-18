@@ -14,7 +14,7 @@ import "go.uber.org/multierr"
 // `corevalidate.ResourceID` в service-слое перед запросом к репо).
 type Network struct {
 	ID                     string
-	ProjectID               string
+	ProjectID              string
 	Name                   RcNameVPC
 	Description            RcDescription
 	Labels                 RcLabels

@@ -30,7 +30,7 @@ func (network) toPb(rec kachorepo.NetworkRecord) (*vpcv1.Network, error) {
 	}
 	return &vpcv1.Network{
 		Id:                     rec.ID,
-		ProjectId:               rec.ProjectID,
+		ProjectId:              rec.ProjectID,
 		CreatedAt:              ts,
 		Name:                   string(rec.Name),
 		Description:            string(rec.Description),

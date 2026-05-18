@@ -39,7 +39,7 @@ import (
 func makeSubnet(sr *repomock.SubnetRepo, networkID string) *domain.Subnet {
 	s := &domain.Subnet{
 		ID:           ids.NewID(ids.PrefixSubnet),
-		ProjectID:     "f1",
+		ProjectID:    "f1",
 		NetworkID:    networkID,
 		Name:         domain.RcNameVPC("test-subnet"),
 		V4CidrBlocks: []string{"10.0.0.0/24"},
@@ -182,7 +182,7 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		ProjectID: "f1",
-		Name:     "addr1",
+		Name:      "addr1",
 		ExternalSpec: &ExternalAddrSpec{
 			Address: "203.0.113.10",
 			ZoneID:  "ru-central1-a",
@@ -212,7 +212,7 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 	listUC := NewListAddressesUseCase(kr)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
-		ProjectID:     "f1",
+		ProjectID:    "f1",
 		ExternalSpec: &ExternalAddrSpec{ZoneID: "ru-central1-a"},
 	})
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestUpdateUseCase_DeletionProtection(t *testing.T) {
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 addrID,
-		ProjectID:           "f1",
+		ProjectID:          "f1",
 		Name:               "addr",
 		DeletionProtection: false,
 	}}
@@ -363,7 +363,7 @@ func TestDeleteUseCase_DeletionProtection(t *testing.T) {
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
 		ID:                 addrID,
-		ProjectID:           "f1",
+		ProjectID:          "f1",
 		DeletionProtection: true,
 	}}
 	kr.SeedAddress(rec)
@@ -382,9 +382,9 @@ func TestDeleteUseCase_InUseByNIC(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	addrID := ids.NewID(ids.PrefixAddress)
 	rec := &kachorepo.AddressRecord{Address: domain.Address{
-		ID:       addrID,
+		ID:        addrID,
 		ProjectID: "f1",
-		Used:     true,
+		Used:      true,
 	}}
 	kr.SeedAddress(rec)
 	uc := NewDeleteAddressUseCase(kr, or)
@@ -492,9 +492,9 @@ func TestHandler_FullFlow(t *testing.T) {
 func TestAddressToPb_External(t *testing.T) {
 	rec := &kachorepo.AddressRecord{
 		Address: domain.Address{
-			ID:       "e9b-test",
+			ID:        "e9b-test",
 			ProjectID: "f1",
-			Type:     domain.AddressTypeExternal,
+			Type:      domain.AddressTypeExternal,
 			ExternalIpv4: &domain.ExternalIpv4Spec{
 				Address: "203.0.113.5",
 				ZoneID:  "ru-central1-a",

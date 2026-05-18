@@ -30,7 +30,7 @@ import (
 func newAddress(folderID, name string, ext bool) *domain.Address {
 	a := &domain.Address{
 		ID:          ids.NewID(ids.PrefixAddress),
-		ProjectID:    folderID,
+		ProjectID:   folderID,
 		Name:        domain.RcNameVPC(name),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),

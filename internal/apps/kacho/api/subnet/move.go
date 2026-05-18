@@ -21,9 +21,9 @@ import (
 //
 // Wave 5 replicate (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveSubnetUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveSubnetUseCase создаёт MoveSubnetUseCase.

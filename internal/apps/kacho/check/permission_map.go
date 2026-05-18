@@ -53,7 +53,7 @@ const (
 //   - Get/Update/Delete/Move/<verb>          — на самом ресурсе `<resource_type>:<resource_id>`
 //   - OperationService.Get                   — на `vpc_operation:<operation_id>` (viewer)
 //   - PrivateEndpoint.GetByEndpointAddress   — viewer на parent project (точечно резолвить
-//                                              ресурс по эндпоинт-адресу слишком дорого; project-scope OK)
+//     ресурс по эндпоинт-адресу слишком дорого; project-scope OK)
 //
 // Update/Delete/Move — relation=editor, всё read-only — relation=viewer.
 //

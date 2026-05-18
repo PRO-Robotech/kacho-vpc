@@ -72,8 +72,8 @@ type SecurityGroupFilter = kachorepo.SecurityGroupFilter
 // GatewayFilter — фильтр для списка NAT Gateways.
 type GatewayFilter struct {
 	ProjectID string
-	Name     string
-	Filter   string
+	Name      string
+	Filter    string
 }
 
 // PrivateEndpointFilter — фильтр для списка PrivateEndpoints. Wave 5
@@ -93,7 +93,7 @@ type AddressPoolFilter = kachorepo.AddressPoolFilter
 // use-case-пакет `internal/apps/kacho/api/networkinterface` экспортирует
 // type-alias на него.
 type NetworkInterfaceFilter struct {
-	ProjectID   string
+	ProjectID  string
 	InstanceID string
 	SubnetID   string
 	// NetworkID — не поддерживается фильтром (NIC не хранит network_id), поле

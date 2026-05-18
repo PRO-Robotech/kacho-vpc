@@ -54,10 +54,10 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 
 	// 1. Пустой labels (default '{}'::jsonb) — CHECK проходит.
 	emptyNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("empty-labels"),
-		Labels:   domain.LabelsFromMap(nil),
+		Name:      domain.RcNameVPC("empty-labels"),
+		Labels:    domain.LabelsFromMap(nil),
 	}
 	require.NoError(t, insertNet(t, emptyNet), "empty labels должен проходить CHECK")
 
@@ -65,9 +65,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	//    полный character class: lowercase letters, digits, '-', '_', '.', '/',
 	//    '\', '@' (Go regex `^[a-z][-_./\\@a-z0-9]{0,62}$`).
 	validNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("valid-labels"),
+		Name:      domain.RcNameVPC("valid-labels"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"env":              "prod",
 			"team-name":        "platform",
@@ -85,10 +85,10 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 		tooMany[k] = "v"
 	}
 	tooManyNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("too-many"),
-		Labels:   domain.LabelsFromMap(tooMany),
+		Name:      domain.RcNameVPC("too-many"),
+		Labels:    domain.LabelsFromMap(tooMany),
 	}
 	err = insertNet(t, tooManyNet)
 	require.Error(t, err, "labels с 65 парами должно отбиваться CHECK (cardinality > 64)")
@@ -97,9 +97,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 
 	// 4. Ключ нарушает regex (uppercase в начале) — CHECK отбивает.
 	badKeyNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("bad-key"),
+		Name:      domain.RcNameVPC("bad-key"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"Bad-Key": "v",
 		}),
@@ -112,9 +112,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 	// 5. Значение длиной 64 — CHECK отбивает (max 63).
 	longVal := strings.Repeat("a", 64)
 	badValNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("bad-val"),
+		Name:      domain.RcNameVPC("bad-val"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"k": longVal,
 		}),
@@ -126,9 +126,9 @@ func TestIntegration_NetworkRepo_LabelsCheckConstraint(t *testing.T) {
 
 	// 6. Edge: value длиной ровно 63 — OK (boundary).
 	okBoundaryNet := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-labels",
-		Name:     domain.RcNameVPC("ok-boundary"),
+		Name:      domain.RcNameVPC("ok-boundary"),
 		Labels: domain.LabelsFromMap(map[string]string{
 			"k": strings.Repeat("a", 63),
 		}),

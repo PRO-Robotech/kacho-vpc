@@ -25,7 +25,7 @@ func seedAddrForRef(ar *repomock.AddressRepo) *kachorepo.AddressRecord {
 	rec := &kachorepo.AddressRecord{
 		Address: domain.Address{
 			ID:           ids.NewID(ids.PrefixAddress),
-			ProjectID:     "f1",
+			ProjectID:    "f1",
 			Name:         domain.RcNameVPC("ref-ip"),
 			Type:         domain.AddressTypeExternal,
 			IpVersion:    domain.IpVersionIPv4,

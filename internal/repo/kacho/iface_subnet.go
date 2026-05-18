@@ -13,7 +13,7 @@ import (
 // `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался тонкий
 // type-alias `SubnetFilter = kacho.SubnetFilter`.
 type SubnetFilter struct {
-	ProjectID  string
+	ProjectID string
 	NetworkID string
 	Name      string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`).

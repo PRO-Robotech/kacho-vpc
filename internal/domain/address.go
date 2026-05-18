@@ -147,7 +147,7 @@ func (r *AddressReference) Equal(other *AddressReference) bool {
 // skill evgeniy §4 D.1 / §7 H.1.
 type Address struct {
 	ID                 string
-	ProjectID           string
+	ProjectID          string
 	Name               RcNameVPC
 	Description        RcDescription
 	Labels             RcLabels

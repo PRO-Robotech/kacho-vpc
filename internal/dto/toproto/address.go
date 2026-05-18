@@ -24,7 +24,7 @@ func (address) toPb(rec kachorepo.AddressRecord) (*vpcv1.Address, error) {
 	}
 	p := &vpcv1.Address{
 		Id:                 rec.ID,
-		ProjectId:           rec.ProjectID,
+		ProjectId:          rec.ProjectID,
 		CreatedAt:          ts,
 		Name:               string(rec.Name),
 		Description:        string(rec.Description),

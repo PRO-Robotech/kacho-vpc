@@ -37,7 +37,7 @@ import (
 // composing use-case вызывается ВНУТРИ writer-TX `doCreate`, перед `Commit()`.
 type CreateNetworkUseCase struct {
 	repo            Repo
-	projectClient    ProjectClient
+	projectClient   ProjectClient
 	opsRepo         operations.Repo
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 	createDefaultSG *CreateDefaultSGUseCase
@@ -50,7 +50,7 @@ type CreateNetworkUseCase struct {
 func NewCreateNetworkUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo, defaultSGInline bool) *CreateNetworkUseCase {
 	return &CreateNetworkUseCase{
 		repo:            r,
-		projectClient:    projectClient,
+		projectClient:   projectClient,
 		opsRepo:         opsRepo,
 		defaultSGInline: defaultSGInline,
 		createDefaultSG: NewCreateDefaultSGUseCase(),

@@ -54,9 +54,9 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 	}
 
 	net := &domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "folder-occ",
-		Name:     domain.RcNameVPC("net-for-occ-sg"),
+		Name:      domain.RcNameVPC("net-for-occ-sg"),
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Networks().Insert(ctx, net)
@@ -71,7 +71,7 @@ func TestIntegration_SecurityGroup_UpdateRules_ConcurrentOCC(t *testing.T) {
 		// Fresh SG per iteration with a single seed rule.
 		sg := &domain.SecurityGroup{
 			ID:        ids.NewID(ids.PrefixSecurityGroup),
-			ProjectID:  "folder-occ",
+			ProjectID: "folder-occ",
 			NetworkID: net.ID,
 			Name:      "",
 			Status:    domain.SecurityGroupStatusActive,

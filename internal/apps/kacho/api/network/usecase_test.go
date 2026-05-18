@@ -127,7 +127,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	// invalid name (starts with digit, NameVPC permissive но цифра в начале запрещена).
 	_, err = uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("1bad"),
+		Name:      domain.RcNameVPC("1bad"),
 	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
@@ -146,7 +146,7 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("net1"),
+		Name:      domain.RcNameVPC("net1"),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
@@ -163,7 +163,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false)
 
 	op, err := uc.Execute(context.Background(), domain.Network{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("net1"),
 		Description: domain.RcDescription("desc"),
 	})
@@ -186,7 +186,7 @@ func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("net-with-sg"),
+		Name:      domain.RcNameVPC("net-with-sg"),
 	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -233,9 +233,9 @@ func TestCreateDefaultSGUseCase_Execute_Composes(t *testing.T) {
 	defer w.Abort()
 
 	net := domain.Network{
-		ID:       ids.NewID(ids.PrefixNetwork),
+		ID:        ids.NewID(ids.PrefixNetwork),
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("net-for-sg"),
+		Name:      domain.RcNameVPC("net-for-sg"),
 	}
 	created, err := w.Networks().Insert(ctx, &net)
 	require.NoError(t, err)
@@ -286,7 +286,7 @@ func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("net-no-sg"),
+		Name:      domain.RcNameVPC("net-no-sg"),
 	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
@@ -363,7 +363,7 @@ func TestHandler_Create_OK(t *testing.T) {
 	h, or, _ := minimalHandler(t, true)
 	op, err := h.Create(context.Background(), &vpcv1.CreateNetworkRequest{
 		ProjectId: "f1",
-		Name:     "net1",
+		Name:      "net1",
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, op.Id)

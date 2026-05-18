@@ -33,7 +33,7 @@ func TestNetworkToProto_Fields(t *testing.T) {
 	rec := kachorepo.NetworkRecord{
 		Network: domain.Network{
 			ID:          "net-123",
-			ProjectID:    "folder-1",
+			ProjectID:   "folder-1",
 			Name:        domain.RcNameVPC("my-net"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),

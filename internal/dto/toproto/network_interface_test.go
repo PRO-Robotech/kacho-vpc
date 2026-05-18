@@ -26,7 +26,7 @@ func TestDTO_TransferNetworkInterfaceRecord(t *testing.T) {
 	rec := kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:               "e9bnic",
-			ProjectID:         "folder-x",
+			ProjectID:        "folder-x",
 			Name:             domain.RcNameVPC("my-nic"),
 			Description:      domain.RcDescription("desc"),
 			Labels:           domain.LabelsFromMap(map[string]string{"env": "prod"}),

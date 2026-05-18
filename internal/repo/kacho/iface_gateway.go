@@ -14,7 +14,7 @@ import (
 // `GatewayFilter = kacho.GatewayFilter`.
 type GatewayFilter struct {
 	ProjectID string
-	Name     string
+	Name      string
 	// Filter — raw filter expression (YC-syntax: `name="<value>"`). Парсится
 	// в repo с whitelist allowedFields=["name"].
 	Filter string

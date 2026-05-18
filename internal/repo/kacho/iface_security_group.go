@@ -11,7 +11,7 @@ import (
 // import-cycle `repo → repo/kacho → repo`. В `internal/repo/iface.go` остался
 // тонкий type-alias `SecurityGroupFilter = kacho.SecurityGroupFilter`.
 type SecurityGroupFilter struct {
-	ProjectID  string
+	ProjectID string
 	NetworkID string
 	Name      string
 	Filter    string

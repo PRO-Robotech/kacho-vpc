@@ -94,7 +94,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpc
 	}
 	subs, nextToken, err := h.list.Execute(ctx, SubnetFilter{
 		ProjectID: req.ProjectId,
-		Filter:   req.Filter,
+		Filter:    req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -119,7 +119,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*
 		return nil, err
 	}
 	s := domain.Subnet{
-		ProjectID:     req.ProjectId,
+		ProjectID:    req.ProjectId,
 		Name:         domain.RcNameVPC(req.Name),
 		Description:  domain.RcDescription(req.Description),
 		Labels:       domain.LabelsFromMap(req.Labels),

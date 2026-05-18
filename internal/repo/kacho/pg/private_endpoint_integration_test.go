@@ -23,7 +23,7 @@ import (
 func newPrivateEndpoint(folderID, networkID, name string) *domain.PrivateEndpoint {
 	return &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    folderID,
+		ProjectID:   folderID,
 		NetworkID:   networkID,
 		Name:        domain.RcNameVPC(name),
 		Description: domain.RcDescription(""),

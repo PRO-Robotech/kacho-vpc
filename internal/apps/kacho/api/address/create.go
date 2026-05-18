@@ -55,7 +55,7 @@ type InternalAddrSpec struct {
 // плоского CreateInput чище. См. также KAC-94: тривиальные обёртки удалены в
 // Network/Subnet/Gateway/RouteTable/SecurityGroup/PrivateEndpoint.
 type CreateInput struct {
-	ProjectID           string
+	ProjectID          string
 	Name               string
 	Description        string
 	Labels             map[string]string
@@ -91,21 +91,21 @@ type CreateInput struct {
 // compensating delete-after-failure (отдельный TX) больше не нужен — Abort
 // автоматически снимает Insert.
 type CreateAddressUseCase struct {
-	repo         Repo
-	subnetReader SubnetReader
+	repo          Repo
+	subnetReader  SubnetReader
 	projectClient ProjectClient
-	opsRepo      operations.Repo
-	pools        PoolService // nil → external IPAM недоступна (test-only)
+	opsRepo       operations.Repo
+	pools         PoolService // nil → external IPAM недоступна (test-only)
 }
 
 // NewCreateAddressUseCase создаёт CreateAddressUseCase.
 func NewCreateAddressUseCase(r Repo, subnetReader SubnetReader, projectClient ProjectClient, opsRepo operations.Repo, pools PoolService) *CreateAddressUseCase {
 	return &CreateAddressUseCase{
-		repo:         r,
-		subnetReader: subnetReader,
+		repo:          r,
+		subnetReader:  subnetReader,
 		projectClient: projectClient,
-		opsRepo:      opsRepo,
-		pools:        pools,
+		opsRepo:       opsRepo,
+		pools:         pools,
 	}
 }
 
@@ -283,7 +283,7 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 
 	a := &domain.Address{
 		ID:                 addrID,
-		ProjectID:           in.ProjectID,
+		ProjectID:          in.ProjectID,
 		Name:               domain.RcNameVPC(in.Name),
 		Description:        domain.RcDescription(in.Description),
 		Labels:             domain.LabelsFromMap(in.Labels),

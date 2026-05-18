@@ -26,9 +26,9 @@ import (
 // inconsistent view при concurrent admin write'ах; теперь cascade-snapshot
 // атомарен в рамках TX.
 type ResolverService struct {
-	repo         Repo
-	addrRepo     AddressRepo
-	subnetRepo   SubnetReader
+	repo          Repo
+	addrRepo      AddressRepo
+	subnetRepo    SubnetReader
 	projectClient ProjectClient // nil → step 3 (label-selector) пропускается
 }
 

@@ -22,9 +22,9 @@ import (
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): SetProjectID + outbox в одной
 // CQRS writer-TX.
 type MoveSecurityGroupUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveSecurityGroupUseCase создаёт MoveSecurityGroupUseCase.

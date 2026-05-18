@@ -274,7 +274,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	h, or, kr, netID := minimalHandler(t, true)
 
 	op, err := h.Create(context.Background(), &vpcv1.CreateSubnetRequest{
-		ProjectId:     "f1",
+		ProjectId:    "f1",
 		NetworkId:    netID,
 		Name:         "sub1",
 		ZoneId:       testZone,
@@ -571,7 +571,7 @@ func TestSubnetToPb_RoundTrip(t *testing.T) {
 	rec := &kachorepo.SubnetRecord{
 		Subnet: domain.Subnet{
 			ID:           "s-1",
-			ProjectID:     "f1",
+			ProjectID:    "f1",
 			Name:         domain.RcNameVPC("sub1"),
 			Description:  domain.RcDescription("desc"),
 			Labels:       domain.LabelsFromMap(map[string]string{"env": "prod"}),

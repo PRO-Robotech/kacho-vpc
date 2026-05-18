@@ -34,6 +34,13 @@ repository:
     sslMode: disable
 authn:
   mode: dev
+# KAC-119: per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
+authz:
+  iamEndpoint: ""           # default cluster-internal kacho-iam-internal:9091
+  breakglass: false          # dev override — пропустить все Check
+  checkTimeout: 2s
+  cacheTtl: 5s
+  denyRateLimitPerSec: 100
 extapi:
   # KAC-106 (E1): renamed peer resourceManager -> iam (kacho-iam.ProjectService.Get).
   iam:

@@ -21,7 +21,7 @@ import (
 // См. https://yandex.cloud/ru/docs/vpc/api-ref/PrivateEndpoint/.
 type PrivateEndpoint struct {
 	ID          string
-	ProjectID    string
+	ProjectID   string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels

@@ -915,7 +915,9 @@ type ProjectClient struct {
 
 func (c *ProjectClient) Exists(_ context.Context, _ string) (bool, error) { return c.OK, nil }
 
-func (c *ProjectClient) GetCloudIDFromProject(_ context.Context, _ string) (string, error) { return c.CloudID, nil }
+func (c *ProjectClient) GetCloudIDFromProject(_ context.Context, _ string) (string, error) {
+	return c.CloudID, nil
+}
 
 // ---- ZoneRegistry ----
 
@@ -1085,6 +1087,6 @@ func AwaitAllOpsDone(t TestingT, r *OpsRepo) {
 // и compile-проверяются здесь.
 var (
 	_ repo.ProjectClient = (*ProjectClient)(nil)
-	_ repo.ZoneRegistry = (*ZoneRegistry)(nil)
-	_ operations.Repo   = (*OpsRepo)(nil)
+	_ repo.ZoneRegistry  = (*ZoneRegistry)(nil)
+	_ operations.Repo    = (*OpsRepo)(nil)
 )

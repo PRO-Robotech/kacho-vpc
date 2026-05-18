@@ -14,7 +14,7 @@ import (
 // игнорируется (NIC не хранит network_id; вычисляется транзитивно через
 // subnet — но фильтрация по этому полю в legacy-репо тоже была no-op).
 type NetworkInterfaceFilter struct {
-	ProjectID   string
+	ProjectID  string
 	InstanceID string
 	SubnetID   string
 	NetworkID  string

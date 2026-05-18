@@ -17,7 +17,7 @@ import "go.uber.org/multierr"
 // https://yandex.cloud/ru/docs/vpc/api-ref/Gateway/.
 type Gateway struct {
 	ID          string
-	ProjectID    string
+	ProjectID   string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels

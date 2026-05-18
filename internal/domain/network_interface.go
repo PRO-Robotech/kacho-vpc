@@ -32,7 +32,7 @@ import (
 // своей data-plane-проекции).
 type NetworkInterface struct {
 	ID          string
-	ProjectID    string
+	ProjectID   string
 	Name        RcNameVPC
 	Description RcDescription
 	Labels      RcLabels

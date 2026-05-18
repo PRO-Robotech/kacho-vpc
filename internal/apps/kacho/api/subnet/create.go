@@ -26,10 +26,10 @@ import (
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.5): worker открывает ОДНУ
 // Writer-TX и делает Insert(Subnet) + outbox-emit Subnet.CREATED атомарно.
 type CreateSubnetUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	zoneReg      ZoneRegistry
-	opsRepo      operations.Repo
+	zoneReg       ZoneRegistry
+	opsRepo       operations.Repo
 }
 
 // NewCreateSubnetUseCase создаёт CreateSubnetUseCase.
@@ -40,10 +40,10 @@ func NewCreateSubnetUseCase(
 	opsRepo operations.Repo,
 ) *CreateSubnetUseCase {
 	return &CreateSubnetUseCase{
-		repo:         r,
+		repo:          r,
 		projectClient: projectClient,
-		zoneReg:      zoneReg,
-		opsRepo:      opsRepo,
+		zoneReg:       zoneReg,
+		opsRepo:       opsRepo,
 	}
 }
 
