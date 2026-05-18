@@ -33,7 +33,7 @@ func (d *DhcpOptions) Equal(other *DhcpOptions) bool {
 // service-слое перед запросом к репо).
 type Subnet struct {
 	ID           string
-	ProjectID     string
+	ProjectID    string
 	Name         RcNameVPC
 	Description  RcDescription
 	Labels       RcLabels

@@ -29,17 +29,17 @@ import (
 // DB-trigger (KAC-56) дополнительно эмитит `Subnet.UPDATED` события в той же
 // tx-области — это часть Commit'а единой writer-TX.
 type CreateRouteTableUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewCreateRouteTableUseCase создаёт CreateRouteTableUseCase.
 func NewCreateRouteTableUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *CreateRouteTableUseCase {
 	return &CreateRouteTableUseCase{
-		repo:         r,
+		repo:          r,
 		projectClient: projectClient,
-		opsRepo:      opsRepo,
+		opsRepo:       opsRepo,
 	}
 }
 

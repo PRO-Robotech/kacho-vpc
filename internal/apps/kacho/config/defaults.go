@@ -72,12 +72,22 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("extapi.compute.endpoint", "compute.kacho.svc.cluster.local:9090")
 	v.SetDefault("extapi.compute.tls.enable", false)
 
+	// authz (E3 / KAC-108). По умолчанию iam-endpoint пустой → interceptor
+	// не навешивается; включается через values.yaml / ENV. В dev-стенде —
+	// values-dev.yaml выставит iam-endpoint=kacho-iam.kacho.svc.cluster.local:9091.
+	v.SetDefault("authz.iam-endpoint", "")
+	v.SetDefault("authz.iam-tls.enable", false)
+	v.SetDefault("authz.breakglass", false)
+	v.SetDefault("authz.check-timeout", 2*time.Second)
+	v.SetDefault("authz.deny-rate-limit-per-sec", 100.0)
+	v.SetDefault("authz.cache-ttl", 5*time.Second)
+
 	// watch
 	v.SetDefault("watch.max-streams", 32)
 
 	// network (VPC-domain)
 	v.SetDefault("network.default-sg-inline", true)
-	v.SetDefault("network.folder-cache.positive-ttl", 30*time.Second)
-	v.SetDefault("network.folder-cache.negative-ttl", 5*time.Second)
-	v.SetDefault("network.folder-cache.max-size", 10000)
+	v.SetDefault("network.project-cache.positive-ttl", 30*time.Second)
+	v.SetDefault("network.project-cache.negative-ttl", 5*time.Second)
+	v.SetDefault("network.project-cache.max-size", 10000)
 }

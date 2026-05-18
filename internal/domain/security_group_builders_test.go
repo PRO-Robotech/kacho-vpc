@@ -41,7 +41,7 @@ func TestNewDefaultSecurityGroupRules(t *testing.T) {
 
 func TestNewDefaultSecurityGroup(t *testing.T) {
 	net := domain.Network{
-		ID:       "enpabcdefghij",
+		ID:        "enpabcdefghij",
 		ProjectID: "folder-1",
 	}
 	sg := domain.NewDefaultSecurityGroup(net)

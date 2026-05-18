@@ -21,9 +21,9 @@ import (
 //
 // Wave 5 pilot (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveNetworkUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveNetworkUseCase создаёт MoveNetworkUseCase.

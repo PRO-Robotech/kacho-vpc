@@ -14,8 +14,8 @@ import (
 // тонкий type-alias `PrivateEndpointFilter = kacho.PrivateEndpointFilter`.
 type PrivateEndpointFilter struct {
 	ProjectID string
-	Name     string
-	Filter   string
+	Name      string
+	Filter    string
 }
 
 // PrivateEndpointReaderIface — read-операции над PrivateEndpoint в TX-области.

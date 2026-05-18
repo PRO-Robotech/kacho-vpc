@@ -68,7 +68,7 @@ func TestCQRS_NIC_InsertCommit_ReaderSees(t *testing.T) {
 	require.NoError(t, err)
 	nic := &domain.NetworkInterface{
 		ID:          ids.NewID(ids.PrefixSubnet),
-		ProjectID:    folderID,
+		ProjectID:   folderID,
 		Name:        domain.RcNameVPC("nic-cqrs"),
 		Description: domain.RcDescription(""),
 		Labels:      domain.LabelsFromMap(nil),

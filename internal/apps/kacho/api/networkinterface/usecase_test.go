@@ -183,7 +183,7 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
-		ProjectID:     "f1",
+		ProjectID:    "f1",
 		Name:         "nic",
 		SubnetID:     "e9bsub1",
 		V4AddressIDs: []string{"e9ba1", "e9ba2"},
@@ -205,8 +205,8 @@ func TestCreateUseCase_OK(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		ProjectID: "f1",
-		Name:     "nic",
-		SubnetID: "e9bsub1",
+		Name:      "nic",
+		SubnetID:  "e9bsub1",
 	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
@@ -255,7 +255,7 @@ func TestAttachUseCase_AlreadyAttachedDifferentOwner(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			ProjectID:   "f1",
+			ProjectID:  "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "other-instance",
@@ -276,10 +276,10 @@ func TestAttachUseCase_OK(t *testing.T) {
 	nicID := ids.NewID(ids.PrefixSubnet)
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
-			ID:       nicID,
+			ID:        nicID,
 			ProjectID: "f1",
-			SubnetID: "e9bsub1",
-			Status:   domain.NIStatusAvailable,
+			SubnetID:  "e9bsub1",
+			Status:    domain.NIStatusAvailable,
 		},
 	})
 	uc := NewAttachToInstanceUseCase(kr, or)
@@ -297,7 +297,7 @@ func TestDetachUseCase_OK(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			ProjectID:   "f1",
+			ProjectID:  "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "my-instance",
@@ -329,7 +329,7 @@ func TestDeleteUseCase_BlockedByAttached(t *testing.T) {
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:         nicID,
-			ProjectID:   "f1",
+			ProjectID:  "f1",
 			SubnetID:   "e9bsub1",
 			UsedByType: "compute_instance",
 			UsedByID:   "my-instance",
@@ -351,10 +351,10 @@ func TestDeleteUseCase_ResponseIsEmpty(t *testing.T) {
 	nicID := ids.NewID(ids.PrefixSubnet)
 	preloadNIC(t, kr, &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
-			ID:       nicID,
+			ID:        nicID,
 			ProjectID: "f1",
-			SubnetID: "e9bsub1",
-			Status:   domain.NIStatusAvailable,
+			SubnetID:  "e9bsub1",
+			Status:    domain.NIStatusAvailable,
 		},
 	})
 	uc := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
@@ -371,7 +371,7 @@ func TestNetworkInterfaceToPb_Fields(t *testing.T) {
 	rec := &kachorepo.NetworkInterfaceRecord{
 		NetworkInterface: domain.NetworkInterface{
 			ID:               "e9bnic1",
-			ProjectID:         "f1",
+			ProjectID:        "f1",
 			Name:             domain.RcNameVPC("nic"),
 			Description:      domain.RcDescription("desc"),
 			Labels:           domain.LabelsFromMap(map[string]string{"env": "test"}),

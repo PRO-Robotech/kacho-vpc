@@ -12,8 +12,8 @@ import (
 // `internal/repo/iface.go` остался type-alias `AddressFilter = kacho.AddressFilter`.
 type AddressFilter struct {
 	ProjectID string
-	Name     string
-	Filter   string
+	Name      string
+	Filter    string
 	// SubnetID — фильтр по подсети: матчит internal_ipv4.subnet_id ИЛИ
 	// internal_ipv6.subnet_id (для ListAddresses?subnet_id=). "" = без фильтра.
 	SubnetID string

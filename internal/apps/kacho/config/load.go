@@ -102,9 +102,9 @@ func applyLegacyEnv(v *viper.Viper) {
 		{"KACHO_VPC_COMPUTE_GRPC_ADDR", "extapi.compute.endpoint"},
 		{"KACHO_VPC_COMPUTE_TLS", "extapi.compute.tls.enable"},
 		{"KACHO_VPC_DEFAULT_SG_INLINE", "network.default-sg-inline"},
-		{"KACHO_VPC_FOLDER_CACHE_TTL", "network.folder-cache.positive-ttl"},
-		{"KACHO_VPC_FOLDER_CACHE_NEGATIVE_TTL", "network.folder-cache.negative-ttl"},
-		{"KACHO_VPC_FOLDER_CACHE_SIZE", "network.folder-cache.max-size"},
+		{"KACHO_VPC_FOLDER_CACHE_TTL", "network.project-cache.positive-ttl"},
+		{"KACHO_VPC_FOLDER_CACHE_NEGATIVE_TTL", "network.project-cache.negative-ttl"},
+		{"KACHO_VPC_FOLDER_CACHE_SIZE", "network.project-cache.max-size"},
 		{"KACHO_VPC_AUTH_MODE", "authn.mode"},
 	}
 	for _, m := range simple {

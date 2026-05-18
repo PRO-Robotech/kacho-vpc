@@ -25,9 +25,9 @@ import (
 // одну Writer-TX, делает Insert(Gateway) + outbox emit и Commit. Либо всё
 // видно, либо ничего — orphan-Gateway / forgotten outbox-event window закрыт.
 type CreateGatewayUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewCreateGatewayUseCase создаёт CreateGatewayUseCase.

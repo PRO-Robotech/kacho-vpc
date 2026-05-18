@@ -21,7 +21,7 @@ func (gateway) toPb(rec kacho.GatewayRecord) (*vpcv1.Gateway, error) {
 	}
 	return &vpcv1.Gateway{
 		Id:          rec.ID,
-		ProjectId:    rec.ProjectID,
+		ProjectId:   rec.ProjectID,
 		CreatedAt:   ts,
 		Name:        string(rec.Name),
 		Description: string(rec.Description),

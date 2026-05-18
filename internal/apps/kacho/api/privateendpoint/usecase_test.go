@@ -141,7 +141,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	uc := NewCreatePrivateEndpointUseCase(kr, nr, sr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.PrivateEndpoint{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		NetworkID:   net.ID,
 		Name:        domain.RcNameVPC("pe1"),
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -231,7 +231,7 @@ func TestPrivateEndpointToPb_Fields(t *testing.T) {
 	rec := &kacho.PrivateEndpointRecord{
 		PrivateEndpoint: domain.PrivateEndpoint{
 			ID:          "pe-1",
-			ProjectID:    "f1",
+			ProjectID:   "f1",
 			Name:        domain.RcNameVPC("pe"),
 			Description: domain.RcDescription("desc"),
 			Labels:      domain.LabelsFromMap(map[string]string{"env": "test"}),

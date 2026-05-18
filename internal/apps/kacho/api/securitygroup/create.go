@@ -32,7 +32,7 @@ import (
 type CreateSecurityGroupUseCase struct {
 	repo          Repo
 	networkReader NetworkReader
-	projectClient  ProjectClient
+	projectClient ProjectClient
 	opsRepo       operations.Repo
 }
 
@@ -41,7 +41,7 @@ func NewCreateSecurityGroupUseCase(r Repo, networkReader NetworkReader, projectC
 	return &CreateSecurityGroupUseCase{
 		repo:          r,
 		networkReader: networkReader,
-		projectClient:  projectClient,
+		projectClient: projectClient,
 		opsRepo:       opsRepo,
 	}
 }

@@ -40,10 +40,6 @@ type accountIDEntry struct {
 	exp       time.Time
 }
 
-// cloudIDEntry retained as alias for any external/test code that referenced it
-// during transition.
-type cloudIDEntry = accountIDEntry
-
 // NewProjectClient создаёт ProjectClient. conn — обычно `clients.Build(...)`
 // (см. builder.go), принимается как grpc.ClientConnInterface — что подходит и
 // для corlib `ClientConn` (KAC-97), и для `*grpc.ClientConn`.

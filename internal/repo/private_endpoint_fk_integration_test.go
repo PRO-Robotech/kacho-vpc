@@ -89,7 +89,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	pe := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-1"),
 		NetworkID:   net.ID,
 		SubnetID:    sub.ID,
@@ -131,7 +131,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 4. INSERT PE с несуществующим network_id → FK violation (via writer) ---
 	bad := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-net"),
 		NetworkID:   ids.NewID(ids.PrefixNetwork),
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -149,7 +149,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 5. INSERT PE с несуществующим subnet_id → FK violation ---
 	bad2 := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-sub"),
 		NetworkID:   net.ID,
 		SubnetID:    ids.NewID(ids.PrefixSubnet),
@@ -168,7 +168,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	// --- 6. INSERT PE с несуществующим address_id → FK violation ---
 	bad3 := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-bad-addr"),
 		NetworkID:   net.ID,
 		AddressID:   ids.NewID(ids.PrefixAddress),
@@ -203,7 +203,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 	}))
 	peIso := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-iso"),
 		NetworkID:   netIso.ID,
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,
@@ -236,7 +236,7 @@ func TestIntegration_PrivateEndpoint_FK_RESTRICT(t *testing.T) {
 
 	peNoOpt := &domain.PrivateEndpoint{
 		ID:          ids.NewID(ids.PrefixPrivateEndpoint),
-		ProjectID:    "folder-1",
+		ProjectID:   "folder-1",
 		Name:        domain.RcNameVPC("pe-fk-no-opt"),
 		NetworkID:   net2.ID,
 		ServiceType: domain.PrivateEndpointServiceTypeObjectStorage,

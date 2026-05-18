@@ -68,7 +68,7 @@ watch:
   max-streams: 17
 network:
   default-sg-inline: false
-  folder-cache:
+  project-cache:
     positive-ttl: 1m
     negative-ttl: 2s
     max-size: 555

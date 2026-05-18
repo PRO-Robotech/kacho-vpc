@@ -261,7 +261,7 @@ func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolA
 		}
 		out = append(out, &vpcv1.AddressPoolAddressEntry{
 			Id:        a.ID,
-			ProjectId:  a.ProjectID,
+			ProjectId: a.ProjectID,
 			Name:      string(a.Name),
 			Ipv4:      ip,
 			ZoneId:    zone,

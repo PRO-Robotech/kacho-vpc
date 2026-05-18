@@ -20,9 +20,9 @@ import (
 //
 // Wave 5 replicate (KAC-94): writer-TX явный, SetProjectID + outbox UPDATED атомарны.
 type MoveRouteTableUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveRouteTableUseCase создаёт MoveRouteTableUseCase.

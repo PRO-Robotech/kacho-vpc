@@ -25,21 +25,21 @@ import (
 // (миграция 0024) проверяются Postgres'ом в момент INSERT, тоже в этой же
 // writer-TX.
 type CreatePrivateEndpointUseCase struct {
-	repo         Repo
-	networkRead  NetworkReader
-	subnetRead   SubnetReader
+	repo          Repo
+	networkRead   NetworkReader
+	subnetRead    SubnetReader
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewCreatePrivateEndpointUseCase создаёт CreatePrivateEndpointUseCase.
 func NewCreatePrivateEndpointUseCase(r Repo, networkRead NetworkReader, subnetRead SubnetReader, projectClient ProjectClient, opsRepo operations.Repo) *CreatePrivateEndpointUseCase {
 	return &CreatePrivateEndpointUseCase{
-		repo:         r,
-		networkRead:  networkRead,
-		subnetRead:   subnetRead,
+		repo:          r,
+		networkRead:   networkRead,
+		subnetRead:    subnetRead,
 		projectClient: projectClient,
-		opsRepo:      opsRepo,
+		opsRepo:       opsRepo,
 	}
 }
 

@@ -148,8 +148,8 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*v
 	}
 	addrs, nextToken, err := h.list.Execute(ctx, AddressFilter{
 		ProjectID: req.ProjectId,
-		Filter:   req.Filter,
-		SubnetID: req.SubnetId,
+		Filter:    req.Filter,
+		SubnetID:  req.SubnetId,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -174,7 +174,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (
 		return nil, err
 	}
 	in := CreateInput{
-		ProjectID:           req.ProjectId,
+		ProjectID:          req.ProjectId,
 		Name:               req.Name,
 		Description:        req.Description,
 		Labels:             req.Labels,

@@ -76,7 +76,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListRouteTablesRequest) (
 	}
 	rts, nextToken, err := h.list.Execute(ctx, RouteTableFilter{
 		ProjectID: req.ProjectId,
-		Filter:   req.Filter,
+		Filter:    req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -101,7 +101,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateRouteTableRequest
 		return nil, err
 	}
 	rt := domain.RouteTable{
-		ProjectID:    req.ProjectId,
+		ProjectID:   req.ProjectId,
 		NetworkID:   req.NetworkId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),

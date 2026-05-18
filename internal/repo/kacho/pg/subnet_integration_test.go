@@ -26,7 +26,7 @@ import (
 func newSubnet(folderID, name, networkID, zone string, v4 []string) *domain.Subnet {
 	return &domain.Subnet{
 		ID:           ids.NewID(ids.PrefixSubnet),
-		ProjectID:     folderID,
+		ProjectID:    folderID,
 		Name:         domain.RcNameVPC(name),
 		Description:  domain.RcDescription(""),
 		Labels:       domain.LabelsFromMap(nil),

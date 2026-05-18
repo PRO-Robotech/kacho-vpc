@@ -79,7 +79,7 @@ func (h *Handler) List(ctx context.Context, req *pepb.ListPrivateEndpointsReques
 	}
 	endpoints, nextToken, err := h.list.Execute(ctx, PrivateEndpointFilter{
 		ProjectID: folderID,
-		Filter:   req.Filter,
+		Filter:    req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -104,7 +104,7 @@ func (h *Handler) Create(ctx context.Context, req *pepb.CreatePrivateEndpointReq
 		return nil, err
 	}
 	p := domain.PrivateEndpoint{
-		ProjectID:    req.ProjectId,
+		ProjectID:   req.ProjectId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),

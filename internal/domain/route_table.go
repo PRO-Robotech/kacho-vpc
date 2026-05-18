@@ -25,7 +25,7 @@ func (r StaticRoute) Equal(other StaticRoute) bool {
 // skill evgeniy §4 D.1 / §7 H.1.
 type RouteTable struct {
 	ID           string
-	ProjectID     string
+	ProjectID    string
 	Name         RcNameVPC
 	Description  RcDescription
 	Labels       RcLabels

@@ -66,19 +66,19 @@ type CreateInput struct {
 // через legacy `*repo.SubnetRepo` peer-port — последняя legacy-зависимость из
 // NIC use-case'ов выпилена.
 type CreateNetworkInterfaceUseCase struct {
-	repo         Repo
-	addressRepo  AddressRepo
+	repo          Repo
+	addressRepo   AddressRepo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewCreateNetworkInterfaceUseCase создаёт CreateNetworkInterfaceUseCase.
 func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, projectClient ProjectClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
 	return &CreateNetworkInterfaceUseCase{
-		repo:         r,
-		addressRepo:  addressRepo,
+		repo:          r,
+		addressRepo:   addressRepo,
 		projectClient: projectClient,
-		opsRepo:      opsRepo,
+		opsRepo:       opsRepo,
 	}
 }
 
@@ -173,7 +173,7 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	}
 	rec := &domain.NetworkInterface{
 		ID:               niID,
-		ProjectID:         n.ProjectID,
+		ProjectID:        n.ProjectID,
 		Name:             n.Name,
 		Description:      n.Description,
 		Labels:           n.Labels,

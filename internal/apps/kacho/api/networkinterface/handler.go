@@ -84,7 +84,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworkInterfacesRequ
 		return nil, err
 	}
 	out, next, err := h.list.Execute(ctx, NetworkInterfaceFilter{
-		ProjectID:   req.ProjectId,
+		ProjectID:  req.ProjectId,
 		InstanceID: req.InstanceId,
 		SubnetID:   req.SubnetId,
 		NetworkID:  req.NetworkId,
@@ -113,7 +113,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkInterfaceR
 	}
 	in := CreateInput{
 		NetworkInterface: domain.NetworkInterface{
-			ProjectID:         req.ProjectId,
+			ProjectID:        req.ProjectId,
 			Name:             domain.RcNameVPC(req.Name),
 			Description:      domain.RcDescription(req.Description),
 			Labels:           domain.LabelsFromMap(req.Labels),

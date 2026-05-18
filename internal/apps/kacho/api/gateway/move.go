@@ -21,9 +21,9 @@ import (
 //
 // Wave 5 replicate (KAC-94, skill evgeniy §6 G.5).
 type MoveGatewayUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveGatewayUseCase создаёт MoveGatewayUseCase.

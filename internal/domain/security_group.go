@@ -17,7 +17,7 @@ import "go.uber.org/multierr"
 // валидация — на уровне `corevalidate.ResourceID` в service-слое).
 type SecurityGroup struct {
 	ID                string
-	ProjectID          string
+	ProjectID         string
 	NetworkID         string
 	Name              RcNameVPC
 	Description       RcDescription

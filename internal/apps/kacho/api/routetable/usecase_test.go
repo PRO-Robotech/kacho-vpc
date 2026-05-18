@@ -139,7 +139,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.RouteTable{
-		ProjectID:  "f1",
+		ProjectID: "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt1"),
 		StaticRoutes: []domain.StaticRoute{
@@ -171,7 +171,7 @@ func TestCreateUseCase_BadStaticRoute(t *testing.T) {
 	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), domain.RouteTable{
-		ProjectID:  "f1",
+		ProjectID: "f1",
 		NetworkID: net.ID,
 		Name:      domain.RcNameVPC("rt-bad"),
 		StaticRoutes: []domain.StaticRoute{
@@ -312,7 +312,7 @@ func TestRouteTableToPb_StaticRoutes(t *testing.T) {
 	rec := &kachorepo.RouteTableRecord{
 		RouteTable: domain.RouteTable{
 			ID:        "rt-1",
-			ProjectID:  "f1",
+			ProjectID: "f1",
 			NetworkID: "net-1",
 			StaticRoutes: []domain.StaticRoute{
 				{DestinationPrefix: "0.0.0.0/0", NextHopAddress: "192.168.0.1"},

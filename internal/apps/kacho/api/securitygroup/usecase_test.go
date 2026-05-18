@@ -156,7 +156,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	// invalid name (digit start, NameVPC permissive но цифра в начале — нет).
 	_, err = uc.Execute(context.Background(), domain.SecurityGroup{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("1bad"),
+		Name:      domain.RcNameVPC("1bad"),
 	})
 	require.Error(t, err)
 	st, _ = status.FromError(err)
@@ -175,7 +175,7 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
 		ProjectID: "f1",
-		Name:     domain.RcNameVPC("sg1"),
+		Name:      domain.RcNameVPC("sg1"),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
@@ -193,7 +193,7 @@ func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
 	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
-		ProjectID:    "f1",
+		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("sg1"),
 		Description: domain.RcDescription("desc"),
 	})
@@ -268,7 +268,7 @@ func TestSGToProto_Fields(t *testing.T) {
 	rec := &kacho.SecurityGroupRecord{
 		SecurityGroup: domain.SecurityGroup{
 			ID:                "sg-1",
-			ProjectID:          "f1",
+			ProjectID:         "f1",
 			NetworkID:         "net-1",
 			Name:              domain.RcNameVPC("sg"),
 			Description:       domain.RcDescription("desc"),

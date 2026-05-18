@@ -21,9 +21,9 @@ import (
 //
 // A.7 sub-PR 2 (KAC-94): Move + outbox-emit UPDATED атомарны в writer-TX.
 type MoveAddressUseCase struct {
-	repo         Repo
+	repo          Repo
 	projectClient ProjectClient
-	opsRepo      operations.Repo
+	opsRepo       operations.Repo
 }
 
 // NewMoveAddressUseCase создаёт MoveAddressUseCase.

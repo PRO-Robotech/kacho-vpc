@@ -89,7 +89,7 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vp
 	}
 	nets, nextToken, err := h.list.Execute(ctx, NetworkFilter{
 		ProjectID: req.ProjectId,
-		Filter:   req.Filter,
+		Filter:    req.Filter,
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,
@@ -114,7 +114,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (
 		return nil, err
 	}
 	n := domain.Network{
-		ProjectID:    req.ProjectId,
+		ProjectID:   req.ProjectId,
 		Name:        domain.RcNameVPC(req.Name),
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),

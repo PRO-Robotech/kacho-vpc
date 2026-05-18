@@ -42,6 +42,14 @@ data:
     authn:
       mode: {{ default "dev" .Values.authn.mode | quote }}
 
+    # KAC-119: per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
+    authz:
+      iam-endpoint: {{ default "kacho-iam-internal.kacho.svc.cluster.local:9091" .Values.authz.iamEndpoint | quote }}
+      breakglass: {{ default false .Values.authz.breakglass }}
+      check-timeout: {{ default "2s" .Values.authz.checkTimeout | quote }}
+      cache-ttl: {{ default "5s" .Values.authz.cacheTtl | quote }}
+      deny-rate-limit-per-sec: {{ default 100 .Values.authz.denyRateLimitPerSec }}
+
     extapi:
       def-dial-duration: 10s
       iam:
