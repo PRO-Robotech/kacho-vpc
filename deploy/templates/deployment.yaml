@@ -20,6 +20,13 @@ spec:
         - name: config
           configMap:
             name: {{ .Values.name }}-config
+        {{- if .Values.opa.enabled }}
+        # KAC-127 Phase 4 — OPA sidecar для guardrails (acceptance §4.2 + helm/kacho-vpc/templates).
+        # Bundle pulled from kacho-iam Internal :9091 + signed JWS verification.
+        - name: opa-config
+          configMap:
+            name: {{ .Values.name }}-opa-config
+        {{- end }}
       initContainers:
         # KAC-96 (skill evgeniy §9 K.1, AP-9): миграции БД исполняет отдельный
         # binary `kacho-migrator` (cobra-based CLI), не subcommand основного.
@@ -85,3 +92,51 @@ spec:
             limits:
               cpu: {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
+        {{- if .Values.opa.enabled }}
+        # KAC-127 Phase 4 — OPA sidecar.
+        #
+        # Pull-mode: signed bundle from kacho-iam Internal :9091 endpoint
+        # `/v1/bundles/kacho-iam-guardrails` (acceptance §4.2). Decision logs
+        # → stdout (`decision_logs.console=true`).
+        #
+        # Sidecar accessible from kacho-vpc on localhost:{{ .Values.opa.port }} for OPA-based
+        # checks beyond FGA (rate-limit guardrails, complex conditions); FGA-filtered
+        # List handlers использует kacho-iam AuthorizeService directly, не OPA.
+        - name: opa
+          image: "{{ .Values.opa.image }}"
+          imagePullPolicy: {{ .Values.opa.imagePullPolicy }}
+          args:
+            - "run"
+            - "--server"
+            - "--addr=127.0.0.1:{{ .Values.opa.port }}"
+            - "--config-file=/etc/opa/config.yaml"
+            - "--log-level={{ .Values.opa.logLevel }}"
+            - "--log-format=json"
+          ports:
+            - name: opa-http
+              containerPort: {{ .Values.opa.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: opa-config
+              mountPath: /etc/opa
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health?bundles=true
+              port: opa-http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: opa-http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: {{ .Values.opa.resources.requests.cpu }}
+              memory: {{ .Values.opa.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.opa.resources.limits.cpu }}
+              memory: {{ .Values.opa.resources.limits.memory }}
+        {{- end }}

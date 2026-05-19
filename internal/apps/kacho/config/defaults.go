@@ -82,6 +82,17 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("authz.deny-rate-limit-per-sec", 100.0)
 	v.SetDefault("authz.cache-ttl", 5*time.Second)
 
+	// KAC-127 Phase 4 — list-filter (FGA-filtered List handlers).
+	v.SetDefault("authz.list-filter.enabled", false)
+	v.SetDefault("authz.list-filter.authorize-endpoint", "")
+	v.SetDefault("authz.list-filter.authorize-tls.enable", false)
+	v.SetDefault("authz.list-filter.timeout-ms", 500)
+	v.SetDefault("authz.list-filter.cache-ttl", 5*time.Second)
+	v.SetDefault("authz.list-filter.max-entries", 10000)
+	v.SetDefault("authz.list-filter.max-results", 10000)
+	v.SetDefault("authz.list-filter.model-id", "")
+	v.SetDefault("authz.list-filter.fail-open", false)
+
 	// watch
 	v.SetDefault("watch.max-streams", 32)
 

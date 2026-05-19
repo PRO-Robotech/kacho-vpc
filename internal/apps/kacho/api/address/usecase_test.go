@@ -61,7 +61,7 @@ func makeHandler(t *testing.T,
 	move := NewMoveAddressUseCase(kr, fc, or)
 	get := NewGetAddressUseCase(kr)
 	getByValue := NewGetByValueUseCase(kr)
-	list := NewListAddressesUseCase(kr)
+	list := NewListAddressesUseCase(kr, nil)
 	listBySubnet := NewListBySubnetUseCase(kr, sr)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, getByValue, list, listBySubnet, listOps, nil)
@@ -178,7 +178,7 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(kr)
+	listUC := NewListAddressesUseCase(kr, nil)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		ProjectID: "f1",
@@ -195,7 +195,7 @@ func TestCreateUseCase_External_OK(t *testing.T) {
 	assert.True(t, savedOp.Done)
 	assert.Nil(t, savedOp.Error)
 
-	addrs, _, err := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
+	addrs, _, err := listUC.Execute(context.Background(), "", AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.NoError(t, err)
 	require.Len(t, addrs, 1)
 	assert.Equal(t, domain.AddressTypeExternal, addrs[0].Type)
@@ -209,7 +209,7 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 	sr := repomock.NewSubnetRepo()
 	or := repomock.NewOpsRepo()
 	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(kr)
+	listUC := NewListAddressesUseCase(kr, nil)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		ProjectID:    "f1",
@@ -218,7 +218,7 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
 
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), "", AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, "", addrs[0].ExternalIpv4.Address,
 		"with pools=nil use-case must NOT auto-allocate")
@@ -231,7 +231,7 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
 	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(kr)
+	listUC := NewListAddressesUseCase(kr, nil)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		ProjectID: "f1",
@@ -242,7 +242,7 @@ func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
 
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), "", AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, domain.AddressTypeInternal, addrs[0].Type)
 	assert.Equal(t, sub.ID, addrs[0].InternalIpv4.SubnetID)
@@ -274,7 +274,7 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	or := repomock.NewOpsRepo()
 	sub := makeSubnet(sr, ids.NewID(ids.PrefixNetwork))
 	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
-	listUC := NewListAddressesUseCase(kr)
+	listUC := NewListAddressesUseCase(kr, nil)
 
 	op, err := uc.Execute(context.Background(), CreateInput{
 		ProjectID: "f1",
@@ -285,7 +285,7 @@ func TestCreateUseCase_Internal_ExplicitIP_InCIDR(t *testing.T) {
 	})
 	require.NoError(t, err)
 	repomock.AwaitOpDone(t, or, op.ID)
-	addrs, _, _ := listUC.Execute(context.Background(), AddressFilter{ProjectID: "f1"}, Pagination{})
+	addrs, _, _ := listUC.Execute(context.Background(), "", AddressFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, addrs, 1)
 	assert.Equal(t, "10.0.0.5", addrs[0].InternalIpv4.Address)
 }
@@ -407,8 +407,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
 	kr := kachomock.NewRepository()
-	uc := NewListAddressesUseCase(kr)
-	_, _, err := uc.Execute(context.Background(), AddressFilter{}, Pagination{})
+	uc := NewListAddressesUseCase(kr, nil)
+	_, _, err := uc.Execute(context.Background(), "", AddressFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

@@ -40,7 +40,7 @@ func makeHandler(t *testing.T,
 	deleteUC := NewDeleteGatewayUseCase(kr, or)
 	move := NewMoveGatewayUseCase(kr, fc, or)
 	get := NewGetGatewayUseCase(kr)
-	list := NewListGatewaysUseCase(kr)
+	list := NewListGatewaysUseCase(kr, nil)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, list, listOps)
 }
@@ -209,8 +209,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListGatewaysUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), GatewayFilter{}, Pagination{})
+	uc := NewListGatewaysUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", GatewayFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

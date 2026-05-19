@@ -52,7 +52,7 @@ func makeHandler(t *testing.T,
 	update := NewUpdateNetworkInterfaceUseCase(kr, ar, or)
 	deleteUC := NewDeleteNetworkInterfaceUseCase(kr, ar, or)
 	get := NewGetNetworkInterfaceUseCase(kr)
-	list := NewListNetworkInterfacesUseCase(kr)
+	list := NewListNetworkInterfacesUseCase(kr, nil)
 	attach := NewAttachToInstanceUseCase(kr, or)
 	detach := NewDetachFromInstanceUseCase(kr, or)
 	listOps := NewListOperationsUseCase(or)
@@ -233,8 +233,8 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListNetworkInterfacesUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), NetworkInterfaceFilter{}, Pagination{})
+	uc := NewListNetworkInterfacesUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", NetworkInterfaceFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

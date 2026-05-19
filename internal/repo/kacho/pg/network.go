@@ -111,6 +111,87 @@ func (r *networkReader) List(ctx context.Context, f kacho.NetworkFilter, p kacho
 	return result, nextToken, nil
 }
 
+// ListByIDs — KAC-127 Phase 4: List с фильтром по `id = ANY($allowedIDs)`.
+//
+// Comparable list-семантика (filter / cursor) сохраняется; добавляется
+// safety-net WHERE-clause с типизированным text[]-параметром (acceptance
+// D-10: SQL-injection-safe). Пустой allowedIDs → возвращает (nil, "", nil).
+func (r *networkReader) ListByIDs(ctx context.Context, f kacho.NetworkFilter, allowedIDs []string, p kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
+	if len(allowedIDs) == 0 {
+		return nil, "", nil
+	}
+	pageSize, err := validate.PageSize("page_size", p.PageSize)
+	if err != nil {
+		return nil, "", err
+	}
+
+	args := []any{allowedIDs}
+	conditions := []string{"id = ANY($1::text[])"}
+	argIdx := 2
+
+	if f.ProjectID != "" {
+		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, f.ProjectID)
+		argIdx++
+	}
+	if f.Name != "" {
+		conditions = append(conditions, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, f.Name)
+		argIdx++
+	}
+	if f.Filter != "" {
+		ast, perr := filter.Parse(f.Filter, []string{"name"})
+		if perr != nil {
+			return nil, "", helpers.InvalidFilterErr(perr)
+		}
+		if ast != nil {
+			frag, fargs := ast.ToSQL(argIdx)
+			conditions = append(conditions, frag)
+			args = append(args, fargs...)
+			argIdx += len(fargs)
+		}
+	}
+	if p.PageToken != "" {
+		ts, id, err := helpers.DecodePageToken(p.PageToken)
+		if err != nil {
+			return nil, "", helpers.InvalidPageTokenErr(err)
+		}
+		conditions = append(conditions, fmt.Sprintf("(created_at, id) > ($%d, $%d)", argIdx, argIdx+1))
+		args = append(args, ts, id)
+		argIdx += 2
+	}
+
+	where := "WHERE " + strings.Join(conditions, " AND ")
+	q := fmt.Sprintf(`SELECT %s FROM networks %s ORDER BY created_at ASC, id ASC LIMIT $%d`, helpers.NetworkCols, where, argIdx)
+	args = append(args, pageSize+1)
+
+	rows, err := r.tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, "", helpers.WrapPgErr(err, "Network", "")
+	}
+	defer rows.Close()
+
+	var result []*kacho.NetworkRecord
+	for rows.Next() {
+		n, err := helpers.ScanNetwork(rows)
+		if err != nil {
+			return nil, "", helpers.WrapPgErr(err, "Network", "")
+		}
+		result = append(result, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", helpers.WrapPgErr(err, "Network", "")
+	}
+
+	var nextToken string
+	if int64(len(result)) > pageSize {
+		last := result[pageSize-1]
+		nextToken = helpers.EncodePageToken(last.CreatedAt, last.ID)
+		result = result[:pageSize]
+	}
+	return result, nextToken, nil
+}
+
 // networkWriter — DML над networks через writer-TX. Embeds networkReader
 // (G.2 — writer видит свои writes: Get/List доступны после Insert/Update в
 // рамках той же TX).

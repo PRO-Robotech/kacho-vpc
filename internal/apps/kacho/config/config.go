@@ -60,6 +60,56 @@ type AuthZConfig struct {
 
 	// CacheTTL — TTL positive-results кеша (default 5s).
 	CacheTTL time.Duration `mapstructure:"cache-ttl"`
+
+	// ListFilter — KAC-127 Phase 4: FGA-filtered List handlers config.
+	ListFilter ListFilterConfig `mapstructure:"list-filter"`
+}
+
+// ListFilterConfig — KAC-127 Phase 4 — конфигурация FGA-filtered List.
+//
+// Source: yaml `authz.list-filter.{enabled,timeout-ms,cache-ttl,max-results,model-id,fail-open}`.
+// ENV-override: `KACHO_VPC_AUTHZ__LIST_FILTER__ENABLED=true`, etc.
+//
+// Когда Enabled=true И authz.iam-endpoint выставлен → каждая List-RPC
+// ходит к kacho-iam AuthorizeService.ListObjects на разрешённые ids.
+type ListFilterConfig struct {
+	// Enabled — главный toggle. Default false (legacy unfiltered behaviour).
+	// В production: true.
+	Enabled bool `mapstructure:"enabled"`
+
+	// AuthorizeEndpoint — gRPC адрес kacho-iam **public** listener'а
+	// (AuthorizeService на :9090, в отличие от InternalIAMService на :9091).
+	// Пустая строка → fallback на AuthZConfig.IAMEndpoint (для compat'а с
+	// существующими values.yaml; production-mode должен указывать явно).
+	AuthorizeEndpoint string `mapstructure:"authorize-endpoint"`
+
+	// AuthorizeTLS — TLS на peer-вызов в kacho-iam AuthorizeService.
+	AuthorizeTLS TLSClient `mapstructure:"authorize-tls"`
+
+	// TimeoutMs — таймаут одного ListObjects-вызова (default 500ms).
+	// Acceptance §4.3: per-call budget ≤100ms p95 + 5x safety margin.
+	TimeoutMs int `mapstructure:"timeout-ms"`
+
+	// CacheTTL — TTL positive entries в LRU-кэше (default 5s).
+	// Acceptance §4.4 D-2.
+	CacheTTL time.Duration `mapstructure:"cache-ttl"`
+
+	// MaxEntries — hard cap кэша (default 10000). LRU eviction.
+	MaxEntries int `mapstructure:"max-entries"`
+
+	// MaxResults — hard cap для ListObjects results (default 10000).
+	// Acceptance §3 D-5.
+	MaxResults int `mapstructure:"max-results"`
+
+	// ModelID — pinned authorization_model_id (acceptance §3 D-12).
+	// Empty → kacho-iam использует свой default. В production:
+	// тот же model id, что seed-ит kacho-iam Phase 3.
+	ModelID string `mapstructure:"model-id"`
+
+	// FailOpen — если true, FGA-error возвращает unfiltered list (acceptance §5.4).
+	// Default false (fail-closed, acceptance §3 D-6). WARN-log + Critical-alert
+	// при включении.
+	FailOpen bool `mapstructure:"fail-open"`
 }
 
 // LoggerConfig — секция logger.

@@ -9,23 +9,33 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+)
+
+// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
+const (
+	FGAObjectTypeGateway = "vpc_gateway"
+	FGAActionGatewayList = "vpc.gateways.list"
 )
 
 // ListGatewaysUseCase — list gateways с пагинацией. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): открывает read-only TX через `repo.Reader(ctx)`.
+//
+// KAC-127 Phase 4: FGA-filtered list. authz==nil → legacy fallback.
 type ListGatewaysUseCase struct {
-	repo Repo
+	repo  Repo
+	authz listauthz.Port
 }
 
-// NewListGatewaysUseCase создаёт ListGatewaysUseCase.
-func NewListGatewaysUseCase(r Repo) *ListGatewaysUseCase {
-	return &ListGatewaysUseCase{repo: r}
+// NewListGatewaysUseCase создаёт ListGatewaysUseCase. authz может быть nil.
+func NewListGatewaysUseCase(r Repo, authz listauthz.Port) *ListGatewaysUseCase {
+	return &ListGatewaysUseCase{repo: r, authz: authz}
 }
 
-// Execute — project_id required (закрыто cross-folder enumeration #C1).
-func (u *ListGatewaysUseCase) Execute(ctx context.Context, f GatewayFilter, p Pagination) ([]*kacho.GatewayRecord, string, error) {
+// Execute — project_id required + FGA-filter (KAC-127 Phase 4).
+func (u *ListGatewaysUseCase) Execute(ctx context.Context, subjectID string, f GatewayFilter, p Pagination) ([]*kacho.GatewayRecord, string, error) {
 	if f.ProjectID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
@@ -34,6 +44,21 @@ func (u *ListGatewaysUseCase) Execute(ctx context.Context, f GatewayFilter, p Pa
 		return nil, "", mapRepoErr(err)
 	}
 	defer func() { _ = rd.Close() }()
+
+	if u.authz != nil && subjectID != "" {
+		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeGateway, FGAActionGatewayList, f.ProjectID)
+		if lerr != nil {
+			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+		}
+		if len(allowedIDs) == 0 {
+			return nil, "", nil
+		}
+		rows, nextToken, ferr := rd.Gateways().List(ctx, f, p)
+		if ferr != nil {
+			return nil, "", mapRepoErr(ferr)
+		}
+		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kacho.GatewayRecord) string { return rec.ID }), nextToken, nil
+	}
 
 	gws, nextToken, lerr := rd.Gateways().List(ctx, f, p)
 	if lerr != nil {

@@ -84,12 +84,13 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetSecurityGroupRequest) (
 	return securityGroupToPb(sg)
 }
 
-// List — project_id required + AuthZ.
+// List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListSecurityGroupsRequest) (*vpcv1.ListSecurityGroupsResponse, error) {
 	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
-	sgs, nextToken, err := h.list.Execute(ctx, SecurityGroupFilter{
+	subject := fgaSubjectFromCtx(ctx)
+	sgs, nextToken, err := h.list.Execute(ctx, subject, SecurityGroupFilter{
 		ProjectID: req.ProjectId,
 		Filter:    req.Filter,
 	}, Pagination{
@@ -324,4 +325,13 @@ func operationToProto(op *operations.Operation) *operationpb.Operation {
 		p.Result = &operationpb.Operation_Response{Response: op.Response}
 	}
 	return p
+}
+
+// fgaSubjectFromCtx — KAC-127 Phase 4: extract FGA subject из ctx-Principal.
+func fgaSubjectFromCtx(ctx context.Context) string {
+	p := operations.PrincipalFromContext(ctx)
+	if p.Type == "" || p.ID == "" || p.Type == "system" {
+		return ""
+	}
+	return p.Type + ":" + p.ID
 }

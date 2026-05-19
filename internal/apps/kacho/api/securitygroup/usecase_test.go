@@ -43,7 +43,7 @@ func makeHandler(
 	deleteUC := NewDeleteSecurityGroupUseCase(sgr, or)
 	move := NewMoveSecurityGroupUseCase(sgr, fc, or)
 	get := NewGetSecurityGroupUseCase(sgr)
-	list := NewListSecurityGroupsUseCase(sgr)
+	list := NewListSecurityGroupsUseCase(sgr, nil)
 	listOps := NewListOperationsUseCase(sgr, or)
 	return NewHandler(create, update, updateRules, updateRule, deleteUC, move, get, list, listOps)
 }
@@ -224,8 +224,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListSecurityGroupsUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), SecurityGroupFilter{}, Pagination{})
+	uc := NewListSecurityGroupsUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", SecurityGroupFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

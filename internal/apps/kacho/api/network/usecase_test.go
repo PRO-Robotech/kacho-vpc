@@ -60,7 +60,7 @@ func makeHandler(t *testing.T,
 	deleteUC := NewDeleteNetworkUseCase(kr, sReader, rtReader, sgRepoIface, or)
 	move := NewMoveNetworkUseCase(kr, fc, or)
 	get := NewGetNetworkUseCase(kr)
-	list := NewListNetworksUseCase(kr)
+	list := NewListNetworksUseCase(kr, nil) // KAC-127: authz nil → legacy unfiltered list path
 	listSub := NewListSubnetsUseCase(kr, sReader)
 	listSG := NewListSecurityGroupsUseCase(kr, sgRepoIface)
 	listRT := NewListRouteTablesUseCase(kr, rtReader)
@@ -320,8 +320,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListNetworksUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), NetworkFilter{}, Pagination{})
+	uc := NewListNetworksUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", NetworkFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

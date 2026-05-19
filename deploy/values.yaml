@@ -35,12 +35,27 @@ repository:
 authn:
   mode: dev
 # KAC-119: per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
+# KAC-127 Phase 4: list-filter через kacho-iam.AuthorizeService.ListObjects (port 9090).
 authz:
   iamEndpoint: ""           # default cluster-internal kacho-iam-internal:9091
   breakglass: false          # dev override — пропустить все Check
   checkTimeout: 2s
   cacheTtl: 5s
   denyRateLimitPerSec: 100
+  # KAC-127 Phase 4 — FGA-filtered List handlers (acceptance §4.2).
+  # Production: enabled=true и authorizeEndpoint указан явно. Dev / legacy: enabled=false →
+  # use-case'ы возвращают unfiltered list (legacy behavior).
+  listFilter:
+    enabled: false           # Toggle FGA list-filter (production: true)
+    authorizeEndpoint: ""    # Public AuthorizeService :9090 (fallback на iamEndpoint)
+    authorizeTls:
+      enable: false
+    timeoutMs: 500           # Per-call FGA timeout (acceptance §4.3)
+    cacheTtl: 5s             # LRU TTL (acceptance §4.4 D-2)
+    maxEntries: 10000        # Cache hard cap (LRU eviction)
+    maxResults: 10000        # FGA ListObjects result cap (acceptance §3 D-5)
+    modelId: ""              # Pinned authorization_model_id (acceptance D-12)
+    failOpen: false          # Default fail-closed (acceptance §3 D-6)
 extapi:
   # KAC-106 (E1): renamed peer resourceManager -> iam (kacho-iam.ProjectService.Get).
   iam:
@@ -85,3 +100,46 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
+
+# ─── OPA Sidecar (KAC-127 Phase 4) ────────────────────────────────────
+# OPA sidecar для guardrails. Bundle pulled from kacho-iam Internal :9091
+# с signed JWS verification. Mirror pattern from kacho-iam Phase 3 (commit 68dc3b1).
+#
+# Decision-logs → stdout (collected by cluster log aggregator).
+# Resource limits 256MB / 100m matching kacho-iam baseline.
+opa:
+  enabled: false                       # production: true
+  image: "openpolicyagent/opa:0.62.0"
+  imagePullPolicy: IfNotPresent
+  port: 8181
+  logLevel: info
+  bundleSource:
+    # kacho-iam Internal :9091 — OpaBundleService.
+    url: "http://kacho-iam-internal.kacho.svc.cluster.local:9091"
+    headers: {}                        # e.g. {Authorization: "Bearer <sa-token>"}
+  bundlePolling:
+    minDelaySeconds: 60
+    maxDelaySeconds: 120
+  bundleSigning:
+    keyID: "kacho-iam-bundle-key-v1"
+    algorithm: "RS256"
+    # publicKey — PEM-encoded RSA public key (provided by kacho-iam admin).
+    # В production загружается из Secret + mounted; placeholder здесь —
+    # values-prod.yaml override обязателен.
+    publicKey: |
+      -----BEGIN PUBLIC KEY-----
+      MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA<replace-with-real-key>
+      -----END PUBLIC KEY-----
+    excludeFiles:
+      - ".manifest"
+  decisionLogs:
+    console: true                      # → stdout, scraped by cluster log agg
+  statusLogs:
+    console: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi

@@ -9,24 +9,34 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+)
+
+// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
+const (
+	FGAObjectTypeAddress = "vpc_address"
+	FGAActionAddressList = "vpc.addresses.list"
 )
 
 // ListAddressesUseCase — list addresses with pagination. project_id обязателен
 // (R10 #C1 closure — закрыт cross-folder enumeration).
 //
 // A.7 sub-PR 2 (KAC-94): использует CQRS Reader.
+//
+// KAC-127 Phase 4: FGA-filtered list. authz==nil → legacy fallback.
 type ListAddressesUseCase struct {
-	repo Repo
+	repo  Repo
+	authz listauthz.Port
 }
 
-// NewListAddressesUseCase создаёт ListAddressesUseCase.
-func NewListAddressesUseCase(r Repo) *ListAddressesUseCase {
-	return &ListAddressesUseCase{repo: r}
+// NewListAddressesUseCase создаёт ListAddressesUseCase. authz может быть nil.
+func NewListAddressesUseCase(r Repo, authz listauthz.Port) *ListAddressesUseCase {
+	return &ListAddressesUseCase{repo: r, authz: authz}
 }
 
-// Execute — project_id required + load UsedBy для каждого адреса.
-func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
+// Execute — project_id required + FGA-filter (KAC-127 Phase 4) + load UsedBy.
+func (u *ListAddressesUseCase) Execute(ctx context.Context, subjectID string, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	if f.ProjectID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
@@ -35,6 +45,24 @@ func (u *ListAddressesUseCase) Execute(ctx context.Context, f AddressFilter, p P
 		return nil, "", mapRepoErr(err)
 	}
 	defer func() { _ = r.Close() }()
+
+	if u.authz != nil && subjectID != "" {
+		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeAddress, FGAActionAddressList, f.ProjectID)
+		if lerr != nil {
+			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+		}
+		if len(allowedIDs) == 0 {
+			return nil, "", nil
+		}
+		addrs, nextToken, ferr := r.Addresses().List(ctx, f, p)
+		if ferr != nil {
+			return nil, "", mapRepoErr(ferr)
+		}
+		filtered := listauthz.FilterByAllowedIDs(addrs, allowedIDs, func(rec *kachorepo.AddressRecord) string { return rec.ID })
+		loadUsedBy(ctx, r.Addresses(), filtered)
+		return filtered, nextToken, nil
+	}
+
 	addrs, nextToken, err := r.Addresses().List(ctx, f, p)
 	if err != nil {
 		return nil, "", mapRepoErr(err)

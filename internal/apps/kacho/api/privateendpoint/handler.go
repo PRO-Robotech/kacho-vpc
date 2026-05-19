@@ -68,7 +68,7 @@ func (h *Handler) Get(ctx context.Context, req *pepb.GetPrivateEndpointRequest) 
 	return privateEndpointToPb(got)
 }
 
-// List — project_id required + AuthZ.
+// List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
 func (h *Handler) List(ctx context.Context, req *pepb.ListPrivateEndpointsRequest) (*pepb.ListPrivateEndpointsResponse, error) {
 	folderID := ""
 	if c, ok := req.Container.(*pepb.ListPrivateEndpointsRequest_ProjectId); ok {
@@ -77,7 +77,8 @@ func (h *Handler) List(ctx context.Context, req *pepb.ListPrivateEndpointsReques
 	if err := handler.AssertFolderOwnership(ctx, folderID); err != nil {
 		return nil, err
 	}
-	endpoints, nextToken, err := h.list.Execute(ctx, PrivateEndpointFilter{
+	subject := fgaSubjectFromCtx(ctx)
+	endpoints, nextToken, err := h.list.Execute(ctx, subject, PrivateEndpointFilter{
 		ProjectID: folderID,
 		Filter:    req.Filter,
 	}, Pagination{
@@ -244,4 +245,13 @@ func operationToProto(op *operations.Operation) *operationpb.Operation {
 		p.Result = &operationpb.Operation_Response{Response: op.Response}
 	}
 	return p
+}
+
+// fgaSubjectFromCtx — KAC-127 Phase 4: extract FGA subject из ctx-Principal.
+func fgaSubjectFromCtx(ctx context.Context) string {
+	p := operations.PrincipalFromContext(ctx)
+	if p.Type == "" || p.ID == "" || p.Type == "system" {
+		return ""
+	}
+	return p.Type + ":" + p.ID
 }

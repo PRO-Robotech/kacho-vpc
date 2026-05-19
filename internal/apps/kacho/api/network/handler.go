@@ -82,12 +82,17 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetNetworkRequest) (*vpcv1
 	return networkToPb(n)
 }
 
-// List — project_id required + AuthZ.
+// List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
+//
+// Subject из ctx (principal-extractor) → ListAllowedIDs → repo.ListByIDs.
+// AssertFolderOwnership остаётся как defense-in-depth pre-check (FGA listing
+// scoped to project; пользователь не должен слать запрос на чужой project).
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListNetworksRequest) (*vpcv1.ListNetworksResponse, error) {
 	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
-	nets, nextToken, err := h.list.Execute(ctx, NetworkFilter{
+	subject := subjectFromCtx(ctx)
+	nets, nextToken, err := h.list.Execute(ctx, subject, NetworkFilter{
 		ProjectID: req.ProjectId,
 		Filter:    req.Filter,
 	}, Pagination{
@@ -353,6 +358,18 @@ func securityGroupToPb(rec *kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGroup
 		return nil, status.Error(codes.Internal, "dto.Transfer SecurityGroup failed")
 	}
 	return dst, nil
+}
+
+// subjectFromCtx — KAC-127 Phase 4: extract FGA subject string из Principal.
+// "user:usr_xxx" / "service_account:sva_xxx". Если Principal == system (no auth) —
+// returns "" → caller (use-case) fall-back'нёт на legacy unfiltered behaviour
+// (acceptance §5.4 dev mode).
+func subjectFromCtx(ctx context.Context) string {
+	p := operations.PrincipalFromContext(ctx)
+	if p.Type == "" || p.ID == "" || p.Type == "system" {
+		return ""
+	}
+	return p.Type + ":" + p.ID
 }
 
 // operationToProto — локальная копия `handler.operationToProto` (та lowercase).

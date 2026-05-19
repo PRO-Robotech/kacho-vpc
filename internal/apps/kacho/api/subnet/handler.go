@@ -87,12 +87,13 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*vpcv1.
 	return subnetToPb(s)
 }
 
-// List — project_id required + AuthZ.
+// List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
 	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
-	subs, nextToken, err := h.list.Execute(ctx, SubnetFilter{
+	subject := fgaSubjectFromCtx(ctx)
+	subs, nextToken, err := h.list.Execute(ctx, subject, SubnetFilter{
 		ProjectID: req.ProjectId,
 		Filter:    req.Filter,
 	}, Pagination{
@@ -384,4 +385,14 @@ func operationToProto(op *operations.Operation) *operationpb.Operation {
 		p.Result = &operationpb.Operation_Response{Response: op.Response}
 	}
 	return p
+}
+
+// fgaSubjectFromCtx — KAC-127 Phase 4: extract FGA subject из ctx-Principal.
+// Empty subject (system / no auth) → use-case fallback на legacy unfiltered.
+func fgaSubjectFromCtx(ctx context.Context) string {
+	p := operations.PrincipalFromContext(ctx)
+	if p.Type == "" || p.ID == "" || p.Type == "system" {
+		return ""
+	}
+	return p.Type + ":" + p.ID
 }
