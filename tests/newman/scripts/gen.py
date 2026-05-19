@@ -38,6 +38,11 @@ class Step:
     body: Optional[Dict] = None
     pre_script: List[str] = field(default_factory=list)
     test_script: List[str] = field(default_factory=list)
+    # KAC-122: per-step auth override для authz-deny suite.
+    #   None              — header не трогается (default — inherit collection Bearer если есть)
+    #   "anonymous"       — Authorization header снимается перед запросом
+    #   "<envVarName>"    — Authorization: Bearer {{envVarName}} (значение из env при выполнении)
+    auth: Optional[str] = None
 
 
 @dataclass
@@ -1398,6 +1403,27 @@ def poll_operation_until_done() -> Step:
 # Сериализация в Postman v2.1
 # ---------------------------------------------------------------------------
 
+def _auth_pre_script(auth: str) -> List[str]:
+    """KAC-122: генерирует JS-сниппет для per-step Authorization-header.
+
+    "anonymous" → снимает Authorization. Имя env-переменной →
+    Authorization: Bearer <значение env-var>. Snippet идёт в начало pre_script."""
+    if auth == "anonymous":
+        return [
+            "// KAC-122 authz-deny: anonymous step",
+            "pm.request.headers.remove('Authorization');",
+        ]
+    return [
+        f"// KAC-122 authz-deny: bearer from env '{auth}'",
+        f"const __t = pm.environment.get('{auth}') || pm.variables.get('{auth}') || '';",
+        "if (__t) {",
+        "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+        "} else {",
+        "  pm.request.headers.remove('Authorization');",
+        "}",
+    ]
+
+
 def step_to_postman(step: Step) -> Dict:
     item: Dict = {
         "name": step.name,
@@ -1417,10 +1443,13 @@ def step_to_postman(step: Step) -> Dict:
             "raw": json.dumps(step.body, ensure_ascii=False),
             "options": {"raw": {"language": "json"}},
         }
+    pre = list(step.pre_script)
+    if step.auth is not None:
+        pre = _auth_pre_script(step.auth) + pre
     events = []
-    if step.pre_script:
+    if pre:
         events.append(
-            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": step.pre_script}}
+            {"listen": "prerequest", "script": {"type": "text/javascript", "exec": pre}}
         )
     if step.test_script:
         events.append(
