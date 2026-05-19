@@ -175,3 +175,24 @@ for subj in SUBJECTS:
          "PATCH", "/vpc/v1/addressPools/aplnonexistent00000", {"name": "x"}, subj)
     emit("APL-DL", "Delete AddressPool (garbage id)", "addresspool-mutate",
          "DELETE", "/vpc/v1/addressPools/aplnonexistent00000", None, subj)
+
+
+# ---------------------------------------------------------------------------
+# Cross-domain validation cases (KAC-122 §5.4 CD-*)
+# ---------------------------------------------------------------------------
+
+EXPECT["cross-domain-subnet-from-victim"] = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
+EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
+
+# CD-1: AAA пытается создать Subnet в project-A1 ссылаясь на network-B1 (cross-account)
+# Должно DENY — peer-validation должна обнаружить что network принадлежит другому account.
+for subj in SUBJECTS:
+    emit("CD-SUBNET-XACCT", "Create Subnet ссылающийся на network из cross-account project",
+         "cross-domain-subnet-from-victim", "POST", "/vpc/v1/subnets",
+         {"projectId":"{{projectA1Id}}","name": f"cd-{subj[0].lower()}-{{{{runId}}}}",
+          "networkId":"{{seedNetworkB1Id}}","zoneId":"ru-central1-a","v4CidrBlocks":["10.88.0.0/16"]}, subj)
+
+# HIGH-2: AddressPool.List на public endpoint — все должны DENY (admin-only)
+for subj in SUBJECTS:
+    emit("DATA-LEAK-APL-LS", "AddressPool.List на public listener (HIGH-2 data leak)",
+         "data-leak-addresspool-list", "GET", "/vpc/v1/addressPools", None, subj)

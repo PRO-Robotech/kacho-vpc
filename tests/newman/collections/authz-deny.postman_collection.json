@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "f54b3634-cd88-42c4-b883-f577abcaa035",
+    "_postman_id": "ae8b9944-9041-47d1-8490-ac7b6faf0c4e",
     "name": "kacho-vpc / newman / authz-deny",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -21661,6 +21661,746 @@
                   "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
                   "pm.test('[AUTHZ-APL-DL-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
                   "pm.test('[AUTHZ-APL-DL-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-ANON — [DENY] Create Subnet ссылающийся на network из cross-account project as anon (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-anon-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: anonymous step",
+                  "pm.request.headers.remove('Authorization');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-ANON] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-ANON] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-ANON] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-NOB — [DENY] Create Subnet ссылающийся на network из cross-account project as no-bind (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-nob-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtNoBindings'",
+                  "const __t = pm.environment.get('jwtNoBindings') || pm.variables.get('jwtNoBindings') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-NOB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-NOB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-NOB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-PA1 — [DENY] Create Subnet ссылающийся на network из cross-account project as proj-adm (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-pa1-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtProjectAdminA1'",
+                  "const __t = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-PA1] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-PA1] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-PA1] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-AAA — [DENY] Create Subnet ссылающийся на network из cross-account project as acct-adm-a (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-aaa-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtAccountAdminA'",
+                  "const __t = pm.environment.get('jwtAccountAdminA') || pm.variables.get('jwtAccountAdminA') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAA] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAA] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAA] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-AAB — [DENY] Create Subnet ссылающийся на network из cross-account project as acct-adm-b (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-aab-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtAccountAdminB'",
+                  "const __t = pm.environment.get('jwtAccountAdminB') || pm.variables.get('jwtAccountAdminB') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-AAB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-CD-SUBNET-XACCT-INV — [DENY] Create Subnet ссылающийся на network из cross-account project as invitee (cross-domain-subnet-from-victim)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{projectA1Id}}\", \"name\": \"cd-inv-{{runId}}\", \"networkId\": \"{{seedNetworkB1Id}}\", \"zoneId\": \"ru-central1-a\", \"v4CidrBlocks\": [\"10.88.0.0/16\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtInvitee'",
+                  "const __t = pm.environment.get('jwtInvitee') || pm.variables.get('jwtInvitee') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-ANON — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as anon (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: anonymous step",
+                  "pm.request.headers.remove('Authorization');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-ANON] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-ANON] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-ANON] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-NOB — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as no-bind (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtNoBindings'",
+                  "const __t = pm.environment.get('jwtNoBindings') || pm.variables.get('jwtNoBindings') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-PA1 — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as proj-adm (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtProjectAdminA1'",
+                  "const __t = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-AAA — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-a (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtAccountAdminA'",
+                  "const __t = pm.environment.get('jwtAccountAdminA') || pm.variables.get('jwtAccountAdminA') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-AAB — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-b (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtAccountAdminB'",
+                  "const __t = pm.environment.get('jwtAccountAdminB') || pm.variables.get('jwtAccountAdminB') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AUTHZ-DATA-LEAK-APL-LS-INV — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as invitee (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/addressPools",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "addressPools"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// KAC-122 authz-deny: bearer from env 'jwtInvitee'",
+                  "const __t = pm.environment.get('jwtInvitee') || pm.variables.get('jwtInvitee') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
