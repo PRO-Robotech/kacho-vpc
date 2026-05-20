@@ -73,7 +73,17 @@ spec:
                   key: {{ .Values.db.passwordSecretKey }}
             {{- /* KAC-127 issue #22: write-side FGA — store-id / model-id are
                    bootstrap-job-populated Secrets, injected as config ENV-override
-                   (KACHO_VPC_AUTHZ__TUPLE_WRITE__*). */}}
+                   (KACHO_VPC_AUTHZ__TUPLE_WRITE__*).
+                   `optional: true` — на fresh install эти Secret'ы создаёт
+                   post-install openfga-bootstrap-job, т.е. их ещё нет к моменту
+                   первого старта vpc-pod'а (помним: helm --wait ждёт vpc
+                   Deployment ДО запуска post-install hook). Без optional kubelet
+                   отдаёт CreateContainerConfigError и pod не стартует никогда →
+                   `helm install --wait` упирается в Progress-deadline. Тот же
+                   паттерн optional уже у kacho-iam / api-gateway; bootstrap-job
+                   после WriteAuthorizationModel бампает annotation
+                   kacho.cloud/openfga-model-id-rev → rolling-restart подхватывает
+                   реальные значения. */}}
             {{- if .Values.authz.tupleWrite.enabled }}
             {{- if .Values.authz.tupleWrite.storeIdSecretName }}
             - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID
@@ -81,6 +91,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.authz.tupleWrite.storeIdSecretName }}
                   key: {{ default "store_id" .Values.authz.tupleWrite.storeIdSecretKey }}
+                  optional: true
             {{- end }}
             {{- if .Values.authz.tupleWrite.modelIdSecretName }}
             - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID
@@ -88,6 +99,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.authz.tupleWrite.modelIdSecretName }}
                   key: {{ default "model_id" .Values.authz.tupleWrite.modelIdSecretKey }}
+                  optional: true
             {{- end }}
             {{- end }}
             {{- range $k, $v := .Values.env }}
