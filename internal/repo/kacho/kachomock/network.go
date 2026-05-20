@@ -50,6 +50,30 @@ func (r *networkReader) List(_ context.Context, f kacho.NetworkFilter, _ kacho.P
 	return result, "", nil
 }
 
+// ListByIDs — KAC-127 Phase 4: mock-реализация ListByIDs. Filtering поверх ids set.
+func (r *networkReader) ListByIDs(_ context.Context, f kacho.NetworkFilter, allowedIDs []string, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
+	if len(allowedIDs) == 0 {
+		return nil, "", nil
+	}
+	allowed := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowed[id] = struct{}{}
+	}
+	var result []*kacho.NetworkRecord
+	for _, n := range r.snap {
+		if _, ok := allowed[n.ID]; !ok {
+			continue
+		}
+		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&
+			(f.Name == "" || string(n.Name) == f.Name) {
+			cp := *n
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
 // ---- Network writer ----
 
 type networkWriter struct {
@@ -73,6 +97,33 @@ func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.
 	var result []*kacho.NetworkRecord
 	for id, n := range nw.w.local {
 		if _, deleted := nw.w.deletedIDs[id]; deleted {
+			continue
+		}
+		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&
+			(f.Name == "" || string(n.Name) == f.Name) {
+			cp := *n
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result, "", nil
+}
+
+// ListByIDs — KAC-127 Phase 4: mock writer-side ListByIDs.
+func (nw *networkWriter) ListByIDs(_ context.Context, f kacho.NetworkFilter, allowedIDs []string, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
+	if len(allowedIDs) == 0 {
+		return nil, "", nil
+	}
+	allowed := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowed[id] = struct{}{}
+	}
+	var result []*kacho.NetworkRecord
+	for id, n := range nw.w.local {
+		if _, deleted := nw.w.deletedIDs[id]; deleted {
+			continue
+		}
+		if _, ok := allowed[id]; !ok {
 			continue
 		}
 		if (f.ProjectID == "" || n.ProjectID == f.ProjectID) &&

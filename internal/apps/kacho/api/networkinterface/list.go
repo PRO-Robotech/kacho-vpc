@@ -8,23 +8,33 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+)
+
+// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
+const (
+	FGAObjectTypeNIC = "vpc_network_interface"
+	FGAActionNICList = "vpc.network_interfaces.list"
 )
 
 // ListNetworkInterfacesUseCase — list NICs. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94, NIC batch): открывает reader-TX через CQRS-iface.
+//
+// KAC-127 Phase 4: FGA-filtered list. authz==nil → legacy fallback.
 type ListNetworkInterfacesUseCase struct {
-	repo Repo
+	repo  Repo
+	authz listauthz.Port
 }
 
-// NewListNetworkInterfacesUseCase создаёт ListNetworkInterfacesUseCase.
-func NewListNetworkInterfacesUseCase(r Repo) *ListNetworkInterfacesUseCase {
-	return &ListNetworkInterfacesUseCase{repo: r}
+// NewListNetworkInterfacesUseCase создаёт ListNetworkInterfacesUseCase. authz==nil OK.
+func NewListNetworkInterfacesUseCase(r Repo, authz listauthz.Port) *ListNetworkInterfacesUseCase {
+	return &ListNetworkInterfacesUseCase{repo: r, authz: authz}
 }
 
-// Execute — project_id required.
-func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, f NetworkInterfaceFilter, p Pagination) ([]*kachorepo.NetworkInterfaceRecord, string, error) {
+// Execute — project_id required + FGA-filter (KAC-127 Phase 4).
+func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, subjectID string, f NetworkInterfaceFilter, p Pagination) ([]*kachorepo.NetworkInterfaceRecord, string, error) {
 	if f.ProjectID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
@@ -33,6 +43,22 @@ func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, f NetworkInt
 		return nil, "", mapRepoErr(err)
 	}
 	defer func() { _ = rd.Close() }()
+
+	if u.authz != nil && subjectID != "" {
+		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeNIC, FGAActionNICList, f.ProjectID)
+		if lerr != nil {
+			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+		}
+		if len(allowedIDs) == 0 {
+			return nil, "", nil
+		}
+		rows, nextToken, ferr := rd.NetworkInterfaces().List(ctx, f, p)
+		if ferr != nil {
+			return nil, "", mapRepoErr(ferr)
+		}
+		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kachorepo.NetworkInterfaceRecord) string { return rec.ID }), nextToken, nil
+	}
+
 	out, next, err := rd.NetworkInterfaces().List(ctx, f, p)
 	if err != nil {
 		return nil, "", mapRepoErr(err)

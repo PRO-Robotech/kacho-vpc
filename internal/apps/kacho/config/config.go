@@ -16,7 +16,7 @@ import (
 //	repository:    { type, postgres }
 //	authn:         { mode, tls }
 //	authz:         { iam-endpoint, breakglass, ... }   ← E3 / KAC-108
-//	extapi:        { def-dial-duration, resource-manager, compute }
+//	extapi:        { def-dial-duration, iam, compute }
 //	watch:         { max-streams }
 //	network:       { default-sg-inline, folder-cache }
 //
@@ -60,6 +60,87 @@ type AuthZConfig struct {
 
 	// CacheTTL — TTL positive-results кеша (default 5s).
 	CacheTTL time.Duration `mapstructure:"cache-ttl"`
+
+	// ListFilter — KAC-127 Phase 4: FGA-filtered List handlers config.
+	ListFilter ListFilterConfig `mapstructure:"list-filter"`
+
+	// TupleWrite — KAC-127 issue #22: write-side FGA. Когда Enabled=true и
+	// OpenFGAEndpoint+StoreID выставлены, каждый успешный resource Create
+	// публикует `vpc_<resource>:<id>#project@project:<project_id>` tuple.
+	TupleWrite TupleWriteConfig `mapstructure:"tuple-write"`
+}
+
+// TupleWriteConfig — KAC-127 issue #22 — конфигурация write-side FGA.
+//
+// Source: yaml `authz.tuple-write.{enabled,openfga-endpoint,store-id,model-id,timeout-ms}`.
+// ENV-override: `KACHO_VPC_AUTHZ__TUPLE_WRITE__ENABLED=true`, etc.
+//
+// Без этого блока созданные VPC-ресурсы не получают per-resource hierarchy
+// tuple → per-resource FGA Check `no path` → fail-closed deny.
+type TupleWriteConfig struct {
+	// Enabled — главный toggle. Default false (legacy: write-side выключен).
+	// В production: true.
+	Enabled bool `mapstructure:"enabled"`
+
+	// OpenFGAEndpoint — host:port OpenFGA HTTP API (например
+	// `kacho-umbrella-openfga:8080`). Тот же store, что использует kacho-iam.
+	OpenFGAEndpoint string `mapstructure:"openfga-endpoint"`
+
+	// StoreID — OpenFGA store id (shared с kacho-iam).
+	StoreID string `mapstructure:"store-id"`
+
+	// ModelID — pinned authorization_model_id. Empty → store default.
+	ModelID string `mapstructure:"model-id"`
+
+	// TimeoutMs — таймаут одного write-вызова (default 2000ms).
+	TimeoutMs int `mapstructure:"timeout-ms"`
+}
+
+// ListFilterConfig — KAC-127 Phase 4 — конфигурация FGA-filtered List.
+//
+// Source: yaml `authz.list-filter.{enabled,timeout-ms,cache-ttl,max-results,model-id,fail-open}`.
+// ENV-override: `KACHO_VPC_AUTHZ__LIST_FILTER__ENABLED=true`, etc.
+//
+// Когда Enabled=true И authz.iam-endpoint выставлен → каждая List-RPC
+// ходит к kacho-iam AuthorizeService.ListObjects на разрешённые ids.
+type ListFilterConfig struct {
+	// Enabled — главный toggle. Default false (legacy unfiltered behaviour).
+	// В production: true.
+	Enabled bool `mapstructure:"enabled"`
+
+	// AuthorizeEndpoint — gRPC адрес kacho-iam **public** listener'а
+	// (AuthorizeService на :9090, в отличие от InternalIAMService на :9091).
+	// Пустая строка → fallback на AuthZConfig.IAMEndpoint (для compat'а с
+	// существующими values.yaml; production-mode должен указывать явно).
+	AuthorizeEndpoint string `mapstructure:"authorize-endpoint"`
+
+	// AuthorizeTLS — TLS на peer-вызов в kacho-iam AuthorizeService.
+	AuthorizeTLS TLSClient `mapstructure:"authorize-tls"`
+
+	// TimeoutMs — таймаут одного ListObjects-вызова (default 500ms).
+	// Acceptance §4.3: per-call budget ≤100ms p95 + 5x safety margin.
+	TimeoutMs int `mapstructure:"timeout-ms"`
+
+	// CacheTTL — TTL positive entries в LRU-кэше (default 5s).
+	// Acceptance §4.4 D-2.
+	CacheTTL time.Duration `mapstructure:"cache-ttl"`
+
+	// MaxEntries — hard cap кэша (default 10000). LRU eviction.
+	MaxEntries int `mapstructure:"max-entries"`
+
+	// MaxResults — hard cap для ListObjects results (default 10000).
+	// Acceptance §3 D-5.
+	MaxResults int `mapstructure:"max-results"`
+
+	// ModelID — pinned authorization_model_id (acceptance §3 D-12).
+	// Empty → kacho-iam использует свой default. В production:
+	// тот же model id, что seed-ит kacho-iam Phase 3.
+	ModelID string `mapstructure:"model-id"`
+
+	// FailOpen — если true, FGA-error возвращает unfiltered list (acceptance §5.4).
+	// Default false (fail-closed, acceptance §3 D-6). WARN-log + Critical-alert
+	// при включении.
+	FailOpen bool `mapstructure:"fail-open"`
 }
 
 // LoggerConfig — секция logger.
@@ -145,14 +226,12 @@ type TLSServer struct {
 
 // ExtAPIConfig — секция extapi (peer-сервисы).
 //
-// KAC-106 (E1): renamed `resource-manager` peer to `iam`. The `ResourceManager`
-// struct field is retained as alias backed by the same `IAM` peer for backward-
-// compat during transition — both `extapi.iam` and `extapi.resource-manager`
-// YAML keys are accepted.
+// KAC-106 (E1) переключил folder-existence peer с kacho-resource-manager на
+// kacho-iam (ProjectService.Get). KAC-127 удалил legacy `resource-manager`
+// alias — поддерживается только `extapi.iam`.
 type ExtAPIConfig struct {
 	DefDialDuration time.Duration `mapstructure:"def-dial-duration"`
 	IAM             PeerConfig    `mapstructure:"iam"`
-	ResourceManager PeerConfig    `mapstructure:"resource-manager"`
 	Compute         PeerConfig    `mapstructure:"compute"`
 }
 

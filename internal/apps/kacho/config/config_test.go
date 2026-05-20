@@ -40,9 +40,9 @@ func TestLoad_Defaults(t *testing.T) {
 	require.Equal(t, 5*time.Second, cfg.Network.ProjectCache.NegativeTTL)
 	require.Equal(t, 10000, cfg.Network.ProjectCache.MaxSize)
 
-	require.Equal(t, "resource-manager.kacho.svc.cluster.local:9090", cfg.ExtAPI.ResourceManager.Endpoint)
-	require.False(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
-	require.False(t, cfg.ExtAPI.ResourceManager.DNSLB)
+	require.Equal(t, "iam.kacho.svc.cluster.local:9090", cfg.ExtAPI.IAM.Endpoint)
+	require.False(t, cfg.ExtAPI.IAM.TLS.Enable)
+	require.False(t, cfg.ExtAPI.IAM.DNSLB)
 	require.Equal(t, "compute.kacho.svc.cluster.local:9090", cfg.ExtAPI.Compute.Endpoint)
 }
 
@@ -73,8 +73,8 @@ network:
     negative-ttl: 2s
     max-size: 555
 extapi:
-  resource-manager:
-    endpoint: rm.test:9090
+  iam:
+    endpoint: iam.test:9090
     tls:
       enable: true
     dns-lb: true
@@ -107,9 +107,9 @@ extapi:
 	require.Equal(t, 2*time.Second, cfg.Network.ProjectCache.NegativeTTL)
 	require.Equal(t, 555, cfg.Network.ProjectCache.MaxSize)
 
-	require.Equal(t, "rm.test:9090", cfg.ExtAPI.ResourceManager.Endpoint)
-	require.True(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
-	require.True(t, cfg.ExtAPI.ResourceManager.DNSLB)
+	require.Equal(t, "iam.test:9090", cfg.ExtAPI.IAM.Endpoint)
+	require.True(t, cfg.ExtAPI.IAM.TLS.Enable)
+	require.True(t, cfg.ExtAPI.IAM.DNSLB)
 	require.Equal(t, "compute.test:9090", cfg.ExtAPI.Compute.Endpoint)
 	require.True(t, cfg.ExtAPI.Compute.TLS.Enable)
 
@@ -132,7 +132,7 @@ func TestLoad_ENVOverride(t *testing.T) {
 	t.Setenv("KACHO_VPC_REPOSITORY__POSTGRES__URL", "postgres://envuser@envhost:5432/envdb")
 	t.Setenv("KACHO_VPC_WATCH__MAX_STREAMS", "64")
 	t.Setenv("KACHO_VPC_AUTHN__MODE", "production")
-	t.Setenv("KACHO_VPC_EXTAPI__RESOURCE_MANAGER__TLS__ENABLE", "true")
+	t.Setenv("KACHO_VPC_EXTAPI__IAM__TLS__ENABLE", "true")
 
 	cfg, err := Load("")
 	require.NoError(t, err)
@@ -140,7 +140,35 @@ func TestLoad_ENVOverride(t *testing.T) {
 	require.Equal(t, "postgres://envuser@envhost:5432/envdb", cfg.Repository.Postgres.URL)
 	require.Equal(t, 64, cfg.Watch.MaxStreams)
 	require.Equal(t, ModeProduction, cfg.AuthN.Mode)
-	require.True(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
+	require.True(t, cfg.ExtAPI.IAM.TLS.Enable)
+}
+
+// TestLoad_TupleWriteSecretENVOverride — KAC-127 Bug-2 regression guard.
+//
+// The write-side FGA store-id / model-id are injected by the Helm Deployment
+// as Secret-ref ENV (KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID / __MODEL_ID); the
+// rest of `authz.tuple-write` comes from the ConfigMap YAML. `tuple-write.*`
+// is NOT in RegisterDefaults, so before the explicit applyLegacyEnv bridge
+// viper's `Unmarshal` silently dropped the ENV value — the write-side FGA
+// client was wired with an empty StoreID, stayed nil, and never published the
+// per-resource hierarchy tuple → every per-resource Check was FGA `no path`.
+// This asserts the ENV value reaches the struct so `cmd/vpc` wires the writer.
+func TestLoad_TupleWriteSecretENVOverride(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID", "01STORE000000000000000000")
+	t.Setenv("KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID", "01MODEL000000000000000000")
+	t.Setenv("KACHO_VPC_AUTHZ__LIST_FILTER__MODEL_ID", "01MODEL000000000000000000")
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+
+	require.Equal(t, "01STORE000000000000000000", cfg.AuthZ.TupleWrite.StoreID,
+		"write-side FGA store-id ENV override must reach the struct")
+	require.Equal(t, "01MODEL000000000000000000", cfg.AuthZ.TupleWrite.ModelID,
+		"write-side FGA model-id ENV override must reach the struct")
+	require.Equal(t, "01MODEL000000000000000000", cfg.AuthZ.ListFilter.ModelID,
+		"read-side FGA list-filter model-id ENV override must reach the struct")
 }
 
 // TestLoad_LegacyENV — старые ENV (KACHO_VPC_DB_HOST/PORT/...) транслируются
@@ -163,9 +191,9 @@ func TestLoad_LegacyENV(t *testing.T) {
 	t.Setenv("KACHO_VPC_FOLDER_CACHE_TTL", "45s")
 	t.Setenv("KACHO_VPC_FOLDER_CACHE_NEGATIVE_TTL", "3s")
 	t.Setenv("KACHO_VPC_FOLDER_CACHE_SIZE", "9999")
-	t.Setenv("KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR", "rm.legacy:9090")
-	t.Setenv("KACHO_VPC_RESOURCE_MANAGER_TLS", "true")
-	t.Setenv("KACHO_VPC_RESOURCE_MANAGER_DNS_LB", "true")
+	t.Setenv("KACHO_VPC_IAM_GRPC_ADDR", "iam.legacy:9090")
+	t.Setenv("KACHO_VPC_IAM_TLS", "true")
+	t.Setenv("KACHO_VPC_IAM_DNS_LB", "true")
 	t.Setenv("KACHO_VPC_COMPUTE_GRPC_ADDR", "compute.legacy:9090")
 	t.Setenv("KACHO_VPC_COMPUTE_TLS", "true")
 
@@ -189,9 +217,9 @@ func TestLoad_LegacyENV(t *testing.T) {
 	require.Equal(t, 3*time.Second, cfg.Network.ProjectCache.NegativeTTL)
 	require.Equal(t, 9999, cfg.Network.ProjectCache.MaxSize)
 
-	require.Equal(t, "rm.legacy:9090", cfg.ExtAPI.ResourceManager.Endpoint)
-	require.True(t, cfg.ExtAPI.ResourceManager.TLS.Enable)
-	require.True(t, cfg.ExtAPI.ResourceManager.DNSLB)
+	require.Equal(t, "iam.legacy:9090", cfg.ExtAPI.IAM.Endpoint)
+	require.True(t, cfg.ExtAPI.IAM.TLS.Enable)
+	require.True(t, cfg.ExtAPI.IAM.DNSLB)
 	require.Equal(t, "compute.legacy:9090", cfg.ExtAPI.Compute.Endpoint)
 	require.True(t, cfg.ExtAPI.Compute.TLS.Enable)
 }
@@ -209,7 +237,7 @@ repository:
     url: postgres://u@h:5432/db
     ssl-mode: disable
 extapi:
-  resource-manager:
+  iam:
     tls:
       enable: false
 `
@@ -218,7 +246,7 @@ extapi:
 
 	err = cfg.Validate()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "extapi.resource-manager.tls.enable=true required")
+	require.Contains(t, err.Error(), "extapi.iam.tls.enable=true required")
 	require.Contains(t, err.Error(), "ssl-mode must be one of require|verify-ca|verify-full")
 }
 
@@ -235,7 +263,7 @@ repository:
     url: postgres://u:p@h:5432/db
     ssl-mode: verify-full
 extapi:
-  resource-manager:
+  iam:
     tls:
       enable: true
   compute:

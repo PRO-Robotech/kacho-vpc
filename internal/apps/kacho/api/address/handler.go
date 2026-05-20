@@ -141,12 +141,13 @@ func (h *Handler) ListBySubnet(ctx context.Context, req *vpcv1.ListAddressesBySu
 	return resp, nil
 }
 
-// List — project_id required + AuthZ.
+// List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressesRequest) (*vpcv1.ListAddressesResponse, error) {
 	if err := handler.AssertFolderOwnership(ctx, req.ProjectId); err != nil {
 		return nil, err
 	}
-	addrs, nextToken, err := h.list.Execute(ctx, AddressFilter{
+	subject := fgaSubjectFromCtx(ctx)
+	addrs, nextToken, err := h.list.Execute(ctx, subject, AddressFilter{
 		ProjectID: req.ProjectId,
 		Filter:    req.Filter,
 		SubnetID:  req.SubnetId,
@@ -353,4 +354,13 @@ func operationToProto(op *operations.Operation) *operationpb.Operation {
 		p.Result = &operationpb.Operation_Response{Response: op.Response}
 	}
 	return p
+}
+
+// fgaSubjectFromCtx — KAC-127 Phase 4: extract FGA subject из ctx-Principal.
+func fgaSubjectFromCtx(ctx context.Context) string {
+	p := operations.PrincipalFromContext(ctx)
+	if p.Type == "" || p.ID == "" || p.Type == "system" {
+		return ""
+	}
+	return p.Type + ":" + p.ID
 }

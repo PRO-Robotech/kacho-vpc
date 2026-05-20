@@ -9,23 +9,33 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+)
+
+// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
+const (
+	FGAObjectTypeRT = "vpc_route_table"
+	FGAActionRTList = "vpc.route_tables.list"
 )
 
 // ListRouteTablesUseCase — list RTs с пагинацией. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): использует CQRS Reader.
+//
+// KAC-127 Phase 4: FGA-filtered list. authz==nil → legacy fallback.
 type ListRouteTablesUseCase struct {
-	repo Repo
+	repo  Repo
+	authz listauthz.Port
 }
 
-// NewListRouteTablesUseCase создаёт ListRouteTablesUseCase.
-func NewListRouteTablesUseCase(r Repo) *ListRouteTablesUseCase {
-	return &ListRouteTablesUseCase{repo: r}
+// NewListRouteTablesUseCase создаёт ListRouteTablesUseCase. authz может быть nil.
+func NewListRouteTablesUseCase(r Repo, authz listauthz.Port) *ListRouteTablesUseCase {
+	return &ListRouteTablesUseCase{repo: r, authz: authz}
 }
 
-// Execute — project_id required.
-func (u *ListRouteTablesUseCase) Execute(ctx context.Context, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error) {
+// Execute — project_id required + FGA-filter (KAC-127 Phase 4).
+func (u *ListRouteTablesUseCase) Execute(ctx context.Context, subjectID string, f RouteTableFilter, p Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	if f.ProjectID == "" {
 		return nil, "", status.Error(codes.InvalidArgument, "project_id required")
 	}
@@ -34,6 +44,21 @@ func (u *ListRouteTablesUseCase) Execute(ctx context.Context, f RouteTableFilter
 		return nil, "", mapRepoErr(err)
 	}
 	defer func() { _ = rd.Close() }()
+
+	if u.authz != nil && subjectID != "" {
+		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeRT, FGAActionRTList, f.ProjectID)
+		if lerr != nil {
+			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+		}
+		if len(allowedIDs) == 0 {
+			return nil, "", nil
+		}
+		rows, nextToken, ferr := rd.RouteTables().List(ctx, f, p)
+		if ferr != nil {
+			return nil, "", ferr
+		}
+		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kacho.RouteTableRecord) string { return rec.ID }), nextToken, nil
+	}
 	return rd.RouteTables().List(ctx, f, p)
 }
 

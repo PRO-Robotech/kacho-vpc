@@ -46,7 +46,7 @@ func makeHandler(t *testing.T,
 	update := NewUpdatePrivateEndpointUseCase(kr, or)
 	deleteUC := NewDeletePrivateEndpointUseCase(kr, or)
 	get := NewGetPrivateEndpointUseCase(kr)
-	list := NewListPrivateEndpointsUseCase(kr)
+	list := NewListPrivateEndpointsUseCase(kr, nil)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, get, list, listOps)
 }
@@ -183,8 +183,8 @@ func TestDeleteUseCase_InvalidArg(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListPrivateEndpointsUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), PrivateEndpointFilter{}, Pagination{})
+	uc := NewListPrivateEndpointsUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", PrivateEndpointFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

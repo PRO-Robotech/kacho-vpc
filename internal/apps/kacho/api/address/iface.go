@@ -64,7 +64,7 @@ type SubnetReader interface {
 }
 
 // ProjectClient — то, что use-case'ам Address нужно от peer-сервиса
-// kacho-resource-manager: проверка существования folder'а на request-path /
+// kacho-iam: проверка существования folder'а на request-path /
 // в worker'е Create/Move.
 type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)

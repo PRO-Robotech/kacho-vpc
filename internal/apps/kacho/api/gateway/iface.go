@@ -44,7 +44,7 @@ type (
 )
 
 // ProjectClient — то, что use-case'ам Gateway нужно от peer-сервиса
-// kacho-resource-manager: проверка существования folder'а.
+// kacho-iam: проверка существования folder'а.
 type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/PRO-Robotech/kacho-corelib/filter"
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	"github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
@@ -217,8 +218,8 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 	row := w.tx.QueryRow(ctx, q,
 		s.ID, s.ProjectID, now, string(s.Name), string(s.Description), labelsJSON,
 		s.NetworkID, s.ZoneID,
-		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V4CidrBlocks)), LowerBound: 1}}},
-		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(s.V6CidrBlocks)), LowerBound: 1}}},
+		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(s.V4CidrBlocks)), LowerBound: 1}}},
+		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(s.V6CidrBlocks)), LowerBound: 1}}},
 		helpers.NullableStr(s.RouteTableID), dhcpJSON,
 	)
 	result, err := helpers.ScanSubnet(row)
@@ -274,8 +275,8 @@ func (w *subnetWriter) Update(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 func (w *subnetWriter) SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*kacho.SubnetRecord, error) {
 	q := fmt.Sprintf(`UPDATE subnets SET v4_cidr_blocks = $2, v6_cidr_blocks = $3 WHERE id = $1 RETURNING %s`, helpers.SubnetCols)
 	row := w.tx.QueryRow(ctx, q, id,
-		pgtype.Array[string]{Elements: v4, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v4)), LowerBound: 1}}},
-		pgtype.Array[string]{Elements: v6, Valid: true, Dims: []pgtype.ArrayDimension{{Length: int32(len(v6)), LowerBound: 1}}},
+		pgtype.Array[string]{Elements: v4, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(v4)), LowerBound: 1}}},
+		pgtype.Array[string]{Elements: v6, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(v6)), LowerBound: 1}}},
 	)
 	s, err := helpers.ScanSubnet(row)
 	if helpers.IsExclusionViolation(err) {

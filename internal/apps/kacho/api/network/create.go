@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
@@ -41,6 +43,12 @@ type CreateNetworkUseCase struct {
 	opsRepo         operations.Repo
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 	createDefaultSG *CreateDefaultSGUseCase
+
+	// fgaWriter / logger — KAC-127 issue #22: after the Network row is
+	// committed, publish `vpc_network:<id>#project@project:<project_id>` so a
+	// per-resource Get/Update/Delete Check resolves. nil → no-op.
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
 }
 
 // NewCreateNetworkUseCase создаёт CreateNetworkUseCase. defaultSGInline берётся
@@ -55,6 +63,15 @@ func NewCreateNetworkUseCase(r Repo, projectClient ProjectClient, opsRepo operat
 		defaultSGInline: defaultSGInline,
 		createDefaultSG: NewCreateDefaultSGUseCase(),
 	}
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-127 issue #22).
+// Without it a created Network has no `vpc_network:<id>#project@project` tuple
+// and every per-resource Check is FGA `no path`.
+func (u *CreateNetworkUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateNetworkUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
@@ -104,8 +121,32 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 		return nil, err
 	}
 
-	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		return u.doCreate(ctx, netID, n)
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (res *anypb.Any, derr error) {
+		// KAC-127 Bug-2: surface async-worker failures. operations.Run masks
+		// any non-gRPC-status error (and a panic) as Operation `INTERNAL
+		// "internal worker error"` and does NOT log it — so a failing
+		// Network.Create silently produces a Network with no FGA hierarchy
+		// tuple (the fgawrite.Emit line is never reached), leaving every
+		// per-resource Check `no path` with zero diagnostic trail. Recover +
+		// log the real cause before the op-worker masks it (parity with the
+		// kacho-iam AccessBinding.Create recover+log wrapper).
+		defer func() {
+			if r := recover(); r != nil {
+				derr = fmt.Errorf("panic in Network.Create doCreate: %v", r)
+				if u.logger != nil {
+					u.logger.Error("network create operation panicked (KAC-127 Bug-2)",
+						"op", op.ID, "network_id", netID, "project_id", string(n.ProjectID),
+						"panic", fmt.Sprint(r))
+				}
+			}
+		}()
+		res, derr = u.doCreate(ctx, netID, n)
+		if derr != nil && u.logger != nil {
+			u.logger.Error("network create operation failed (KAC-127 Bug-2)",
+				"op", op.ID, "network_id", netID, "project_id", string(n.ProjectID),
+				"err", derr.Error())
+		}
+		return res, derr
 	})
 
 	return &op, nil
@@ -175,5 +216,19 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
+
+	// KAC-127 issue #22: publish the vpc_network→project hierarchy tuple so a
+	// per-resource Get/Update/Delete/ListSubnets Check resolves through the
+	// `<rel> from project` cascade. Best-effort + non-fatal (row committed).
+	// fgawrite.Emit logs the result (`vpc fga hierarchy-tuple written` /
+	// `... write failed`); a Debug pre-line keeps the writer-state visible
+	// when tuple emission is investigated without adding INFO-level noise.
+	if u.logger != nil {
+		u.logger.Debug("network committed — emitting FGA hierarchy tuple",
+			"network_id", finalRec.ID, "project_id", string(n.ProjectID),
+			"fga_writer_nil", u.fgaWriter == nil)
+	}
+	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_network", finalRec.ID, string(n.ProjectID))
+
 	return marshalNetworkRecord(finalRec)
 }

@@ -38,7 +38,7 @@ func makeHandler(t *testing.T,
 	deleteUC := NewDeleteSubnetUseCase(kr, nil, or)
 	move := NewMoveSubnetUseCase(kr, fc, or)
 	get := NewGetSubnetUseCase(kr)
-	list := NewListSubnetsUseCase(kr)
+	list := NewListSubnetsUseCase(kr, nil)
 	addCidr := NewAddCidrBlocksUseCase(kr, or)
 	removeCidr := NewRemoveCidrBlocksUseCase(kr, or)
 	relocate := NewRelocateUseCase(kr, zr)
@@ -384,8 +384,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 // ---- use-case-level (List) ----
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListSubnetsUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), SubnetFilter{}, Pagination{})
+	uc := NewListSubnetsUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", SubnetFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

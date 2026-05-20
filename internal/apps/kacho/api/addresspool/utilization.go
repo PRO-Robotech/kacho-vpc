@@ -6,6 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -75,7 +76,7 @@ func (u *GetPoolUtilizationUseCase) Execute(ctx context.Context, poolID string) 
 		out.FreeIPs = 0
 	}
 	if out.TotalIPs > 0 {
-		out.UsedPercent = int32(out.UsedIPs * 100 / out.TotalIPs)
+		out.UsedPercent = safeconv.ClampInt32(out.UsedIPs * 100 / out.TotalIPs)
 	}
 	return out, nil
 }

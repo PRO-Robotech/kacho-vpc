@@ -9,10 +9,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"log/slog"
+
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
@@ -34,6 +37,18 @@ type CreateSecurityGroupUseCase struct {
 	networkReader NetworkReader
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+
+	// fgaWriter / logger — KAC-127 issue #22: publish
+	// `vpc_security_group:<id>#project@project:<project_id>` after commit.
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-127 issue #22).
+func (u *CreateSecurityGroupUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateSecurityGroupUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // NewCreateSecurityGroupUseCase создаёт CreateSecurityGroupUseCase.
@@ -169,5 +184,7 @@ func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, 
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
+	// KAC-127 issue #22: publish vpc_security_group→project hierarchy tuple.
+	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_security_group", created.ID, string(sg.ProjectID))
 	return marshalSecurityGroupRecord(created)
 }

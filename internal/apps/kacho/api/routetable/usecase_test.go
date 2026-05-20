@@ -52,7 +52,7 @@ func makeHandler(t *testing.T,
 	deleteUC := NewDeleteRouteTableUseCase(kr, or)
 	move := NewMoveRouteTableUseCase(kr, fc, or)
 	get := NewGetRouteTableUseCase(kr)
-	list := NewListRouteTablesUseCase(kr)
+	list := NewListRouteTablesUseCase(kr, nil)
 	listOps := NewListOperationsUseCase(or)
 	return NewHandler(create, update, deleteUC, move, get, list, listOps)
 }
@@ -190,14 +190,14 @@ func TestUpdateUseCase_StaticRoutes(t *testing.T) {
 	createUC := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 	updateUC := NewUpdateRouteTableUseCase(kr, or)
 	getUC := NewGetRouteTableUseCase(kr)
-	listUC := NewListRouteTablesUseCase(kr)
+	listUC := NewListRouteTablesUseCase(kr, nil)
 
 	createOp, _ := createUC.Execute(context.Background(), domain.RouteTable{
 		ProjectID: "f1", NetworkID: net.ID, Name: domain.RcNameVPC("rt1"),
 	})
 	repomock.AwaitOpDone(t, or, createOp.ID)
 
-	rts, _, _ := listUC.Execute(context.Background(), RouteTableFilter{ProjectID: "f1"}, Pagination{})
+	rts, _, _ := listUC.Execute(context.Background(), "", RouteTableFilter{ProjectID: "f1"}, Pagination{})
 	require.Len(t, rts, 1)
 	rtID := rts[0].ID
 
@@ -259,8 +259,8 @@ func TestMoveUseCase_Validates(t *testing.T) {
 }
 
 func TestListUseCase_RequiresFolder(t *testing.T) {
-	uc := NewListRouteTablesUseCase(kachomock.NewRepository())
-	_, _, err := uc.Execute(context.Background(), RouteTableFilter{}, Pagination{})
+	uc := NewListRouteTablesUseCase(kachomock.NewRepository(), nil)
+	_, _, err := uc.Execute(context.Background(), "", RouteTableFilter{}, Pagination{})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

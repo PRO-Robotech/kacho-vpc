@@ -17,9 +17,11 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
@@ -96,6 +98,11 @@ type CreateAddressUseCase struct {
 	projectClient ProjectClient
 	opsRepo       operations.Repo
 	pools         PoolService // nil → external IPAM недоступна (test-only)
+
+	// fgaWriter / logger — KAC-127 issue #22: publish
+	// `vpc_address:<id>#project@project:<project_id>` after commit.
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
 }
 
 // NewCreateAddressUseCase создаёт CreateAddressUseCase.
@@ -107,6 +114,13 @@ func NewCreateAddressUseCase(r Repo, subnetReader SubnetReader, projectClient Pr
 		opsRepo:       opsRepo,
 		pools:         pools,
 	}
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-127 issue #22).
+func (u *CreateAddressUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateAddressUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
@@ -408,6 +422,8 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
+	// KAC-127 issue #22: publish vpc_address→project hierarchy tuple.
+	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_address", created.ID, in.ProjectID)
 	return marshalAddressRecord(created)
 }
 
@@ -694,8 +710,8 @@ func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
 	case 1:
 		first, last = 0, 2
 	}
-	if uint32(maxN) < last-first {
-		last = first + uint32(maxN)
+	if safeconv.IntToUint32(maxN) < last-first {
+		last = first + safeconv.IntToUint32(maxN)
 	}
 	base := cidr.Addr().As4()
 	baseInt := binary.BigEndian.Uint32(base[:])

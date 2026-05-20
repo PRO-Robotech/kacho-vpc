@@ -35,6 +35,12 @@ type NetworkFilter struct {
 type NetworkReaderIface interface {
 	Get(ctx context.Context, id string) (*NetworkRecord, error)
 	List(ctx context.Context, f NetworkFilter, p Pagination) ([]*NetworkRecord, string, error)
+	// ListByIDs — KAC-127 Phase 4: вернуть только networks с id из allowedIDs.
+	// project_id filter применяется на верх (handler validate'нул ownership);
+	// `WHERE id = ANY($allowed_ids)`. Пустой allowedIDs → returns (nil, "", nil)
+	// (short-circuit — короче, чем посылать SQL с пустым массивом).
+	// Используется при FGA-filtered List handlers (acceptance §5.2).
+	ListByIDs(ctx context.Context, f NetworkFilter, allowedIDs []string, p Pagination) ([]*NetworkRecord, string, error)
 }
 
 // NetworkWriterIface — write-операции + read (writer видит свои writes, G.2).

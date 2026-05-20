@@ -19,10 +19,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 
+	"github.com/PRO-Robotech/kacho-corelib/authz"
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
 	"github.com/PRO-Robotech/kacho-corelib/observability"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -39,7 +41,9 @@ import (
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
@@ -158,12 +162,8 @@ func runServe(cfg config.Config) error {
 	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
 	// retries=3 / dialTimeout=10s / keepalive=30s / TLS / опц. dns:///+round_robin (KAC-39).
 	// KAC-106 (E1): peer switched from kacho-resource-manager to kacho-iam.
-	// Falls back to `extapi.resource-manager` endpoint if `extapi.iam` is empty
-	// (backward-compat with helm-chart in transit).
+	// KAC-127: legacy `extapi.resource-manager` fallback удалён.
 	iamPeer := cfg.ExtAPI.IAM
-	if iamPeer.Endpoint == "" {
-		iamPeer = cfg.ExtAPI.ResourceManager
-	}
 	iamConn, err := clients.Build(ctx, clients.BuildOptions{
 		Endpoint: iamPeer.Endpoint,
 		TLS:      iamPeer.TLS.Enable,
@@ -198,7 +198,60 @@ func runServe(cfg config.Config) error {
 	defer computeConn.Close()
 	geoClient := clients.NewComputeGeographyClient(computeConn)
 
-	svcs := buildServices(pool, slavePool, projectClient, geoClient, opsRepo, cfg, logger)
+	// KAC-127 Phase 4 — FGA-filtered List handlers.
+	//
+	// Композиция: gRPC-conn к kacho-iam **public** AuthorizeService → corelib
+	// authz.ListObjectsService (cache 5s LRU + LISTEN-invalidate) → узкий
+	// adapter `listauthz.Adapter` → каждый list-use-case.
+	//
+	// Если list-filter disabled — listAuthz остаётся nil; use-case'ы получают
+	// nil-authz и идут по legacy unfiltered path.
+	var listAuthz *listauthz.Adapter
+	if cfg.AuthZ.ListFilter.Enabled {
+		// Endpoint resolution: явный authorize-endpoint > fallback на authz.iam-endpoint
+		// (для compat с existing values.yaml). Public AuthorizeService обычно
+		// на :9090 (internal на :9091). Если оба пусты — fail-closed, не enable'им.
+		endpoint := cfg.AuthZ.ListFilter.AuthorizeEndpoint
+		if endpoint == "" {
+			endpoint = cfg.AuthZ.IAMEndpoint
+		}
+		if endpoint == "" {
+			logger.Warn("authz.list-filter.enabled=true но authorize-endpoint и iam-endpoint пусты — list-filter отключён")
+		} else {
+			listAuthzConn, err := clients.Build(ctx, clients.BuildOptions{
+				Endpoint: endpoint,
+				TLS:      cfg.AuthZ.ListFilter.AuthorizeTLS.Enable,
+			})
+			if err != nil {
+				return fmt.Errorf("dial kacho-iam authorize-endpoint (list-filter): %w", err)
+			}
+			defer listAuthzConn.Close()
+
+			listObjectsClient := clients.NewIAMListObjectsClient(listAuthzConn)
+			listObjectsSvc := authz.NewListObjectsService(listObjectsClient, authz.ListObjectsConfig{
+				TTL:             cfg.AuthZ.ListFilter.CacheTTL,
+				MaxEntries:      cfg.AuthZ.ListFilter.MaxEntries,
+				MaxResults:      safeconv.IntToUint32(cfg.AuthZ.ListFilter.MaxResults),
+				FollowupTimeout: time.Duration(cfg.AuthZ.ListFilter.TimeoutMs) * time.Millisecond,
+				AuthzModelID:    cfg.AuthZ.ListFilter.ModelID,
+				ServiceName:     "kacho-vpc",
+			})
+			listAuthz = listauthz.New(listObjectsSvc)
+			logger.Info("KAC-127 Phase 4 list-filter enabled",
+				"endpoint", endpoint,
+				"cache_ttl", cfg.AuthZ.ListFilter.CacheTTL,
+				"timeout_ms", cfg.AuthZ.ListFilter.TimeoutMs,
+				"max_results", cfg.AuthZ.ListFilter.MaxResults,
+				"model_id", cfg.AuthZ.ListFilter.ModelID,
+				"fail_open", cfg.AuthZ.ListFilter.FailOpen,
+			)
+			if cfg.AuthZ.ListFilter.FailOpen {
+				logger.Warn("authz.list-filter.fail-open=true — FGA errors fallback to unfiltered list; raises Critical alert in production")
+			}
+		}
+	}
+
+	svcs := buildServices(pool, slavePool, projectClient, geoClient, listAuthz, opsRepo, cfg, logger)
 
 	// authz (E3 / KAC-108): per-RPC OpenFGA Check на public listener'е.
 	//
@@ -212,8 +265,23 @@ func runServe(cfg config.Config) error {
 	// (sidecar / impl-controller), либо проксируются api-gateway'ем на
 	// admin-UI (там auth-z делается на api-gw слое).
 	productionMode := cfg.AuthN.Mode.IsProduction()
-	publicUnary := []grpc.UnaryServerInterceptor{handler.TenantUnaryInterceptor(false, productionMode)}
-	publicStream := []grpc.StreamServerInterceptor{handler.TenantStreamInterceptor(false, productionMode)}
+
+	// KAC-127 bug #104: principal-extract ОБЯЗАН стоять ПЕРВЫМ в public-цепочке —
+	// раньше authz-interceptor вызывал operations.PrincipalFromContext(ctx) без
+	// предварительного UnaryPrincipalExtract, и для КАЖДОГО request'а получал
+	// SystemPrincipal() fallback ("user:bootstrap") вместо реального principal'а,
+	// который api-gateway форвардит через x-kacho-principal-* gRPC metadata.
+	// UnaryPrincipalExtract читает эти metadata-headers и кладёт реальный
+	// operations.Principal в ctx → authz-interceptor (и use-case'ы, пишущие
+	// operations.principal_* колонки) видят верного principal'а.
+	publicUnary := []grpc.UnaryServerInterceptor{
+		grpcsrv.UnaryPrincipalExtract(),
+		handler.TenantUnaryInterceptor(false, productionMode),
+	}
+	publicStream := []grpc.StreamServerInterceptor{
+		grpcsrv.StreamPrincipalExtract(),
+		handler.TenantStreamInterceptor(false, productionMode),
+	}
 
 	var authzConn clients.Conn
 	if cfg.AuthZ.IAMEndpoint != "" {
@@ -343,7 +411,7 @@ func runServe(cfg config.Config) error {
 	// параллельно; собирает первую ошибку. maxConcurrency=len(tasks)-1 даёт
 	// схему «1 + (N-1)» — основная горутина + N-1 дополнительных, все
 	// задачи реально параллельны (см. corlib/pkg/parallel/exec-in-parallel.go).
-	err = parallel.ExecAbstract(len(tasks), int32(len(tasks)-1), func(i int) error {
+	err = parallel.ExecAbstract(len(tasks), safeconv.IntToInt32(len(tasks)-1), func(i int) error {
 		return tasks[i]()
 	})
 	cancel()
@@ -360,9 +428,31 @@ func runServe(cfg config.Config) error {
 //
 // slavePool — опц. read-replica pool (skill evgeniy §6 G.4); nil → kachopg.New
 // делает fallback и Reader-TX идут на master.
-func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClient, geoClient repo.ZoneRegistry, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClient, geoClient repo.ZoneRegistry, listAuthz *listauthz.Adapter, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
 	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
+	}
+
+	// KAC-127 issue #22: write-side FGA. fgaTupleWriter — nil unless
+	// authz.tuple-write is configured; nil makes fgawrite.Emit a no-op
+	// (dev / degraded). When wired, each resource Create publishes
+	// `vpc_<resource>:<id>#project@project:<project_id>` so a per-resource
+	// FGA Check resolves through the `<rel> from project` cascade.
+	var fgaTupleWriter fgawrite.HierarchyTupleWriter
+	if tw := cfg.AuthZ.TupleWrite; tw.Enabled && tw.OpenFGAEndpoint != "" && tw.StoreID != "" {
+		timeout := time.Duration(tw.TimeoutMs) * time.Millisecond
+		fgaTupleWriter = &clients.OpenFGAWriteClient{
+			Endpoint: tw.OpenFGAEndpoint,
+			StoreID:  tw.StoreID,
+			ModelID:  tw.ModelID,
+			Timeout:  timeout,
+		}
+		logger.Info("vpc write-side FGA wired (KAC-127 #22)",
+			"openfga_endpoint", tw.OpenFGAEndpoint, "store_id", tw.StoreID,
+			"model_id", tw.ModelID)
+	} else {
+		logger.Warn("vpc write-side FGA NOT wired — authz.tuple-write disabled; " +
+			"created resources will have no per-resource FGA hierarchy tuple (KAC-127 #22)")
 	}
 
 	// CQRS pilot (KAC-94, skill evgeniy §6 G.1-G.7): все 8 VPC-ресурсов
@@ -422,12 +512,19 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
 	// создаётся inline default SG и Network.default_security_group_id
 	// заполняется атомарно.
-	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline)
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline).
+		WithFGAWriter(fgaTupleWriter, logger)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
 	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetAdapter, routeTableAdapter, sgAdapter, opsRepo)
 	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, projectClient, opsRepo)
 	netGetUC := networkapp.NewGetNetworkUseCase(kachoRepo)
-	netListUC := networkapp.NewListNetworksUseCase(kachoRepo)
+	// KAC-127 Phase 4 — passes listAuthz to FGA-filter the List handler.
+	// listAuthz == nil → use-case fallback'нёт на legacy unfiltered list.
+	var netListAuthz networkapp.ListAuthorizer
+	if listAuthz != nil {
+		netListAuthz = listAuthz
+	}
+	netListUC := networkapp.NewListNetworksUseCase(kachoRepo, netListAuthz)
 	netListSubUC := networkapp.NewListSubnetsUseCase(kachoRepo, subnetAdapter)
 	netListSGUC := networkapp.NewListSecurityGroupsUseCase(kachoRepo, sgAdapter)
 	netListRTUC := networkapp.NewListRouteTablesUseCase(kachoRepo, routeTableAdapter)
@@ -441,12 +538,13 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// конструктор принимает Repository, каждый use-case открывает Reader/Writer
 	// внутри. KAC-94 A.7 ultra-final: legacy *repo.GatewayRepo удалён.
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewMoveGatewayUseCase(kachoRepo, projectClient, opsRepo),
 		gatewayapp.NewGetGatewayUseCase(kachoRepo),
-		gatewayapp.NewListGatewaysUseCase(kachoRepo),
+		gatewayapp.NewListGatewaysUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		gatewayapp.NewListOperationsUseCase(opsRepo),
 	)
 
@@ -454,35 +552,38 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// NetworkReader/SubnetReader для request-path-precheck — adapter'ы поверх
 	// kachoRepo (cqrsadapter.Network / Subnet).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, projectClient, opsRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
-		peapp.NewListPrivateEndpointsUseCase(kachoRepo),
+		peapp.NewListPrivateEndpointsUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		peapp.NewListOperationsUseCase(opsRepo),
 	)
 
 	// RouteTable use-case'ы работают через CQRS-Repository (parity с pilot
 	// Network). routeTableAdapter передаётся Network.Delete для child-check.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewMoveRouteTableUseCase(kachoRepo, projectClient, opsRepo),
 		routetableapp.NewGetRouteTableUseCase(kachoRepo),
-		routetableapp.NewListRouteTablesUseCase(kachoRepo),
+		routetableapp.NewListRouteTablesUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		routetableapp.NewListOperationsUseCase(opsRepo),
 	)
 
 	// Subnet use-case'ы работают через CQRS-Repository (kachoRepo). niAdapter
 	// передаётся в Delete для precondition-check «нет привязанных NIC».
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
 		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niAdapter, opsRepo),
 		subnetapp.NewMoveSubnetUseCase(kachoRepo, projectClient, opsRepo),
 		subnetapp.NewGetSubnetUseCase(kachoRepo),
-		subnetapp.NewListSubnetsUseCase(kachoRepo),
+		subnetapp.NewListSubnetsUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		subnetapp.NewAddCidrBlocksUseCase(kachoRepo, opsRepo),
 		subnetapp.NewRemoveCidrBlocksUseCase(kachoRepo, opsRepo),
 		subnetapp.NewRelocateUseCase(kachoRepo, geoClient),
@@ -499,13 +600,14 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter —
 	// peer-port для SubnetReader (Get + AddressesBySubnet), удовлетворяется
 	// тем же kachoRepo через cqrsadapter.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver).
+		WithFGAWriter(fgaTupleWriter, logger)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, projectClient, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo)
 	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo)
-	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo)
+	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo, listauthz.AsPort(listAuthz))
 	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(kachoRepo, subnetAdapter)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
 	addressAllocateUC := addressapp.NewAllocateUseCase(kachoRepo, subnetAdapter, addressPoolResolver)
@@ -521,14 +623,15 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
 	// Network.Delete (отдельная TX от Network writer'а).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
 		sgapp.NewDeleteSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, projectClient, opsRepo),
 		sgapp.NewGetSecurityGroupUseCase(kachoRepo),
-		sgapp.NewListSecurityGroupsUseCase(kachoRepo),
+		sgapp.NewListSecurityGroupsUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
 	)
 
@@ -543,7 +646,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),
-		niapp.NewListNetworkInterfacesUseCase(kachoRepo),
+		niapp.NewListNetworkInterfacesUseCase(kachoRepo, listauthz.AsPort(listAuthz)),
 		niapp.NewAttachToInstanceUseCase(kachoRepo, opsRepo),
 		niapp.NewDetachFromInstanceUseCase(kachoRepo, opsRepo),
 		niapp.NewListOperationsUseCase(opsRepo),

@@ -23,9 +23,9 @@ import (
 //	KACHO_VPC_GRPC_PORT=9090                          → api-server.endpoint=tcp://0.0.0.0:9090
 //	KACHO_VPC_INTERNAL_PORT=9091                      → api-server.internal-endpoint=tcp://0.0.0.0:9091
 //	KACHO_VPC_WATCH_MAX_STREAMS=32                    → watch.max-streams
-//	KACHO_VPC_RESOURCE_MANAGER_GRPC_ADDR=...          → extapi.resource-manager.endpoint
-//	KACHO_VPC_RESOURCE_MANAGER_TLS=false              → extapi.resource-manager.tls.enable
-//	KACHO_VPC_RESOURCE_MANAGER_DNS_LB=false           → extapi.resource-manager.dns-lb
+//	KACHO_VPC_IAM_GRPC_ADDR=...                       → extapi.iam.endpoint
+//	KACHO_VPC_IAM_TLS=false                           → extapi.iam.tls.enable
+//	KACHO_VPC_IAM_DNS_LB=false                        → extapi.iam.dns-lb
 //	KACHO_VPC_COMPUTE_GRPC_ADDR=...                   → extapi.compute.endpoint
 //	KACHO_VPC_COMPUTE_TLS=false                       → extapi.compute.tls.enable
 //	KACHO_VPC_DEFAULT_SG_INLINE=true                  → network.default-sg-inline
@@ -65,10 +65,11 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("authn.mode", "dev")
 
 	// extapi
+	// KAC-106/127: folder-existence peer — kacho-iam (ProjectService.Get).
 	v.SetDefault("extapi.def-dial-duration", 10*time.Second)
-	v.SetDefault("extapi.resource-manager.endpoint", "resource-manager.kacho.svc.cluster.local:9090")
-	v.SetDefault("extapi.resource-manager.tls.enable", false)
-	v.SetDefault("extapi.resource-manager.dns-lb", false)
+	v.SetDefault("extapi.iam.endpoint", "iam.kacho.svc.cluster.local:9090")
+	v.SetDefault("extapi.iam.tls.enable", false)
+	v.SetDefault("extapi.iam.dns-lb", false)
 	v.SetDefault("extapi.compute.endpoint", "compute.kacho.svc.cluster.local:9090")
 	v.SetDefault("extapi.compute.tls.enable", false)
 
@@ -81,6 +82,17 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("authz.check-timeout", 2*time.Second)
 	v.SetDefault("authz.deny-rate-limit-per-sec", 100.0)
 	v.SetDefault("authz.cache-ttl", 5*time.Second)
+
+	// KAC-127 Phase 4 — list-filter (FGA-filtered List handlers).
+	v.SetDefault("authz.list-filter.enabled", false)
+	v.SetDefault("authz.list-filter.authorize-endpoint", "")
+	v.SetDefault("authz.list-filter.authorize-tls.enable", false)
+	v.SetDefault("authz.list-filter.timeout-ms", 500)
+	v.SetDefault("authz.list-filter.cache-ttl", 5*time.Second)
+	v.SetDefault("authz.list-filter.max-entries", 10000)
+	v.SetDefault("authz.list-filter.max-results", 10000)
+	v.SetDefault("authz.list-filter.model-id", "")
+	v.SetDefault("authz.list-filter.fail-open", false)
 
 	// watch
 	v.SetDefault("watch.max-streams", 32)
