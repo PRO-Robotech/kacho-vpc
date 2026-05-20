@@ -72,8 +72,16 @@ func PermissionMap() authz.RPCMap {
 				return req.(*vpcv1.GetNetworkRequest).GetNetworkId(), nil
 			}),
 		},
+		// KAC-127 #25: NetworkService/List is a scope-filtered List RPC — the
+		// handler (ListNetworksUseCase) resolves the FGA-allowed Network id set
+		// via ListObjects and returns 200 + filtered (EMPTY when the caller has
+		// no grant in the requested project). A single per-RPC Check here would
+		// reject the whole call `no path` 403 before the scope-filter runs.
+		// ScopeFiltered → interceptor skips the Check; authn is still enforced
+		// upstream (api-gateway JWT). Extract kept for catalog/tooling parity.
 		"/kacho.cloud.vpc.v1.NetworkService/List": {
-			Relation: relationViewer,
+			Relation:      relationViewer,
+			ScopeFiltered: true,
 			Extract: authz.StaticExtractor(objectTypeProject, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworksRequest).GetProjectId(), nil
 			}),
