@@ -220,13 +220,11 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	// KAC-127 issue #22: publish the vpc_network→project hierarchy tuple so a
 	// per-resource Get/Update/Delete/ListSubnets Check resolves through the
 	// `<rel> from project` cascade. Best-effort + non-fatal (row committed).
-	//
-	// KAC-127 Bug-2 diagnostic: log committed-network state at the point
-	// fgawrite.Emit is invoked. If this line appears in the vpc log but no
-	// `vpc fga hierarchy-tuple` line follows, the writer is nil / the ids are
-	// empty; if neither appears, doCreate exited before w.Commit().
+	// fgawrite.Emit logs the result (`vpc fga hierarchy-tuple written` /
+	// `... write failed`); a Debug pre-line keeps the writer-state visible
+	// when tuple emission is investigated without adding INFO-level noise.
 	if u.logger != nil {
-		u.logger.Info("network committed — emitting FGA hierarchy tuple (KAC-127 Bug-2)",
+		u.logger.Debug("network committed — emitting FGA hierarchy tuple",
 			"network_id", finalRec.ID, "project_id", string(n.ProjectID),
 			"fga_writer_nil", u.fgaWriter == nil)
 	}
