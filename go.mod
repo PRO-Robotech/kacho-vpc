@@ -2,7 +2,7 @@ module github.com/PRO-Robotech/kacho-vpc
 
 go 1.25.7
 
-replace github.com/PRO-Robotech/kacho-corelib => ../kacho-corelib-KAC-127
+replace github.com/PRO-Robotech/kacho-corelib => ../kacho-corelib
 
 replace github.com/PRO-Robotech/kacho-proto => ../kacho-proto
 
