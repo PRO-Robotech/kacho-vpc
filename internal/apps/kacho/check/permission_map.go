@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/PRO-Robotech/kacho-corelib/authz"
-	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	privatelinkv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
 )
@@ -35,7 +34,6 @@ const (
 	objectTypeGateway          = "vpc_gateway"
 	objectTypePrivateEndpoint  = "vpc_private_endpoint"
 	objectTypeNetworkInterface = "vpc_network_interface"
-	objectTypeOperation        = "vpc_operation"
 )
 
 // FGA relations (FGA model E3 §4 acceptance). Дублирует константы из
@@ -511,30 +509,21 @@ func PermissionMap() authz.RPCMap {
 		},
 
 		// =========================
-		// OperationService (LRO; viewer на operation-id).
+		// OperationService (LRO poll RPC).
 		//
 		// Proto-пакет — `kacho.cloud.operation` (без `.v1`); gRPC fullMethod
 		// соответственно `/kacho.cloud.operation.OperationService/*`.
-		// =========================
-		"/kacho.cloud.operation.OperationService/Get": {
-			Relation: relationViewer,
-			Extract: authz.StaticExtractor(objectTypeOperation, func(req any) (string, error) {
-				r, ok := req.(*operationv1.GetOperationRequest)
-				if !ok {
-					return "", fmt.Errorf("authz: unexpected req type for OperationService.Get: %T", req)
-				}
-				return r.GetOperationId(), nil
-			}),
-		},
-		"/kacho.cloud.operation.OperationService/Cancel": {
-			Relation: relationEditor,
-			Extract: authz.StaticExtractor(objectTypeOperation, func(req any) (string, error) {
-				r, ok := req.(*operationv1.CancelOperationRequest)
-				if !ok {
-					return "", fmt.Errorf("authz: unexpected req type for OperationService.Cancel: %T", req)
-				}
-				return r.GetOperationId(), nil
-			}),
-		},
+		//
+		// KAC-127: Operation poll is NOT gated per-RPC. The FGA model has no
+		// `vpc_operation` object type and no per-operation tuples are emitted,
+		// so a `viewer on vpc_operation:<id>` Check has no path and every poll
+		// — including the poll the creating client itself issues right after a
+		// successful mutation — was denied. Operation ids are opaque and
+		// unguessable; the api-gateway already marks `OperationService/Get` and
+		// `/Cancel` `<exempt>`. Marking them Public here makes the vpc service
+		// interceptor consistent with the gateway (a map-miss would fail-closed
+		// with ErrUnmapped, so the entries are kept but flagged Public).
+		"/kacho.cloud.operation.OperationService/Get":    {Public: true},
+		"/kacho.cloud.operation.OperationService/Cancel": {Public: true},
 	}
 }
