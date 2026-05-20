@@ -15,8 +15,8 @@ import (
 
 // FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
 const (
-	FGAObjectTypeSubnet  = "vpc_subnet"
-	FGAActionSubnetList  = "vpc.subnets.list"
+	FGAObjectTypeSubnet = "vpc_subnet"
+	FGAActionSubnetList = "vpc.subnets.list"
 )
 
 // ListSubnetsUseCase — list subnets с пагинацией. project_id обязателен

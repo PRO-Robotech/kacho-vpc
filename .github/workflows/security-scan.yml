@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: aquasecurity/trivy-action@0.30.0
+      - uses: aquasecurity/trivy-action@master  # KAC-127 — previous "0.30.0" failed (aquasec publishes only v-prefixed tags v0.28.0..v0.36.0; no plain "0.30.0" ref)
         with:
           scan-type: 'fs'
           scan-ref: 'kacho-vpc'
