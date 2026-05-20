@@ -263,8 +263,23 @@ func runServe(cfg config.Config) error {
 	// (sidecar / impl-controller), либо проксируются api-gateway'ем на
 	// admin-UI (там auth-z делается на api-gw слое).
 	productionMode := cfg.AuthN.Mode.IsProduction()
-	publicUnary := []grpc.UnaryServerInterceptor{handler.TenantUnaryInterceptor(false, productionMode)}
-	publicStream := []grpc.StreamServerInterceptor{handler.TenantStreamInterceptor(false, productionMode)}
+
+	// KAC-127 bug #104: principal-extract ОБЯЗАН стоять ПЕРВЫМ в public-цепочке —
+	// раньше authz-interceptor вызывал operations.PrincipalFromContext(ctx) без
+	// предварительного UnaryPrincipalExtract, и для КАЖДОГО request'а получал
+	// SystemPrincipal() fallback ("user:bootstrap") вместо реального principal'а,
+	// который api-gateway форвардит через x-kacho-principal-* gRPC metadata.
+	// UnaryPrincipalExtract читает эти metadata-headers и кладёт реальный
+	// operations.Principal в ctx → authz-interceptor (и use-case'ы, пишущие
+	// operations.principal_* колонки) видят верного principal'а.
+	publicUnary := []grpc.UnaryServerInterceptor{
+		grpcsrv.UnaryPrincipalExtract(),
+		handler.TenantUnaryInterceptor(false, productionMode),
+	}
+	publicStream := []grpc.StreamServerInterceptor{
+		grpcsrv.StreamPrincipalExtract(),
+		handler.TenantStreamInterceptor(false, productionMode),
+	}
 
 	var authzConn clients.Conn
 	if cfg.AuthZ.IAMEndpoint != "" {
