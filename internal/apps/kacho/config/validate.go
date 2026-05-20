@@ -51,9 +51,9 @@ func (c Config) Validate() error {
 	}
 
 	if c.AuthN.Mode == ModeProductionStrict {
-		if !c.ExtAPI.ResourceManager.TLS.Enable {
+		if !c.ExtAPI.IAM.TLS.Enable {
 			errs = multierr.Append(errs,
-				fmt.Errorf("production-strict mode: extapi.resource-manager.tls.enable=true required"))
+				fmt.Errorf("production-strict mode: extapi.iam.tls.enable=true required"))
 		}
 		switch strings.ToLower(c.Repository.Postgres.SSLMode) {
 		case "require", "verify-ca", "verify-full":
@@ -85,9 +85,9 @@ func (c Config) InsecureDevWarnings() []string {
 		return nil
 	}
 	var out []string
-	if !c.ExtAPI.ResourceManager.TLS.Enable {
+	if !c.ExtAPI.IAM.TLS.Enable {
 		out = append(out,
-			"extapi.resource-manager.tls.enable=false — cross-service gRPC plaintext (dev only)")
+			"extapi.iam.tls.enable=false — cross-service gRPC plaintext (dev only)")
 	}
 	mode := strings.ToLower(c.Repository.Postgres.SSLMode)
 	if mode == "" || mode == "disable" {

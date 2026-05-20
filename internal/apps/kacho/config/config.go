@@ -16,7 +16,7 @@ import (
 //	repository:    { type, postgres }
 //	authn:         { mode, tls }
 //	authz:         { iam-endpoint, breakglass, ... }   ← E3 / KAC-108
-//	extapi:        { def-dial-duration, resource-manager, compute }
+//	extapi:        { def-dial-duration, iam, compute }
 //	watch:         { max-streams }
 //	network:       { default-sg-inline, folder-cache }
 //
@@ -195,14 +195,12 @@ type TLSServer struct {
 
 // ExtAPIConfig — секция extapi (peer-сервисы).
 //
-// KAC-106 (E1): renamed `resource-manager` peer to `iam`. The `ResourceManager`
-// struct field is retained as alias backed by the same `IAM` peer for backward-
-// compat during transition — both `extapi.iam` and `extapi.resource-manager`
-// YAML keys are accepted.
+// KAC-106 (E1) переключил folder-existence peer с kacho-resource-manager на
+// kacho-iam (ProjectService.Get). KAC-127 удалил legacy `resource-manager`
+// alias — поддерживается только `extapi.iam`.
 type ExtAPIConfig struct {
 	DefDialDuration time.Duration `mapstructure:"def-dial-duration"`
 	IAM             PeerConfig    `mapstructure:"iam"`
-	ResourceManager PeerConfig    `mapstructure:"resource-manager"`
 	Compute         PeerConfig    `mapstructure:"compute"`
 }
 

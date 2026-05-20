@@ -1,7 +1,7 @@
 // Package clients — cross-service gRPC client builder (KAC-97).
 //
 // Этот файл — единая точка сборки gRPC-клиентских соединений из kacho-vpc к
-// peer-сервисам (kacho-resource-manager, kacho-compute) согласно skill evgeniy §9 K.6:
+// peer-сервисам (kacho-iam, kacho-compute) согласно skill evgeniy §9 K.6:
 // «`dialResourceManager` заменить на `H-BF/corlib/client/grpc/client-builder.go`
 // — единый паттерн для всех gRPC-клиентов (retries, LB, TLS, metrics)».
 //

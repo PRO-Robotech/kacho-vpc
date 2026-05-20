@@ -160,12 +160,8 @@ func runServe(cfg config.Config) error {
 	// Cross-service gRPC dial — через единый builder (KAC-97, skill evgeniy §9 K.6):
 	// retries=3 / dialTimeout=10s / keepalive=30s / TLS / опц. dns:///+round_robin (KAC-39).
 	// KAC-106 (E1): peer switched from kacho-resource-manager to kacho-iam.
-	// Falls back to `extapi.resource-manager` endpoint if `extapi.iam` is empty
-	// (backward-compat with helm-chart in transit).
+	// KAC-127: legacy `extapi.resource-manager` fallback удалён.
 	iamPeer := cfg.ExtAPI.IAM
-	if iamPeer.Endpoint == "" {
-		iamPeer = cfg.ExtAPI.ResourceManager
-	}
 	iamConn, err := clients.Build(ctx, clients.BuildOptions{
 		Endpoint: iamPeer.Endpoint,
 		TLS:      iamPeer.TLS.Enable,

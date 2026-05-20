@@ -58,7 +58,7 @@ type SubnetReader interface {
 	Get(ctx context.Context, id string) (*kacho.SubnetRecord, error)
 }
 
-// ProjectClient — peer-сервис kacho-resource-manager.
+// ProjectClient — peer-сервис kacho-iam.
 type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }

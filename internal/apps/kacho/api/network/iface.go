@@ -68,7 +68,7 @@ type SecurityGroupRepo interface {
 }
 
 // ProjectClient — то, что use-case'ам Network нужно от peer-сервиса
-// kacho-resource-manager: проверка существования folder'а на request-path /
+// kacho-iam: проверка существования folder'а на request-path /
 // в worker'е.
 type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)

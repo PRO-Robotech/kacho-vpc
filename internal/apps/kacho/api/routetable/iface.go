@@ -46,7 +46,7 @@ type (
 )
 
 // ProjectClient — то, что use-case'ам RouteTable нужно от peer-сервиса
-// kacho-resource-manager.
+// kacho-iam.
 type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }

@@ -104,7 +104,7 @@ type SubnetReader interface {
 }
 
 // ProjectClient — то, что use-case'ам AddressPool нужно от peer-сервиса
-// kacho-resource-manager (для cascade-resolve Step 3: project_id → cloud_id).
+// kacho-iam (для cascade-resolve Step 3: project_id → cloud_id).
 type ProjectClient interface {
 	GetCloudIDFromProject(ctx context.Context, folderID string) (string, error)
 }
