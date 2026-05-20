@@ -63,6 +63,37 @@ type AuthZConfig struct {
 
 	// ListFilter — KAC-127 Phase 4: FGA-filtered List handlers config.
 	ListFilter ListFilterConfig `mapstructure:"list-filter"`
+
+	// TupleWrite — KAC-127 issue #22: write-side FGA. Когда Enabled=true и
+	// OpenFGAEndpoint+StoreID выставлены, каждый успешный resource Create
+	// публикует `vpc_<resource>:<id>#project@project:<project_id>` tuple.
+	TupleWrite TupleWriteConfig `mapstructure:"tuple-write"`
+}
+
+// TupleWriteConfig — KAC-127 issue #22 — конфигурация write-side FGA.
+//
+// Source: yaml `authz.tuple-write.{enabled,openfga-endpoint,store-id,model-id,timeout-ms}`.
+// ENV-override: `KACHO_VPC_AUTHZ__TUPLE_WRITE__ENABLED=true`, etc.
+//
+// Без этого блока созданные VPC-ресурсы не получают per-resource hierarchy
+// tuple → per-resource FGA Check `no path` → fail-closed deny.
+type TupleWriteConfig struct {
+	// Enabled — главный toggle. Default false (legacy: write-side выключен).
+	// В production: true.
+	Enabled bool `mapstructure:"enabled"`
+
+	// OpenFGAEndpoint — host:port OpenFGA HTTP API (например
+	// `kacho-umbrella-openfga:8080`). Тот же store, что использует kacho-iam.
+	OpenFGAEndpoint string `mapstructure:"openfga-endpoint"`
+
+	// StoreID — OpenFGA store id (shared с kacho-iam).
+	StoreID string `mapstructure:"store-id"`
+
+	// ModelID — pinned authorization_model_id. Empty → store default.
+	ModelID string `mapstructure:"model-id"`
+
+	// TimeoutMs — таймаут одного write-вызова (default 2000ms).
+	TimeoutMs int `mapstructure:"timeout-ms"`
 }
 
 // ListFilterConfig — KAC-127 Phase 4 — конфигурация FGA-filtered List.

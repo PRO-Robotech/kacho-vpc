@@ -9,10 +9,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"log/slog"
+
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	pe "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
@@ -30,6 +33,18 @@ type CreatePrivateEndpointUseCase struct {
 	subnetRead    SubnetReader
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+
+	// fgaWriter / logger — KAC-127 issue #22: publish
+	// `vpc_private_endpoint:<id>#project@project:<project_id>` after commit.
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-127 issue #22).
+func (u *CreatePrivateEndpointUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreatePrivateEndpointUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // NewCreatePrivateEndpointUseCase создаёт CreatePrivateEndpointUseCase.
@@ -173,5 +188,7 @@ func (u *CreatePrivateEndpointUseCase) doCreate(ctx context.Context, peID string
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
+	// KAC-127 issue #22: publish vpc_private_endpoint→project hierarchy tuple.
+	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_private_endpoint", created.ID, string(p.ProjectID))
 	return marshalPrivateEndpointRecord(created)
 }

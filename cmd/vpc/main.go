@@ -40,6 +40,7 @@ import (
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
@@ -431,6 +432,28 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создаёт default SG")
 	}
 
+	// KAC-127 issue #22: write-side FGA. fgaTupleWriter — nil unless
+	// authz.tuple-write is configured; nil makes fgawrite.Emit a no-op
+	// (dev / degraded). When wired, each resource Create publishes
+	// `vpc_<resource>:<id>#project@project:<project_id>` so a per-resource
+	// FGA Check resolves through the `<rel> from project` cascade.
+	var fgaTupleWriter fgawrite.HierarchyTupleWriter
+	if tw := cfg.AuthZ.TupleWrite; tw.Enabled && tw.OpenFGAEndpoint != "" && tw.StoreID != "" {
+		timeout := time.Duration(tw.TimeoutMs) * time.Millisecond
+		fgaTupleWriter = &clients.OpenFGAWriteClient{
+			Endpoint: tw.OpenFGAEndpoint,
+			StoreID:  tw.StoreID,
+			ModelID:  tw.ModelID,
+			Timeout:  timeout,
+		}
+		logger.Info("vpc write-side FGA wired (KAC-127 #22)",
+			"openfga_endpoint", tw.OpenFGAEndpoint, "store_id", tw.StoreID,
+			"model_id", tw.ModelID)
+	} else {
+		logger.Warn("vpc write-side FGA NOT wired — authz.tuple-write disabled; " +
+			"created resources will have no per-resource FGA hierarchy tuple (KAC-127 #22)")
+	}
+
 	// CQRS pilot (KAC-94, skill evgeniy §6 G.1-G.7): все 8 VPC-ресурсов
 	// (Network/Subnet/Address/RouteTable/SecurityGroup/Gateway/PrivateEndpoint/
 	// NetworkInterface) работают через `kacho.Repository` (Reader/Writer split).
@@ -488,7 +511,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// defaultSGInline=true (default) — при Network.Create в одной writer-TX
 	// создаётся inline default SG и Network.default_security_group_id
 	// заполняется атомарно.
-	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline)
+	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline).
+		WithFGAWriter(fgaTupleWriter, logger)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
 	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetAdapter, routeTableAdapter, sgAdapter, opsRepo)
 	netMoveUC := networkapp.NewMoveNetworkUseCase(kachoRepo, projectClient, opsRepo)
@@ -513,7 +537,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// конструктор принимает Repository, каждый use-case открывает Reader/Writer
 	// внутри. KAC-94 A.7 ultra-final: legacy *repo.GatewayRepo удалён.
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewMoveGatewayUseCase(kachoRepo, projectClient, opsRepo),
@@ -526,7 +551,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// NetworkReader/SubnetReader для request-path-precheck — adapter'ы поверх
 	// kachoRepo (cqrsadapter.Network / Subnet).
 	peHandler := peapp.NewHandler(
-		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, projectClient, opsRepo),
+		peapp.NewCreatePrivateEndpointUseCase(kachoRepo, networkAdapter, subnetAdapter, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		peapp.NewUpdatePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewDeletePrivateEndpointUseCase(kachoRepo, opsRepo),
 		peapp.NewGetPrivateEndpointUseCase(kachoRepo),
@@ -537,7 +563,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// RouteTable use-case'ы работают через CQRS-Repository (parity с pilot
 	// Network). routeTableAdapter передаётся Network.Delete для child-check.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewMoveRouteTableUseCase(kachoRepo, projectClient, opsRepo),
@@ -549,7 +576,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Subnet use-case'ы работают через CQRS-Repository (kachoRepo). niAdapter
 	// передаётся в Delete для precondition-check «нет привязанных NIC».
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
 		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niAdapter, opsRepo),
 		subnetapp.NewMoveSubnetUseCase(kachoRepo, projectClient, opsRepo),
@@ -571,7 +599,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter —
 	// peer-port для SubnetReader (Get + AddressesBySubnet), удовлетворяется
 	// тем же kachoRepo через cqrsadapter.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver).
+		WithFGAWriter(fgaTupleWriter, logger)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressMoveUC := addressapp.NewMoveAddressUseCase(kachoRepo, projectClient, opsRepo)
@@ -593,7 +622,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Network use-case'ы для checkNetworkEmpty / default-SG cleanup при
 	// Network.Delete (отдельная TX от Network writer'а).
 	sgHandler := sgapp.NewHandler(
-		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo),
+		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
 		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),

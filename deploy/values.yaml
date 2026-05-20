@@ -56,6 +56,15 @@ authz:
     maxResults: 10000        # FGA ListObjects result cap (acceptance §3 D-5)
     modelId: ""              # Pinned authorization_model_id (acceptance D-12)
     failOpen: false          # Default fail-closed (acceptance §3 D-6)
+  # KAC-127 issue #22 — write-side FGA: each resource Create publishes
+  # `vpc_<resource>:<id>#project@project:<project_id>` so per-resource Checks
+  # resolve. Production: enabled=true with the shared OpenFGA store id.
+  tupleWrite:
+    enabled: false           # Toggle write-side FGA (production: true)
+    openfgaEndpoint: ""      # OpenFGA HTTP API host:port (shared cluster store)
+    storeId: ""              # OpenFGA store id (shared with kacho-iam)
+    modelId: ""              # Pinned authorization_model_id (empty → store default)
+    timeoutMs: 2000          # Per-call write timeout
 extapi:
   # KAC-106 (E1): renamed peer resourceManager -> iam (kacho-iam.ProjectService.Get).
   iam:

@@ -71,6 +71,25 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.db.passwordSecretName }}
                   key: {{ .Values.db.passwordSecretKey }}
+            {{- /* KAC-127 issue #22: write-side FGA — store-id / model-id are
+                   bootstrap-job-populated Secrets, injected as config ENV-override
+                   (KACHO_VPC_AUTHZ__TUPLE_WRITE__*). */}}
+            {{- if .Values.authz.tupleWrite.enabled }}
+            {{- if .Values.authz.tupleWrite.storeIdSecretName }}
+            - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.tupleWrite.storeIdSecretName }}
+                  key: {{ default "store_id" .Values.authz.tupleWrite.storeIdSecretKey }}
+            {{- end }}
+            {{- if .Values.authz.tupleWrite.modelIdSecretName }}
+            - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.tupleWrite.modelIdSecretName }}
+                  key: {{ default "model_id" .Values.authz.tupleWrite.modelIdSecretKey }}
+            {{- end }}
+            {{- end }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

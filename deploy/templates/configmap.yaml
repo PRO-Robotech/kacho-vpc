@@ -61,6 +61,13 @@ data:
         max-results: {{ default 10000 .Values.authz.listFilter.maxResults }}
         model-id: {{ default "" .Values.authz.listFilter.modelId | quote }}
         fail-open: {{ default false .Values.authz.listFilter.failOpen }}
+      # KAC-127 issue #22 — write-side FGA: publish per-resource hierarchy tuples on Create.
+      tuple-write:
+        enabled: {{ default false .Values.authz.tupleWrite.enabled }}
+        openfga-endpoint: {{ default "" .Values.authz.tupleWrite.openfgaEndpoint | quote }}
+        store-id: {{ default "" .Values.authz.tupleWrite.storeId | quote }}
+        model-id: {{ default "" .Values.authz.tupleWrite.modelId | quote }}
+        timeout-ms: {{ default 2000 .Values.authz.tupleWrite.timeoutMs }}
 
     extapi:
       def-dial-duration: 10s

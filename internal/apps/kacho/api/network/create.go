@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,6 +12,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
@@ -41,6 +43,12 @@ type CreateNetworkUseCase struct {
 	opsRepo         operations.Repo
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 	createDefaultSG *CreateDefaultSGUseCase
+
+	// fgaWriter / logger — KAC-127 issue #22: after the Network row is
+	// committed, publish `vpc_network:<id>#project@project:<project_id>` so a
+	// per-resource Get/Update/Delete Check resolves. nil → no-op.
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
 }
 
 // NewCreateNetworkUseCase создаёт CreateNetworkUseCase. defaultSGInline берётся
@@ -55,6 +63,15 @@ func NewCreateNetworkUseCase(r Repo, projectClient ProjectClient, opsRepo operat
 		defaultSGInline: defaultSGInline,
 		createDefaultSG: NewCreateDefaultSGUseCase(),
 	}
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-127 issue #22).
+// Without it a created Network has no `vpc_network:<id>#project@project` tuple
+// and every per-resource Check is FGA `no path`.
+func (u *CreateNetworkUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateNetworkUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
@@ -175,5 +192,11 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	if err := w.Commit(); err != nil {
 		return nil, mapRepoErr(err)
 	}
+
+	// KAC-127 issue #22: publish the vpc_network→project hierarchy tuple so a
+	// per-resource Get/Update/Delete/ListSubnets Check resolves through the
+	// `<rel> from project` cascade. Best-effort + non-fatal (row committed).
+	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_network", finalRec.ID, string(n.ProjectID))
+
 	return marshalNetworkRecord(finalRec)
 }
