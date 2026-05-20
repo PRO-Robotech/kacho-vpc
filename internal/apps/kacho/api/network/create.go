@@ -121,8 +121,32 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 		return nil, err
 	}
 
-	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (*anypb.Any, error) {
-		return u.doCreate(ctx, netID, n)
+	operations.Run(ctx, u.opsRepo, op.ID, func(ctx context.Context) (res *anypb.Any, derr error) {
+		// KAC-127 Bug-2: surface async-worker failures. operations.Run masks
+		// any non-gRPC-status error (and a panic) as Operation `INTERNAL
+		// "internal worker error"` and does NOT log it — so a failing
+		// Network.Create silently produces a Network with no FGA hierarchy
+		// tuple (the fgawrite.Emit line is never reached), leaving every
+		// per-resource Check `no path` with zero diagnostic trail. Recover +
+		// log the real cause before the op-worker masks it (parity with the
+		// kacho-iam AccessBinding.Create recover+log wrapper).
+		defer func() {
+			if r := recover(); r != nil {
+				derr = fmt.Errorf("panic in Network.Create doCreate: %v", r)
+				if u.logger != nil {
+					u.logger.Error("network create operation panicked (KAC-127 Bug-2)",
+						"op", op.ID, "network_id", netID, "project_id", string(n.ProjectID),
+						"panic", fmt.Sprint(r))
+				}
+			}
+		}()
+		res, derr = u.doCreate(ctx, netID, n)
+		if derr != nil && u.logger != nil {
+			u.logger.Error("network create operation failed (KAC-127 Bug-2)",
+				"op", op.ID, "network_id", netID, "project_id", string(n.ProjectID),
+				"err", derr.Error())
+		}
+		return res, derr
 	})
 
 	return &op, nil
@@ -196,6 +220,16 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	// KAC-127 issue #22: publish the vpc_network→project hierarchy tuple so a
 	// per-resource Get/Update/Delete/ListSubnets Check resolves through the
 	// `<rel> from project` cascade. Best-effort + non-fatal (row committed).
+	//
+	// KAC-127 Bug-2 diagnostic: log committed-network state at the point
+	// fgawrite.Emit is invoked. If this line appears in the vpc log but no
+	// `vpc fga hierarchy-tuple` line follows, the writer is nil / the ids are
+	// empty; if neither appears, doCreate exited before w.Commit().
+	if u.logger != nil {
+		u.logger.Info("network committed — emitting FGA hierarchy tuple (KAC-127 Bug-2)",
+			"network_id", finalRec.ID, "project_id", string(n.ProjectID),
+			"fga_writer_nil", u.fgaWriter == nil)
+	}
 	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_network", finalRec.ID, string(n.ProjectID))
 
 	return marshalNetworkRecord(finalRec)
