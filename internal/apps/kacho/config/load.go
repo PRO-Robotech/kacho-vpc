@@ -106,6 +106,28 @@ func applyLegacyEnv(v *viper.Viper) {
 		{"KACHO_VPC_FOLDER_CACHE_NEGATIVE_TTL", "network.project-cache.negative-ttl"},
 		{"KACHO_VPC_FOLDER_CACHE_SIZE", "network.project-cache.max-size"},
 		{"KACHO_VPC_AUTH_MODE", "authn.mode"},
+		// KAC-127 Bug-2: write-side FGA store-id / model-id. The Helm
+		// Deployment injects these as Secret-ref ENV (the bootstrap-job-
+		// populated openfga store/model Secrets); the rest of
+		// `authz.tuple-write` comes from the YAML config file (ConfigMap).
+		// `authz.tuple-write.*` is NOT in RegisterDefaults — the keys exist
+		// only in the ConfigMap with an empty value — and viper's `Unmarshal`
+		// decodes from AllSettings (config-file + defaults + explicit Set),
+		// NOT from AutomaticEnv. So without an explicit bridge the ENV
+		// override is silently dropped: the write-side FGA client is wired
+		// with an empty StoreID → the `tw.StoreID != ""` guard fails →
+		// `fgaTupleWriter` stays nil → no `vpc_<resource>:<id>#project@
+		// project:<pid>` hierarchy tuple is ever published → every
+		// per-resource Get/Update FGA Check is `no path` (403). An explicit
+		// v.Set bridges ENV → key deterministically (same pattern as the
+		// legacy DB-env entries above).
+		{"KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID", "authz.tuple-write.store-id"},
+		{"KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID", "authz.tuple-write.model-id"},
+		// Same class of fix for the read-side list-filter model-id (also a
+		// bootstrap-job Secret-ref ENV). `authz.list-filter.model-id` IS in
+		// RegisterDefaults so AutomaticEnv would catch it, but binding it
+		// explicitly keeps both FGA model-id ENV sources consistent.
+		{"KACHO_VPC_AUTHZ__LIST_FILTER__MODEL_ID", "authz.list-filter.model-id"},
 	}
 	for _, m := range simple {
 		if val, ok := os.LookupEnv(m.env); ok {

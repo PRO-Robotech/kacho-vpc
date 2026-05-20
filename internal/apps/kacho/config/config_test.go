@@ -143,6 +143,34 @@ func TestLoad_ENVOverride(t *testing.T) {
 	require.True(t, cfg.ExtAPI.IAM.TLS.Enable)
 }
 
+// TestLoad_TupleWriteSecretENVOverride — KAC-127 Bug-2 regression guard.
+//
+// The write-side FGA store-id / model-id are injected by the Helm Deployment
+// as Secret-ref ENV (KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID / __MODEL_ID); the
+// rest of `authz.tuple-write` comes from the ConfigMap YAML. `tuple-write.*`
+// is NOT in RegisterDefaults, so before the explicit applyLegacyEnv bridge
+// viper's `Unmarshal` silently dropped the ENV value — the write-side FGA
+// client was wired with an empty StoreID, stayed nil, and never published the
+// per-resource hierarchy tuple → every per-resource Check was FGA `no path`.
+// This asserts the ENV value reaches the struct so `cmd/vpc` wires the writer.
+func TestLoad_TupleWriteSecretENVOverride(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID", "01STORE000000000000000000")
+	t.Setenv("KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID", "01MODEL000000000000000000")
+	t.Setenv("KACHO_VPC_AUTHZ__LIST_FILTER__MODEL_ID", "01MODEL000000000000000000")
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+
+	require.Equal(t, "01STORE000000000000000000", cfg.AuthZ.TupleWrite.StoreID,
+		"write-side FGA store-id ENV override must reach the struct")
+	require.Equal(t, "01MODEL000000000000000000", cfg.AuthZ.TupleWrite.ModelID,
+		"write-side FGA model-id ENV override must reach the struct")
+	require.Equal(t, "01MODEL000000000000000000", cfg.AuthZ.ListFilter.ModelID,
+		"read-side FGA list-filter model-id ENV override must reach the struct")
+}
+
 // TestLoad_LegacyENV — старые ENV (KACHO_VPC_DB_HOST/PORT/...) транслируются
 // в новые ключи через applyLegacyEnv (backward-compat для текущего Helm chart).
 func TestLoad_LegacyENV(t *testing.T) {
