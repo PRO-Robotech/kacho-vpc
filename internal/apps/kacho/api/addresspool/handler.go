@@ -83,7 +83,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressPoolReques
 		Labels:           req.GetLabels(),
 		V4CIDRBlocks:     req.GetV4CidrBlocks(),
 		V6CIDRBlocks:     req.GetV6CidrBlocks(),
-		Kind:             domain.AddressPoolKind(req.GetKind()),
+		Kind:             domain.AddressPoolKind(req.GetKind()), // #nosec G115 -- proto enum value (bounded set), not an arithmetic overflow.
 		ZoneID:           req.GetZoneId(),
 		IsDefault:        req.GetIsDefault(),
 		SelectorLabels:   req.GetSelectorLabels(),
@@ -105,7 +105,7 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetAddressPoolRequest) (*v
 
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressPoolsRequest) (*vpcv1.ListAddressPoolsResponse, error) {
 	pools, next, err := h.list.Execute(ctx, AddressPoolFilter{
-		Kind:   domain.AddressPoolKind(req.GetKind()),
+		Kind:   domain.AddressPoolKind(req.GetKind()), // #nosec G115 -- proto enum value (bounded set), not an arithmetic overflow.
 		ZoneID: req.GetZoneId(),
 	}, Pagination{
 		PageToken: req.GetPageToken(),

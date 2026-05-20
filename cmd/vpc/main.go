@@ -24,6 +24,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
 	"github.com/PRO-Robotech/kacho-corelib/observability"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -230,7 +231,7 @@ func runServe(cfg config.Config) error {
 			listObjectsSvc := authz.NewListObjectsService(listObjectsClient, authz.ListObjectsConfig{
 				TTL:             cfg.AuthZ.ListFilter.CacheTTL,
 				MaxEntries:      cfg.AuthZ.ListFilter.MaxEntries,
-				MaxResults:      uint32(cfg.AuthZ.ListFilter.MaxResults),
+				MaxResults:      safeconv.IntToUint32(cfg.AuthZ.ListFilter.MaxResults),
 				FollowupTimeout: time.Duration(cfg.AuthZ.ListFilter.TimeoutMs) * time.Millisecond,
 				AuthzModelID:    cfg.AuthZ.ListFilter.ModelID,
 				ServiceName:     "kacho-vpc",
@@ -410,7 +411,7 @@ func runServe(cfg config.Config) error {
 	// параллельно; собирает первую ошибку. maxConcurrency=len(tasks)-1 даёт
 	// схему «1 + (N-1)» — основная горутина + N-1 дополнительных, все
 	// задачи реально параллельны (см. corlib/pkg/parallel/exec-in-parallel.go).
-	err = parallel.ExecAbstract(len(tasks), int32(len(tasks)-1), func(i int) error {
+	err = parallel.ExecAbstract(len(tasks), safeconv.IntToInt32(len(tasks)-1), func(i int) error {
 		return tasks[i]()
 	})
 	cancel()

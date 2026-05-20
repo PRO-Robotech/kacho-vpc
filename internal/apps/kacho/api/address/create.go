@@ -17,6 +17,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
@@ -709,8 +710,8 @@ func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
 	case 1:
 		first, last = 0, 2
 	}
-	if uint32(maxN) < last-first {
-		last = first + uint32(maxN)
+	if safeconv.IntToUint32(maxN) < last-first {
+		last = first + safeconv.IntToUint32(maxN)
 	}
 	base := cidr.Addr().As4()
 	baseInt := binary.BigEndian.Uint32(base[:])
