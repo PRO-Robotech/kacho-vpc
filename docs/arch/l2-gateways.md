@@ -47,3 +47,11 @@ external-адреса иметь исходящий доступ в интерн
   software-проверкой.
 - Egress-gateway — control-plane-ресурс; фактический NAT-data-plane
   программируется отдельным слоем (kube-ovn / impl), детали wiring — internal.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-gateways]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

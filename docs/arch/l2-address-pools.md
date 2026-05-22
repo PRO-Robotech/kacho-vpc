@@ -64,3 +64,11 @@ per-Cloud selector → глобальный default. AddressPool — internal-on
   selector) — см. `l2-internal-projections`.
 - Аллокация IP из пула под concurrency — `FOR UPDATE SKIP LOCKED LIMIT 1` +
   `DELETE … RETURNING` по `address_pool_free_ips` (миграция 0015).
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-address-pools]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

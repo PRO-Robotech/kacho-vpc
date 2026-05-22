@@ -4,6 +4,20 @@
 
 Generated inventory of the repository's exported domain types, fields, variables and constants — each with its doc-comment synopsis and its structural links to the code.
 
+## Функциональности
+
+- [[l3-l2-address-pools]]
+- [[l3-l2-addresses]]
+- [[l3-l2-gateways]]
+- [[l3-l2-internal-projections]]
+- [[l3-l2-network-interfaces]]
+- [[l3-l2-network-lifecycle]]
+- [[l3-l2-operations]]
+- [[l3-l2-private-endpoints]]
+- [[l3-l2-route-tables]]
+- [[l3-l2-security-groups]]
+- [[l3-l2-subnet-lifecycle]]
+
 ## Types
 
 | Type | Kind | Synopsis | Fields | Used by |

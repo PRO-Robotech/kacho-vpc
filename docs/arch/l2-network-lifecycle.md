@@ -60,3 +60,11 @@ cross-project `Move`.
   Network его больше нет.
 - `Move` не каскадит в compute — ссылки оттуда через границу сервиса
   переживаются как dangling-ref.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-network-lifecycle]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

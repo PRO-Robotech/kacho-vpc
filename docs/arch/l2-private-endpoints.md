@@ -47,3 +47,11 @@ proto-пакета `kacho.cloud.vpc.v1.privatelink` — выделенного s
 - Sub-package `privatelink` — отдельное proto-namespace внутри
   `kacho.cloud.vpc.v1`; FQN сервиса — `…vpc.v1.privatelink.PrivateEndpointService`.
 - REST-пути — `/vpc/v1/endpoints/*`.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-private-endpoints]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

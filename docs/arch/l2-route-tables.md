@@ -52,3 +52,11 @@ CRUD `RouteTable` — набора статических маршрутов, а
   рвётся, это by-design.
 - Конфликт `destination_prefix` внутри одной route-table проверяется при
   валидации запроса (нет двух маршрутов на один и тот же префикс).
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-route-tables]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

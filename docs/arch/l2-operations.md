@@ -46,3 +46,11 @@ source_sha: ""
 - Per-resource истории (`NetworkService.ListOperations`,
   `SubnetService.ListOperations` и т.п.) — отдельные RPC своих L2-кластеров;
   здесь только generic `Get` / `Cancel`.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-operations]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

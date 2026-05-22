@@ -54,3 +54,11 @@ CRUD `SecurityGroup` — stateful firewall-набора правил, ассоц
   `security_group_id`) — это within-network ссылка.
 - `Move` между проектами — async; правила-ссылки на SG из другого проекта
   становятся невалидны — by-design.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-security-groups]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

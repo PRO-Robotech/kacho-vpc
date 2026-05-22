@@ -91,3 +91,21 @@ InternalCloud / InternalNetwork / InternalWatch — доступны control-pla
 **Циклы запрещены.** Ребро `kacho-compute → kacho-vpc` (proxy зон) было удалено
 и заменено на `kacho-vpc → kacho-compute` (валидация zone_id) — A↔B не
 допускается (§«Кросс-доменные ссылки на ресурсы»).
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Проект: [[_l0-kacho]]
+- ↓ Функциональность: [[l2-addresses]]
+- ↓ Функциональность: [[l2-address-pools]]
+- ↓ Функциональность: [[l2-gateways]]
+- ↓ Функциональность: [[l2-internal-projections]]
+- ↓ Функциональность: [[l2-network-interfaces]]
+- ↓ Функциональность: [[l2-network-lifecycle]]
+- ↓ Функциональность: [[l2-operations]]
+- ↓ Функциональность: [[l2-private-endpoints]]
+- ↓ Функциональность: [[l2-route-tables]]
+- ↓ Функциональность: [[l2-security-groups]]
+- ↓ Функциональность: [[l2-subnet-lifecycle]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->

@@ -70,3 +70,11 @@ admin-семантика.
   (§Запрет #10).
 - Эти RPC доступны только service→service / admin-UI через internal-mux;
   на external TLS их нет.
+
+## Связанные заметки
+
+<!-- archgraph:links -->
+- ↑ Приклад: [[_l1-kacho-vpc]]
+- ↓ Функции (call-дерево, RPC contract): [[l3-l2-internal-projections]]
+- Переменные: [[l4-kacho-vpc]]
+<!-- /archgraph:links -->
