@@ -27,6 +27,7 @@ type privateEndpointReader struct {
 	snap map[string]*kacho.PrivateEndpointRecord
 }
 
+// Get возвращает копию PrivateEndpoint-записи по id (repo.ErrNotFound если нет).
 func (r *privateEndpointReader) Get(_ context.Context, id string) (*kacho.PrivateEndpointRecord, error) {
 	pe, ok := r.snap[id]
 	if !ok {
@@ -36,6 +37,7 @@ func (r *privateEndpointReader) Get(_ context.Context, id string) (*kacho.Privat
 	return &cp, nil
 }
 
+// List возвращает PrivateEndpoint-записи, отфильтрованные по ProjectID/Name.
 func (r *privateEndpointReader) List(_ context.Context, f kacho.PrivateEndpointFilter, _ kacho.Pagination) ([]*kacho.PrivateEndpointRecord, string, error) {
 	var result []*kacho.PrivateEndpointRecord
 	for _, pe := range r.snap {
@@ -57,6 +59,7 @@ type privateEndpointWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает PrivateEndpoint-запись из writer-локального стора (исключая удалённые).
 func (pw *privateEndpointWriter) Get(_ context.Context, id string) (*kacho.PrivateEndpointRecord, error) {
 	if _, deleted := pw.w.deletedPEIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -69,6 +72,7 @@ func (pw *privateEndpointWriter) Get(_ context.Context, id string) (*kacho.Priva
 	return &cp, nil
 }
 
+// List возвращает PrivateEndpoint-записи из writer-локального стора (исключая удалённые).
 func (pw *privateEndpointWriter) List(_ context.Context, f kacho.PrivateEndpointFilter, _ kacho.Pagination) ([]*kacho.PrivateEndpointRecord, string, error) {
 	var result []*kacho.PrivateEndpointRecord
 	for id, pe := range pw.w.localPEs {
@@ -85,6 +89,7 @@ func (pw *privateEndpointWriter) List(_ context.Context, f kacho.PrivateEndpoint
 	return result, "", nil
 }
 
+// Insert сохраняет новый PrivateEndpoint в writer-локальный стор с CreatedAt = now.
 func (pw *privateEndpointWriter) Insert(_ context.Context, pe *domain.PrivateEndpoint) (*kacho.PrivateEndpointRecord, error) {
 	rec := &kacho.PrivateEndpointRecord{PrivateEndpoint: *pe, CreatedAt: time.Now().UTC()}
 	pw.w.localPEs[pe.ID] = rec
@@ -92,6 +97,7 @@ func (pw *privateEndpointWriter) Insert(_ context.Context, pe *domain.PrivateEnd
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля PrivateEndpoint в writer-локальном сторе.
 func (pw *privateEndpointWriter) Update(_ context.Context, pe *domain.PrivateEndpoint) (*kacho.PrivateEndpointRecord, error) {
 	if _, deleted := pw.w.deletedPEIDs[pe.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -105,6 +111,7 @@ func (pw *privateEndpointWriter) Update(_ context.Context, pe *domain.PrivateEnd
 	return &cp, nil
 }
 
+// SetProjectID меняет ProjectID PrivateEndpoint в writer-локальном сторе (Move).
 func (pw *privateEndpointWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.PrivateEndpointRecord, error) {
 	if _, deleted := pw.w.deletedPEIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -118,6 +125,7 @@ func (pw *privateEndpointWriter) SetProjectID(_ context.Context, id, folderID st
 	return &cp, nil
 }
 
+// Delete помечает PrivateEndpoint удалённым в writer-локальном сторе.
 func (pw *privateEndpointWriter) Delete(_ context.Context, id string) error {
 	if _, ok := pw.w.localPEs[id]; !ok {
 		return repo.ErrNotFound

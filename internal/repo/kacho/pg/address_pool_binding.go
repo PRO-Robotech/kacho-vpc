@@ -17,6 +17,7 @@ type addressPoolBindingReader struct {
 	tx pgx.Tx
 }
 
+// GetNetworkDefault возвращает pool-id, привязанный к сети как default (helpers.ErrNotFound если нет).
 func (r *addressPoolBindingReader) GetNetworkDefault(ctx context.Context, networkID string) (string, error) {
 	var poolID string
 	err := r.tx.QueryRow(ctx,
@@ -31,6 +32,7 @@ func (r *addressPoolBindingReader) GetNetworkDefault(ctx context.Context, networ
 	return poolID, nil
 }
 
+// GetAddressOverride возвращает pool-id, override-привязанный к адресу (helpers.ErrNotFound если нет).
 func (r *addressPoolBindingReader) GetAddressOverride(ctx context.Context, addressID string) (string, error) {
 	var poolID string
 	err := r.tx.QueryRow(ctx,
@@ -52,6 +54,7 @@ type addressPoolBindingWriter struct {
 	emitter kacho.OutboxEmitter
 }
 
+// SetNetworkDefault upsert'ит network-default-биндинг (network → pool).
 func (w *addressPoolBindingWriter) SetNetworkDefault(ctx context.Context, networkID, poolID string) error {
 	_, err := w.tx.Exec(ctx, `
 		INSERT INTO address_pool_network_default (network_id, pool_id, bound_at)
@@ -64,6 +67,7 @@ func (w *addressPoolBindingWriter) SetNetworkDefault(ctx context.Context, networ
 	return nil
 }
 
+// UnsetNetworkDefault удаляет network-default-биндинг.
 func (w *addressPoolBindingWriter) UnsetNetworkDefault(ctx context.Context, networkID string) error {
 	_, err := w.tx.Exec(ctx,
 		`DELETE FROM address_pool_network_default WHERE network_id = $1`, networkID)
@@ -73,6 +77,7 @@ func (w *addressPoolBindingWriter) UnsetNetworkDefault(ctx context.Context, netw
 	return nil
 }
 
+// SetAddressOverride upsert'ит address-override-биндинг (address → pool).
 func (w *addressPoolBindingWriter) SetAddressOverride(ctx context.Context, addressID, poolID string) error {
 	_, err := w.tx.Exec(ctx, `
 		INSERT INTO address_pool_address_override (address_id, pool_id, bound_at)
@@ -85,6 +90,7 @@ func (w *addressPoolBindingWriter) SetAddressOverride(ctx context.Context, addre
 	return nil
 }
 
+// UnsetAddressOverride удаляет address-override-биндинг.
 func (w *addressPoolBindingWriter) UnsetAddressOverride(ctx context.Context, addressID string) error {
 	_, err := w.tx.Exec(ctx,
 		`DELETE FROM address_pool_address_override WHERE address_id = $1`, addressID)

@@ -78,6 +78,7 @@ func (u *UpdateAddressUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 	return &op, nil
 }
 
+// doUpdate — async worker-тело Address.Update: применяет mutable-поля в writer-TX.
 func (u *UpdateAddressUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

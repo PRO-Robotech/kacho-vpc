@@ -78,6 +78,7 @@ func NewClientFromConn(conn *grpc.ClientConn) *Client {
 	return newClientFromConn(conn)
 }
 
+// newClientFromConn собирает Client со всеми per-service stub-клиентами поверх conn.
 func newClientFromConn(conn *grpc.ClientConn) *Client {
 	return &Client{
 		conn:              conn,

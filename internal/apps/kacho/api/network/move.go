@@ -74,6 +74,8 @@ func (u *MoveNetworkUseCase) Execute(ctx context.Context, id, destProjectID stri
 	return &op, nil
 }
 
+// doMove — async worker-тело Network.Move: проверяет destination-project и
+// переносит Network в новый project.
 func (u *MoveNetworkUseCase) doMove(ctx context.Context, id, destProjectID string) (*anypb.Any, error) {
 	exists, err := u.projectClient.Exists(ctx, destProjectID)
 	if err != nil {

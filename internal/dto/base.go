@@ -63,7 +63,9 @@ func Fn2Face[F any, T any](fn func(F) (T, error)) Interface[F, T] { return Fn[F,
 type tag[_ any, _ any] struct{}
 
 var (
-	regMu        sync.RWMutex
+	// regMu защищает transfersReg от конкурентного доступа.
+	regMu sync.RWMutex
+	// transfersReg — реестр трансферов F→T, индексированный по reflect.TypeFor[tag[F,T]].
 	transfersReg = map[reflect.Type]any{}
 )
 

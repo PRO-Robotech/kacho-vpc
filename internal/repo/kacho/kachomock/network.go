@@ -28,6 +28,7 @@ type networkReader struct {
 	snap map[string]*kacho.NetworkRecord
 }
 
+// Get возвращает копию Network-записи по id (repo.ErrNotFound если нет).
 func (r *networkReader) Get(_ context.Context, id string) (*kacho.NetworkRecord, error) {
 	n, ok := r.snap[id]
 	if !ok {
@@ -37,6 +38,7 @@ func (r *networkReader) Get(_ context.Context, id string) (*kacho.NetworkRecord,
 	return &cp, nil
 }
 
+// List возвращает Network-записи, отфильтрованные по ProjectID/Name, в порядке CreatedAt.
 func (r *networkReader) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
 	var result []*kacho.NetworkRecord
 	for _, n := range r.snap {
@@ -81,6 +83,7 @@ type networkWriter struct {
 }
 
 // Reader-методы writer'а — поверх local (writer видит свои writes, G.2).
+// Get возвращает Network-запись из writer-локального стора (исключая удалённые).
 func (nw *networkWriter) Get(_ context.Context, id string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -93,6 +96,7 @@ func (nw *networkWriter) Get(_ context.Context, id string) (*kacho.NetworkRecord
 	return &cp, nil
 }
 
+// List возвращает Network-записи из writer-локального стора (исключая удалённые).
 func (nw *networkWriter) List(_ context.Context, f kacho.NetworkFilter, _ kacho.Pagination) ([]*kacho.NetworkRecord, string, error) {
 	var result []*kacho.NetworkRecord
 	for id, n := range nw.w.local {
@@ -136,6 +140,7 @@ func (nw *networkWriter) ListByIDs(_ context.Context, f kacho.NetworkFilter, all
 	return result, "", nil
 }
 
+// Insert сохраняет новую Network в writer-локальный стор с CreatedAt = now.
 func (nw *networkWriter) Insert(_ context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
 	rec := &kacho.NetworkRecord{Network: *n, CreatedAt: time.Now().UTC()}
 	nw.w.local[n.ID] = rec
@@ -143,6 +148,7 @@ func (nw *networkWriter) Insert(_ context.Context, n *domain.Network) (*kacho.Ne
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля Network в writer-локальном сторе.
 func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[n.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -156,6 +162,7 @@ func (nw *networkWriter) Update(_ context.Context, n *domain.Network) (*kacho.Ne
 	return &cp, nil
 }
 
+// SetProjectID меняет ProjectID Network в writer-локальном сторе (Move).
 func (nw *networkWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.NetworkRecord, error) {
 	if _, deleted := nw.w.deletedIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -183,6 +190,7 @@ func (nw *networkWriter) SetDefaultSGID(_ context.Context, id, sgID string) (*ka
 	return &cp, nil
 }
 
+// Delete помечает Network удалённой в writer-локальном сторе.
 func (nw *networkWriter) Delete(_ context.Context, id string) error {
 	if _, ok := nw.w.local[id]; !ok {
 		return repo.ErrNotFound

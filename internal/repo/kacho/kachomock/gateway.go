@@ -26,6 +26,7 @@ type gatewayReader struct {
 	snap map[string]*kacho.GatewayRecord
 }
 
+// Get возвращает копию Gateway-записи по id (repo.ErrNotFound если нет).
 func (r *gatewayReader) Get(_ context.Context, id string) (*kacho.GatewayRecord, error) {
 	g, ok := r.snap[id]
 	if !ok {
@@ -35,6 +36,7 @@ func (r *gatewayReader) Get(_ context.Context, id string) (*kacho.GatewayRecord,
 	return &cp, nil
 }
 
+// List возвращает Gateway-записи, отфильтрованные по ProjectID/Name.
 func (r *gatewayReader) List(_ context.Context, f kacho.GatewayFilter, _ kacho.Pagination) ([]*kacho.GatewayRecord, string, error) {
 	var result []*kacho.GatewayRecord
 	for _, g := range r.snap {
@@ -56,6 +58,7 @@ type gatewayWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает Gateway-запись из writer-локального стора (исключая удалённые).
 func (gw *gatewayWriter) Get(_ context.Context, id string) (*kacho.GatewayRecord, error) {
 	if _, deleted := gw.w.deletedGWIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -68,6 +71,7 @@ func (gw *gatewayWriter) Get(_ context.Context, id string) (*kacho.GatewayRecord
 	return &cp, nil
 }
 
+// List возвращает Gateway-записи из writer-локального стора (исключая удалённые).
 func (gw *gatewayWriter) List(_ context.Context, f kacho.GatewayFilter, _ kacho.Pagination) ([]*kacho.GatewayRecord, string, error) {
 	var result []*kacho.GatewayRecord
 	for id, g := range gw.w.localGWs {
@@ -84,6 +88,7 @@ func (gw *gatewayWriter) List(_ context.Context, f kacho.GatewayFilter, _ kacho.
 	return result, "", nil
 }
 
+// Insert сохраняет новый Gateway в writer-локальный стор с CreatedAt = now.
 func (gw *gatewayWriter) Insert(_ context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
 	rec := &kacho.GatewayRecord{Gateway: *g, CreatedAt: time.Now().UTC()}
 	gw.w.localGWs[g.ID] = rec
@@ -91,6 +96,7 @@ func (gw *gatewayWriter) Insert(_ context.Context, g *domain.Gateway) (*kacho.Ga
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля Gateway в writer-локальном сторе.
 func (gw *gatewayWriter) Update(_ context.Context, g *domain.Gateway) (*kacho.GatewayRecord, error) {
 	if _, deleted := gw.w.deletedGWIDs[g.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -104,6 +110,7 @@ func (gw *gatewayWriter) Update(_ context.Context, g *domain.Gateway) (*kacho.Ga
 	return &cp, nil
 }
 
+// SetProjectID меняет ProjectID Gateway в writer-локальном сторе (Move).
 func (gw *gatewayWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.GatewayRecord, error) {
 	if _, deleted := gw.w.deletedGWIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -117,6 +124,7 @@ func (gw *gatewayWriter) SetProjectID(_ context.Context, id, folderID string) (*
 	return &cp, nil
 }
 
+// Delete помечает Gateway удалённым в writer-локальном сторе.
 func (gw *gatewayWriter) Delete(_ context.Context, id string) error {
 	if _, ok := gw.w.localGWs[id]; !ok {
 		return repo.ErrNotFound

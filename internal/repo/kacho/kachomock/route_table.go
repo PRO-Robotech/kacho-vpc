@@ -23,6 +23,7 @@ type routeTableReader struct {
 	snap map[string]*kacho.RouteTableRecord
 }
 
+// Get возвращает копию RouteTable-записи по id (repo.ErrNotFound если нет).
 func (r *routeTableReader) Get(_ context.Context, id string) (*kacho.RouteTableRecord, error) {
 	rt, ok := r.snap[id]
 	if !ok {
@@ -32,6 +33,7 @@ func (r *routeTableReader) Get(_ context.Context, id string) (*kacho.RouteTableR
 	return &cp, nil
 }
 
+// List возвращает RouteTable-записи, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *routeTableReader) List(_ context.Context, f kacho.RouteTableFilter, _ kacho.Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	var result []*kacho.RouteTableRecord
 	for _, rt := range r.snap {
@@ -46,6 +48,7 @@ func (r *routeTableReader) List(_ context.Context, f kacho.RouteTableFilter, _ k
 	return result, "", nil
 }
 
+// ListByNetwork возвращает RouteTable'ы заданной сети.
 func (r *routeTableReader) ListByNetwork(ctx context.Context, networkID string, p kacho.Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	return r.List(ctx, kacho.RouteTableFilter{NetworkID: networkID}, p)
 }
@@ -56,6 +59,7 @@ type routeTableWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает RouteTable-запись из writer-локального стора (исключая удалённые).
 func (rw *routeTableWriter) Get(_ context.Context, id string) (*kacho.RouteTableRecord, error) {
 	if _, deleted := rw.w.deletedRTIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -68,6 +72,7 @@ func (rw *routeTableWriter) Get(_ context.Context, id string) (*kacho.RouteTable
 	return &cp, nil
 }
 
+// List возвращает RouteTable-записи из writer-локального стора (исключая удалённые).
 func (rw *routeTableWriter) List(_ context.Context, f kacho.RouteTableFilter, _ kacho.Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	var result []*kacho.RouteTableRecord
 	for id, rt := range rw.w.localRTs {
@@ -85,10 +90,12 @@ func (rw *routeTableWriter) List(_ context.Context, f kacho.RouteTableFilter, _ 
 	return result, "", nil
 }
 
+// ListByNetwork возвращает RouteTable'ы заданной сети из writer-локального стора.
 func (rw *routeTableWriter) ListByNetwork(ctx context.Context, networkID string, p kacho.Pagination) ([]*kacho.RouteTableRecord, string, error) {
 	return rw.List(ctx, kacho.RouteTableFilter{NetworkID: networkID}, p)
 }
 
+// Insert сохраняет новую RouteTable в writer-локальный стор с CreatedAt = now.
 func (rw *routeTableWriter) Insert(_ context.Context, rt *domain.RouteTable) (*kacho.RouteTableRecord, error) {
 	rec := &kacho.RouteTableRecord{RouteTable: *rt, CreatedAt: time.Now().UTC()}
 	rw.w.localRTs[rt.ID] = rec
@@ -96,6 +103,7 @@ func (rw *routeTableWriter) Insert(_ context.Context, rt *domain.RouteTable) (*k
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля RouteTable в writer-локальном сторе.
 func (rw *routeTableWriter) Update(_ context.Context, rt *domain.RouteTable) (*kacho.RouteTableRecord, error) {
 	if _, deleted := rw.w.deletedRTIDs[rt.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -109,6 +117,7 @@ func (rw *routeTableWriter) Update(_ context.Context, rt *domain.RouteTable) (*k
 	return &cp, nil
 }
 
+// SetProjectID меняет ProjectID RouteTable в writer-локальном сторе (Move).
 func (rw *routeTableWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.RouteTableRecord, error) {
 	if _, deleted := rw.w.deletedRTIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -122,6 +131,7 @@ func (rw *routeTableWriter) SetProjectID(_ context.Context, id, folderID string)
 	return &cp, nil
 }
 
+// Delete помечает RouteTable удалённой в writer-локальном сторе.
 func (rw *routeTableWriter) Delete(_ context.Context, id string) error {
 	if _, ok := rw.w.localRTs[id]; !ok {
 		return repo.ErrNotFound

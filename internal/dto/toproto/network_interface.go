@@ -55,6 +55,7 @@ func (networkInterface) toPb(rec kachorepo.NetworkInterfaceRecord) (*vpcv1.Netwo
 	return p, nil
 }
 
+// niStatusToPb маппит domain-статус NIC в proto-enum NetworkInterface_Status.
 func niStatusToPb(s domain.NetworkInterfaceStatus) vpcv1.NetworkInterface_Status {
 	switch s {
 	case domain.NIStatusProvisioning:

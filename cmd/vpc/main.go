@@ -111,6 +111,8 @@ type services struct {
 	networkInterfaceHandler *niapp.Handler
 }
 
+// runServe — composition root: поднимает gRPC-серверы VPC, wiring всех слоёв,
+// и блокируется до SIGTERM/SIGINT с graceful shutdown.
 func runServe(cfg config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()

@@ -43,10 +43,10 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.AllocateUseCase).AllocateInternalIPv6` — AllocateInternalIPv6 — выделяет случайный свободный IPv6 внутри subnet.v6_cidr_blocks[0] для Address с заполненным internal_ipv6.subnet_id.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.AllocateUseCase).finishAllocate` — finishAllocate — общий эпилог: outbox-emit Address.UPDATED + Commit.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv4` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv6` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv4` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv6` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv4` — allocateExternalIPv4 аллоцирует внешний IPv4-адрес для Address из resolved pool.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv6` — allocateExternalIPv6 аллоцирует внешний IPv6-адрес для Address из resolved pool.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv4` — allocateInternalIPv4 аллоцирует внутренний IPv4-адрес для Address из CIDR его подсети.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv6` — allocateInternalIPv6 аллоцирует внутренний IPv6-адрес для Address из CIDR его подсети.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.DeleteAddressUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.GetAddressUseCase).Execute$1` — (undocumented — see C4)
@@ -55,9 +55,9 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListAddressesUseCase).Execute$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListBySubnetUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).doMove` — doMove — async worker-тело Address.Move: проверяет destination-project и переносит Address в новый project.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).doUpdate` — doUpdate — async worker-тело Address.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.CheckUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetAddressPoolUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetCloudPoolSelectorUseCase).Execute` — Execute возвращает CloudPoolSelector.
@@ -79,7 +79,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.ListGatewaysUseCase).Execute$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.MoveGatewayUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).doUpdate` — doUpdate — async worker-тело Gateway.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateDefaultSGUseCase).Execute` — Execute создаёт default-SG для только-что-вставленной Network и проставляет её id как `Network.default_security_group_id`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1$1` — (undocumented — see C4)
@@ -93,27 +93,27 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSecurityGroupsUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSubnetsUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).doMove` — doMove — async worker-тело Network.Move: проверяет destination-project и переносит Network в новый project.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).doUpdate` — doUpdate — async worker-тело Network.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).doAttach` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).doAttach` — doAttach — async worker-тело NetworkInterface.AttachToInstance: атомарно (CAS) проставляет used_by-привязку NIC к инстансу.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).detachAddresses` — detachAddresses снимает used + referrer-row с каждого address id (best-effort, ошибки логируются неявно — пропускаются).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAddressRef` — validateAddressRef проверяет, что Address id существует, имеет ожидаемую IP-версию, (для internal) лежит в подсети nicSubnet и не занят.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAndAttachAddresses` — validateAndAttachAddresses валидирует все v4/v6 address-refs, затем помечает каждый used=true + referrer={network_interface, nicID, nicName}.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).doDelete` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).doDelete` — doDelete — async worker-тело NetworkInterface.Delete: удаляет NIC в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).doDetach` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).doDetach` — doDetach — async worker-тело NetworkInterface.DetachFromInstance: очищает used_by-привязку NIC.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.GetNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).detachAddresses` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).detachAddresses` — detachAddresses снимает referrer-привязку с перечисленных Address-id (best-effort).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).doUpdate` — doUpdate — worker-loop Update.
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAddressRef` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAddressRef` — validateAddressRef проверяет ссылку NIC на Address (существует, нужной IP-версии, в подсети, не занят) — делегирует create-time проверке.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAndAttachAddresses` — validateAndAttachAddresses / validateAddressRef / detachAddresses — повторно используем шаблон из Create (дублируем тут, потому что use-case'ы независимы; общий refactor в repo/service-leaf — TODO Wave 4).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
@@ -132,7 +132,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.MoveRouteTableUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).doUpdate` — doUpdate — async worker-тело RouteTable.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.DeleteSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
@@ -143,7 +143,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRuleUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRulesUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).doUpdate` — doUpdate — async worker-тело SecurityGroup.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.AddCidrBlocksUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
@@ -154,14 +154,14 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListSubnetsUseCase).Execute$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListUsedAddressesUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).doMove` — doMove — async worker-тело Subnet.Move: проверяет destination-project и переносит Subnet в новый project.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.RemoveCidrBlocksUseCase).Execute$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).Execute$1` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).doUpdate` — doUpdate — async worker-тело Subnet.Update: применяет mutable-поля в writer-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.IAMCheckClient).Check` — Check вызывает `InternalIAMService.Check`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).MarshalJSON` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).String` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).UnmarshalJSON` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).UnmarshalJSON` — UnmarshalJSON парсит Mode из JSON-строки (обратно к MarshalJSON).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref.Service).ClearAddressReference` — ClearAddressReference удаляет referrer-row адреса (no-op если нет) и выставляет Address.used=false.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref.Service).GetAddressReference` — GetAddressReference возвращает referrer-row адреса.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref.Service).MarkAddressEphemeralInUse` — MarkAddressEphemeralInUse атомарно (одна tx): выставляет Address.reserved=false, Address.used=true и upsert'ит referrer-row (= SetAddressReference + сброс reserved).
@@ -193,23 +193,23 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateExternalIP` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateInternalIP` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateInternalIPv6` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).ClearAddressReference` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).GetAddressReference` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).MarkAddressEphemeralInUse` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).SetAddressReference` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).GetPoolSelector` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).SetPoolSelector` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).UnsetPoolSelector` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalNetworkHandler).SetDefaultSecurityGroupId` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateExternalIP` — AllocateExternalIP обрабатывает RPC InternalAddressService.AllocateExternalIP — аллоцирует внешний IP из resolved pool.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateInternalIP` — AllocateInternalIP обрабатывает RPC InternalAddressService.AllocateInternalIP — аллоцирует internal IPv4 для адреса.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).AllocateInternalIPv6` — AllocateInternalIPv6 обрабатывает RPC InternalAddressService.AllocateInternalIPv6 — аллоцирует internal IPv6 для адреса.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).ClearAddressReference` — ClearAddressReference обрабатывает RPC InternalAddressService.ClearAddressReference — снимает referrer-привязку с адреса.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).GetAddressReference` — GetAddressReference обрабатывает RPC InternalAddressService.GetAddressReference — возвращает текущую referrer-привязку адреса.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).MarkAddressEphemeralInUse` — MarkAddressEphemeralInUse обрабатывает RPC InternalAddressService.MarkAddressEphemeralInUse — атомарно снимает reserved и проставляет referrer для эфемерного адреса.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalAddressAllocateHandler).SetAddressReference` — SetAddressReference обрабатывает RPC InternalAddressService.SetAddressReference — привязывает referrer к адресу.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).GetPoolSelector` — GetPoolSelector обрабатывает RPC InternalCloudService.GetPoolSelector — возвращает pool-selector облака (Present=false если не задан).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).SetPoolSelector` — SetPoolSelector обрабатывает RPC InternalCloudService.SetPoolSelector — задаёт admin-controlled pool-selector для облака.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalCloudHandler).UnsetPoolSelector` — UnsetPoolSelector обрабатывает RPC InternalCloudService.UnsetPoolSelector — снимает pool-selector с облака.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalNetworkHandler).SetDefaultSecurityGroupId` — SetDefaultSecurityGroupId обрабатывает RPC InternalNetworkService.SetDefaultSecurityGroupId — проставляет default_security_group_id сети.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch` — Watch реализует server-stream подписки.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$2` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$3` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).streamSince` — streamSince читает все события из vpc_outbox с sequence_no > cursor (и resource_kind ∈ kinds, если задан) и шлёт их в stream.
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.wrappedStream).Context` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.wrappedStream).Context` — Context возвращает переопределённый context (с inject'ленным TenantCtx).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).ClearReference` — ClearReference — удаляет referrer-row + used=false.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get` — Get — read через свежую Reader-TX.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get$1` — (undocumented — see C4)
@@ -233,8 +233,8 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).List$1` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Reader` — Reader открывает read-only TX (read-committed) на **slave-pool'е**, если он настроен; иначе на master (fallback).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Writer` — Writer открывает RW TX на **master-pool'е**.
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetAddressOverride` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetNetworkDefault` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetAddressOverride` — GetAddressOverride возвращает pool-id, override-привязанный к адресу (helpers.ErrNotFound если нет).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetNetworkDefault` — GetNetworkDefault возвращает pool-id, привязанный к сети как default (helpers.ErrNotFound если нет).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetAddressOverride` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetNetworkDefault` — (undocumented — see C4)
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).FindBySelectorMatch` — FindBySelectorMatch — label-cascade резолв (containment: networkSelector ⊆ pool.selector_labels).
@@ -260,10 +260,10 @@ Generated from L2 note `l2-internal-projections.md`.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetProjectID` — SetProjectID меняет project_id у Address (для :move).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetReference` — SetReference — single-statement CAS upsert referrer-row + addresses.used=true.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Update` — Update — UPDATE name/description/labels/reserved/used/deletion_protection.
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorReader).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorReader).Get` — Get возвращает CloudPoolSelector облака (helpers.ErrNotFound если не задан).
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Get` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Set` — (undocumented — see C4)
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Unset` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Set` — Set upsert'ит CloudPoolSelector облака (selector + set_by).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Unset` — Unset удаляет CloudPoolSelector облака.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Gateway <id> not found".
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Delete` — Delete — DELETE gateways WHERE id = $1.
 - `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Get` — (undocumented — see C4)
@@ -363,7 +363,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.pickRandomIPv6` — pickRandomIPv6 выбирает случайный адрес внутри IPv6-префикса, заполняя host-биты криптослучайными значениями.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.usableIPv4Sweep` — usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без network/broadcast).
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.nilOrSecondRec` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.nilOrSecondRec` — nilOrSecondRec возвращает второй match как runner-up ResolvedPool (nil если < 2).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.normalizeMapForPayload` — normalizeMapForPayload — nil → empty map (deterministic outbox payload).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamily` — poolHasFamily — true если pool имеет хотя бы один CIDR-блок запрошенной family.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamilyRec` — poolHasFamilyRec — family-фильтр для Record-обёртки (KAC-63).
@@ -386,17 +386,17 @@ Generated from L2 note `l2-internal-projections.md`.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV4` — nicMaskV4 — какой набор v4_address_ids применять (новый или текущий).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV6` — nicMaskV6 — какой набор v6_address_ids применять.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSet` — strSet / strSetEqual — мини-helper'ы для diff-логики address-refs.
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSetEqual` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSetEqual` — strSetEqual сообщает, совпадают ли два слайса строк как множества.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.applyPrivateEndpointMask` — applyPrivateEndpointMask — применяет subset полей к существующему domain.PE.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.marshalPrivateEndpointRecord` — marshalPrivateEndpointRecord конвертирует repo-entity PE в *anypb.Any через DTO-реестр.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.privateEndpointPayloadMap` — privateEndpointPayloadMap — snapshot PrivateEndpoint для outbox payload.
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.stripSentinel` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.stripSentinel` — stripSentinel удаляет sentinel-префикс из текста ошибки (verbatim YC-сообщение наружу).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.applyRouteTableMask` — applyRouteTableMask — применяет subset полей к существующему domain.RouteTable.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.marshalRouteTableRecord` — marshalRouteTableRecord конвертирует repo-entity RouteTable в *anypb.Any через DTO-реестр.
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.stripSentinel` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.stripSentinel` — stripSentinel удаляет sentinel-префикс из текста ошибки (verbatim YC-сообщение наружу).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.applySGMask` — applySGMask — применяет subset полей к существующему domain.SecurityGroup.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.assignRuleIDs` — assignRuleIDs присваивает каждому rule UID если он пустой.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
@@ -485,7 +485,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Load$1` — (undocumented — see C4)
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.RegisterDefaults` — RegisterDefaults устанавливает default-значения всех конфиг-ключей (skill evgeniy §8 J.3 — defaults в одном месте, не в struct-tags).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.applyLegacyEnv` — applyLegacyEnv — мост из старых ENV-имён в новые viper-ключи.
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.dsnHas` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.dsnHas` — dsnHas сообщает, содержит ли DSN-строка подстроку frag.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.injectPasswordIntoDSN` — injectPasswordIntoDSN добавляет пароль в DSN (postgres://user@host → postgres://user:pwd@host).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook` — modeDecodeHook — DecodeHook для viper.Unmarshal: парсит string → Mode (ENUM).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook$1` — (undocumented — see C4)
@@ -497,7 +497,7 @@ Generated from L2 note `l2-internal-projections.md`.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.New` — New собирает Runner; cfg валидируется здесь же.
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.NewDialect` — NewDialect — фабрика, возвращает реализацию [Dialect] по имени (skill evgeniy §9 K.3 буквально: «фабрика; supported postgres, cockroach»).
 - `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.ResolveDialect` — ResolveDialect — backwards-compat обёртка над [NewDialect].
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.listDialects` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.listDialects` — listDialects возвращает имена всех зарегистрированных диалектов.
 - `github.com/PRO-Robotech/kacho-vpc/internal/clients.retryHTTPWrite` — retryHTTPWrite runs fn with up to 3 attempts, retrying only retryableErr, each attempt bounded by timeout.
 - `github.com/PRO-Robotech/kacho-vpc/internal/clients.withPrincipalMD` — withPrincipalMD propagates the caller's principal onto the outgoing gRPC metadata (KAC-127 Bug-2).
 - `github.com/PRO-Robotech/kacho-vpc/internal/domain.DefaultSGName` — DefaultSGName возвращает имя default-SG для сети.
@@ -535,11 +535,11 @@ Generated from L2 note `l2-internal-projections.md`.
 - `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]` — (undocumented — see C4)
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantStreamInterceptor$1` — (undocumented — see C4)
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantUnaryInterceptor$1` — (undocumented — see C4)
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.addressReferenceToProto` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.addressReferenceToProto` — addressReferenceToProto конвертирует domain.AddressReference в proto-сообщение.
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.assertAdminAccess` — assertAdminAccess — internal :9091 listener gate.
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.internalMapErr` — internalMapErr — admin/Internal-handler error mapper.
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.jsonBytesToStruct` — jsonBytesToStruct декодирует raw JSON-bytes (object) в structpb.Struct.
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.mapAllocErr` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.mapAllocErr` — mapAllocErr транслирует ошибки аллокатора в gRPC-status (NotFound/Internal).
 - `github.com/PRO-Robotech/kacho-vpc/internal/handler.tenantFromMetadata` — tenantFromMetadata — internal helper, извлекает TenantCtx из gRPC md.
 - `github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.jsonRoundTrip` — jsonRoundTrip — общий helper «struct → JSON → map[string]any».
 - `github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.networkPayloadMap` — networkPayloadMap — snapshot Network для outbox-payload (parity с `apps/kacho/api/network/helpers.go::networkPayloadMap`: JSON round-trip сериализация всей entity-структуры).

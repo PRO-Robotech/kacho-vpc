@@ -26,10 +26,13 @@ import (
 // поддерживаются. CLI гоняет одну команду за раз — это ок.
 type postgresDialect struct{}
 
+// newPostgresDialect создаёт postgresDialect.
 func newPostgresDialect() *postgresDialect { return &postgresDialect{} }
 
+// Spec возвращает DialectSpec PostgreSQL.
 func (p *postgresDialect) Spec() DialectSpec { return SpecPostgres }
 
+// Up применяет миграции (до target-версии либо все) через goose.
 func (p *postgresDialect) Up(ctx context.Context, dsn string, fsys fs.FS, dir string, target string) error {
 	db, err := openPgxDB(dsn, p.Spec())
 	if err != nil {
@@ -50,6 +53,7 @@ func (p *postgresDialect) Up(ctx context.Context, dsn string, fsys fs.FS, dir st
 	return goose.UpToContext(ctx, db, dir, version)
 }
 
+// Down откатывает миграции (до target-версии либо на шаг назад) через goose.
 func (p *postgresDialect) Down(ctx context.Context, dsn string, fsys fs.FS, dir string, target string) error {
 	db, err := openPgxDB(dsn, p.Spec())
 	if err != nil {
@@ -70,6 +74,7 @@ func (p *postgresDialect) Down(ctx context.Context, dsn string, fsys fs.FS, dir 
 	return goose.DownToContext(ctx, db, dir, version)
 }
 
+// Status печатает applied/pending миграции через goose.
 func (p *postgresDialect) Status(ctx context.Context, dsn string, fsys fs.FS, dir string, out io.Writer) error {
 	db, err := openPgxDB(dsn, p.Spec())
 	if err != nil {
@@ -84,6 +89,7 @@ func (p *postgresDialect) Status(ctx context.Context, dsn string, fsys fs.FS, di
 	return goose.StatusContext(ctx, db, dir)
 }
 
+// Create создаёт новый пустой SQL-файл миграции на диске (без подключения к БД).
 func (p *postgresDialect) Create(physDir, name string) error {
 	if name == "" {
 		return errors.New("migration name is empty")
@@ -103,6 +109,7 @@ func (p *postgresDialect) Create(physDir, name string) error {
 // через pgx driver и goose-dialect="postgres"). Вынесены сюда (postgres.go),
 // потому что postgres — primary impl; cockroach их переиспользует.
 
+// openPgxDB открывает *sql.DB через pgx-driver по dsn (общий helper postgres+cockroach).
 func openPgxDB(dsn string, spec DialectSpec) (*sql.DB, error) {
 	db, err := sql.Open(spec.SQLDriver, dsn)
 	if err != nil {
@@ -111,6 +118,7 @@ func openPgxDB(dsn string, spec DialectSpec) (*sql.DB, error) {
 	return db, nil
 }
 
+// setupGoose настраивает goose: base-FS с миграциями + диалект (общий helper).
 func setupGoose(fsys fs.FS, spec DialectSpec) error {
 	goose.SetBaseFS(fsys)
 	if err := goose.SetDialect(spec.GooseDialect); err != nil {

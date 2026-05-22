@@ -58,9 +58,12 @@ type RcLabels = dict.HDict[LabelKey, LabelVal]
 // ---- Regex'ы (синхронизированы с corelib/validate; источник истины здесь) ---
 
 var (
-	nameVPCRe    = regexp.MustCompile(`^([a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)?$`)
+	// nameVPCRe — permissive-regex имени ресурса (empty/uppercase/underscore допустимы).
+	nameVPCRe = regexp.MustCompile(`^([a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)?$`)
+	// nameStrictRe — strict-regex имени (lowercase, без uppercase/underscore — для Gateway).
 	nameStrictRe = regexp.MustCompile(`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`)
-	labelKeyRe   = regexp.MustCompile(`^[a-z][-_./\\@a-z0-9]{0,62}$`)
+	// labelKeyRe — regex ключа label.
+	labelKeyRe = regexp.MustCompile(`^[a-z][-_./\\@a-z0-9]{0,62}$`)
 )
 
 const (

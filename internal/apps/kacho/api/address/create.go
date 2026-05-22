@@ -462,6 +462,7 @@ type allocResult struct {
 	PoolID string // только для external; "" для internal
 }
 
+// allocateInternalIPv4 аллоцирует внутренний IPv4-адрес для Address из CIDR его подсети.
 func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
@@ -563,6 +564,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Write
 		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
 }
 
+// allocateInternalIPv6 аллоцирует внутренний IPv6-адрес для Address из CIDR его подсети.
 func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.InternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s has no internal_ipv6 spec", addr.ID)
@@ -616,6 +618,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, w Write
 		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
 }
 
+// allocateExternalIPv4 аллоцирует внешний IPv4-адрес для Address из resolved pool.
 func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv4 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,
@@ -650,6 +653,7 @@ func (u *CreateAddressUseCase) allocateExternalIPv4(ctx context.Context, w Write
 	return &allocResult{IP: ip, PoolID: pool.ID}, nil
 }
 
+// allocateExternalIPv6 аллоцирует внешний IPv6-адрес для Address из resolved pool.
 func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*allocResult, error) {
 	if addr.ExternalIpv6 == nil {
 		return nil, status.Errorf(codes.FailedPrecondition,

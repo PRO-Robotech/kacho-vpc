@@ -42,6 +42,7 @@ type networkInterfaceReader struct {
 	snap map[string]*kacho.NetworkInterfaceRecord
 }
 
+// Get возвращает копию NetworkInterface-записи по id (repo.ErrNotFound если нет).
 func (r *networkInterfaceReader) Get(_ context.Context, id string) (*kacho.NetworkInterfaceRecord, error) {
 	n, ok := r.snap[id]
 	if !ok {
@@ -51,6 +52,7 @@ func (r *networkInterfaceReader) Get(_ context.Context, id string) (*kacho.Netwo
 	return &cp, nil
 }
 
+// List возвращает NIC-записи, отфильтрованные по ProjectID/SubnetID/InstanceID.
 func (r *networkInterfaceReader) List(_ context.Context, f kacho.NetworkInterfaceFilter, _ kacho.Pagination) ([]*kacho.NetworkInterfaceRecord, string, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for _, n := range r.snap {
@@ -66,6 +68,7 @@ func (r *networkInterfaceReader) List(_ context.Context, f kacho.NetworkInterfac
 	return result, "", nil
 }
 
+// ListBySubnet возвращает все NIC заданной подсети (для Subnet.Delete precheck).
 func (r *networkInterfaceReader) ListBySubnet(_ context.Context, subnetID string) ([]*kacho.NetworkInterfaceRecord, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for _, n := range r.snap {
@@ -86,6 +89,7 @@ type networkInterfaceWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает NIC-запись из writer-локального стора (исключая удалённые).
 func (nw *networkInterfaceWriter) Get(_ context.Context, id string) (*kacho.NetworkInterfaceRecord, error) {
 	if _, deleted := nw.w.deletedNIIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -98,6 +102,7 @@ func (nw *networkInterfaceWriter) Get(_ context.Context, id string) (*kacho.Netw
 	return &cp, nil
 }
 
+// List возвращает NIC-записи из writer-локального стора (исключая удалённые).
 func (nw *networkInterfaceWriter) List(_ context.Context, f kacho.NetworkInterfaceFilter, _ kacho.Pagination) ([]*kacho.NetworkInterfaceRecord, string, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for id, n := range nw.w.localNIs {
@@ -116,6 +121,7 @@ func (nw *networkInterfaceWriter) List(_ context.Context, f kacho.NetworkInterfa
 	return result, "", nil
 }
 
+// ListBySubnet возвращает NIC заданной подсети из writer-локального стора.
 func (nw *networkInterfaceWriter) ListBySubnet(_ context.Context, subnetID string) ([]*kacho.NetworkInterfaceRecord, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for id, n := range nw.w.localNIs {
@@ -131,6 +137,7 @@ func (nw *networkInterfaceWriter) ListBySubnet(_ context.Context, subnetID strin
 	return result, nil
 }
 
+// Insert сохраняет новую NIC в writer-локальный стор с CreatedAt = now.
 func (nw *networkInterfaceWriter) Insert(_ context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
 	rec := &kacho.NetworkInterfaceRecord{NetworkInterface: *n, CreatedAt: time.Now().UTC()}
 	nw.w.localNIs[n.ID] = rec
@@ -138,6 +145,7 @@ func (nw *networkInterfaceWriter) Insert(_ context.Context, n *domain.NetworkInt
 	return &cp, nil
 }
 
+// UpdateMeta перезаписывает mutable-поля NIC (name/description/labels/SG/addresses).
 func (nw *networkInterfaceWriter) UpdateMeta(_ context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
 	if _, deleted := nw.w.deletedNIIDs[n.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -159,6 +167,7 @@ func (nw *networkInterfaceWriter) UpdateMeta(_ context.Context, n *domain.Networ
 	return &cp, nil
 }
 
+// SetProjectID меняет ProjectID NIC в writer-локальном сторе (Move).
 func (nw *networkInterfaceWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.NetworkInterfaceRecord, error) {
 	if _, deleted := nw.w.deletedNIIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -207,6 +216,7 @@ func (nw *networkInterfaceWriter) DetachFromInstance(_ context.Context, id strin
 	return &cp, nil
 }
 
+// Delete помечает NIC удалённой в writer-локальном сторе.
 func (nw *networkInterfaceWriter) Delete(_ context.Context, id string) error {
 	if _, ok := nw.w.localNIs[id]; !ok {
 		return repo.ErrNotFound

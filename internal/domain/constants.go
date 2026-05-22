@@ -23,9 +23,13 @@ func TruncateID(id string) string {
 type SecurityGroupStatus string
 
 const (
-	SecurityGroupStatusActive   SecurityGroupStatus = "ACTIVE"
+	// SecurityGroupStatusActive — SG активна и применена.
+	SecurityGroupStatusActive SecurityGroupStatus = "ACTIVE"
+	// SecurityGroupStatusCreating — SG создаётся.
 	SecurityGroupStatusCreating SecurityGroupStatus = "CREATING"
+	// SecurityGroupStatusUpdating — правила SG обновляются.
 	SecurityGroupStatusUpdating SecurityGroupStatus = "UPDATING"
+	// SecurityGroupStatusDeleting — SG удаляется.
 	SecurityGroupStatusDeleting SecurityGroupStatus = "DELETING"
 )
 
@@ -35,8 +39,10 @@ const (
 type SecurityGroupRuleDirection string
 
 const (
+	// SecurityGroupRuleDirectionIngress — правило для входящего трафика.
 	SecurityGroupRuleDirectionIngress SecurityGroupRuleDirection = "INGRESS"
-	SecurityGroupRuleDirectionEgress  SecurityGroupRuleDirection = "EGRESS"
+	// SecurityGroupRuleDirectionEgress — правило для исходящего трафика.
+	SecurityGroupRuleDirectionEgress SecurityGroupRuleDirection = "EGRESS"
 )
 
 // ---- GatewayType -------------------------------------------------------------
@@ -68,9 +74,12 @@ const (
 type PrivateEndpointStatus string
 
 const (
-	PrivateEndpointStatusPending   PrivateEndpointStatus = "PENDING"
+	// PrivateEndpointStatusPending — PE создаётся.
+	PrivateEndpointStatusPending PrivateEndpointStatus = "PENDING"
+	// PrivateEndpointStatusAvailable — PE готов к использованию.
 	PrivateEndpointStatusAvailable PrivateEndpointStatus = "AVAILABLE"
-	PrivateEndpointStatusDeleting  PrivateEndpointStatus = "DELETING"
+	// PrivateEndpointStatusDeleting — PE удаляется.
+	PrivateEndpointStatusDeleting PrivateEndpointStatus = "DELETING"
 )
 
 // ---- NetworkInterfaceStatus --------------------------------------------------

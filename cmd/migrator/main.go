@@ -38,12 +38,15 @@ import (
 )
 
 const (
-	defaultDialect       = "postgres"
+	// defaultDialect — SQL-диалект по умолчанию, если флаг --dialect не задан.
+	defaultDialect = "postgres"
+	// defaultMigrationsDir — каталог с миграциями по умолчанию для чтения (embed FS root).
 	defaultMigrationsDir = "."
 	// defaultPhysDir — куда `create` пишет новые миграции по умолчанию.
 	// На внешнем диске (relative cwd), не в embed FS — embed read-only.
 	defaultPhysDir = "internal/migrations"
-	envDSN         = "KACHO_MIGRATOR_DSN"
+	// envDSN — имя env-переменной, из которой берётся DSN при отсутствии флага --dsn.
+	envDSN = "KACHO_MIGRATOR_DSN"
 )
 
 // rootOptions — shared параметры всех subcommand'ов, накапливаются persistent-флагами.
@@ -89,6 +92,7 @@ func newRootCmd(migrationsFS fs.FS) *cobra.Command {
 	return root
 }
 
+// newUpCmd собирает subcommand `up` — применяет миграции до последней (или до --target).
 func newUpCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	var target string
 	cmd := &cobra.Command{
@@ -106,6 +110,7 @@ func newUpCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	return cmd
 }
 
+// newDownCmd собирает subcommand `down` — откатывает последнюю миграцию (или до --target).
 func newDownCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	var target string
 	cmd := &cobra.Command{
@@ -123,6 +128,7 @@ func newDownCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	return cmd
 }
 
+// newStatusCmd собирает cobra-команду `status` (показ applied/pending миграций).
 func newStatusCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -137,6 +143,7 @@ func newStatusCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	}
 }
 
+// newCreateCmd собирает cobra-команду `create` (создание нового пустого SQL-файла миграции).
 func newCreateCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{

@@ -45,6 +45,7 @@ func mapRepoErr(err error) error {
 	return status.Error(codes.Internal, "internal database error")
 }
 
+// stripSentinel удаляет sentinel-префикс из текста ошибки (verbatim YC-сообщение наружу).
 func stripSentinel(err, sentinel error) string {
 	msg := err.Error()
 	prefix := sentinel.Error() + ": "

@@ -175,12 +175,15 @@ func (u *UpdateNetworkInterfaceUseCase) validateAndAttachAddresses(ctx context.C
 	return nil
 }
 
+// validateAddressRef проверяет ссылку NIC на Address (существует, нужной
+// IP-версии, в подсети, не занят) — делегирует create-time проверке.
 func (u *UpdateNetworkInterfaceUseCase) validateAddressRef(ctx context.Context, id, nicSubnet string, want domain.IpVersion) error {
 	// Делегируем create-time проверку: семантика идентичная (Address существует,
 	// нужной IP-версии, в подсети, не занят).
 	return (&CreateNetworkInterfaceUseCase{addressRepo: u.addressRepo}).validateAddressRef(ctx, id, nicSubnet, want)
 }
 
+// detachAddresses снимает referrer-привязку с перечисленных Address-id (best-effort).
 func (u *UpdateNetworkInterfaceUseCase) detachAddresses(ctx context.Context, ids []string) {
 	for _, id := range ids {
 		_ = u.addressRepo.ClearReference(ctx, id)
@@ -235,6 +238,7 @@ func strSet(ss []string) map[string]bool {
 	return m
 }
 
+// strSetEqual сообщает, совпадают ли два слайса строк как множества.
 func strSetEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

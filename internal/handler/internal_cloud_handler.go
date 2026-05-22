@@ -37,6 +37,8 @@ func NewInternalCloudHandler(
 	return &InternalCloudHandler{set: set, unset: unset, get: get}
 }
 
+// SetPoolSelector обрабатывает RPC InternalCloudService.SetPoolSelector —
+// задаёт admin-controlled pool-selector для облака.
 func (h *InternalCloudHandler) SetPoolSelector(ctx context.Context, req *vpcv1.SetCloudPoolSelectorRequest) (*vpcv1.SetCloudPoolSelectorResponse, error) {
 	if req.GetCloudId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "cloud_id required")
@@ -47,6 +49,8 @@ func (h *InternalCloudHandler) SetPoolSelector(ctx context.Context, req *vpcv1.S
 	return &vpcv1.SetCloudPoolSelectorResponse{}, nil
 }
 
+// UnsetPoolSelector обрабатывает RPC InternalCloudService.UnsetPoolSelector —
+// снимает pool-selector с облака.
 func (h *InternalCloudHandler) UnsetPoolSelector(ctx context.Context, req *vpcv1.UnsetCloudPoolSelectorRequest) (*vpcv1.UnsetCloudPoolSelectorResponse, error) {
 	if req.GetCloudId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "cloud_id required")
@@ -57,6 +61,8 @@ func (h *InternalCloudHandler) UnsetPoolSelector(ctx context.Context, req *vpcv1
 	return &vpcv1.UnsetCloudPoolSelectorResponse{}, nil
 }
 
+// GetPoolSelector обрабатывает RPC InternalCloudService.GetPoolSelector —
+// возвращает pool-selector облака (Present=false если не задан).
 func (h *InternalCloudHandler) GetPoolSelector(ctx context.Context, req *vpcv1.GetCloudPoolSelectorRequest) (*vpcv1.GetCloudPoolSelectorResponse, error) {
 	if req.GetCloudId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "cloud_id required")

@@ -53,6 +53,8 @@ func (u *DetachFromInstanceUseCase) Execute(ctx context.Context, id string) (*op
 	return &op, nil
 }
 
+// doDetach — async worker-тело NetworkInterface.DetachFromInstance: очищает
+// used_by-привязку NIC.
 func (u *DetachFromInstanceUseCase) doDetach(ctx context.Context, id string) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

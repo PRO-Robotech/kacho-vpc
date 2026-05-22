@@ -86,6 +86,7 @@ func (u *UpdateSubnetUseCase) Execute(ctx context.Context, in UpdateInput) (*ope
 	return &op, nil
 }
 
+// doUpdate — async worker-тело Subnet.Update: применяет mutable-поля в writer-TX.
 func (u *UpdateSubnetUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

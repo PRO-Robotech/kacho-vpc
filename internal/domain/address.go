@@ -10,18 +10,24 @@ import (
 type AddressType int32
 
 const (
+	// AddressTypeUnspecified — тип адреса не задан.
 	AddressTypeUnspecified AddressType = 0
-	AddressTypeInternal    AddressType = 1
-	AddressTypeExternal    AddressType = 2
+	// AddressTypeInternal — внутренний (subnet-scoped) адрес.
+	AddressTypeInternal AddressType = 1
+	// AddressTypeExternal — внешний (folder-level) адрес.
+	AddressTypeExternal AddressType = 2
 )
 
 // IpVersion — версия IP.
 type IpVersion int32
 
 const (
+	// IpVersionUnspecified — версия IP не задана.
 	IpVersionUnspecified IpVersion = 0
-	IpVersionIPv4        IpVersion = 1
-	IpVersionIPv6        IpVersion = 2
+	// IpVersionIPv4 — IPv4.
+	IpVersionIPv4 IpVersion = 1
+	// IpVersionIPv6 — IPv6.
+	IpVersionIPv6 IpVersion = 2
 )
 
 // ExternalIpv4Spec — параметры внешнего IPv4-адреса.

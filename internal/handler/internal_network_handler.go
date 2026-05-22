@@ -27,10 +27,13 @@ type InternalNetworkHandler struct {
 	netInternal *networkinternal.Service
 }
 
+// NewInternalNetworkHandler создаёт InternalNetworkHandler.
 func NewInternalNetworkHandler(ni *networkinternal.Service) *InternalNetworkHandler {
 	return &InternalNetworkHandler{netInternal: ni}
 }
 
+// SetDefaultSecurityGroupId обрабатывает RPC InternalNetworkService.SetDefaultSecurityGroupId —
+// проставляет default_security_group_id сети.
 func (h *InternalNetworkHandler) SetDefaultSecurityGroupId(ctx context.Context, req *vpcv1.SetDefaultSecurityGroupIdRequest) (*vpcv1.SetDefaultSecurityGroupIdResponse, error) {
 	if req.GetNetworkId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")

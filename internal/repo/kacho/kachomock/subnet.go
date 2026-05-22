@@ -29,6 +29,7 @@ type subnetReader struct {
 	addrs map[string]*kacho.AddressRecord
 }
 
+// Get возвращает копию Subnet-записи по id (repo.ErrNotFound если нет).
 func (r *subnetReader) Get(_ context.Context, id string) (*kacho.SubnetRecord, error) {
 	s, ok := r.snap[id]
 	if !ok {
@@ -38,6 +39,7 @@ func (r *subnetReader) Get(_ context.Context, id string) (*kacho.SubnetRecord, e
 	return &cp, nil
 }
 
+// List возвращает Subnet-записи, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *subnetReader) List(_ context.Context, f kacho.SubnetFilter, _ kacho.Pagination) ([]*kacho.SubnetRecord, string, error) {
 	var result []*kacho.SubnetRecord
 	for _, s := range r.snap {
@@ -80,6 +82,7 @@ type subnetWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает Subnet-запись из writer-локального стора (исключая удалённые).
 func (sw *subnetWriter) Get(_ context.Context, id string) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -92,6 +95,7 @@ func (sw *subnetWriter) Get(_ context.Context, id string) (*kacho.SubnetRecord, 
 	return &cp, nil
 }
 
+// List возвращает Subnet-записи из writer-локального стора (исключая удалённые).
 func (sw *subnetWriter) List(_ context.Context, f kacho.SubnetFilter, _ kacho.Pagination) ([]*kacho.SubnetRecord, string, error) {
 	var result []*kacho.SubnetRecord
 	for id, s := range sw.w.localSubs {
@@ -109,6 +113,7 @@ func (sw *subnetWriter) List(_ context.Context, f kacho.SubnetFilter, _ kacho.Pa
 	return result, "", nil
 }
 
+// AddressesBySubnet возвращает internal-адреса подсети из writer-локального стора.
 func (sw *subnetWriter) AddressesBySubnet(_ context.Context, subnetID string, _ kacho.Pagination) ([]*kacho.AddressRecord, string, error) {
 	var result []*kacho.AddressRecord
 	for _, a := range sw.w.localAddrs {
@@ -126,6 +131,7 @@ func (sw *subnetWriter) AddressesBySubnet(_ context.Context, subnetID string, _ 
 	return result, "", nil
 }
 
+// Insert сохраняет новую Subnet в writer-локальный стор с CreatedAt = now.
 func (sw *subnetWriter) Insert(_ context.Context, s *domain.Subnet) (*kacho.SubnetRecord, error) {
 	rec := &kacho.SubnetRecord{Subnet: *s, CreatedAt: time.Now().UTC()}
 	sw.w.localSubs[s.ID] = rec
@@ -133,6 +139,7 @@ func (sw *subnetWriter) Insert(_ context.Context, s *domain.Subnet) (*kacho.Subn
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля Subnet в writer-локальном сторе.
 func (sw *subnetWriter) Update(_ context.Context, s *domain.Subnet) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[s.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -146,6 +153,7 @@ func (sw *subnetWriter) Update(_ context.Context, s *domain.Subnet) (*kacho.Subn
 	return &cp, nil
 }
 
+// Delete помечает Subnet удалённой в writer-локальном сторе.
 func (sw *subnetWriter) Delete(_ context.Context, id string) error {
 	if _, ok := sw.w.localSubs[id]; !ok {
 		return repo.ErrNotFound
@@ -158,6 +166,7 @@ func (sw *subnetWriter) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID Subnet в writer-локальном сторе (Move).
 func (sw *subnetWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -171,6 +180,7 @@ func (sw *subnetWriter) SetProjectID(_ context.Context, id, folderID string) (*k
 	return &cp, nil
 }
 
+// SetCidrBlocks перезаписывает v4/v6 CIDR-блоки Subnet в writer-локальном сторе.
 func (sw *subnetWriter) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -185,6 +195,7 @@ func (sw *subnetWriter) SetCidrBlocks(_ context.Context, id string, v4, v6 []str
 	return &cp, nil
 }
 
+// SetZoneID меняет ZoneID Subnet в writer-локальном сторе (Relocate).
 func (sw *subnetWriter) SetZoneID(_ context.Context, id, zoneID string) (*kacho.SubnetRecord, error) {
 	if _, deleted := sw.w.deletedSubIDs[id]; deleted {
 		return nil, repo.ErrNotFound

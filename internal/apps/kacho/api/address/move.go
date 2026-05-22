@@ -74,6 +74,8 @@ func (u *MoveAddressUseCase) Execute(ctx context.Context, id, destProjectID stri
 	return &op, nil
 }
 
+// doMove — async worker-тело Address.Move: проверяет destination-project и
+// переносит Address в новый project.
 func (u *MoveAddressUseCase) doMove(ctx context.Context, id, destProjectID string) (*anypb.Any, error) {
 	exists, err := u.projectClient.Exists(ctx, destProjectID)
 	if err != nil {

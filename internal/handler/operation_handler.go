@@ -22,6 +22,7 @@ func NewOperationHandler(repo operations.Repo) *OperationHandler {
 	return &OperationHandler{repo: repo}
 }
 
+// Get обрабатывает RPC OperationService.Get — возвращает Operation по id.
 func (h *OperationHandler) Get(ctx context.Context, req *operationpb.GetOperationRequest) (*operationpb.Operation, error) {
 	if req.OperationId == "" {
 		return nil, status.Error(codes.InvalidArgument, "operation_id required")
@@ -38,6 +39,7 @@ func (h *OperationHandler) Get(ctx context.Context, req *operationpb.GetOperatio
 	return operationToProto(op), nil
 }
 
+// Cancel обрабатывает RPC OperationService.Cancel — отменяет Operation по id.
 func (h *OperationHandler) Cancel(ctx context.Context, req *operationpb.CancelOperationRequest) (*operationpb.Operation, error) {
 	if req.OperationId == "" {
 		return nil, status.Error(codes.InvalidArgument, "operation_id required")

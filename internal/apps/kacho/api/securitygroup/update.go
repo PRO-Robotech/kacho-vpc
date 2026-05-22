@@ -77,6 +77,7 @@ func (u *UpdateSecurityGroupUseCase) Execute(ctx context.Context, in UpdateInput
 	return &op, nil
 }
 
+// doUpdate — async worker-тело SecurityGroup.Update: применяет mutable-поля в writer-TX.
 func (u *UpdateSecurityGroupUseCase) doUpdate(ctx context.Context, in UpdateInput) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

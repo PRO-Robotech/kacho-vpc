@@ -75,6 +75,7 @@ func parseMode(s string) (Mode, error) {
 // удобнее иметь строкой).
 func (m Mode) MarshalJSON() ([]byte, error) { return json.Marshal(m.String()) }
 
+// UnmarshalJSON парсит Mode из JSON-строки (обратно к MarshalJSON).
 func (m *Mode) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {

@@ -18,6 +18,7 @@ type cloudPoolSelectorReader struct {
 	snap map[string]*domain.CloudPoolSelector
 }
 
+// Get возвращает CloudPoolSelector по cloud-id (repo.ErrNotFound если нет).
 func (r *cloudPoolSelectorReader) Get(_ context.Context, cloudID string) (*domain.CloudPoolSelector, error) {
 	c, ok := r.snap[cloudID]
 	if !ok {
@@ -33,6 +34,7 @@ type cloudPoolSelectorWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает CloudPoolSelector из writer-локального стора (исключая удалённые).
 func (cw *cloudPoolSelectorWriter) Get(_ context.Context, cloudID string) (*domain.CloudPoolSelector, error) {
 	if _, deleted := cw.w.deletedCSIDs[cloudID]; deleted {
 		return nil, repo.ErrNotFound
@@ -45,6 +47,7 @@ func (cw *cloudPoolSelectorWriter) Get(_ context.Context, cloudID string) (*doma
 	return &cp, nil
 }
 
+// Set сохраняет/перезаписывает CloudPoolSelector в writer-локальном сторе.
 func (cw *cloudPoolSelectorWriter) Set(_ context.Context, cloudID string, sel map[string]string, setBy string) error {
 	if cw.w.deletedCSIDs != nil {
 		delete(cw.w.deletedCSIDs, cloudID)
@@ -58,6 +61,7 @@ func (cw *cloudPoolSelectorWriter) Set(_ context.Context, cloudID string, sel ma
 	return nil
 }
 
+// Unset удаляет CloudPoolSelector в writer-локальном сторе.
 func (cw *cloudPoolSelectorWriter) Unset(_ context.Context, cloudID string) error {
 	if cw.w.deletedCSIDs == nil {
 		cw.w.deletedCSIDs = make(map[string]struct{})

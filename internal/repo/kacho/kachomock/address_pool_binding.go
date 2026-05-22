@@ -17,6 +17,7 @@ type addressPoolBindingReader struct {
 	addrOver map[string]string // address_id → pool_id
 }
 
+// GetNetworkDefault возвращает pool-id, привязанный к сети как default (ErrNotFound если нет).
 func (r *addressPoolBindingReader) GetNetworkDefault(_ context.Context, networkID string) (string, error) {
 	p, ok := r.netDef[networkID]
 	if !ok {
@@ -25,6 +26,7 @@ func (r *addressPoolBindingReader) GetNetworkDefault(_ context.Context, networkI
 	return p, nil
 }
 
+// GetAddressOverride возвращает pool-id, override-привязанный к адресу (ErrNotFound если нет).
 func (r *addressPoolBindingReader) GetAddressOverride(_ context.Context, addressID string) (string, error) {
 	p, ok := r.addrOver[addressID]
 	if !ok {
@@ -39,6 +41,7 @@ type addressPoolBindingWriter struct {
 	w *writerImpl
 }
 
+// GetNetworkDefault возвращает network-default pool-id из writer-локального стора.
 func (bw *addressPoolBindingWriter) GetNetworkDefault(_ context.Context, networkID string) (string, error) {
 	if _, deleted := bw.w.deletedNDIDs[networkID]; deleted {
 		return "", repo.ErrNotFound
@@ -50,6 +53,7 @@ func (bw *addressPoolBindingWriter) GetNetworkDefault(_ context.Context, network
 	return p, nil
 }
 
+// GetAddressOverride возвращает address-override pool-id из writer-локального стора.
 func (bw *addressPoolBindingWriter) GetAddressOverride(_ context.Context, addressID string) (string, error) {
 	if _, deleted := bw.w.deletedAOIDs[addressID]; deleted {
 		return "", repo.ErrNotFound
@@ -61,6 +65,7 @@ func (bw *addressPoolBindingWriter) GetAddressOverride(_ context.Context, addres
 	return p, nil
 }
 
+// SetNetworkDefault привязывает pool к сети как default в writer-локальном сторе.
 func (bw *addressPoolBindingWriter) SetNetworkDefault(_ context.Context, networkID, poolID string) error {
 	if bw.w.deletedNDIDs != nil {
 		delete(bw.w.deletedNDIDs, networkID)
@@ -69,6 +74,7 @@ func (bw *addressPoolBindingWriter) SetNetworkDefault(_ context.Context, network
 	return nil
 }
 
+// UnsetNetworkDefault снимает network-default-привязку в writer-локальном сторе.
 func (bw *addressPoolBindingWriter) UnsetNetworkDefault(_ context.Context, networkID string) error {
 	if bw.w.deletedNDIDs == nil {
 		bw.w.deletedNDIDs = make(map[string]struct{})
@@ -78,6 +84,7 @@ func (bw *addressPoolBindingWriter) UnsetNetworkDefault(_ context.Context, netwo
 	return nil
 }
 
+// SetAddressOverride привязывает pool к адресу как override в writer-локальном сторе.
 func (bw *addressPoolBindingWriter) SetAddressOverride(_ context.Context, addressID, poolID string) error {
 	if bw.w.deletedAOIDs != nil {
 		delete(bw.w.deletedAOIDs, addressID)
@@ -86,6 +93,7 @@ func (bw *addressPoolBindingWriter) SetAddressOverride(_ context.Context, addres
 	return nil
 }
 
+// UnsetAddressOverride снимает address-override-привязку в writer-локальном сторе.
 func (bw *addressPoolBindingWriter) UnsetAddressOverride(_ context.Context, addressID string) error {
 	if bw.w.deletedAOIDs == nil {
 		bw.w.deletedAOIDs = make(map[string]struct{})

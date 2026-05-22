@@ -72,6 +72,8 @@ func (u *AttachToInstanceUseCase) Execute(ctx context.Context, id, instanceID, i
 	return &op, nil
 }
 
+// doAttach — async worker-тело NetworkInterface.AttachToInstance: атомарно
+// (CAS) проставляет used_by-привязку NIC к инстансу.
 func (u *AttachToInstanceUseCase) doAttach(ctx context.Context, id, instanceID string) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

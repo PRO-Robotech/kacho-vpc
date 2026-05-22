@@ -52,6 +52,7 @@ func (privateEndpoint) toPb(rec kachorepo.PrivateEndpointRecord) (*pepb.PrivateE
 	return out, nil
 }
 
+// peStatusToPb маппит domain-статус PrivateEndpoint в proto-enum PrivateEndpoint_Status.
 func peStatusToPb(s domain.PrivateEndpointStatus) pepb.PrivateEndpoint_Status {
 	switch s {
 	case domain.PrivateEndpointStatusPending:

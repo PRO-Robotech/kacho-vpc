@@ -76,6 +76,7 @@ func NewHandler(
 
 // -- CRUD --
 
+// Create обрабатывает RPC InternalAddressPoolService.Create — создаёт AddressPool.
 func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressPoolRequest) (*vpcv1.AddressPool, error) {
 	p, err := h.create.Execute(ctx, CreatePoolReq{
 		Name:             req.GetName(),
@@ -95,6 +96,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressPoolReques
 	return poolToProto(p), nil
 }
 
+// Get обрабатывает RPC InternalAddressPoolService.Get — возвращает AddressPool по id.
 func (h *Handler) Get(ctx context.Context, req *vpcv1.GetAddressPoolRequest) (*vpcv1.AddressPool, error) {
 	p, err := h.get.Execute(ctx, req.GetPoolId())
 	if err != nil {
@@ -103,6 +105,7 @@ func (h *Handler) Get(ctx context.Context, req *vpcv1.GetAddressPoolRequest) (*v
 	return poolToProto(p), nil
 }
 
+// List обрабатывает RPC InternalAddressPoolService.List — список AddressPool с пагинацией.
 func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressPoolsRequest) (*vpcv1.ListAddressPoolsResponse, error) {
 	pools, next, err := h.list.Execute(ctx, AddressPoolFilter{
 		Kind:   domain.AddressPoolKind(req.GetKind()), // #nosec G115 -- proto enum value (bounded set), not an arithmetic overflow.
@@ -121,6 +124,8 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressPoolsRequest) 
 	return &vpcv1.ListAddressPoolsResponse{Pools: out, NextPageToken: next}, nil
 }
 
+// Update обрабатывает RPC InternalAddressPoolService.Update — обновляет AddressPool
+// (CIDR/labels-поля мутируются только при выставленных replace-флагах, KAC-71).
 func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateAddressPoolRequest) (*vpcv1.AddressPool, error) {
 	in := UpdatePoolReq{ID: req.GetPoolId()}
 	if req.GetName() != "" {
@@ -165,6 +170,7 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateAddressPoolReques
 	return poolToProto(p), nil
 }
 
+// Delete обрабатывает RPC InternalAddressPoolService.Delete — удаляет AddressPool.
 func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressPoolRequest) (*vpcv1.DeleteAddressPoolResponse, error) {
 	if err := h.deleteUC.Execute(ctx, req.GetPoolId()); err != nil {
 		return nil, mapPoolErr(err)
@@ -174,6 +180,8 @@ func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressPoolReques
 
 // -- Bindings --
 
+// BindAsNetworkDefault обрабатывает RPC InternalAddressPoolService.BindAsNetworkDefault —
+// привязывает pool к сети как default.
 func (h *Handler) BindAsNetworkDefault(ctx context.Context, req *vpcv1.BindAsNetworkDefaultRequest) (*vpcv1.BindResponse, error) {
 	if err := h.bindNet.Execute(ctx, req.GetNetworkId(), req.GetPoolId()); err != nil {
 		return nil, mapPoolErr(err)
@@ -181,6 +189,8 @@ func (h *Handler) BindAsNetworkDefault(ctx context.Context, req *vpcv1.BindAsNet
 	return &vpcv1.BindResponse{}, nil
 }
 
+// UnbindNetworkDefault обрабатывает RPC InternalAddressPoolService.UnbindNetworkDefault —
+// снимает network-default-привязку pool.
 func (h *Handler) UnbindNetworkDefault(ctx context.Context, req *vpcv1.UnbindNetworkDefaultRequest) (*vpcv1.BindResponse, error) {
 	if err := h.unbindNet.Execute(ctx, req.GetNetworkId()); err != nil {
 		return nil, mapPoolErr(err)
@@ -188,6 +198,8 @@ func (h *Handler) UnbindNetworkDefault(ctx context.Context, req *vpcv1.UnbindNet
 	return &vpcv1.BindResponse{}, nil
 }
 
+// BindAsAddressOverride обрабатывает RPC InternalAddressPoolService.BindAsAddressOverride —
+// привязывает pool к адресу как override.
 func (h *Handler) BindAsAddressOverride(ctx context.Context, req *vpcv1.BindAsAddressOverrideRequest) (*vpcv1.BindResponse, error) {
 	if err := h.bindAddr.Execute(ctx, req.GetAddressId(), req.GetPoolId()); err != nil {
 		return nil, mapPoolErr(err)
@@ -195,6 +207,8 @@ func (h *Handler) BindAsAddressOverride(ctx context.Context, req *vpcv1.BindAsAd
 	return &vpcv1.BindResponse{}, nil
 }
 
+// UnbindAddressOverride обрабатывает RPC InternalAddressPoolService.UnbindAddressOverride —
+// снимает address-override-привязку pool.
 func (h *Handler) UnbindAddressOverride(ctx context.Context, req *vpcv1.UnbindAddressOverrideRequest) (*vpcv1.BindResponse, error) {
 	if err := h.unbindAddr.Execute(ctx, req.GetAddressId()); err != nil {
 		return nil, mapPoolErr(err)
@@ -204,6 +218,8 @@ func (h *Handler) UnbindAddressOverride(ctx context.Context, req *vpcv1.UnbindAd
 
 // -- Diagnostics --
 
+// Check обрабатывает RPC InternalAddressPoolService.Check — диагностика
+// ambiguous-конфигураций pool в зоне (список warnings).
 func (h *Handler) Check(ctx context.Context, req *vpcv1.CheckRequest) (*vpcv1.CheckResponse, error) {
 	warnings, err := h.check.Execute(ctx, req.GetZoneId())
 	if err != nil {
@@ -243,6 +259,8 @@ func (h *Handler) ExplainResolution(ctx context.Context, req *vpcv1.ExplainResol
 
 // -- Admin observability --
 
+// ListAddresses обрабатывает RPC InternalAddressPoolService.ListAddresses —
+// admin-observability: список адресов, аллоцированных из pool.
 func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolAddressesRequest) (*vpcv1.ListAddressPoolAddressesResponse, error) {
 	addrs, next, err := h.listAddresses.Execute(ctx, req.GetPoolId(), req.GetProjectId(), Pagination{
 		PageToken: req.GetPageToken(),
@@ -273,6 +291,8 @@ func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolA
 	return &vpcv1.ListAddressPoolAddressesResponse{Addresses: out, NextPageToken: next}, nil
 }
 
+// GetUtilization обрабатывает RPC InternalAddressPoolService.GetUtilization —
+// admin-observability: статистика занятости IP в pool (total/used/free + per-CIDR).
 func (h *Handler) GetUtilization(ctx context.Context, req *vpcv1.GetAddressPoolUtilizationRequest) (*vpcv1.AddressPoolUtilization, error) {
 	u, err := h.utilization.Execute(ctx, req.GetPoolId())
 	if err != nil {

@@ -55,6 +55,7 @@ func (securityGroup) toPb(rec kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGro
 	return p, nil
 }
 
+// sgStatusToPb маппит domain-статус SecurityGroup в proto-enum SecurityGroup_Status.
 func sgStatusToPb(s domain.SecurityGroupStatus) vpcv1.SecurityGroup_Status {
 	switch s {
 	case domain.SecurityGroupStatusCreating:
@@ -69,6 +70,7 @@ func sgStatusToPb(s domain.SecurityGroupStatus) vpcv1.SecurityGroup_Status {
 	return vpcv1.SecurityGroup_STATUS_UNSPECIFIED
 }
 
+// sgDirectionToPb маппит domain-направление SG-правила в proto-enum SecurityGroupRule_Direction.
 func sgDirectionToPb(d domain.SecurityGroupRuleDirection) vpcv1.SecurityGroupRule_Direction {
 	switch d {
 	case domain.SecurityGroupRuleDirectionIngress:
