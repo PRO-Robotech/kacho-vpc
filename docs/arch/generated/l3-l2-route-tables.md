@@ -14,542 +14,554 @@ Generated from L2 note `l2-route-tables.md`.
 - `kacho.cloud.vpc.v1.RouteTableService/Move`
 - `kacho.cloud.vpc.v1.RouteTableService/Update`
 
+## RPC contract
+
+| RPC | gRPC | REST |
+|-----|------|------|
+| RouteTableService/Create | (CreateRouteTableRequest) → operation.Operation | POST /vpc/v1/routeTables |
+| RouteTableService/Delete | (DeleteRouteTableRequest) → operation.Operation | DELETE /vpc/v1/routeTables/{route_table_id} |
+| RouteTableService/Get | (GetRouteTableRequest) → RouteTable | GET /vpc/v1/routeTables/{route_table_id} |
+| RouteTableService/List | (ListRouteTablesRequest) → ListRouteTablesResponse | GET /vpc/v1/routeTables |
+| RouteTableService/ListOperations | (ListRouteTableOperationsRequest) → ListRouteTableOperationsResponse | GET /vpc/v1/routeTables/{route_table_id}/operations |
+| RouteTableService/Move | (MoveRouteTableRequest) → operation.Operation | POST /vpc/v1/routeTables/{route_table_id}:move |
+| RouteTableService/Update | (UpdateRouteTableRequest) → operation.Operation | PATCH /vpc/v1/routeTables/{route_table_id} |
+
 ## Call tree
 
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv4`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv6`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv4`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv6`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.DeleteAddressUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.GetAddressUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.GetByValueUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListAddressesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListAddressesUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListBySubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).doMove`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.CheckUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetAddressPoolUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetCloudPoolSelectorUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetPoolUtilizationUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ListAddressPoolsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ListPoolAddressesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).ResolvePoolForAddressObjFamily`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).doResolve`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).doResolve$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).tryRestForRunnerUp`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.CreateGatewayUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.CreateGatewayUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.DeleteGatewayUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.GetGatewayUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.ListGatewaysUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.ListGatewaysUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.MoveGatewayUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateDefaultSGUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).checkNetworkEmpty$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).doDelete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.GetNetworkUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListNetworksUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListRouteTablesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSecurityGroupsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSubnetsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).doMove`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).doAttach`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).detachAddresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAddressRef`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAndAttachAddresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).doDelete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).doDetach`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.GetNetworkInterfaceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).detachAddresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAddressRef`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAndAttachAddresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.DeletePrivateEndpointUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.DeletePrivateEndpointUseCase).doDelete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.GetPrivateEndpointUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.ListPrivateEndpointsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.ListPrivateEndpointsUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.UpdatePrivateEndpointUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.UpdatePrivateEndpointUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.DeleteRouteTableUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.DeleteRouteTableUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.GetRouteTableUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.GetRouteTableUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Create`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).List`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).ListOperations`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Move`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListOperationsUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.MoveRouteTableUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.MoveRouteTableUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).Execute`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.DeleteSecurityGroupUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.GetSecurityGroupUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.ListSecurityGroupsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.ListSecurityGroupsUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.MoveSecurityGroupUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRuleUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRulesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.AddCidrBlocksUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).doCreate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.DeleteSubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.DeleteSubnetUseCase).doDelete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.GetSubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListSubnetsUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListSubnetsUseCase).Execute$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListUsedAddressesUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).doMove`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.RemoveCidrBlocksUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).Execute$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).doUpdate`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.IAMCheckClient).Check`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).MarshalJSON`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).String`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).UnmarshalJSON`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz.Adapter).ListAllowedIDs`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Create`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Down`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Status`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Up`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).Exists`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).GetCloudIDFromProject`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).lookup`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).store`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ComputeGeographyClient).Get$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ComputeGeographyClient).ListIDs$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.IAMListObjectsClient).ListObjects`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.IAMListObjectsClient).ListObjects$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.OpenFGAWriteClient).WriteHierarchyTuple`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.OpenFGAWriteClient).WriteHierarchyTuple$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).Exists`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).Exists$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).GetCloudIDFromProject`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).GetCloudIDFromProject$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.retryableErr).Error`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$2`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$3`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.wrappedStream).Context`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).ClearReference`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).GetReference$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).ReferencesForAddresses$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).SetReference`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkAdapter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkAdapter).Get$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkInterfaceAdapter).ListBySubnet$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.RouteTableAdapter).List$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).Get$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).List$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).AddressesBySubnet$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).Get$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).List$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Reader`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Writer`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetAddressOverride`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetNetworkDefault`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetAddressOverride`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetNetworkDefault`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).FindBySelectorMatch`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).GetDefaultForZone`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).FindBySelectorMatch`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).GetDefaultForZone`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).AllocateExternalIPv6`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).AllocateIPFromFreelist`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).ClearReference`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).FreeExternalIPv6`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).ReturnIPToFreelist`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetIPSpec`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetInternalIPv6`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetReference`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceReader).List$1`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).AttachToInstance`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).DetachFromInstance`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).UpdateMeta`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).SetDefaultSGID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.outboxEmitter).Emit`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).AddressPoolBindings`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).AddressPools`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Addresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Close`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).CloudPoolSelectors`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Networks`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).RouteTables`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Subnets`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableReader).List`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).List`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).UpdateRule`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).UpdateRules`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetReader).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Delete`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Get`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Insert`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).SetCidrBlocks`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).SetProjectID`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Update`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Abort`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Addresses`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Commit`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Gateways`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).NetworkInterfaces`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Networks`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Outbox`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).PrivateEndpoints`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).RouteTables`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).SecurityGroups`
-- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Subnets`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).MigrateDSN`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).baseDSN`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).composeDSN`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).MarshalJSON`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).String`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Config).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/clients.retryableErr).Error`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.CloudPoolSelector).IsEmpty`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelKey).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelVal).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RcDescription).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RcNameVPC).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RouteTable).Validate`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantCtx).HasFolderAccess`
-- `(github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantCtx).IsAnonymous`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.buildRunner`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newCreateCmd$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newDownCmd$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newStatusCmd$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newUpCmd$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$1$1`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$2`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$3`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$4`
-- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$5`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.addressPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.applyAddressMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.isUniqueViolation`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.marshalAddressRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.pickRandomIPv4`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.pickRandomIPv6`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.usableIPv4Sweep`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.nilOrSecondRec`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamily`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamilyRec`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.applyGatewayMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.gatewayPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.marshalGatewayRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.applyNetworkMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.marshalNetworkRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.networkPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.securityGroupPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.applyNICMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.derefName`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.marshalNetworkInterfaceRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.networkInterfacePayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV4`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV6`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSet`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSetEqual`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.applyPrivateEndpointMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.marshalPrivateEndpointRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.privateEndpointPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.applyRouteTableMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.checkMoveDestination`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.fgaSubjectFromCtx`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.invalidArg`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.marshalRouteTableRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.operationToProto`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.routeTableToPb`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.validateRouteTableUpdate`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.validateStaticRoutes`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.applySGMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.assignRuleIDs`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.marshalSecurityGroupRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.securityGroupPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.appendDedup`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.applySubnetMask`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.checkCIDRDisjoint`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.invalidArg`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.mapRepoErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.marshalSubnetRecord`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.parseNetipPrefix`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.prefixesOverlap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.stripSentinel`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.subnetPayloadMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.subtractCIDRs`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$10`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$11`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$12`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$13`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$14`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$15`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$16`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$17`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$18`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$19`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$2`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$20`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$21`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$22`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$23`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$24`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$25`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$26`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$27`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$28`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$29`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$3`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$30`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$31`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$32`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$33`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$34`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$35`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$36`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$37`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$38`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$39`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$4`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$40`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$41`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$42`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$43`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$44`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$45`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$46`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$47`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$48`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$49`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$5`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$50`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$51`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$52`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$53`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$54`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$55`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$56`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$57`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$58`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$59`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$6`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$60`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$61`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$62`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$63`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$64`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$65`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$66`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$67`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$7`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$8`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$9`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Load`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Load$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.RegisterDefaults`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.applyLegacyEnv`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.dsnHas`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.injectPasswordIntoDSN`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.parseMode`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite.Emit`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz.FilterByAllowedIDs[*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/macutil.GenerateMAC`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.New`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.NewDialect`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.ResolveDialect`
-- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.listDialects`
-- `github.com/PRO-Robotech/kacho-vpc/internal/clients.retryHTTPWrite`
-- `github.com/PRO-Robotech/kacho-vpc/internal/clients.withPrincipalMD`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.DefaultSGName`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsEqual$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsFromMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsToMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsToMap$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.NewDefaultSecurityGroup`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.NewDefaultSecurityGroupRules`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.TruncateID`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.ValidateLabels`
-- `github.com/PRO-Robotech/kacho-vpc/internal/domain.ValidateLabels$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.AssertFolderOwnership`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantFromCtx`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantStreamInterceptor$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantUnaryInterceptor$1`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.assertAdminAccess`
-- `github.com/PRO-Robotech/kacho-vpc/internal/handler.tenantFromMetadata`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.DecodePageToken`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.DomainToMap`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.EmitVPC`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.EncodePageToken`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.GatewayPayload`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.InvalidFilterErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.InvalidPageTokenErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsCheckViolation`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsExclusionViolation`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsFKViolation`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsInvalidUUID`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsNICMacCollision`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsUniqueViolation`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalDhcp`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalJSONB`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalStaticRoutes`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NIStatusFromName`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NIStatusName`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NullableStr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.OrEmptyStrSlice`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.RouteTablePayload`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddress`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddressPool`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddressPoolDomain`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanGateway`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNI`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNIRec`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNetwork`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanPrivateEndpoint`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanRouteTable`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanSG`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanSubnet`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.SecurityGroupPayload`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.UnmarshalJSONB`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapGatewayErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapPgErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapSGErr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.YCKindText`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addOffsetToAddr`
-- `github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.marshalIPSpec`
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv4` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateExternalIPv6` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv4` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).allocateInternalIPv6` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.CreateAddressUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.DeleteAddressUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.GetAddressUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.GetByValueUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListAddressesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListAddressesUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.ListBySubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.MoveAddressUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.UpdateAddressUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.CheckUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetAddressPoolUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetCloudPoolSelectorUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.GetPoolUtilizationUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ListAddressPoolsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ListPoolAddressesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).ResolvePoolForAddressObjFamily` — ResolvePoolForAddressObjFamily — cascade-resolve с явным IP-family фильтром (KAC-63).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).doResolve` — doResolve — единая реализация cascade.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).doResolve$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.ResolverService).tryRestForRunnerUp` — tryRestForRunnerUp — упрощённая попытка вычислить runner-up: skip step that won the primary, run cascade from next.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.CreateGatewayUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.CreateGatewayUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.DeleteGatewayUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.GetGatewayUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.ListGatewaysUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.ListGatewaysUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.MoveGatewayUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.UpdateGatewayUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateDefaultSGUseCase).Execute` — Execute создаёт default-SG для только-что-вставленной Network и проставляет её id как `Network.default_security_group_id`.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).Execute$1$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.CreateNetworkUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).checkNetworkEmpty$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.DeleteNetworkUseCase).doDelete` — doDelete — async-часть Delete.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.GetNetworkUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListNetworksUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListRouteTablesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSecurityGroupsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.ListSubnetsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.MoveNetworkUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.UpdateNetworkUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.AttachToInstanceUseCase).doAttach` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).detachAddresses` — detachAddresses снимает used + referrer-row с каждого address id (best-effort, ошибки логируются неявно — пропускаются).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAddressRef` — validateAddressRef проверяет, что Address id существует, имеет ожидаемую IP-версию, (для internal) лежит в подсети nicSubnet и не занят.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.CreateNetworkInterfaceUseCase).validateAndAttachAddresses` — validateAndAttachAddresses валидирует все v4/v6 address-refs, затем помечает каждый used=true + referrer={network_interface, nicID, nicName}.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DeleteNetworkInterfaceUseCase).doDelete` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.DetachFromInstanceUseCase).doDetach` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.GetNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.ListNetworkInterfacesUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).detachAddresses` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).doUpdate` — doUpdate — worker-loop Update.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAddressRef` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.UpdateNetworkInterfaceUseCase).validateAndAttachAddresses` — validateAndAttachAddresses / validateAddressRef / detachAddresses — повторно используем шаблон из Create (дублируем тут, потому что use-case'ы независимы; общий refactor в repo/service-leaf — TODO Wave 4).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.CreatePrivateEndpointUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.DeletePrivateEndpointUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.DeletePrivateEndpointUseCase).doDelete` — doDelete — async-часть Delete.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.GetPrivateEndpointUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.ListPrivateEndpointsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.ListPrivateEndpointsUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.UpdatePrivateEndpointUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.UpdatePrivateEndpointUseCase).doUpdate` — doUpdate — async-часть Update.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).Execute` — Execute — sync-валидация + create Operation + запуск worker'а.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.CreateRouteTableUseCase).doCreate` — doCreate — async-часть Create.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.DeleteRouteTableUseCase).Execute` — Execute инициирует Delete: sync-проверки → Operation → worker.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.DeleteRouteTableUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.GetRouteTableUseCase).Execute` — Execute возвращает repo-entity RouteTable.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.GetRouteTableUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Create` — Create — AuthZ → proto → domain → use-case.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Delete` — Delete — sync repo.Get для AuthZ, затем use-case.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Get` — Get — sync read + AuthZ.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).List` — List — project_id required + AuthZ + FGA list-filter (KAC-127 Phase 4).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).ListOperations` — ListOperations — best-effort AuthZ.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Move` — Move — sync repo.Get для AuthZ источника, AssertFolderOwnership на dest, затем use-case.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.Handler).Update` — Update — sync repo.Get + AuthZ + use-case.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListOperationsUseCase).Execute` — Execute — id-валидация + list.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute` — Execute — project_id required + FGA-filter (KAC-127 Phase 4).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.ListRouteTablesUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.MoveRouteTableUseCase).Execute` — Execute — sync-валидация и старт worker'а.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.MoveRouteTableUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).Execute` — Execute — sync-проверки и запуск Update в worker'е.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.UpdateRouteTableUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.CreateSecurityGroupUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.DeleteSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.GetSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.ListSecurityGroupsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.ListSecurityGroupsUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.MoveSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRuleUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateRulesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.UpdateSecurityGroupUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.AddCidrBlocksUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.CreateSubnetUseCase).doCreate` — doCreate — async-часть Create (внутри Operation worker'а).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.DeleteSubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.DeleteSubnetUseCase).doDelete` — doDelete — Subnet.Delete + outbox-emit DELETED атомарны в одной CQRS-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.GetSubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListSubnetsUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListSubnetsUseCase).Execute$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.ListUsedAddressesUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.MoveSubnetUseCase).doMove` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.RemoveCidrBlocksUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).Execute$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.UpdateSubnetUseCase).doUpdate` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.IAMCheckClient).Check` — Check вызывает `InternalIAMService.Check`.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).MarshalJSON` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).String` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).UnmarshalJSON` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz.Adapter).ListAllowedIDs` — ListAllowedIDs — fan-out на corelib service.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Create` — Create создаёт новый sql-файл миграции на диске (в указанной директории).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Down` — Down откатывает миграции.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Status` — Status печатает применённые/неприменённые миграции.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Runner).Up` — Up прогоняет миграции вверх.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).Exists` — Exists проверяет существование folder через кеш + upstream.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).GetCloudIDFromProject` — GetCloudID проксирует к upstream без дополнительного кеша.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).lookup` — lookup возвращает (exists, true) если кеш hit и не expired, иначе (_, false).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.CachedProjectClient).store` — store записывает entry в кеш с указанным TTL; вытесняет LRU-tail если перешагнули maxSize.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ComputeGeographyClient).Get$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ComputeGeographyClient).ListIDs$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.IAMListObjectsClient).ListObjects` — ListObjects реализует authz.ListObjectsClient.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.IAMListObjectsClient).ListObjects$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.OpenFGAWriteClient).WriteHierarchyTuple` — WriteHierarchyTuple writes `<objectType>:<objectID>#project@project:<projectID>`.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.OpenFGAWriteClient).WriteHierarchyTuple$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).Exists` — Exists проверяет существование Project через kacho-iam.ProjectService.Get.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).Exists$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).GetCloudIDFromProject` — GetCloudIDFromProject возвращает parent-scope id для Project — account_id в IAM-модели (исторически "cloud_id" из RM-эпохи).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.ProjectClient).GetCloudIDFromProject$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/clients.retryableErr).Error` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]).Perform[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$2` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.InternalWatchHandler).Watch$3` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/handler.wrappedStream).Context` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).ClearReference` — ClearReference — удаляет referrer-row + used=false.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get` — Get — read через свежую Reader-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).Get$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).GetReference$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).ReferencesForAddresses$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.AddressAdapter).SetReference` — SetReference — atomic CAS-upsert referrer-row + addresses.used=true.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkAdapter).Get` — Get — read через свежую Reader-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkAdapter).Get$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.NetworkInterfaceAdapter).ListBySubnet$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.RouteTableAdapter).List$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).Delete` — Delete — DML + outbox-emit DELETED в одной writer-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).Get$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SecurityGroupAdapter).List$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).AddressesBySubnet$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).Get` — Get — read через свежую Reader-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).Get$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter.SubnetAdapter).List$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Reader` — Reader открывает read-only TX (read-committed) на **slave-pool'е**, если он настроен; иначе на master (fallback).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.Repository).Writer` — Writer открывает RW TX на **master-pool'е**.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetAddressOverride` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingReader).GetNetworkDefault` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetAddressOverride` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolBindingWriter).GetNetworkDefault` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).FindBySelectorMatch` — FindBySelectorMatch — label-cascade резолв (containment: networkSelector ⊆ pool.selector_labels).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "AddressPool <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolReader).GetDefaultForZone` — GetDefaultForZone — default pool для (zone, kind).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).FindBySelectorMatch` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressPoolWriter).GetDefaultForZone` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Address <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).AllocateExternalIPv6` — AllocateExternalIPv6 — sparse counter allocator.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).AllocateIPFromFreelist` — AllocateIPFromFreelist — single-statement atomic pop из address_pool_free_ips (FOR UPDATE SKIP LOCKED) + UPDATE addresses.external_ipv4.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).ClearReference` — ClearReference — DELETE referrer-row + used=false.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Delete` — Delete — DELETE addresses WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).FreeExternalIPv6` — FreeExternalIPv6 — освобождает v6 (released_offsets ← offset; addresses.external_ipv6 ← NULL).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Insert` — Insert — INSERT addresses RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).ReturnIPToFreelist` — ReturnIPToFreelist — INSERT … ON CONFLICT DO NOTHING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetIPSpec` — SetIPSpec — атомарный UPDATE external_ipv4 / internal_ipv4.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetInternalIPv6` — SetInternalIPv6 — атомарный UPDATE internal_ipv6 (random-pick allocator).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetProjectID` — SetProjectID меняет project_id у Address (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).SetReference` — SetReference — single-statement CAS upsert referrer-row + addresses.used=true.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addressWriter).Update` — Update — UPDATE name/description/labels/reserved/used/deletion_protection.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorReader).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.cloudPoolSelectorWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Gateway <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Delete` — Delete — DELETE gateways WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Insert` — Insert — INSERT gateways RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).SetProjectID` — SetProjectID меняет project_id у Gateway (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.gatewayWriter).Update` — Update — UPDATE gateways RETURNING name/description/labels/gateway_type.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Network interface <id> not found" (через WrapPgErr).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceReader).List$1` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).AttachToInstance` — AttachToInstance — атомарный CAS на used_by_* + status=ACTIVE.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Delete` — Delete — DELETE network_interfaces WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).DetachFromInstance` — DetachFromInstance — idempotent UPDATE: затирает used_by_* + status=AVAILABLE.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).Insert` — Insert — INSERT network_interfaces RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkInterfaceWriter).UpdateMeta` — UpdateMeta — UPDATE name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Network <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Delete` — Delete — DELETE networks WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Insert` — Insert — INSERT networks RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).SetDefaultSGID` — SetDefaultSGID атомарно проставляет networks.default_security_group_id для конкретной сети.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).SetProjectID` — SetProjectID меняет project_id у Network (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.networkWriter).Update` — Update — UPDATE networks RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.outboxEmitter).Emit` — Emit добавляет outbox-row в той же tx, что и DML resource'а.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "PrivateEndpoint <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Delete` — Delete — DELETE private_endpoints WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Insert` — Insert — INSERT private_endpoints RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.privateEndpointWriter).Update` — Update — UPDATE private_endpoints RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).AddressPoolBindings` — AddressPoolBindings — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).AddressPools` — AddressPools возвращает AddressPool-reader, привязанный к этой read-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Addresses` — Addresses возвращает Address-reader, привязанный к этой read-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Close` — Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).CloudPoolSelectors` — CloudPoolSelectors — Wave 5 replicate (KAC-94 A.7 sub-PR 1/6).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Networks` — Networks возвращает Network-reader, привязанный к этой read-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).RouteTables` — RouteTables возвращает RouteTable-reader, привязанный к этой read-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.readerImpl).Subnets` — Subnets возвращает Subnet-reader, привязанный к этой read-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Route table <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableReader).List` — List — cursor-based pagination + filter.Parse (YC-syntax, whitelist `["name"]`).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Delete` — Delete — DELETE route_tables WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Insert` — Insert — INSERT route_tables RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).List` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).SetProjectID` — SetProjectID меняет project_id у RouteTable (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.routeTableWriter).Update` — Update — UPDATE route_tables RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Security group SecurityGroup.Id(value=<id>) not found" (через WrapSGErr).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Delete` — Delete — DELETE security_groups WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Insert` — Insert — INSERT security_groups RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).SetProjectID` — SetProjectID меняет project_id у SG (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).Update` — Update — UPDATE security_groups RETURNING name/description/labels/rules/status.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).UpdateRule` — UpdateRule обновляет description/labels единичного правила в SG (xmin-OCC).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.securityGroupWriter).UpdateRules` — UpdateRules атомарно меняет набор правил SG в текущей writer-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetReader).Get` — Get — verbatim YC: well-formed-but-absent → NotFound с "Subnet <id> not found".
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Delete` — Delete — DELETE subnets WHERE id = $1.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Get` — (undocumented — see C4)
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Insert` — Insert — INSERT subnets RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).SetCidrBlocks` — SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks у Subnet (для AddCidrBlocks/RemoveCidrBlocks).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).SetProjectID` — SetProjectID меняет project_id у Subnet (для :move).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.subnetWriter).Update` — Update — UPDATE subnets RETURNING.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Abort` — Abort откатывает TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Addresses` — Addresses возвращает Address-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Commit` — Commit финализирует write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Gateways` — Gateways возвращает Gateway-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).NetworkInterfaces` — NetworkInterfaces возвращает NIC-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Networks` — Networks возвращает Network-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Outbox` — Outbox возвращает emitter, привязанный к этой write-TX — DML + outbox-emit атомарны (skill evgeniy §6 G.5: атомарность гарантируется тем, что обе операции идут через одну pgx.Tx).
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).PrivateEndpoints` — PrivateEndpoints возвращает PrivateEndpoint-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).RouteTables` — RouteTables возвращает RouteTable-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).SecurityGroups` — SecurityGroups возвращает SecurityGroup-writer, привязанный к этой write-TX.
+- `(*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.writerImpl).Subnets` — Subnets возвращает Subnet-writer, привязанный к этой write-TX.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).MigrateDSN` — MigrateDSN — connection string для goose/database/sql (без pool_max_conns).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).baseDSN` — baseDSN — стандартный postgres DSN без pgxpool-параметров; используется и pgxpool, и database/sql.Open("pgx").
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Config).composeDSN` — composeDSN добавляет к raw-DSN (master URL или slave URL) недостающие libpq- параметры: `sslmode=<mode>` (из PostgresConfig.SSLMode, default `disable`) и `options=-c search_path=kacho_vpc,public` (KAC-94: миграция 0034 переехала все VPC-таблицы из схемы `public` в `kacho_vpc`, поэтому каждое соединение должно установить корректный search_path).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).MarshalJSON` — MarshalJSON / UnmarshalJSON — для удобной сериализации (mapstructure сам через DecodeHook парсит string, но JSON-output логов и тестов удобнее иметь строкой).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Mode).String` — String — каноническое имя для логирования / config-ошибок.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.Config).Validate` — Validate проверяет минимально необходимые поля перед обращением к диалекту.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/clients.retryableErr).Error` — (undocumented — see C4)
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.CloudPoolSelector).IsEmpty` — IsEmpty — нет ни одной метки.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelKey).Validate` — Validate проверяет LabelKey-регекс (1..63 bytes, lowercase letters / digits / `-_./\\@`).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelVal).Validate` — Validate проверяет LabelVal (0..63 bytes; пустая строка OK).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RcDescription).Validate` — Validate проверяет длину description (UTF-8 rune count ≤ MaxDescriptionLen).
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RcNameVPC).Validate` — Validate проверяет, что value соответствует verbatim YC permissive name- контракту для VPC-ресурсов.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/domain.RouteTable).Validate` — Validate проверяет name/description/labels по domain-контракту.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantCtx).HasFolderAccess` — HasFolderAccess — может ли caller трогать ресурс из folder'а.
+- `(github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantCtx).IsAnonymous` — IsAnonymous — true если caller не предъявил identity, влияющую на AuthZ решение: ни Admin-claim, ни ProjectIDs.
+- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.buildRunner` — buildRunner собирает migrator.Runner из persistent-флагов + ENV + config-fallback.
+- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newCreateCmd$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newDownCmd$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newStatusCmd$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/migrator.newUpCmd$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$1$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$2` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$3` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$4` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/cmd/vpc.runServe$5` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.addressPayloadMap` — addressPayloadMap — snapshot Address для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.applyAddressMask` — applyAddressMask — применяет subset полей к существующему domain.Address.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.isUniqueViolation` — isUniqueViolation распознаёт UNIQUE-violation для retry-loop в allocate.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.marshalAddressRecord` — marshalAddressRecord конвертирует repo-entity Address в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.pickRandomIPv4` — pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast addresses (для prefix length < 31).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.pickRandomIPv6` — pickRandomIPv6 выбирает случайный адрес внутри IPv6-префикса, заполняя host-биты криптослучайными значениями.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address.usableIPv4Sweep` — usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без network/broadcast).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.nilOrSecondRec` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamily` — poolHasFamily — true если pool имеет хотя бы один CIDR-блок запрошенной family.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool.poolHasFamilyRec` — poolHasFamilyRec — family-фильтр для Record-обёртки (KAC-63).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.applyGatewayMask` — applyGatewayMask — применяет subset полей к существующему domain.Gateway.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.gatewayPayloadMap` — gatewayPayloadMap — payload snapshot для outbox-event (parity с legacy `repo.gatewayPayload`).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.marshalGatewayRecord` — marshalGatewayRecord конвертирует repo-entity Gateway в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.applyNetworkMask` — applyNetworkMask — применяет subset полей к существующему domain.Network.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.marshalNetworkRecord` — marshalNetworkRecord конвертирует repo-entity Network в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.networkPayloadMap` — networkPayloadMap — snapshot Network для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.securityGroupPayloadMap` — securityGroupPayloadMap — snapshot SecurityGroup для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.applyNICMask` — applyNICMask — применяет subset полей UpdateInput к существующему domain.NIC.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.derefName` — derefName — name to apply: либо из mask (если включён), либо текущее имя.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.marshalNetworkInterfaceRecord` — marshalNetworkInterfaceRecord конвертирует repo-entity NIC в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.networkInterfacePayloadMap` — networkInterfacePayloadMap — snapshot NIC для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV4` — nicMaskV4 — какой набор v4_address_ids применять (новый или текущий).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.nicMaskV6` — nicMaskV6 — какой набор v6_address_ids применять.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSet` — strSet / strSetEqual — мини-helper'ы для diff-логики address-refs.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.strSetEqual` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.applyPrivateEndpointMask` — applyPrivateEndpointMask — применяет subset полей к существующему domain.PE.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.marshalPrivateEndpointRecord` — marshalPrivateEndpointRecord конвертирует repo-entity PE в *anypb.Any через DTO-реестр.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.privateEndpointPayloadMap` — privateEndpointPayloadMap — snapshot PrivateEndpoint для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/privateendpoint.stripSentinel` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.applyRouteTableMask` — applyRouteTableMask — применяет subset полей к существующему domain.RouteTable.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.checkMoveDestination` — checkMoveDestination — sync precondition для Move: dest должен отличаться от source.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.fgaSubjectFromCtx` — fgaSubjectFromCtx — KAC-127 Phase 4: extract FGA subject из ctx-Principal.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.invalidArg` — invalidArg — InvalidArgument с BadRequest-details (verbatim YC parity).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.marshalRouteTableRecord` — marshalRouteTableRecord конвертирует repo-entity RouteTable в *anypb.Any через DTO-реестр.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.operationToProto` — operationToProto — локальная копия `handler.operationToProto`.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.routeTableToPb` — routeTableToPb — repo-entity RouteTable → proto RouteTable через DTO-реестр.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.stripSentinel` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.validateRouteTableUpdate` — validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/routetable.validateStaticRoutes` — validateStaticRoutes проверяет каждую запись routes: - destinationPrefix: валидный CIDR (IPv4 или IPv6) без host-bits; - nextHopAddress: валидный IP-адрес (IPv4 или IPv6).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.applySGMask` — applySGMask — применяет subset полей к существующему domain.SecurityGroup.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.assignRuleIDs` — assignRuleIDs присваивает каждому rule UID если он пустой.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.marshalSecurityGroupRecord` — marshalSecurityGroupRecord конвертирует repo-entity SG в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.securityGroupPayloadMap` — securityGroupPayloadMap — snapshot SecurityGroup для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/securitygroup.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.appendDedup` — appendDedup добавляет элементы src в dst, пропуская уже присутствующие в dst.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.applySubnetMask` — applySubnetMask применяет mutable поля из in к sub.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.checkCIDRDisjoint` — checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.invalidArg` — invalidArg — InvalidArgument с BadRequest-details (verbatim YC parity).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.mapRepoErr` — mapRepoErr — переводит repo-sentinel в gRPC status.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.marshalSubnetRecord` — marshalSubnetRecord конвертирует repo-entity Subnet в *anypb.Any через DTO-реестр (skill evgeniy §3 C.3 / C.4).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.parseNetipPrefix` — parseNetipPrefix парсит CIDR-строку в netip.Prefix.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.prefixesOverlap` — prefixesOverlap возвращает true если два CIDR-блока пересекаются.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.stripSentinel` — stripSentinel — извлекает «полезную» часть сообщения (после «sentinel: »).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.subnetPayloadMap` — subnetPayloadMap — snapshot Subnet для outbox payload.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet.subtractCIDRs` — subtractCIDRs возвращает existing без блоков из remove + сколько блоков было фактически удалено (для проверки "блок не найден" — mirror v4-поведения).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$10` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$11` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$12` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$13` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$14` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$15` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$16` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$17` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$18` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$19` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$2` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$20` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$21` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$22` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$23` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$24` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$25` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$26` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$27` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$28` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$29` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$3` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$30` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$31` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$32` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$33` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$34` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$35` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$36` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$37` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$38` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$39` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$4` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$40` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$41` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$42` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$43` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$44` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$45` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$46` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$47` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$48` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$49` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$5` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$50` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$51` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$52` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$53` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$54` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$55` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$56` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$57` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$58` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$59` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$6` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$60` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$61` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$62` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$63` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$64` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$65` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$66` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$67` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$7` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$8` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check.PermissionMap$9` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Load` — Load загружает конфигурацию из YAML-файла (если path != "") + ENV-override.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.Load$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.RegisterDefaults` — RegisterDefaults устанавливает default-значения всех конфиг-ключей (skill evgeniy §8 J.3 — defaults в одном месте, не в struct-tags).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.applyLegacyEnv` — applyLegacyEnv — мост из старых ENV-имён в новые viper-ключи.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.dsnHas` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.injectPasswordIntoDSN` — injectPasswordIntoDSN добавляет пароль в DSN (postgres://user@host → postgres://user:pwd@host).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook` — modeDecodeHook — DecodeHook для viper.Unmarshal: парсит string → Mode (ENUM).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.modeDecodeHook$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config.parseMode` — parseMode — точечная инверсия String(); используется кастомным mapstructure-хуком и YAML-/ENV-loader'ом.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite.Emit` — Emit publishes the resource→project hierarchy tuple, best-effort.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz.FilterByAllowedIDs[*github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/macutil.GenerateMAC` — GenerateMAC возвращает свежий MAC-адрес для NIC.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.New` — New собирает Runner; cfg валидируется здесь же.
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.NewDialect` — NewDialect — фабрика, возвращает реализацию [Dialect] по имени (skill evgeniy §9 K.3 буквально: «фабрика; supported postgres, cockroach»).
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.ResolveDialect` — ResolveDialect — backwards-compat обёртка над [NewDialect].
+- `github.com/PRO-Robotech/kacho-vpc/internal/apps/migrator.listDialects` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/clients.retryHTTPWrite` — retryHTTPWrite runs fn with up to 3 attempts, retrying only retryableErr, each attempt bounded by timeout.
+- `github.com/PRO-Robotech/kacho-vpc/internal/clients.withPrincipalMD` — withPrincipalMD propagates the caller's principal onto the outgoing gRPC metadata (KAC-127 Bug-2).
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.DefaultSGName` — DefaultSGName возвращает имя default-SG для сети.
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsEqual$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsFromMap` — LabelsFromMap конвертирует обычный map[string]string в RcLabels.
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsToMap` — LabelsToMap — обратное преобразование, для DTO (dto/toproto).
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.LabelsToMap$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.NewDefaultSecurityGroup` — NewDefaultSecurityGroup собирает domain.SecurityGroup для default-SG сети.
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.NewDefaultSecurityGroupRules` — NewDefaultSecurityGroupRules возвращает дефолтный набор правил, который получает каждый автосозданный default-SG: разрешить весь INGRESS и EGRESS от/в 0.0.0.0/0 (verbatim YC: 2 правила, protocol=ANY (=-1), v4 cidr `0.0.0.0/0`).
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.TruncateID` — TruncateID возвращает первые ShortIDLen символов id (или весь id если он короче).
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.ValidateLabels` — ValidateLabels пробегает по всем парам RcLabels и валидирует ключ + значение.
+- `github.com/PRO-Robotech/kacho-vpc/internal/domain.ValidateLabels$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.FromTo[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.Transfer[*github.com/PRO-Robotech/kacho-vpc/internal/dto.DTO[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord, *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.AddressRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Address]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.GatewayRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Gateway]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkInterfaceRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.NetworkInterface]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.NetworkRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Network]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.PrivateEndpointRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink.PrivateEndpoint]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.RouteTableRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.RouteTable]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SecurityGroupRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.SecurityGroup]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/dto.findTransfer[github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho.SubnetRecord *github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1.Subnet]` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.AssertFolderOwnership` — AssertFolderOwnership — handler-side AuthZ check.
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantFromCtx` — TenantFromCtx извлекает TenantCtx из context.
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantStreamInterceptor$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.TenantUnaryInterceptor$1` — (undocumented — see C4)
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.assertAdminAccess` — assertAdminAccess — internal :9091 listener gate.
+- `github.com/PRO-Robotech/kacho-vpc/internal/handler.tenantFromMetadata` — tenantFromMetadata — internal helper, извлекает TenantCtx из gRPC md.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.DecodePageToken` — DecodePageToken декодирует page_token обратно в (created_at, id).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.DomainToMap` — DomainToMap конвертирует произвольный domain-объект в map[string]any через JSON round-trip.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.EmitVPC` — EmitVPC — обёртка над outbox.Emit с фиксированной таблицей vpc_outbox.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.EncodePageToken` — EncodePageToken кодирует created_at + id в непрозрачный page_token.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.GatewayPayload` — GatewayPayload — snapshot GatewayRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.InvalidFilterErr` — InvalidFilterErr оборачивает ParseError из filter.Parse в gRPC InvalidArgument с YC-verbatim message ("Bad expression at column N.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.InvalidPageTokenErr` — InvalidPageTokenErr оборачивает ошибку DecodePageToken в gRPC InvalidArgument.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsCheckViolation` — IsCheckViolation — PG SQLSTATE 23514 (check_violation).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsExclusionViolation` — IsExclusionViolation — PG SQLSTATE 23P01 (exclusion_violation), возникает при нарушении EXCLUDE constraint (например `subnets_no_overlap_v4` — пересекающиеся v4 CIDR в одной VPC).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsFKViolation` — IsFKViolation — Postgres foreign_key_violation (SQLSTATE 23503).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsInvalidUUID` — IsInvalidUUID — PG SQLSTATE 22P02 (invalid_text_representation), возникает когда в WHERE id=$1 передан non-UUID string.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsNICMacCollision` — IsNICMacCollision — true если err — это нарушение UNIQUE на network_interfaces.mac_address (а не на (project_id, name) или другом constraint таблицы).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.IsUniqueViolation` — IsUniqueViolation — Postgres unique-constraint violation (SQLSTATE 23505).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalDhcp` — MarshalDhcp — JSONB-сериализация Subnet.dhcp_options.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalJSONB` — MarshalJSONB сериализует v в JSONB-байты для записи в БД.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.MarshalStaticRoutes` — MarshalStaticRoutes — JSONB-сериализация RouteTable.static_routes.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NIStatusFromName` — NIStatusFromName — DB column text → domain enum.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NIStatusName` — NIStatusName — domain enum → DB column text (status TEXT в network_interfaces).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.NullableStr` — NullableStr: "" → nil (SQL NULL); non-empty → &s.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.OrEmptyStrSlice` — OrEmptyStrSlice: nil → empty slice (для JSONB-сериализации; иначе `null` вместо `[]` в БД-колонке).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.RouteTablePayload` — RouteTablePayload — snapshot RouteTableRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddress` — ScanAddress — row-scanner для AddressRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddressPool` — ScanAddressPool — row-scanner для AddressPoolRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanAddressPoolDomain` — ScanAddressPoolDomain — row-scanner возвращающий plain `*domain.AddressPool`.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanGateway` — ScanGateway — row-scanner для GatewayRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNI` — ScanNI — row-scanner для NetworkInterfaceRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNIRec` — ScanNIRec — alias на ScanNI (legacy name from shim_kacho_ni.go re-export).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanNetwork` — ScanNetwork — row-scanner для NetworkRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanPrivateEndpoint` — ScanPrivateEndpoint — row-scanner для PrivateEndpointRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanRouteTable` — ScanRouteTable — row-scanner для RouteTableRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanSG` — ScanSG — row-scanner для SecurityGroupRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.ScanSubnet` — ScanSubnet — row-scanner для SubnetRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.SecurityGroupPayload` — SecurityGroupPayload — snapshot SecurityGroupRecord.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.UnmarshalJSONB` — UnmarshalJSONB десериализует JSONB-байты из БД в target.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapGatewayErr` — WrapGatewayErr — обёртка над WrapPgErr со значением kind="Gateway" (parity с WrapPgErr для Network/Subnet/...).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapPgErr` — WrapPgErr классифицирует pgx-ошибку и возвращает sentinel-ошибку из helpers-пакета.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.WrapSGErr` — WrapSGErr — обёртка над WrapPgErr с verbatim-YC SG-specific not-found текстом ("Security group SecurityGroup.Id(value=%s) not found", probe 2026-05-11, kacho-vpc#10).
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers.YCKindText` — YCKindText маппит camelCase Go-имя ресурса в YC verbatim text для error-message "invalid <kind> id 'X'".
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.addOffsetToAddr` — addOffsetToAddr — IP + offset (big.Int) = новый IP.
+- `github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg.marshalIPSpec` — marshalIPSpec — общий json marshaler для опциональных IP-spec'ов (nil → nil []byte → SQL NULL).
 
 ## Exported signatures
 
