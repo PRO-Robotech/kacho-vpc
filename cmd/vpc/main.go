@@ -642,7 +642,8 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// addressAdapter передаётся в Create/Update/Delete UC — он удовлетворяет
 	// `networkinterface.AddressRepo` port (Get + SetReference + ClearReference).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo).
+			WithFGAWriter(fgaTupleWriter, logger),
 		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo),

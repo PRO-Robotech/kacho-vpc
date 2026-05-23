@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -13,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgawrite"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/macutil"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -70,6 +72,13 @@ type CreateNetworkInterfaceUseCase struct {
 	addressRepo   AddressRepo
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+
+	// fgaWriter / logger — KAC-133: after the NIC row is committed, publish
+	// `vpc_network_interface:<id>#project@project:<project_id>` so per-resource
+	// Get/Update/Delete Check resolves through `<rel> from project` cascade.
+	// nil → no-op (dev / FGA not configured).
+	fgaWriter fgawrite.HierarchyTupleWriter
+	logger    *slog.Logger
 }
 
 // NewCreateNetworkInterfaceUseCase создаёт CreateNetworkInterfaceUseCase.
@@ -80,6 +89,15 @@ func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, projectCl
 		projectClient: projectClient,
 		opsRepo:       opsRepo,
 	}
+}
+
+// WithFGAWriter wires the OpenFGA hierarchy-tuple writer (KAC-133).
+// Without it a created NetworkInterface has no `vpc_network_interface:<id>#project@project`
+// tuple and every per-resource Get/Update/Delete Check is FGA `no path` → 404.
+func (u *CreateNetworkInterfaceUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateNetworkInterfaceUseCase {
+	u.fgaWriter = w
+	u.logger = logger
+	return u
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а.
@@ -220,6 +238,10 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 			u.detachAddresses(ctx, allAddrs)
 			return nil, mapRepoErr(cerr)
 		}
+		// KAC-133: publish the vpc_network_interface→project hierarchy tuple so
+		// per-resource Get/Update/Delete Check resolves. Best-effort + non-fatal
+		// (NIC row already committed). Mirrors the same pattern in network/create.go.
+		fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_network_interface", created.ID, string(n.ProjectID))
 		return marshalNetworkInterfaceRecord(created)
 	}
 	// Все попытки исчерпаны — rollback маркировки адресов best-effort.

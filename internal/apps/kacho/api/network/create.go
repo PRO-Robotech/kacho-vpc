@@ -230,5 +230,11 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	}
 	fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_network", finalRec.ID, string(n.ProjectID))
 
+	// KAC-133: also publish the default SG → project hierarchy tuple so that
+	// per-resource Get/Update/Delete Check on the default SG resolves.
+	if finalRec.DefaultSecurityGroupID != "" {
+		fgawrite.Emit(ctx, u.fgaWriter, u.logger, "vpc_security_group", finalRec.DefaultSecurityGroupID, string(n.ProjectID))
+	}
+
 	return marshalNetworkRecord(finalRec)
 }
