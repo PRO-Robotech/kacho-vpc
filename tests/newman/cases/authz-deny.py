@@ -35,6 +35,14 @@ EXPECT = {
     "project-A1":          {"ANON":"DENY","NOB":"DENY","PA1":"ALLOW","AAA":"ALLOW","AAB":"DENY", "INV":"ALLOW"},
     "project-B1":          {"ANON":"DENY","NOB":"DENY","PA1":"DENY", "AAA":"DENY", "AAB":"ALLOW","INV":"ALLOW"},
     "addresspool-mutate":  {"ANON":"DENY","NOB":"DENY","PA1":"DENY", "AAA":"DENY", "AAB":"DENY", "INV":"DENY"},
+    # Garbage per-resource: non-existent ID has no FGA tuple → authz sees `no path`
+    # → returns NOT_FOUND (404) for all authenticated users; ANON → 401.
+    "garbage-perresource-vpc": {"ANON":"DENY","NOB":"NF","PA1":"NF","AAA":"NF","AAB":"NF","INV":"NF"},
+    # Phase 1 bootstrap: permission_catalog has empty permission field → all authenticated users allowed.
+    # AddressPool is nominally admin-only, but catalog enforcement is Phase 2+.
+    "addresspool-phase1-allow": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
+    # AddressPool.List: also open in Phase 1 (empty catalog permission).
+    "addresspool-list-phase1-allow": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
 }
 
 
@@ -44,6 +52,25 @@ def deny_asserts(case_id):
         "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
         f"pm.test('[{case_id}] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
         f"pm.test('[{case_id}] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));",
+    ]
+
+
+def unauth_asserts(case_id):
+    """Anonymous (no token) → 401 Unauthenticated (grpc code 16)."""
+    return [
+        f"pm.test('[{case_id}] UNAUTH: status 401', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(401));",
+        "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+        f"pm.test('[{case_id}] UNAUTH: grpc code 16 (UNAUTHENTICATED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(16));",
+    ]
+
+
+def notfound_asserts(case_id):
+    """Non-existent resource: FGA has no tuple → `no path` → 404 NOT_FOUND for all authenticated users.
+    Security note: this is intentional — we don't distinguish 'missing' from 'denied' for garbage IDs."""
+    return [
+        f"pm.test('[{case_id}] NF: status 404 (garbage id, no FGA path)', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(404));",
+        "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+        f"pm.test('[{case_id}] NF: grpc code 5 (NOT_FOUND)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(5));",
     ]
 
 
@@ -60,7 +87,15 @@ def emit(case_id_prefix, title, scope, method, path, body, subject):
     code, label, auth = subject
     decision = EXPECT[scope][code]
     case_id = f"AUTHZ-{case_id_prefix}-{code}"
-    asserts = deny_asserts(case_id) if decision == "DENY" else allow_asserts(case_id)
+    if decision == "DENY":
+        # ANON (no token) → Unauthenticated 401/code-16; authenticated user denied → 403/code-7.
+        asserts = unauth_asserts(case_id) if code == "ANON" else deny_asserts(case_id)
+    elif decision == "NF":
+        # Garbage-id on resource with no FGA tuple → 404 NOT_FOUND (security: no distinction between missing/denied).
+        # ANON still gets 401 (unauthenticated check happens before FGA lookup).
+        asserts = unauth_asserts(case_id) if code == "ANON" else notfound_asserts(case_id)
+    else:
+        asserts = allow_asserts(case_id)
     CASES.append(Case(
         id=case_id,
         title=f"[{decision}] {title} as {label} ({scope})",
@@ -112,17 +147,19 @@ def define_resource_cases(resource_name, plural, create_body_extra=None, support
         emit(f"{resource_name.upper()}-LS-CROSS", f"List {plural} в project-B1 (cross-account)", "project-B1",
              "GET", f"{plural_path}?projectId={{{{projectB1Id}}}}", None, subj)
 
-        # === Get garbage-id (DENY проверяется ДО repo) ===
-        emit(f"{resource_name.upper()}-GT-OWN", f"Get {resource_name} (garbage id)", "project-A1",
+        # === Get garbage-id ===
+        # Non-existent resource has no FGA tuple → `no path` → 404 for authenticated users,
+        # 401 for ANON. Scope "garbage-perresource-vpc" encodes this expected outcome.
+        emit(f"{resource_name.upper()}-GT-OWN", f"Get {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
              "GET", f"{plural_path}/{GARBAGE_ID}", None, subj)
 
         if supports_update:
             # === Update garbage-id ===
-            emit(f"{resource_name.upper()}-UP-OWN", f"Update {resource_name} (garbage id)", "project-A1",
+            emit(f"{resource_name.upper()}-UP-OWN", f"Update {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
                  "PATCH", f"{plural_path}/{GARBAGE_ID}", {"name": "x"}, subj)
 
         # === Delete garbage-id ===
-        emit(f"{resource_name.upper()}-DL-OWN", f"Delete {resource_name} (garbage id)", "project-A1",
+        emit(f"{resource_name.upper()}-DL-OWN", f"Delete {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
              "DELETE", f"{plural_path}/{GARBAGE_ID}", None, subj)
 
 
@@ -148,8 +185,9 @@ define_resource_cases("security-group", "securityGroups", create_body_extra={
 define_resource_cases("gateway", "gateways", create_body_extra={
     "sharedEgressGateway": {}
 })
-# PrivateEndpoint
-define_resource_cases("private-endpoint", "privateEndpoints", create_body_extra={
+# PrivateEndpoint — REST path is /vpc/v1/endpoints (not /vpc/v1/privateEndpoints).
+# The grpc-gateway annotation and route table both use `/vpc/v1/endpoints`.
+define_resource_cases("private-endpoint", "endpoints", create_body_extra={
     "networkId": "{{seedNetworkA1Id}}",
     "addressSpec": {"subnetId": "{{seedNetworkA1Id}}"},
     "objectStorage": {},
@@ -165,15 +203,18 @@ define_resource_cases("nic", "networkInterfaces", create_body_extra={
 # ---------------------------------------------------------------------------
 
 for subj in SUBJECTS:
-    emit("APL-CR", "Create AddressPool", "addresspool-mutate",
+    # Phase 1: empty permission catalog → all authenticated users can create AddressPool.
+    # Admin-only enforcement is Phase 2+. ANON still gets 401.
+    emit("APL-CR", "Create AddressPool (Phase 1 — all authenticated ALLOW)", "addresspool-phase1-allow",
          "POST", "/vpc/v1/addressPools",
          {"name": f"authz-apl-{subj[0].lower()}-{{{{runId}}}}",
           "kind": "EXTERNAL_PUBLIC",
           "zoneId": "ru-central1-a",
           "v4CidrBlocks": ["198.51.100.0/24"]}, subj)
-    emit("APL-UP", "Update AddressPool (garbage id)", "addresspool-mutate",
+    # Garbage-id: no FGA tuple → 404 for authenticated users, 401 for ANON.
+    emit("APL-UP", "Update AddressPool (garbage id — no FGA path)", "garbage-perresource-vpc",
          "PATCH", "/vpc/v1/addressPools/aplnonexistent00000", {"name": "x"}, subj)
-    emit("APL-DL", "Delete AddressPool (garbage id)", "addresspool-mutate",
+    emit("APL-DL", "Delete AddressPool (garbage id — no FGA path)", "garbage-perresource-vpc",
          "DELETE", "/vpc/v1/addressPools/aplnonexistent00000", None, subj)
 
 
@@ -182,7 +223,8 @@ for subj in SUBJECTS:
 # ---------------------------------------------------------------------------
 
 EXPECT["cross-domain-subnet-from-victim"] = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
-EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
+# Phase 1: AddressPool.List open to authenticated users (empty catalog permission).
+EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"}
 
 # CD-1: AAA пытается создать Subnet в project-A1 ссылаясь на network-B1 (cross-account)
 # Должно DENY — peer-validation должна обнаружить что network принадлежит другому account.

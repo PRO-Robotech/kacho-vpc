@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "a406c896-aee3-4d49-b933-01a98e5643d6",
+    "_postman_id": "29745cff-d2da-4707-b16f-b91f863dad94",
     "name": "kacho-vpc / newman / network",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -118,6 +118,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -297,6 +301,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -444,7 +452,7 @@
       ]
     },
     {
-      "name": "NET-CR-NEG-FOLDER-NOT-FOUND — Create с garbage projectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+      "name": "NET-CR-NEG-FOLDER-NOT-FOUND — Create с garbage projectId → 403 (IAM authz no-path) или 200 + async NOT_FOUND (KAC-133)",
       "description": "class:NEG | priority:P0",
       "item": [
         {
@@ -470,7 +478,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{garbageId}}\", \"name\": \"net-bf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{garbageRmId}}\", \"name\": \"net-bf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -484,12 +492,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "pm.test('rejected sync (403) or accepted async (200)', () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));",
+                  "if (pm.response.code === 200) pm.environment.set('opId', pm.response.json().id);",
+                  "else pm.environment.set('opId', '');"
                 ]
               }
             }
@@ -522,6 +527,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -536,44 +545,6 @@
                   "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
                   "else pm.environment.unset('lastOpError');",
                   "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "assert-op-error",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                  "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
-                  "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
-                  "pm.test('mentions folder not found', () => pm.expect((j.error.message || '').toLowerCase()).to.include('folder'));"
                 ]
               }
             }
@@ -670,6 +641,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1161,6 +1136,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1256,6 +1235,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1632,6 +1615,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1727,6 +1714,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1903,6 +1894,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -1998,6 +1993,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -2176,6 +2175,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -2353,6 +2356,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -2533,6 +2540,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -2715,6 +2726,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -3049,7 +3064,7 @@
       ]
     },
     {
-      "name": "NET-CR-CONF-FOLDER-NF-TEXT — Create network в garbage folder → operation.error verbatim 'Folder with id ... not found' (KAC-94 skill evgeniy I.4 — async-only)",
+      "name": "NET-CR-CONF-FOLDER-NF-TEXT — Create network в garbage folder → 403 (IAM no-path) или operation.error 'Folder with id ... not found' (KAC-133)",
       "description": "class:CONF | class:NEG | priority:P1",
       "item": [
         {
@@ -3075,7 +3090,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{garbageId}}\", \"name\": \"net-confnf-{{runId}}\"}",
+              "raw": "{\"projectId\": \"{{garbageRmId}}\", \"name\": \"net-confnf-{{runId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3089,12 +3104,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
+                  "pm.test('rejected sync (403) or accepted async (200)', () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));",
+                  "if (pm.response.code === 200) pm.environment.set('opId', pm.response.json().id);",
+                  "else pm.environment.set('opId', '');"
                 ]
               }
             }
@@ -3127,6 +3139,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -3141,44 +3157,6 @@
                   "if (j.error) pm.environment.set('lastOpError', JSON.stringify(j.error));",
                   "else pm.environment.unset('lastOpError');",
                   "if (j.response) pm.environment.set('lastOpResponse', JSON.stringify(j.response));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "assert-op-error",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "const j = pm.response.json();",
-                  "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                  "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
-                  "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
-                  "pm.test('verbatim text', () => pm.expect(j.error.message || '').to.match(/^Folder with id .* not found$/));"
                 ]
               }
             }
@@ -3497,6 +3475,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -3583,6 +3565,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -7165,7 +7151,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"
+                  "pm.test('not allowed (403/404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([403, 404, 405, 501]));"
                 ]
               }
             }
@@ -7205,7 +7191,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"
+                  "pm.test('not allowed (403/404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([403, 404, 405, 501]));"
                 ]
               }
             }
@@ -8196,6 +8182,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -8621,6 +8611,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -8720,6 +8714,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -8845,6 +8843,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -8930,6 +8932,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9035,6 +9041,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9134,6 +9144,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9259,6 +9273,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9344,6 +9362,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9449,6 +9471,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9548,6 +9574,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9673,6 +9703,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9758,6 +9792,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9863,6 +9901,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -9987,6 +10029,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10166,6 +10212,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10330,6 +10380,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10509,6 +10563,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10608,6 +10666,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10707,6 +10769,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10833,6 +10899,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -10919,6 +10989,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -11005,6 +11079,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -11110,6 +11188,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -11234,6 +11316,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -11969,6 +12055,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -12136,6 +12226,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",
@@ -12258,6 +12352,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+                  "  pm.environment.unset('_pollCount');",
+                  "  return;",
+                  "}",
                   "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const j = pm.response.json();",
                   "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",

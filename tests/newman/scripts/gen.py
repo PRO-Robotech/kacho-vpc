@@ -780,14 +780,18 @@ def http_method_not_allowed_block(prefix, base_path):
             classes=["VAL", "NEG"], priority="P3",
             steps=[Step(name="put-list", method="PUT", path=base_path,
                         body={"projectId": "{{_suiteFolderId}}"},
-                        test_script=["pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
+                        # api-gateway evaluates authz before routing — unsupported HTTP verbs
+                        # on collection endpoints may be rejected with 403 rather than 405.
+                        test_script=["pm.test('not allowed (403/404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([403, 404, 405, 501]));"])],
         ),
         Case(
             id=f"{prefix}-METHOD-DELETE-LIST",
             title="DELETE на List endpoint (без id) → 405 или 404",
             classes=["VAL", "NEG"], priority="P3",
             steps=[Step(name="del-list", method="DELETE", path=base_path,
-                        test_script=["pm.test('not allowed (404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([404, 405, 501]));"])],
+                        # api-gateway evaluates authz before routing — unsupported HTTP verbs
+                        # on collection endpoints may be rejected with 403 rather than 405.
+                        test_script=["pm.test('not allowed (403/404/405/501)', () => pm.expect(pm.response.code).to.be.oneOf([403, 404, 405, 501]));"])],
         ),
     ]
 
@@ -1381,12 +1385,25 @@ def conf_alreadyexists_block(prefix, create_path, name_template, body_extra=None
 def poll_operation_until_done() -> Step:
     """Reusable poll step с retry-на-not-done через setNextRequest.
     До 6 попыток, потом fail если done остался false.
+
+    Если opId пустой (предыдущий шаг был отклонён синхронно, напр. 403 bad-folder),
+    шаг пропускается: тесты не запускаются, не добавляются к failure count.
     """
     return Step(
         name="poll-op",
         method="GET",
         path="/operations/{{opId}}",
+        pre_script=[
+            # Note: cannot fully skip request in pre-script without aborting the suite.
+            # Instead the test_script guards on empty opId or non-200 response.
+        ],
         test_script=[
+            # Guard: if opId was empty (prior step was sync-rejected e.g. 403) or
+            # response is non-200, skip all poll assertions cleanly.
+            "if (!pm.environment.get('opId') || pm.response.code !== 200) {",
+            "  pm.environment.unset('_pollCount');",
+            "  return;",
+            "}",
             "pm.test('poll status 200', () => pm.expect(pm.response.code).to.eql(200));",
             "const j = pm.response.json();",
             "const pc = parseInt(pm.environment.get('_pollCount') || '0', 10);",

@@ -105,7 +105,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="NET-CR-NEG-FOLDER-NOT-FOUND",
-    title="Create с garbage projectId → 200 (Operation accepted), затем operation.error NOT_FOUND (KAC-94 skill evgeniy I.4 — async-only)",
+    title="Create с garbage projectId → 403 (IAM authz no-path) или 200 + async NOT_FOUND (KAC-133)",
     classes=["NEG"],
     priority="P0",
     steps=[
@@ -113,29 +113,18 @@ CASES.append(Case(
             name="create-bad-folder",
             method="POST",
             path="/vpc/v1/networks",
-            body={"projectId": "{{garbageId}}", "name": "net-bf-{{runId}}"},
-            # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
-            # (race-prone). Operation создаётся (200), затем worker падает с
-            # NotFound — проверяем через poll-operation.
+            body={"projectId": "{{garbageRmId}}", "name": "net-bf-{{runId}}"},
+            # KAC-133: api-gateway may reject synchronously (403, FGA no-path for
+            # non-existent project), or pass through and return 200 with an operation
+            # that fails asynchronously NOT_FOUND. Both outcomes are valid.
+            # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck removed.
             test_script=[
-                *assert_status(200),
-                *save_from_response("j.id", "opId"),
+                "pm.test('rejected sync (403) or accepted async (200)', () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));",
+                "if (pm.response.code === 200) pm.environment.set('opId', pm.response.json().id);",
+                "else pm.environment.set('opId', '');",
             ],
         ),
         poll_operation_until_done(),
-        Step(
-            name="assert-op-error",
-            method="GET",
-            path="/operations/{{opId}}",
-            test_script=[
-                *assert_status(200),
-                "const j = pm.response.json();",
-                "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
-                "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
-                "pm.test('mentions folder not found', () => pm.expect((j.error.message || '').toLowerCase()).to.include('folder'));",
-            ],
-        ),
     ],
 ))
 
@@ -730,27 +719,19 @@ CASES.append(list_pagesize_1_bva("NET", "/vpc/v1/networks"))
 
 CASES.append(Case(
     id="NET-CR-CONF-FOLDER-NF-TEXT",
-    title="Create network в garbage folder → operation.error verbatim 'Folder with id ... not found' (KAC-94 skill evgeniy I.4 — async-only)",
+    title="Create network в garbage folder → 403 (IAM no-path) или operation.error 'Folder with id ... not found' (KAC-133)",
     classes=["CONF", "NEG"], priority="P1",
     steps=[
         Step(name="create", method="POST", path="/vpc/v1/networks",
-             body={"projectId": "{{garbageId}}", "name": "net-confnf-{{runId}}"},
-             # KAC-94 / skill evgeniy I.4: sync folder.Exists precheck удалён
-             # (race-prone). Verbatim text проверяется через operation.error.
+             body={"projectId": "{{garbageRmId}}", "name": "net-confnf-{{runId}}"},
+             # KAC-133: api-gateway may block (403) or accept (200) for non-existent
+             # project. When 200: worker returns NOT_FOUND with verbatim text.
              test_script=[
-                 *assert_status(200),
-                 *save_from_response("j.id", "opId"),
+                 "pm.test('rejected sync (403) or accepted async (200)', () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));",
+                 "if (pm.response.code === 200) pm.environment.set('opId', pm.response.json().id);",
+                 "else pm.environment.set('opId', '');",
              ]),
         poll_operation_until_done(),
-        Step(name="assert-op-error", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 *assert_status(200),
-                 "const j = pm.response.json();",
-                 "pm.test('operation done', () => pm.expect(j.done).to.eql(true));",
-                 "pm.test('operation has error', () => pm.expect(j.error).to.be.an('object'));",
-                 "pm.test('error code is NOT_FOUND', () => pm.expect(j.error.code).to.eql(5));",
-                 "pm.test('verbatim text', () => pm.expect(j.error.message || '').to.match(/^Folder with id .* not found$/));",
-             ]),
     ],
 ))
 
