@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/PRO-Robotech/kacho-corelib/auth"
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 	iamv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/iam/v1"
 )
@@ -37,8 +38,16 @@ func NewIAMCheckClient(conn grpc.ClientConnInterface) *IAMCheckClient {
 // Когда IAM возвращает allowed=false с reason "no path" (нет FGA-tuple для
 // объекта), Check возвращает authz.ErrNoPath — сигнал interceptor'у пропустить
 // запрос к handler'у (который вернёт NOT_FOUND из DB) вместо 403.
+//
+// W1.4 (KAC-140): outgoing ctx обёрнут `auth.PropagateOutgoing`, чтобы iam-side
+// `grpcsrv.UnaryPrincipalExtract` увидел реального caller'а, а не SystemPrincipal()
+// = user:bootstrap. До W1.4 каждый per-RPC authz Check от vpc-check-interceptor
+// → iam летел без MD → iam-обработчики, которые потом звали
+// operations.PrincipalFromContext (audit, scope-filter, OPA-overlay) видели
+// bootstrap независимо от реального caller'а. См.
+// `docs/specs/sub-phase-W1.4-principal-propagation-acceptance.md`.
 func (c *IAMCheckClient) Check(ctx context.Context, subjectID, relation, object string) (bool, error) {
-	resp, err := c.cli.Check(ctx, &iamv1.CheckRequest{
+	resp, err := c.cli.Check(auth.PropagateOutgoing(ctx), &iamv1.CheckRequest{
 		SubjectId: subjectID,
 		Relation:  relation,
 		Object:    object,

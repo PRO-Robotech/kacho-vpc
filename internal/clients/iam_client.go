@@ -7,45 +7,28 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
-	"github.com/PRO-Robotech/kacho-corelib/operations"
+	"github.com/PRO-Robotech/kacho-corelib/auth"
 	"github.com/PRO-Robotech/kacho-corelib/retry"
 	iamv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/iam/v1"
 )
 
-// withPrincipalMD propagates the caller's principal onto the outgoing gRPC
-// metadata (KAC-127 Bug-2).
+// KAC-127 Bug-2: kacho-iam's public ProjectService.Get carries a tenant
+// scope-filter: it returns NOT_FOUND unless the caller is the owning Account's
+// owner, and skips straight to NOT_FOUND for an anonymous caller. kacho-vpc
+// validates a Network's project via ProjectService.Get on the Network.Create
+// hot path — that call runs inside the Operation worker, whose ctx (via
+// operations baggage) still carries the original request Principal, but vpc
+// must forward it onto the outgoing gRPC metadata via auth.PropagateOutgoing
+// — otherwise the peer sees an anonymous/system call, returns NOT_FOUND, and
+// Network.Create fails its project-exists check.
 //
-// kacho-iam's public ProjectService.Get carries a tenant scope-filter: it
-// returns NOT_FOUND unless the caller is the owning Account's owner, and
-// skips straight to NOT_FOUND for an anonymous caller. kacho-vpc validates a
-// Network's project via ProjectService.Get on the Network.Create hot path —
-// that call runs inside the Operation worker, whose ctx (via operations
-// baggage) still carries the original request Principal, but vpc never
-// forwarded it onto the outgoing gRPC metadata. The peer therefore saw an
-// anonymous/system call, returned NOT_FOUND, and Network.Create failed its
-// project-exists check — silently (operations.Run masks worker errors) — so
-// no Network row and no `vpc_network:<id>#project` FGA tuple were ever
-// produced, leaving every per-resource Check `no path`.
+// W1.4 (KAC-140): the per-repo `withPrincipalMD` helper that used to live
+// here was lifted to `kacho-corelib/auth.PropagateOutgoing` so the same
+// behaviour applies uniformly to ProjectService.Get, IAM Check, and any
+// future peer-call without copy-paste.
 //
-// Propagating `x-kacho-principal-*` lets the peer resolve the real caller
-// (the project's account-owner on the seeded fixtures) so the scope-filter
-// passes. A ctx without a principal is forwarded unchanged.
-func withPrincipalMD(ctx context.Context) context.Context {
-	p := operations.PrincipalFromContext(ctx)
-	if p.ID == "" || p.Type == "" {
-		return ctx
-	}
-	return metadata.AppendToOutgoingContext(ctx,
-		grpcsrv.MDKeyPrincipalType, p.Type,
-		grpcsrv.MDKeyPrincipalID, p.ID,
-		grpcsrv.MDKeyPrincipalDisplay, p.DisplayName,
-	)
-}
-
 // KAC-106 (E1): peer-call switched from kacho-resource-manager.FolderService.Get
 // to kacho-iam.ProjectService.Get. File-name retained for git-history continuity;
 // the type name is now ProjectClient.
@@ -99,7 +82,7 @@ func (c *ProjectClient) Exists(ctx context.Context, projectID string) (bool, err
 
 	var exists bool
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		_, rerr := c.cli.Get(withPrincipalMD(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
+		_, rerr := c.cli.Get(auth.PropagateOutgoing(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
 		if rerr != nil {
 			st, ok := status.FromError(rerr)
 			if ok && (st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument) {
@@ -143,7 +126,7 @@ func (c *ProjectClient) GetCloudIDFromProject(ctx context.Context, projectID str
 
 	var accountID string
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		p, rerr := c.cli.Get(withPrincipalMD(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
+		p, rerr := c.cli.Get(auth.PropagateOutgoing(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
 		if rerr != nil {
 			return rerr
 		}
