@@ -102,7 +102,13 @@ func (c *ProjectClient) Exists(ctx context.Context, projectID string) (bool, err
 		_, rerr := c.cli.Get(withPrincipalMD(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
 		if rerr != nil {
 			st, ok := status.FromError(rerr)
-			if ok && st.Code() == codes.NotFound {
+			if ok && (st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument) {
+				// NotFound  → project does not exist.
+				// InvalidArgument → project id is malformed (wrong prefix / length);
+				//   IAM validates the id format and returns InvalidArgument for
+				//   garbage ids. Treat as "not found" so callers receive the
+				//   canonical "Folder with id X not found" async error instead of
+				//   the spurious "folder check: rpc error: code = Inval..." text.
 				exists = false
 				return nil
 			}
