@@ -58,7 +58,7 @@ func (c *ComputeGeographyClient) Get(ctx context.Context, id string) (*domain.Zo
 
 	var z *domain.Zone
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		resp, rerr := c.zones.Get(ctx, &computev1.GetZoneRequest{ZoneId: id})
+		resp, rerr := c.zones.Get(withPrincipalMD(ctx), &computev1.GetZoneRequest{ZoneId: id})
 		if rerr != nil {
 			if st, ok := status.FromError(rerr); ok && st.Code() == codes.NotFound {
 				return repo.ErrNotFound
@@ -86,7 +86,7 @@ func (c *ComputeGeographyClient) ListIDs(ctx context.Context) ([]string, error) 
 		ids = ids[:0]
 		var pageToken string
 		for {
-			resp, rerr := c.zones.List(ctx, &computev1.ListZonesRequest{PageSize: 1000, PageToken: pageToken})
+			resp, rerr := c.zones.List(withPrincipalMD(ctx), &computev1.ListZonesRequest{PageSize: 1000, PageToken: pageToken})
 			if rerr != nil {
 				return rerr
 			}
