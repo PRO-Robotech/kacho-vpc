@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "769e5d1e-c869-4c94-a538-023c8db8f1ee",
+    "_postman_id": "7a77109a-647e-412e-8d04-46fa945e4ddd",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -17,7 +17,13 @@
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
           "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
-          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));"
+          "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));",
+          "// Default auth: projectAdmin on project A1 — sufficient for most happy-path steps.",
+          "// Per-step auth= overrides this via item-level pre-request script (_auth_pre_script).",
+          "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
+          "if (__defaultJwt && !pm.request.headers.has('Authorization')) {",
+          "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __defaultJwt});",
+          "}"
         ]
       }
     }

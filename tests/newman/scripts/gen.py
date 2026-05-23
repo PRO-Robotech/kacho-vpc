@@ -68,6 +68,12 @@ PRE_GLOBAL = [
     "}",
     "pm.environment.set('_suiteFolderId', pm.environment.get('existingProjectId'));",
     "pm.environment.set('_suiteFolderCrossId', pm.environment.get('existingProjectCrossId'));",
+    "// Default auth: projectAdmin on project A1 — sufficient for most happy-path steps.",
+    "// Per-step auth= overrides this via item-level pre-request script (_auth_pre_script).",
+    "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
+    "if (__defaultJwt && !pm.request.headers.has('Authorization')) {",
+    "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __defaultJwt});",
+    "}",
 ]
 
 
