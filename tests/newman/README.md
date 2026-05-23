@@ -16,7 +16,8 @@ tests/newman/
 ├── README.md                — этот файл
 ├── cases/                   — ИСТОЧНИК ИСТИНЫ: декларативные case-наборы (Python), по сервису
 │   ├── {network,subnet,address,route-table,security-group,gateway,private-endpoint,operation}.py  — публичные RPC
-│   └── {internal-pool,internal-region-zone,internal-cloud}.py  — internal/admin IPAM RPC (kacho-only)
+│   └── {internal-pool,internal-cloud}.py  — internal/admin IPAM RPC (kacho-only)
+│       (Region/Zone — переехали в kacho-compute, KAC-15)
 ├── collections/             — СГЕНЕРИРОВАННЫЕ Postman-коллекции (по сервису) — НЕ править руками
 │   └── {…}.postman_collection.json
 ├── environments/

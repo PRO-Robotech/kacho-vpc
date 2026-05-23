@@ -25,9 +25,11 @@
 > v16 (TODO #35): + 45 кейсов для internal/admin-only IPAM RPC —
 > `internal-pool` (26 → 40 после v20/KAC-71: AddressPool CRUD + bindings + Check/ExplainResolution/Utilization/ListAddresses
 > + split-shape family-фильтр и replace-семантика, prefix `IPL-*`),
-> `internal-region-zone` (15: Region/Zone CRUD + FK-empty-checks, prefix `RGN-*`/`ZON-*`),
 > `internal-cloud` (4: Cloud poolSelector set/get/unset, prefix `CLD-*`). Эти RPC возвращают
 > ресурсы напрямую (не Operation); таблицы паттернов ниже их не индексируют (кейсы — в `cases/internal-*.py`).
+>
+> KAC-15 (Geography→kacho-compute): `internal-region-zone` suite (15 cases, `RGN-*`/`ZON-*`) удалён
+> из этого репо в коммите `73f913b`; Region/Zone теперь покрываются в `kacho-compute/tests/newman/`.
 
 ## По методам
 

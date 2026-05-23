@@ -12,17 +12,19 @@
 | gateway | 89 | ~262 | 0 | ~177 | 89% |
 | private-endpoint | 64 | ~250 | 0 | ~185 | 64% (3 explicit-дубля убраны → helper-блоки) |
 | internal-pool | 40 | ~210 | 0 | ~140 | (admin; +14 IPL-* KAC-71 split-shape) |
-| internal-region-zone | 15 | 77 | 0 | 40 | (admin) |
 | network-interface | 14 | ~80 | 0 | ~55 | (nic — first-class, эпик KAC-2; KAC-48: NIC-CR-MAC-OK) |
 | internal-cloud | 4 | 31 | 0 | 17 | (admin) |
 | operation | 5 | ~20 | 0 | ~9 | (n/a) |
-| **Итого** | **762** | **~3585** | **0** | **~2465** | — |
+| **Итого** | **747** | **~3508** | **0** | **~2425** | — |
+
+> KAC-15 Geography→kacho-compute: `internal-region-zone` suite (15 cases / 77 assertions / 40 requests, prefix `RGN-*`/`ZON-*`) удалён из этого репо в коммите `73f913b`; покрытие Region/Zone сейчас в `kacho-compute/tests/newman/cases/region-zone.py`. Цифры в таблице выше — без него.
 
 **100% PASS**. v16 добавил покрытие internal/admin-only IPAM RPC
-(`InternalAddressPoolService` / `InternalRegion`/`InternalZone`/`InternalCloud`) —
-kacho-only RPC проброшены через api-gateway cluster-internal mux, возвращают
-ресурсы напрямую (не Operation). Новых FINDINGs: 3 (007/008/009 — informational,
-все «фактическое поведение задокументировано в кейсе»).
+(`InternalAddressPoolService` / `InternalCloud`; `InternalRegion`/`InternalZone` —
+удалены вместе с переносом Geography в kacho-compute, KAC-15) — kacho-only RPC
+проброшены через api-gateway cluster-internal mux, возвращают ресурсы напрямую
+(не Operation). Новых FINDINGs: 3 (007/008/009 — informational, все
+«фактическое поведение задокументировано в кейсе»).
 
 > Деплоймент-замечание: suite требует `KACHO_VPC_DEFAULT_SG_INLINE=true`
 > (default) — `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` проверяют

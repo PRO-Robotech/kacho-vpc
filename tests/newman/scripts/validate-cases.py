@@ -17,7 +17,8 @@ tests/newman/scripts/validate-cases.py — MANDATORY case-uniqueness validation.
            «инстанс известного паттерна <ref>, отдельная запись в индексе не нужна».
 
   Исключение: case-файлы `internal-*.py` (admin/IPAM RPC, prefix `IPL-*`/
-  `RGN-*`/`ZON-*`/`CLD-*`) — CASES-INDEX каталогизирует их отдельной заметкой,
+  `CLD-*`; `RGN-*`/`ZON-*` уехали с Geography в kacho-compute, KAC-15) —
+  CASES-INDEX каталогизирует их отдельной заметкой,
   а не таблицей паттернов (см. шапку `CASES-INDEX.md`), поэтому от них
   индекс-покрытие не требуется (но dup-id-проверка работает и для них).
 
