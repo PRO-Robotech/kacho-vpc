@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: KAC-178-list-filter-pd, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: KAC-178-list-filter-pd, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: KAC-178-list-filter-pd, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: KAC-178-list-filter-pd, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -107,7 +107,7 @@ jobs:
       # siblings: нужны как Go-deps (corelib/proto) и как Docker build-context
       # (Dockerfile'ы COPY ../kacho-corelib и т.п.; PROJECT_ROOT в kacho-deploy/Makefile = $(abspath ..))
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: KAC-178-list-filter-pd, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/checkout@v6

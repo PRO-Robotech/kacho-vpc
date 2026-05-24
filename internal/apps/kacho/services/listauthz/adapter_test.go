@@ -3,11 +3,14 @@ package listauthz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 )
@@ -86,4 +89,40 @@ func TestAsPort_ValidAdapter(t *testing.T) {
 	a := New(svc)
 	p := AsPort(a)
 	assert.NotNil(t, p)
+}
+
+// KAC-178 §1: MapListFilterErr должен разделять PermissionDenied → 403
+// и всё остальное → 503 (legacy behaviour для infra errors). До этого
+// helper'а use-case'ы блиндово wrap'или любой error в Unavailable.
+func TestMapListFilterErr_PermissionDenied_ReturnsPermissionDenied(t *testing.T) {
+	// corelib теперь возвращает PermissionDenied wrap'нутый в ErrPermissionDenied.
+	innerErr := fmt.Errorf("%w: rpc error: code = PermissionDenied desc = permission denied", authz.ErrPermissionDenied)
+
+	mapped := MapListFilterErr(innerErr)
+	require.Error(t, mapped)
+	assert.Equal(t, codes.PermissionDenied, status.Code(mapped),
+		"PermissionDenied sentinel должен мапиться на gRPC PermissionDenied (HTTP 403), а не Unavailable")
+	assert.Equal(t, "list-filter denied", status.Convert(mapped).Message())
+}
+
+func TestMapListFilterErr_Unavailable_ReturnsUnavailable(t *testing.T) {
+	innerErr := fmt.Errorf("%w: connection refused", authz.ErrUnavailable)
+
+	mapped := MapListFilterErr(innerErr)
+	require.Error(t, mapped)
+	assert.Equal(t, codes.Unavailable, status.Code(mapped))
+	assert.Contains(t, status.Convert(mapped).Message(), "list-filter unavailable")
+	assert.Contains(t, status.Convert(mapped).Message(), "connection refused")
+}
+
+func TestMapListFilterErr_NilReturnsNil(t *testing.T) {
+	assert.Nil(t, MapListFilterErr(nil))
+}
+
+func TestMapListFilterErr_GenericErrorTreatedAsUnavailable(t *testing.T) {
+	// Errors без ErrPermissionDenied wrap'а — fallback на Unavailable
+	// (defensive: даже если caller передал не-corelib error).
+	mapped := MapListFilterErr(errors.New("boom"))
+	require.Error(t, mapped)
+	assert.Equal(t, codes.Unavailable, status.Code(mapped))
 }

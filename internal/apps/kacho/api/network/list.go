@@ -9,6 +9,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -60,7 +61,7 @@ func (u *ListNetworksUseCase) Execute(ctx context.Context, subjectID string, f N
 	if u.authz != nil && subjectID != "" {
 		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeNetwork, FGAActionNetworkList, f.ProjectID)
 		if lerr != nil {
-			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+			return nil, "", listauthz.MapListFilterErr(lerr)
 		}
 		if len(allowedIDs) == 0 {
 			// Empty grant — return 200 OK + empty list (acceptance §3 D-4).
