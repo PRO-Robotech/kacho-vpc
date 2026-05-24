@@ -68,7 +68,8 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Add CIDR blocks to subnet %s", id),
 		&vpcv1.UpdateSubnetMetadata{SubnetId: id},

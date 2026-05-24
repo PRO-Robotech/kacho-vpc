@@ -67,7 +67,8 @@ func (u *UpdateSubnetUseCase) Execute(ctx context.Context, in UpdateInput) (*ope
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update subnet %s", in.SubnetID),
 		&vpcv1.UpdateSubnetMetadata{SubnetId: in.SubnetID},

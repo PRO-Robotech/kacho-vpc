@@ -60,7 +60,8 @@ func (u *UpdateRulesUseCase) Execute(ctx context.Context, in UpdateRulesInput) (
 		}
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update rules of security group %s", in.SecurityGroupID),
 		&vpcv1.UpdateSecurityGroupMetadata{SecurityGroupId: in.SecurityGroupID},

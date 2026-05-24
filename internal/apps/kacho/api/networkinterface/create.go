@@ -127,7 +127,8 @@ func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateIn
 	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
 
 	niID := ids.NewID(ids.PrefixSubnet)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create network interface %s", string(n.Name)),
 		&vpcv1.CreateNetworkInterfaceMetadata{NetworkInterfaceId: niID},

@@ -52,7 +52,8 @@ func (u *UpdateNetworkUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update network %s", in.NetworkID),
 		&vpcv1.UpdateNetworkMetadata{NetworkId: in.NetworkID},

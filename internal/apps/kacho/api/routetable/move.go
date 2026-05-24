@@ -54,7 +54,8 @@ func (u *MoveRouteTableUseCase) Execute(ctx context.Context, id, destProjectID s
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Move route table %s", id),
 		&vpcv1.MoveRouteTableMetadata{RouteTableId: id},

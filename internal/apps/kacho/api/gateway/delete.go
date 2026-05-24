@@ -38,7 +38,8 @@ func (u *DeleteGatewayUseCase) Execute(ctx context.Context, id string) (*operati
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "gateway_id required")
 	}
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete gateway %s", id),
 		&vpcv1.DeleteGatewayMetadata{GatewayId: id},

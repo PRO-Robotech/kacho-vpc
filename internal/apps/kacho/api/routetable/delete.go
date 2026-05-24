@@ -42,7 +42,8 @@ func (u *DeleteRouteTableUseCase) Execute(ctx context.Context, id string) (*oper
 		return nil, status.Error(codes.InvalidArgument, "route_table_id required")
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete route table %s", id),
 		&vpcv1.DeleteRouteTableMetadata{RouteTableId: id},

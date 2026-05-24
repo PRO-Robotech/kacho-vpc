@@ -54,7 +54,8 @@ func (u *AttachToInstanceUseCase) Execute(ctx context.Context, id, instanceID, i
 	if instanceID == "" {
 		return nil, status.Error(codes.InvalidArgument, "instance_id required")
 	}
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Attach network interface %s to instance %s", id, instanceID),
 		&vpcv1.AttachNetworkInterfaceMetadata{NetworkInterfaceId: id, InstanceId: instanceID},

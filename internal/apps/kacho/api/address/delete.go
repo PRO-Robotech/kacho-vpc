@@ -80,7 +80,8 @@ func (u *DeleteAddressUseCase) Execute(ctx context.Context, id string) (*operati
 	}
 	_ = rd.Close()
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete address %s", id),
 		&vpcv1.DeleteAddressMetadata{AddressId: id},

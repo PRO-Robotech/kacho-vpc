@@ -50,7 +50,8 @@ func (u *UpdateRouteTableUseCase) Execute(ctx context.Context, in UpdateInput) (
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update route table %s", in.RouteTableID),
 		&vpcv1.UpdateRouteTableMetadata{RouteTableId: in.RouteTableID},

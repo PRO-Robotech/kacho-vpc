@@ -38,7 +38,8 @@ func (u *DeletePrivateEndpointUseCase) Execute(ctx context.Context, id string) (
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "private_endpoint_id required")
 	}
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete private endpoint %s", id),
 		&pe.DeletePrivateEndpointMetadata{PrivateEndpointId: id},

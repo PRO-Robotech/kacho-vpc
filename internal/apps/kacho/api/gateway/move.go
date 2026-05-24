@@ -55,7 +55,8 @@ func (u *MoveGatewayUseCase) Execute(ctx context.Context, id, destProjectID stri
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Move gateway %s", id),
 		&vpcv1.MoveGatewayMetadata{GatewayId: id},

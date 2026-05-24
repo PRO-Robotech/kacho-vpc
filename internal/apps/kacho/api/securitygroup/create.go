@@ -129,7 +129,8 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 	}
 
 	sgID := ids.NewID(ids.PrefixSecurityGroup)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create security group %s", name),
 		&vpcv1.CreateSecurityGroupMetadata{SecurityGroupId: sgID},

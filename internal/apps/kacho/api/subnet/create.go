@@ -145,7 +145,8 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 	_ = rd.Close()
 
 	subID := ids.NewID(ids.PrefixSubnet)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create subnet %s", name),
 		&vpcv1.CreateSubnetMetadata{SubnetId: subID},

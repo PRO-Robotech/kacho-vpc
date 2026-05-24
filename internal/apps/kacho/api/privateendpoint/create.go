@@ -124,7 +124,8 @@ func (u *CreatePrivateEndpointUseCase) Execute(ctx context.Context, p domain.Pri
 	}
 
 	peID := ids.NewID(ids.PrefixPrivateEndpoint)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create private endpoint %s", name),
 		&pe.CreatePrivateEndpointMetadata{PrivateEndpointId: peID},

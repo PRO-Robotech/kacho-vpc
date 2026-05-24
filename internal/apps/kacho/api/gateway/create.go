@@ -85,7 +85,8 @@ func (u *CreateGatewayUseCase) Execute(ctx context.Context, g domain.Gateway) (*
 	// НЕ проверяем (в отличие от Network/Subnet/RT/SG).
 
 	gwID := ids.NewID(ids.PrefixGateway)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create gateway %s", name),
 		&vpcv1.CreateGatewayMetadata{GatewayId: gwID},

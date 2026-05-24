@@ -43,7 +43,8 @@ func (u *DeleteNetworkInterfaceUseCase) Execute(ctx context.Context, id string) 
 		return nil, status.Error(codes.InvalidArgument, "network_interface_id required")
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete network interface %s", id),
 		&vpcv1.DeleteNetworkInterfaceMetadata{NetworkInterfaceId: id},

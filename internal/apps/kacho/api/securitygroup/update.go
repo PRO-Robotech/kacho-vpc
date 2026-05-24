@@ -58,7 +58,8 @@ func (u *UpdateSecurityGroupUseCase) Execute(ctx context.Context, in UpdateInput
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update security group %s", in.SecurityGroupID),
 		&vpcv1.UpdateSecurityGroupMetadata{SecurityGroupId: in.SecurityGroupID},

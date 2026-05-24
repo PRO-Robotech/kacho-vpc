@@ -118,7 +118,8 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTa
 	_ = rd.Close()
 
 	rtID := ids.NewID(ids.PrefixRouteTable)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create route table %s", name),
 		&vpcv1.CreateRouteTableMetadata{RouteTableId: rtID},

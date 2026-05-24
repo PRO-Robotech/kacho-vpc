@@ -55,7 +55,8 @@ func (u *MoveNetworkUseCase) Execute(ctx context.Context, id, destProjectID stri
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Move network %s", id),
 		&vpcv1.MoveNetworkMetadata{NetworkId: id},

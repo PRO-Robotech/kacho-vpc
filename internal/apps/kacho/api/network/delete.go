@@ -55,7 +55,8 @@ func (u *DeleteNetworkUseCase) Execute(ctx context.Context, id string) (*operati
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete network %s", id),
 		&vpcv1.DeleteNetworkMetadata{NetworkId: id},

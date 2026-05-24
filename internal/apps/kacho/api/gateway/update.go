@@ -52,7 +52,8 @@ func (u *UpdateGatewayUseCase) Execute(ctx context.Context, in UpdateInput) (*op
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update gateway %s", in.GatewayID),
 		&vpcv1.UpdateGatewayMetadata{GatewayId: in.GatewayID},
