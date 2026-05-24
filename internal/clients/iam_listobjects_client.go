@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/PRO-Robotech/kacho-corelib/auth"
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 	"github.com/PRO-Robotech/kacho-corelib/retry"
 	iamv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/iam/v1"
@@ -58,11 +59,20 @@ func NewIAMListObjectsClient(conn grpc.ClientConnInterface) *IAMListObjectsClien
 //   - retry.OnUnavailable — авто-retry на временные сетевые сбои.
 //   - Любая `error` → возвращается caller'у, который wraps в ErrUnavailable
 //     (см. authz.ListObjectsService.ListAllowedIDs).
+//   - W1.4 (KAC-178 follow-up): outgoing ctx обёрнут `auth.PropagateOutgoing`,
+//     чтобы iam-side `grpcsrv.UnaryPrincipalExtract` увидел реального caller'а,
+//     а не SystemPrincipal() = user:bootstrap. Без этого wrap'а IAM
+//     authzguard'ы видели "system:bootstrap" и отбивали ListObjects как
+//     "authz_anonymous_mutation_denied" → vpc list-filter возвращал 403
+//     "list-filter denied" для ВСЕХ user'ов независимо от их FGA-tuple'ов.
+//     Зеркало `kacho-vpc/internal/apps/kacho/check/check_client.go` (W1.4 для Check)
+//     и `kacho-compute/internal/check/check_client.go`.
 func (c *IAMListObjectsClient) ListObjects(ctx context.Context, req authz.ListObjectsRequest) (authz.ListObjectsResponse, error) {
 	if c == nil || c.cli == nil {
 		return authz.ListObjectsResponse{}, fmt.Errorf("IAMListObjectsClient: client not initialized")
 	}
 
+	ctx = auth.PropagateOutgoing(ctx)
 	if req.AuthzModelID != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authzModelHeader, req.AuthzModelID)
 	}
