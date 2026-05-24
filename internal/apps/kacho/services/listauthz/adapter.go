@@ -11,9 +11,39 @@ package listauthz
 
 import (
 	"context"
+	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 )
+
+// MapListFilterErr — KAC-178 §1: единая трансляция ошибок ListAllowedIDs
+// (corelib authz.ErrPermissionDenied / authz.ErrUnavailable) в gRPC status,
+// который list-handler возвращает клиенту.
+//
+//   - authz.ErrPermissionDenied → codes.PermissionDenied (HTTP 403)
+//     "у тебя нет прав на этот action" — легитимный denial, retry бесполезен.
+//   - всё остальное (включая authz.ErrUnavailable, sentinel-free errors) →
+//     codes.Unavailable (HTTP 503) с префиксом "list-filter unavailable:"
+//     — infra сломана, retry имеет смысл.
+//
+// До KAC-178 use-case'ы блиндово оборачивали любой error в Unavailable, что
+// возвращало 503 на легитимные denial'ы; UI/SDK не отличал "нет прав" от
+// "сервис мёртв" → retry-логика делала хуже. После coordinated fix в corelib
+// (errors.Is(err, authz.ErrPermissionDenied)) этот helper разделяет ветки.
+//
+// nil-err → nil (defensive).
+func MapListFilterErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, authz.ErrPermissionDenied) {
+		return status.Error(codes.PermissionDenied, "list-filter denied")
+	}
+	return status.Error(codes.Unavailable, "list-filter unavailable: "+err.Error())
+}
 
 // Port — generic интерфейс для FGA list-filter. Используется во всех VPC
 // list-use-case'ах (network/subnet/sg/rt/address/gateway/pe/ni). Adapter

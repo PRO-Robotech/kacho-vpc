@@ -50,7 +50,7 @@ func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, subjectID strin
 	if u.authz != nil && subjectID != "" {
 		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeSG, FGAActionSGList, f.ProjectID)
 		if lerr != nil {
-			return nil, "", status.Error(codes.Unavailable, "list-filter unavailable: "+lerr.Error())
+			return nil, "", listauthz.MapListFilterErr(lerr)
 		}
 		if len(allowedIDs) == 0 {
 			return nil, "", nil
