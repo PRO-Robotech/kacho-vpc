@@ -256,8 +256,19 @@ jobs:
           echo "=== authz-fixtures.json ==="
           cat tests/authz-fixtures/out/authz-fixtures.json
 
-          # --- newman -----------------------------------------------------
+          # --- newman: kacho-iam --------------------------------------------
           cd "${GITHUB_WORKSPACE}/kacho-iam"
+          python3 tests/newman/scripts/gen.py
+          tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080
+
+          # --- newman: kacho-vpc (KAC-165) ----------------------------------
+          # Same stack already has VPC deployment + pg-vpc + api-gateway up;
+          # authz-fixtures patched kacho-vpc/tests/newman/environments/local
+          # with fresh JWTs. Generate VPC collections and run them too.
+          # gen.py invocation gates Python syntax of cases/*.py (validates the
+          # whole catalog); run.sh exits non-zero on any FAILED assertion (see
+          # `awk '... $3+0>0' out/summary.txt` pattern in ci.yaml).
+          cd "${GITHUB_WORKSPACE}/kacho-vpc"
           python3 tests/newman/scripts/gen.py
           tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080
 

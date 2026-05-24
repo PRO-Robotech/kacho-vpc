@@ -1059,3 +1059,99 @@ CASES.append(Case(
         poll_operation_until_done(),
     ],
 ))
+
+
+# ---------------------------------------------------------------------------
+# KAC-165 T11 — Pool exhaustion (REQ-IPAM-* P0)
+# ---------------------------------------------------------------------------
+
+CASES.append(Case(
+    id="IPL-ALLOC-POOL-EXHAUSTED",
+    title="Pool /30 (2 usable IPs) + bound to fresh Network → 2 internal v4 allocate ok, 3rd Address.Create Operation FailedPrecondition (pool exhausted)",
+    classes=["NEG", "STATE", "CONF"], priority="P0",
+    steps=[
+        # 1. Создать throwaway Network.
+        Step(name="cr-net", method="POST", path="/vpc/v1/networks",
+             body={"projectId": "{{_suiteFolderId}}", "name": "ipl-exh-net-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "exhNetId")]),
+        poll_operation_until_done(),
+        # 2. Создать pool /30 — 4 addresses total, 2 usable (excl network+broadcast).
+        Step(name="cr-pool", method="POST", path=POOLS,
+             body={"name": "ipl-exh-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
+                   "zoneId": "ru-central1-c",
+                   "v4CidrBlocks": ["198.51.100.252/30"], "v6CidrBlocks": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "exhPoolId")]),
+        # 3. Bind network → pool.
+        Step(name="bind", method="POST", path="/vpc/v1/networks/{{exhNetId}}/addressPoolBinding",
+             body={"poolId": "{{exhPoolId}}"},
+             test_script=[*assert_status(200)]),
+        # 4. Allocate #1 — external Address (резолв cascade Step 2 = network_default → наш pool).
+        Step(name="alloc-1", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "exh-1-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "ru-central1-c"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdE1")]),
+        poll_operation_until_done(),
+        Step(name="verify-1", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "let _t=0;",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "  let j=null;try{j=res.json();}catch(e){}",
+                 "  if(j&&j.done){pm.test('alloc-1 success',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(false));}",
+                 "  else if(++_t<8){setTimeout(_s,400);}",
+                 "});_s();",
+             ]),
+        # 5. Allocate #2 — second usable IP.
+        Step(name="alloc-2", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "exh-2-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "ru-central1-c"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdE2")]),
+        poll_operation_until_done(),
+        Step(name="verify-2", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "let _t=0;",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "  let j=null;try{j=res.json();}catch(e){}",
+                 "  if(j&&j.done){pm.test('alloc-2 success',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(false));}",
+                 "  else if(++_t<8){setTimeout(_s,400);}",
+                 "});_s();",
+             ]),
+        # 6. Allocate #3 — pool exhausted → FailedPrecondition.
+        Step(name="alloc-3-fails", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "exh-3-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "ru-central1-c"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdE3")]),
+        Step(name="verify-3-fails", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "let _t=0;",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "  let j=null;try{j=res.json();}catch(e){}",
+                 "  if(j&&j.done){",
+                 "    pm.test('alloc-3 fails (pool exhausted)',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(true));",
+                 "    pm.test('FailedPrecondition (9)',()=>pm.expect(j.error.code).to.eql(9));",
+                 "  } else if(++_t<8){setTimeout(_s,400);}",
+                 "  else { pm.test('op resolved', () => pm.expect.fail('timeout')); }",
+                 "});_s();",
+             ]),
+        # Cleanup (releases free up the pool).
+        Step(name="del-1", method="DELETE", path="/vpc/v1/addresses/{{addrIdE1}}",
+             test_script=["pm.test('del 200|400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-2", method="DELETE", path="/vpc/v1/addresses/{{addrIdE2}}",
+             test_script=["pm.test('del 200|400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="unbind", method="DELETE", path="/vpc/v1/networks/{{exhNetId}}/addressPoolBinding",
+             test_script=["pm.test('unbind ok', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
+        Step(name="del-pool", method="DELETE", path=POOLS + "/{{exhPoolId}}",
+             test_script=["pm.test('del pool', () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"]),
+        Step(name="del-net", method="DELETE", path="/vpc/v1/networks/{{exhNetId}}",
+             test_script=["pm.test('del net 200|400', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
+                          *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))

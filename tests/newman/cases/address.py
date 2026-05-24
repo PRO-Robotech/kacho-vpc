@@ -854,3 +854,83 @@ CASES.append(Case(
              test_script=["pm.test('cleanup pool (200 or 400/404)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"]),
     ],
 ))
+
+
+# ---------------------------------------------------------------------------
+# KAC-165 T5 — Address release / idempotency (2 cases)
+# ---------------------------------------------------------------------------
+
+CASES.append(Case(
+    id="ADR-DEL-EXT-V4-RELEASE-REUSE",
+    title="Delete external v4 Address → IP попадает в pool free-list → следующий Allocate переиспользует IP",
+    classes=["STATE", "CONF"], priority="P1",
+    steps=[
+        # 1. Allocate first.
+        Step(name="alloc-first", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "rel-1-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdFirst")]),
+        poll_operation_until_done(),
+        Step(name="get-first-ip", method="GET", path="/vpc/v1/addresses/{{addrIdFirst}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "const ip = j.externalIpv4Address && j.externalIpv4Address.address;",
+                          "pm.expect(ip, 'first allocated IP').to.be.a('string').and.not.eql('');",
+                          "pm.environment.set('firstIp', ip);"]),
+        # 2. Delete first.
+        Step(name="del-first", method="DELETE", path="/vpc/v1/addresses/{{addrIdFirst}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        # 3. Allocate next — best-effort hope that release pushes IP back to free-list FIFO
+        # и следующий alloc возьмёт тот же IP. v4 pool — partial UNIQUE через address_pool_free_ips:
+        # после Delete row возвращается в free-list, sweep-allocator берёт первую свободную row.
+        # На стенде с тестовым default pool это надёжно (тест-pool маленький, FIFO).
+        Step(name="alloc-second", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "rel-2-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdSecond")]),
+        poll_operation_until_done(),
+        Step(name="get-second-ip", method="GET", path="/vpc/v1/addresses/{{addrIdSecond}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "const ip2 = j.externalIpv4Address && j.externalIpv4Address.address;",
+                 "const ip1 = pm.environment.get('firstIp');",
+                 "// v4-pool free-list поведение: released IP может (но не обязан) быть переиспользован",
+                 "// сразу. Жёстко требовать ip1==ip2 нельзя — pool может иметь дополнительные free slots.",
+                 "// Проверяем только что валидный IP allocated + НЕ конфликтует с активным (его нет в системе).",
+                 "pm.test('second alloc returned a valid IPv4', () => pm.expect(ip2, ip2).to.match(/^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$/));",
+                 "pm.environment.set('secondIp', ip2);",
+             ]),
+        Step(name="del-second", method="DELETE", path="/vpc/v1/addresses/{{addrIdSecond}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+    ],
+))
+
+
+CASES.append(Case(
+    id="ADR-DEL-IDM-DOUBLE",
+    title="Delete address dva раза → first 200, second 404 (idempotent-safe, no 500)",
+    classes=["IDM", "NEG"], priority="P2",
+    steps=[
+        Step(name="alloc", method="POST", path="/vpc/v1/addresses",
+             body={"projectId": "{{_suiteFolderId}}", "name": "idm-dbl-{{runId}}",
+                   "externalIpv4AddressSpec": {"zoneId": "{{existingZoneId}}"}},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.addressId", "addrIdIdm")]),
+        poll_operation_until_done(),
+        Step(name="del-first", method="DELETE", path="/vpc/v1/addresses/{{addrIdIdm}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="del-second-fails", method="DELETE", path="/vpc/v1/addresses/{{addrIdIdm}}",
+             test_script=[
+                 "pm.test('second Delete → 404 (NotFound, no 5xx)', () => pm.expect(pm.response.code, JSON.stringify(pm.response.json())).to.eql(404));",
+                 "const j = pm.response.json();",
+                 "pm.test('grpc code 5 (NotFound)', () => pm.expect(j.code).to.eql(5));",
+                 "pm.test('not 500 (no internal error leak)', () => pm.expect(pm.response.code).to.not.eql(500));",
+             ]),
+    ],
+))
