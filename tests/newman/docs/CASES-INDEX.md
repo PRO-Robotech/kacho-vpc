@@ -475,3 +475,67 @@
 | Pattern | Classes | P | Apps | Что проверяет |
 |---|---|---|---|---|
 | `NIC-ATTACH-DETACH-OK` | CRUD,STATE | P1 | 1 (nic) | (см. секцию NetworkInterface) roundtrip Attach→Detach; `used_by` зеркалит привязку. Verifies REQ-NIC-03. |
+
+---
+
+### Concurrency / Burst (KAC-165 T1)
+
+*Burst-best-effort cases для race-defense инвариантов через api-gateway. Newman пускает N `pm.sendRequest` почти-одновременно с одного runner'а; server обрабатывает в реальной race-window. True deterministic race — integration-территория (`internal/repo/*_integration_test.go`). Кейсы в `cases/concurrency.py` (новый файл).*
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `SUB-CR-CONC-OVERLAP-BURST` | CONC,NEG | P0 | 1 (sub) | 3 parallel Create Subnet same Network + same CIDR → 1 succeed + 2 FailedPrecondition (EXCLUDE `subnets_no_overlap_v4` race-defense). Verifies REQ-CIDR-02. |
+| `ADR-CR-CONC-BURST-ALLOC` | CONC | P0 | 1 (add) | 5 parallel external Address.Create → 5 distinct IPs (UNIQUE `addresses_external_pool_ip_uniq` + retry on collision). Verifies REQ-IPAM-03. |
+| `NIC-CR-CONC-MAC-UNIQUE` | CONC | P1 | 1 (nic) | 10 parallel NIC Create в одном subnet → 10 distinct MAC (UNIQUE `network_interfaces_mac_address_key` + `crypto/rand` MAC + retry on collision). Verifies REQ-NIC-08. |
+| `NIC-ATTACH-CONC-BURST` | CONC,STATE | P0 | 1 (nic) | 5 parallel AttachToInstance same NIC к разным instance → 1 succeed + 4 FailedPrecondition (CAS `used_by_id`, KAC-52 race fix). Verifies REQ-NIC-03 race-free. |
+| `SG-URL-CONC-OCC-CONFLICT` | CONC,STATE | P0 | 1 (sec) | 2 parallel UpdateRules same SG → 1 OK + 1 Aborted/FailedPrecondition (`xmin`-based OCC). |
+
+### NIC negative + ephemeral lifecycle (KAC-165 T3)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `NIC-CR-NEG-MULTI-V4-ADDR` | NEG,VAL | P0 | 1 (nic) | Create NIC с 2× `v4_address_ids` → InvalidArgument/FailedPrecondition (sync `validateNICAddressCardinality` либо DB CHECK constraint). Verifies REQ-NIC-04 / KAC-55. |
+| `NIC-CR-NEG-MULTI-V6-ADDR` | NEG,VAL | P0 | 1 (nic) | Симметрично для v6. |
+| `NIC-ATTACH-NEG-ALREADY-USED` | NEG,STATE,CONF | P0 | 1 (nic) | Attach к instance A → Attach к instance B того же NIC → second FailedPrecondition (CAS used_by_id). Verifies REQ-NIC-03. |
+| `NIC-DETACH-IDM-REATTACH-OK` | IDM,STATE | P1 | 1 (nic) | Detach → Attach к другому instance → ok (NIC reusable, idempotent state). |
+| `NIC-DETACH-STATE-EPHEMERAL-IP-RELEASE` | STATE | P1 | 1 (nic,add) | Create NIC + ephemeral v4 Address → Attach → Detach → NIC сохраняет address; после NIC.Delete — Address.used=false. Verifies REQ-NIC-04 / REQ-DEL-09. |
+
+### Subnet v6 / utilization / rollback (KAC-165 T4)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `SUB-CR-NEG-DUP-CIDR-EXACT` | NEG,CONF | P0 | 1 (sub) | Create Subnet с CIDR exact match существующей → FailedPrecondition (EXCLUDE backstop). |
+| `SUB-CR-NEG-V6-OVERLAP` | NEG,CONF | P0 | 1 (sub) | 2 v6-subnet overlapping в одной Network → 2nd FailedPrecondition (EXCLUDE `subnets_no_overlap_v6`). Verifies REQ-CIDR-02 для v6. |
+| `SUB-LUA-CRUD-COUNT` | CRUD,STATE | P1 | 1 (sub) | Allocate 3 internal Address → `ListUsedAddresses` returns ≥3 entries. |
+| `SUB-LUA-STATE-FRAGMENT` | STATE | P2 | 1 (sub) | Allocate 5 → delete middle 3 → ListUsedAddresses count decreased by exactly 3 (fragmentation handling). |
+| `SUB-CR-NEG-ROLLBACK-NO-RESOURCE-IN-GET` | NEG,STATE | P1 | 1 (sub) | Failed Subnet.Create (parent network NF) → Get(<reserved-id>) → 404, List не включает. Async rollback verified. |
+
+### Address release / idempotency (KAC-165 T5)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `ADR-DEL-EXT-V4-RELEASE-REUSE` | STATE,CONF | P1 | 1 (add) | Allocate v4 → Delete → Allocate next: получает валидный IP (free-list возвращает row, sweep-allocator). |
+| `ADR-DEL-IDM-DOUBLE` | IDM,NEG | P2 | 1 (add) | Delete address twice → first 200, second 404 (idempotent-safe, no 500 leak). |
+
+### RouteTable delete-with-association (KAC-165 T7)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `RT-DEL-WITH-ASSOC-OK` | CRUD,STATE | P1 | 1 (rou,sub) | Delete RouteTable с auto-assoc'нутой Subnet → 200, `subnet.route_table_id` обнулён через FK ON DELETE SET NULL (KAC-56). |
+
+### Operation failure shape (KAC-165 T7)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `OP-GET-ASYNC-FAILURE-RESPONSE` | STATE,CONF | P1 | 1 (ope) | Failed Operation: `done=true`, `error.code/message` populated, `response=null`, `metadata` preserved для tracing. Verifies REQ-OPS-01 / REQ-RES-02. |
+
+### Pool exhaustion (KAC-165 T11)
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `IPL-ALLOC-POOL-EXHAUSTED` | NEG,STATE,CONF | P0 | 1 (add,internal-pool) | Pool /30 (2 usable) bound to fresh Network → 2 internal Address.Create OK → 3rd FailedPrecondition (pool exhausted via cascade resolve). Verifies REQ-IPAM-* и REQ-IPL-CR-01. |
+
+> **Note**: existing CASES-INDEX gaps от KAC-124 (FOLDER→PROJECT rename) и KAC-127
+> (`AUTHZ-NETWORK-*` matrix) — отдельный tech-debt, не покрывается KAC-165
+> (test-only sprint, см. workspace `CLAUDE.md` §«Запреты» #13). GitHub issue
+> в `PRO-Robotech/kacho-vpc` под этот index re-sync — follow-up.
