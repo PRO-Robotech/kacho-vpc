@@ -519,3 +519,56 @@ CASES.extend(immutable_fields_matrix("RT", "/vpc/v1/routeTables",
 for c in security_injection_block("RT", "/vpc/v1/routeTables", "/vpc/v1/routeTables",
     {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "staticRoutes": []}):
     CASES.append(_rt_wrap("RT", "sec", c))
+
+
+# ---------------------------------------------------------------------------
+# KAC-165 T7 — RT delete-with-association
+# ---------------------------------------------------------------------------
+
+CASES.append(Case(
+    id="RT-DEL-WITH-ASSOC-OK",
+    title="Delete RouteTable с привязанной Subnet → 200 + Subnet.routeTableId обнулён (FK ON DELETE SET NULL, KAC-56)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        *_net_steps("delAssoc"),
+        # Создаём Subnet (auto-pick RT нет, поскольку RT в этой сети ещё нет).
+        Step(name="create-sub", method="POST", path="/vpc/v1/subnets",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-da-sub-{{runId}}", "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.235.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.subnetId", "subId")]),
+        poll_operation_until_done(),
+        # Create RouteTable — DB-trigger auto-assoc'ит Subnet'ы этой сети (KAC-56).
+        Step(name="create-rt", method="POST", path="/vpc/v1/routeTables",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "rt-da-{{runId}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.routeTableId", "rtId")]),
+        poll_operation_until_done(),
+        Step(name="verify-subnet-rt-set", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "pm.test('Subnet auto-assoc к свежему RT (KAC-56 BEFORE INSERT trigger или AFTER INSERT ON route_tables)', () => {",
+                 "  pm.expect(j.routeTableId, JSON.stringify(j)).to.eql(pm.environment.get('rtId'));",
+                 "});",
+             ]),
+        Step(name="del-rt", method="DELETE", path="/vpc/v1/routeTables/{{rtId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="verify-subnet-rt-null", method="GET", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[
+                 *assert_status(200),
+                 "const j = pm.response.json();",
+                 "pm.test('FK ON DELETE SET NULL обнулил subnet.route_table_id', () => {",
+                 "  pm.expect(j.routeTableId || '', JSON.stringify(j)).to.eql('');",
+                 "});",
+             ]),
+        Step(name="del-sub", method="DELETE", path="/vpc/v1/subnets/{{subId}}",
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+        poll_operation_until_done(),
+    ],
+))

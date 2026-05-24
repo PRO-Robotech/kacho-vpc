@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "765f9445-5189-4e99-9649-728447f571a4",
+    "_postman_id": "4a4bd8d8-06f6-4d15-a6ff-1c691c2be864",
     "name": "kacho-vpc / newman / operation",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -806,6 +806,114 @@
                   "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
                   "});",
                   "pm.test('text matches', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not found'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OP-GET-ASYNC-FAILURE-RESPONSE — Failed Operation: error.code/message заполнены, response пуст (REQ-OPS-01)",
+      "description": "class:STATE | class:CONF | priority:P1",
+      "item": [
+        {
+          "name": "trigger-fail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"enpopfailtest00000000\", \"name\": \"op-fail-shape-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.236.0.0/24\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const v = (j.id);",
+                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "poll-and-verify-shape",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/{{opId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "{{opId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let _t = 0; const _MAX = 8;",
+                  "const _step = () => pm.sendRequest({",
+                  "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
+                  "  method: 'GET',",
+                  "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
+                  "}, (err, res) => {",
+                  "  let j = null; try { j = res.json(); } catch (e) {}",
+                  "  if (j && j.done) {",
+                  "    pm.test('done=true', () => pm.expect(j.done).to.eql(true));",
+                  "    pm.test('error.code populated (gRPC code)', () => {",
+                  "      pm.expect(j.error, JSON.stringify(j)).to.be.an('object');",
+                  "      pm.expect(j.error.code).to.be.a('number');",
+                  "    });",
+                  "    pm.test('error.message non-empty', () => pm.expect(j.error.message, j.error.message).to.be.a('string').and.not.eql(''));",
+                  "    pm.test('response NOT set on failure', () => pm.expect(j.response || null, JSON.stringify(j.response)).to.eql(null));",
+                  "    pm.test('metadata still present (resource_id для tracing)', () => {",
+                  "      pm.expect(j.metadata, JSON.stringify(j)).to.be.an('object');",
+                  "    });",
+                  "  } else if (++_t < _MAX) { setTimeout(_step, 500); }",
+                  "  else { pm.test('op resolved in time', () => pm.expect.fail('timeout')); }",
+                  "});",
+                  "_step();"
                 ]
               }
             }

@@ -103,3 +103,49 @@ CASES.append(Case(
              ]),
     ],
 ))
+
+
+# ---------------------------------------------------------------------------
+# KAC-165 T7 — Operation failure response shape
+# ---------------------------------------------------------------------------
+
+CASES.append(Case(
+    id="OP-GET-ASYNC-FAILURE-RESPONSE",
+    title="Failed Operation: error.code/message заполнены, response пуст (REQ-OPS-01)",
+    classes=["STATE", "CONF"], priority="P1",
+    steps=[
+        # Trigger guaranteed-fail: Subnet.Create в несуществующую сеть.
+        Step(name="trigger-fail", method="POST", path="/vpc/v1/subnets",
+             body={"projectId": "{{_suiteFolderId}}",
+                   "networkId": "enpopfailtest00000000",
+                   "name": "op-fail-shape-{{runId}}",
+                   "zoneId": "{{existingZoneId}}",
+                   "v4CidrBlocks": ["10.236.0.0/24"]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        Step(name="poll-and-verify-shape", method="GET", path="/operations/{{opId}}",
+             test_script=[
+                 "let _t = 0; const _MAX = 8;",
+                 "const _step = () => pm.sendRequest({",
+                 "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
+                 "  method: 'GET',",
+                 "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
+                 "}, (err, res) => {",
+                 "  let j = null; try { j = res.json(); } catch (e) {}",
+                 "  if (j && j.done) {",
+                 "    pm.test('done=true', () => pm.expect(j.done).to.eql(true));",
+                 "    pm.test('error.code populated (gRPC code)', () => {",
+                 "      pm.expect(j.error, JSON.stringify(j)).to.be.an('object');",
+                 "      pm.expect(j.error.code).to.be.a('number');",
+                 "    });",
+                 "    pm.test('error.message non-empty', () => pm.expect(j.error.message, j.error.message).to.be.a('string').and.not.eql(''));",
+                 "    pm.test('response NOT set on failure', () => pm.expect(j.response || null, JSON.stringify(j.response)).to.eql(null));",
+                 "    pm.test('metadata still present (resource_id для tracing)', () => {",
+                 "      pm.expect(j.metadata, JSON.stringify(j)).to.be.an('object');",
+                 "    });",
+                 "  } else if (++_t < _MAX) { setTimeout(_step, 500); }",
+                 "  else { pm.test('op resolved in time', () => pm.expect.fail('timeout')); }",
+                 "});",
+                 "_step();",
+             ]),
+    ],
+))
