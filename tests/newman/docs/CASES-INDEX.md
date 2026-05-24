@@ -539,3 +539,11 @@
 > (`AUTHZ-NETWORK-*` matrix) — отдельный tech-debt, не покрывается KAC-165
 > (test-only sprint, см. workspace `CLAUDE.md` §«Запреты» #13). GitHub issue
 > в `PRO-Robotech/kacho-vpc` под этот index re-sync — follow-up.
+
+### Observability (KAC-165 T9 partial)
+
+*Только `OBS-REQID-HEADER-ECHO` в scope этого PR; `OBS-METRICS-*` (8 cases) — blocked by [kacho-vpc#110](https://github.com/PRO-Robotech/kacho-vpc/issues/110) (vpc Service не exposes :9090). См. `cases/observability.py` docstring.*
+
+| Pattern | Classes | P | Apps | Что проверяет |
+|---|---|---|---|---|
+| `OBS-REQID-HEADER-ECHO` | OBS | P2 | 1 (obs) | Client отправляет `X-Request-Id: <uuid>` → response header echoes тот же id (observability trace propagation через api-gateway). |
