@@ -66,6 +66,14 @@ func (s *stubProjectClient) callCount(folderID string) int {
 	return s.calls[folderID]
 }
 
+// resetCalls обнуляет счётчик вызовов (для тестов, которые сначала прогревают
+// кеш и затем измеряют upstream-нагрузку под параллельной загрузкой).
+func (s *stubProjectClient) resetCalls() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = make(map[string]int)
+}
+
 // fakeClock — управляемые часы для unit-тестов TTL.
 type fakeClock struct {
 	mu  sync.Mutex
@@ -378,8 +386,18 @@ func TestCachedProjectClient_DefaultsApplied(t *testing.T) {
 func TestCachedProjectClient_ParallelAccess(t *testing.T) {
 	t.Parallel()
 
-	// -race-проверка под высокой конкуренцией: много горутин, один folder
-	// → ровно один upstream-вызов после прогрева, кеш не race'ит.
+	// -race-проверка под высокой конкуренцией: после прогрева кеша параллельная
+	// нагрузка должна давать ровно 0 upstream-вызовов (cache-hit на всё),
+	// а сам кеш не должен race'ить (фиксируется через -race + детерминированный
+	// инвариант на счётчик).
+	//
+	// Раньше тест запускал параллельный sweep **без** прогрева и допускал
+	// "небольшой thundering herd" с порогом 64. Под нагрузкой CI (GOMAXPROCS=2,
+	// race-detector overhead) thundering herd подскакивал выше порога (>=68 в
+	// failing CI run 26358985805, KAC-177 на 46cc37a) — тест flaky. Прогрев
+	// устраняет thundering herd как переменную (свойство кеша уже проверено в
+	// TestCachedProjectClient_PositiveCacheHit; здесь — race-safety map+LRU).
+	folders := []string{"a", "b", "c", "d", "e"}
 	stub := newStubProjectClient()
 	stub.setDefault(stubAnswer{exists: true})
 
@@ -389,6 +407,25 @@ func TestCachedProjectClient_ParallelAccess(t *testing.T) {
 		MaxSize:     1000,
 	})
 
+	// Phase 1: warmup — последовательно прогреваем кеш по всем folder'ам.
+	// Гарантирует ровно по одному upstream-вызову на folder, без гонок.
+	for _, id := range folders {
+		exists, err := c.Exists(context.Background(), id)
+		if err != nil || !exists {
+			t.Fatalf("warmup folder=%q: exists=%v err=%v", id, exists, err)
+		}
+	}
+	// Sanity: после прогрева — ровно 5 upstream-вызовов (по 1 на folder).
+	warmupCalls := 0
+	for _, id := range folders {
+		warmupCalls += stub.callCount(id)
+	}
+	if warmupCalls != len(folders) {
+		t.Fatalf("warmup upstream calls = %d, want %d", warmupCalls, len(folders))
+	}
+	stub.resetCalls()
+
+	// Phase 2: parallel load. Все cache-hit'ы → 0 upstream-вызовов.
 	const goroutines = 64
 	const iter = 500
 
@@ -402,8 +439,9 @@ func TestCachedProjectClient_ParallelAccess(t *testing.T) {
 		go func(seed int) {
 			defer wg.Done()
 			for i := 0; i < iter; i++ {
-				// Несколько разных folder'ов чтобы LRU-list был под нагрузкой.
-				folder := []string{"a", "b", "c", "d", "e"}[(seed+i)%5]
+				// Несколько разных folder'ов чтобы LRU-list был под нагрузкой
+				// (touch разных entries через MoveToFront → race-target).
+				folder := folders[(seed+i)%len(folders)]
 				exists, err := c.Exists(context.Background(), folder)
 				if err != nil || !exists {
 					errorCount.Add(1)
@@ -415,16 +453,14 @@ func TestCachedProjectClient_ParallelAccess(t *testing.T) {
 	if errorCount.Load() != 0 {
 		t.Fatalf("got %d errors under concurrent load", errorCount.Load())
 	}
-	// После прогрева — для каждой из 5 folder upstream должен быть вызван ≥1.
-	// Без кеша было бы 64*500 = 32_000 вызовов. С кешем — несколько (race на первый miss).
+	// После прогрева ни одного upstream-вызова быть не должно — всё cache-hit.
+	// Без кеша было бы 64*500 = 32_000 вызовов.
 	totalCalls := 0
-	for _, id := range []string{"a", "b", "c", "d", "e"} {
+	for _, id := range folders {
 		totalCalls += stub.callCount(id)
 	}
-	if totalCalls > 64 {
-		// Допускаем небольшое thundering herd (до goroutines на folder) пока
-		// первый writer не положил entry в кеш. Без singleflight это норма.
-		t.Errorf("upstream calls under load = %d; suspiciously high (cache leak?)", totalCalls)
+	if totalCalls != 0 {
+		t.Errorf("upstream calls under load (after warmup) = %d; want 0 (cache miss / leak?)", totalCalls)
 	}
 	t.Logf("upstream calls = %d (down from %d without cache)", totalCalls, goroutines*iter)
 }
