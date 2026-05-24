@@ -50,7 +50,8 @@ func (u *UpdatePrivateEndpointUseCase) Execute(ctx context.Context, in UpdateInp
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update private endpoint %s", in.PrivateEndpointID),
 		&pe.UpdatePrivateEndpointMetadata{PrivateEndpointId: in.PrivateEndpointID},

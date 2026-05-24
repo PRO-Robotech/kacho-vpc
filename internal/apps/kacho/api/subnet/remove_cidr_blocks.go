@@ -46,7 +46,8 @@ func (u *RemoveCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6
 	if len(v4) == 0 && len(v6) == 0 {
 		return nil, invalidArg("v4_cidr_blocks", "v4_cidr_blocks or v6_cidr_blocks is required")
 	}
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Remove CIDR blocks from subnet %s", id),
 		&vpcv1.UpdateSubnetMetadata{SubnetId: id},

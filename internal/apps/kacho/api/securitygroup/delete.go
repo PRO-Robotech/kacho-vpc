@@ -53,7 +53,8 @@ func (u *DeleteSecurityGroupUseCase) Execute(ctx context.Context, id string) (*o
 		return nil, status.Errorf(codes.FailedPrecondition, "default security group cannot be deleted")
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Delete security group %s", id),
 		&vpcv1.DeleteSecurityGroupMetadata{SecurityGroupId: id},

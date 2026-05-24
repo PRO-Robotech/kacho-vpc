@@ -109,7 +109,8 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 	}
 
 	netID := ids.NewID(ids.PrefixNetwork)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create network %s", name),
 		&vpcv1.CreateNetworkMetadata{NetworkId: netID},

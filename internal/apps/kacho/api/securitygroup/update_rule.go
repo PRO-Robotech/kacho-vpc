@@ -81,7 +81,8 @@ func (u *UpdateRuleUseCase) Execute(ctx context.Context, in UpdateRuleInput) (*o
 	}
 	_ = rd.Close()
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update rule %s of security group %s", in.RuleID, in.SecurityGroupID),
 		&vpcv1.UpdateSecurityGroupRuleMetadata{

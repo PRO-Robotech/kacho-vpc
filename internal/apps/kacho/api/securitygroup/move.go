@@ -56,7 +56,8 @@ func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destProjectI
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Move security group %s", id),
 		&vpcv1.MoveSecurityGroupMetadata{SecurityGroupId: id},

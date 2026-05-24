@@ -36,7 +36,8 @@ func (u *DetachFromInstanceUseCase) Execute(ctx context.Context, id string) (*op
 	if err := niResourceID(id); err != nil {
 		return nil, err
 	}
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Detach network interface %s", id),
 		&vpcv1.DetachNetworkInterfaceMetadata{NetworkInterfaceId: id},

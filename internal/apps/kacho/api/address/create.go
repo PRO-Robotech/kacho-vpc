@@ -220,7 +220,8 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	}
 
 	addrID := ids.NewID(ids.PrefixAddress)
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Create address %s", in.Name),
 		&vpcv1.CreateAddressMetadata{AddressId: addrID},

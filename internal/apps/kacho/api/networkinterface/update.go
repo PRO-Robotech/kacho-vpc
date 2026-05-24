@@ -68,7 +68,8 @@ func (u *UpdateNetworkInterfaceUseCase) Execute(ctx context.Context, in UpdateIn
 		return nil, err
 	}
 
-	op, err := operations.New(
+	op, err := operations.NewFromContext(
+		ctx,
 		ids.PrefixOperationVPC,
 		fmt.Sprintf("Update network interface %s", in.NetworkInterfaceID),
 		&vpcv1.UpdateNetworkInterfaceMetadata{NetworkInterfaceId: in.NetworkInterfaceID},
