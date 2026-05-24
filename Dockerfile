@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM mirror.gcr.io/library/golang:1.25-alpine AS builder
 WORKDIR /src
 
 COPY kacho-corelib /src/kacho-corelib
@@ -14,7 +14,7 @@ RUN go mod download
 RUN CGO_ENABLED=0 go build -o /kacho-vpc ./cmd/vpc \
  && CGO_ENABLED=0 go build -o /kacho-migrator ./cmd/migrator
 
-FROM alpine:3.20
+FROM mirror.gcr.io/library/alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /kacho-vpc /usr/local/bin/kacho-vpc
 COPY --from=builder /kacho-migrator /usr/local/bin/kacho-migrator
