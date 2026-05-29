@@ -253,13 +253,13 @@ func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) 
 // operationToProto — локальная копия `handler.operationToProto`.
 func operationToProto(op *operations.Operation) *operationpb.Operation {
 	p := &operationpb.Operation{
-		Id:          op.ID,
-		Description: op.Description,
-		CreatedAt:   timestamppb.New(op.CreatedAt),
-		CreatedBy:   op.CreatedBy,
-		ModifiedAt:  timestamppb.New(op.ModifiedAt),
-		Done:        op.Done,
-		Metadata:    op.Metadata,
+		Id:                   op.ID,
+		Description:          op.Description,
+		CreatedAt:            timestamppb.New(op.CreatedAt),
+		CreatedBy:            op.CreatedBy,
+		ModifiedAt:           timestamppb.New(op.ModifiedAt),
+		Done:                 op.Done,
+		Metadata:             op.Metadata,
 		PrincipalType:        op.Principal.Type,
 		PrincipalId:          op.Principal.ID,
 		PrincipalDisplayName: op.Principal.DisplayName,

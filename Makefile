@@ -5,7 +5,7 @@ MIGRATOR_BIN   := kacho-migrator
 MIGRATOR_CMD   := ./cmd/migrator
 IMAGE          := kacho-vpc:dev
 
-.PHONY: build build-migrator test test-short vet lint docker sync-migrations generate
+.PHONY: build build-migrator test test-short vet lint docker sync-migrations generate audit-list-filter
 
 build:
 	CGO_ENABLED=0 go build -o bin/$(BINARY) $(CMD)
@@ -21,6 +21,12 @@ test-short:
 
 vet:
 	go vet ./...
+
+# audit-list-filter — RBAC v2 / KAC-219 / W6 CI gate.
+# Refuses to ship a public List<Resource> handler without listauthz wiring.
+# Whitelist admin-only handlers via --allow=<resource>.
+audit-list-filter:
+	@./tools/audit-list-filter.sh --allow=addresspool
 
 lint:
 	golangci-lint run ./...
