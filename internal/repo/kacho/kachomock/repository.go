@@ -106,6 +106,27 @@ func (r *Repository) SeedSubnet(rec *kacho.SubnetRecord) {
 	r.subnets[rec.ID] = rec
 }
 
+// SeedSecurityGroup / SeedNetwork / SeedNetworkInterface — KAC-239 S2: фикстуры
+// для derived-on-read SG.used_by (NIC.security_group_ids ∋ sg,
+// networks.default_security_group_id == sg).
+func (r *Repository) SeedSecurityGroup(rec *kacho.SecurityGroupRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.securityGroups[rec.ID] = rec
+}
+
+func (r *Repository) SeedNetwork(rec *kacho.NetworkRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.networks[rec.ID] = rec
+}
+
+func (r *Repository) SeedNetworkInterface(rec *kacho.NetworkInterfaceRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.networkInterfaces[rec.ID] = rec
+}
+
 // Outbox возвращает копию выпущенных outbox-event'ов (post-commit only).
 func (r *Repository) Outbox() []OutboxEvent {
 	r.mu.Lock()
