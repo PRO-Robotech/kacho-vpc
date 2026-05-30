@@ -450,7 +450,8 @@ func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
 }
 
 func (rd *readerImpl) SecurityGroups() kacho.SecurityGroupReaderIface {
-	return &securityGroupReader{snap: rd.sgSnap}
+	// nics/nets — для derived-on-read UsedBy (KAC-239 S2).
+	return &securityGroupReader{snap: rd.sgSnap, nics: rd.niSnap, nets: rd.netSnap}
 }
 
 func (rd *readerImpl) Subnets() kacho.SubnetReaderIface {
