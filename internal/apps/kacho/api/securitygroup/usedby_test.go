@@ -11,6 +11,8 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
 )
 
 // KAC-239 S2 — SecurityGroup.used_by (потребители SG, derived-on-read) +
@@ -19,6 +21,12 @@ import (
 // "network"). НЕ rule-references-another-SG.
 
 const s2SGID = "enp" + "0000000000000usg2" // valid prefix + 17 chars
+
+// sgTestRepo — kachomock + opsRepo для S2 used_by/delete тестов.
+func sgTestRepo(t *testing.T) (*kachomock.Repository, *repomock.OpsRepo) {
+	t.Helper()
+	return kachomock.NewRepository(), repomock.NewOpsRepo()
+}
 
 func seedPlainSG(r interface {
 	SeedSecurityGroup(*kacho.SecurityGroupRecord)
