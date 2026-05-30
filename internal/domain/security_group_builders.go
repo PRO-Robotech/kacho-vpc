@@ -30,9 +30,14 @@ const DefaultSGDescription = "Default security group (auto-created by kacho-vpc)
 // Wave 2 batch B (KAC-94): Direction — enum `SecurityGroupRuleDirection`,
 // а не голая string-literal (skill evgeniy §4 D.8).
 func NewDefaultSecurityGroupRules() []SecurityGroupRule {
+	// KAC-239: каждому правилу присваивается стабильный id при создании —
+	// иначе default-SG rules не имеют id в JSONB, и их нельзя адресно
+	// удалить/изменить (UI дублировал/не мог удалить egress). Custom-SG rules
+	// получают id через assignRuleIDs в create-use-case; default-SG собирается
+	// builder'ом напрямую (Insert без use-case), поэтому id выдаём здесь.
 	return []SecurityGroupRule{
-		{Direction: SecurityGroupRuleDirectionIngress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
-		{Direction: SecurityGroupRuleDirectionEgress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+		{ID: ids.NewID(ids.PrefixSecurityGroup), Direction: SecurityGroupRuleDirectionIngress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
+		{ID: ids.NewID(ids.PrefixSecurityGroup), Direction: SecurityGroupRuleDirectionEgress, ProtocolName: "ANY", ProtocolNumber: -1, V4CidrBlocks: []string{"0.0.0.0/0"}},
 	}
 }
 
