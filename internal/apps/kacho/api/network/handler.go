@@ -124,7 +124,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateNetworkRequest) (
 		Description: domain.RcDescription(req.Description),
 		Labels:      domain.LabelsFromMap(req.Labels),
 	}
-	op, err := h.create.Execute(ctx, n)
+	op, err := h.create.Execute(ctx, n, req.CreateDefaultSecurityGroup)
 	if err != nil {
 		return nil, err
 	}

@@ -119,7 +119,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false)
 
 	// project_id required.
-	_, err := uc.Execute(context.Background(), domain.Network{Name: "test"})
+	_, err := uc.Execute(context.Background(), domain.Network{Name: "test"}, nil)
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -128,7 +128,7 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	_, err = uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
 		Name:      domain.RcNameVPC("1bad"),
-	})
+	}, nil)
 	require.Error(t, err)
 	st, _ = status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -147,7 +147,7 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
 		Name:      domain.RcNameVPC("net1"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -166,7 +166,7 @@ func TestCreateUseCase_OK(t *testing.T) {
 		ProjectID:   "f1",
 		Name:        domain.RcNameVPC("net1"),
 		Description: domain.RcDescription("desc"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, op.ID)
 
@@ -187,7 +187,7 @@ func TestCreateUseCase_DefaultSGInline_Atomic(t *testing.T) {
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
 		Name:      domain.RcNameVPC("net-with-sg"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.True(t, saved.Done)
@@ -287,7 +287,7 @@ func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
 	op, err := uc.Execute(context.Background(), domain.Network{
 		ProjectID: "f1",
 		Name:      domain.RcNameVPC("net-no-sg"),
-	})
+	}, nil)
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.ID)
 	require.True(t, saved.Done)
@@ -299,6 +299,64 @@ func TestCreateUseCase_DefaultSGInline_OFF(t *testing.T) {
 	require.Len(t, events, 1)
 	assert.Equal(t, "Network", events[0].Resource)
 	assert.Equal(t, "CREATED", events[0].Action)
+}
+
+func s1Bool(b bool) *bool { return &b }
+
+// KAC-239 S1-1: request-флаг create_default_security_group=true перебивает env=false.
+func TestCreateUseCase_DefaultSG_FlagTrue_OverridesEnvFalse(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, false) // env disabled
+
+	op, err := uc.Execute(context.Background(), domain.Network{
+		ProjectID: "f1",
+		Name:      domain.RcNameVPC("net-flag-on"),
+	}, s1Bool(true))
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error)
+
+	sgs := kr.SecurityGroups()
+	require.Len(t, sgs, 1, "flag=true must create default SG despite env=false")
+	assert.True(t, sgs[0].DefaultForNetwork)
+}
+
+// KAC-239 S1-2: request-флаг create_default_security_group=false перебивает env=true.
+func TestCreateUseCase_DefaultSG_FlagFalse_OverridesEnvTrue(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, true) // env enabled
+
+	op, err := uc.Execute(context.Background(), domain.Network{
+		ProjectID: "f1",
+		Name:      domain.RcNameVPC("net-flag-off"),
+	}, s1Bool(false))
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error)
+
+	assert.Empty(t, kr.SecurityGroups(), "flag=false must skip default SG despite env=true")
+}
+
+// KAC-239 S1-3: nil-флаг → fallback на env (back-compat). env=true → SG.
+func TestCreateUseCase_DefaultSG_NilFlag_FollowsEnvTrue(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := NewCreateNetworkUseCase(kr, &repomock.ProjectClient{OK: true}, or, true)
+
+	op, err := uc.Execute(context.Background(), domain.Network{
+		ProjectID: "f1",
+		Name:      domain.RcNameVPC("net-nil-flag"),
+	}, nil)
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error)
+
+	require.Len(t, kr.SecurityGroups(), 1, "nil flag + env=true must create default SG (back-compat)")
 }
 
 func TestDeleteUseCase_InvalidArg(t *testing.T) {

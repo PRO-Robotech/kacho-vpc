@@ -81,7 +81,7 @@ func (u *CreateNetworkUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, lo
 // тривиальная `CreateInput{Network: …}`-обёртка удалена — она лишь
 // перепаковывала domain.X без дополнительного контекста. Поле `n.ID` на входе
 // пустое — назначим внутри use-case'а через `ids.NewID(ids.PrefixNetwork)`.
-func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*operations.Operation, error) {
+func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network, createDefaultSG *bool) (*operations.Operation, error) {
 	if n.ProjectID == "" {
 		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
@@ -141,7 +141,7 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 				}
 			}
 		}()
-		res, derr = u.doCreate(ctx, netID, n)
+		res, derr = u.doCreate(ctx, netID, n, createDefaultSG)
 		if derr != nil && u.logger != nil {
 			u.logger.Error("network create operation failed (KAC-127 Bug-2)",
 				"op", op.ID, "network_id", netID, "project_id", string(n.ProjectID),
@@ -178,7 +178,7 @@ func (u *CreateNetworkUseCase) Execute(ctx context.Context, n domain.Network) (*
 // TX это нормально: Insert(SG) ссылается на только что вставленный Network в
 // той же tx (видимость G.2 + Postgres deferred constraint check на коммите для
 // non-deferrable — INSERT(child) после INSERT(parent) в одной TX проходит).
-func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network) (*anypb.Any, error) {
+func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n domain.Network, createDefaultSG *bool) (*anypb.Any, error) {
 	exists, err := u.projectClient.Exists(ctx, n.ProjectID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "folder check: %v", err)
@@ -204,7 +204,12 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 	}
 
 	finalRec := created
-	if u.defaultSGInline {
+	// KAC-239 S1: request-флаг перебивает env (defaultSGInline); nil → env.
+	useSG := u.defaultSGInline
+	if createDefaultSG != nil {
+		useSG = *createDefaultSG
+	}
+	if useSG {
 		// Композиция use-case'ов в одной writer-TX (skill evgeniy I.9-residual):
 		// CreateDefaultSGUseCase работает в нашей `w` — Abort/Commit делает caller.
 		upd, sgErr := u.createDefaultSG.Execute(ctx, w, created.Network)
