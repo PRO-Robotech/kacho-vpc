@@ -33,9 +33,15 @@ func (u *GetSecurityGroupUseCase) Execute(ctx context.Context, id string) (*kach
 		return nil, mapRepoErr(err)
 	}
 	defer func() { _ = rd.Close() }()
-	sg, err := rd.SecurityGroups().Get(ctx, id)
+	sgr := rd.SecurityGroups()
+	sg, err := sgr.Get(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
+	}
+	// KAC-239 S2: derived-on-read used_by (потребители SG). Best-effort —
+	// ошибка скана не должна валить Get самого SG.
+	if used, uerr := sgr.UsedBy(ctx, id); uerr == nil {
+		sg.UsedBy = used
 	}
 	return sg, nil
 }

@@ -21,6 +21,10 @@ type SecurityGroupFilter struct {
 type SecurityGroupReaderIface interface {
 	Get(ctx context.Context, id string) (*SecurityGroupRecord, error)
 	List(ctx context.Context, f SecurityGroupFilter, p Pagination) ([]*SecurityGroupRecord, string, error)
+	// UsedBy — KAC-239 S2: потребители SG (derived-on-read). Скан
+	// network_interfaces.security_group_ids @> [sgID] (тип "network_interface")
+	// + networks.default_security_group_id == sgID (тип "network").
+	UsedBy(ctx context.Context, sgID string) ([]domain.SecurityGroupReference, error)
 }
 
 // SecurityGroupWriterIface — write-операции + read (G.2 — writer видит свои writes).

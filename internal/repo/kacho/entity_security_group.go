@@ -21,4 +21,8 @@ import (
 type SecurityGroupRecord struct {
 	domain.SecurityGroup
 	CreatedAt time.Time
+	// UsedBy — KAC-239 S2: потребители SG (output-only, derived-on-read; не
+	// персистится в security_groups). Заполняется reader'ом через UsedBy(ctx,id)
+	// в Get; в List опускается (per-row scan дорог; UI читает used_by на detail).
+	UsedBy []domain.SecurityGroupReference
 }

@@ -24,8 +24,11 @@ import (
 // ---- SecurityGroup reader ----
 
 // securityGroupReader — read-only snapshot SG.
+// nics/nets — для derived-on-read UsedBy (KAC-239 S2).
 type securityGroupReader struct {
 	snap map[string]*kacho.SecurityGroupRecord
+	nics map[string]*kacho.NetworkInterfaceRecord
+	nets map[string]*kacho.NetworkRecord
 }
 
 func (r *securityGroupReader) Get(_ context.Context, id string) (*kacho.SecurityGroupRecord, error) {
@@ -49,6 +52,45 @@ func (r *securityGroupReader) List(_ context.Context, f kacho.SecurityGroupFilte
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
 	return result, "", nil
+}
+
+// UsedBy — KAC-239 S2: потребители SG (derived-on-read), parity с pg-impl.
+func (r *securityGroupReader) UsedBy(_ context.Context, sgID string) ([]domain.SecurityGroupReference, error) {
+	return computeSGUsedBy(sgID, r.nics, r.nets)
+}
+
+// computeSGUsedBy — общий derived-on-read скан для reader/writer mock'а:
+// NIC.security_group_ids ∋ sgID (тип "network_interface") +
+// networks.default_security_group_id == sgID (тип "network"); сорт по id.
+func computeSGUsedBy(
+	sgID string,
+	nics map[string]*kacho.NetworkInterfaceRecord,
+	nets map[string]*kacho.NetworkRecord,
+) ([]domain.SecurityGroupReference, error) {
+	var nicIDs, netIDs []string
+	for id, nic := range nics {
+		for _, sg := range nic.SecurityGroupIDs {
+			if sg == sgID {
+				nicIDs = append(nicIDs, id)
+				break
+			}
+		}
+	}
+	for id, n := range nets {
+		if n.DefaultSecurityGroupID == sgID {
+			netIDs = append(netIDs, id)
+		}
+	}
+	sort.Strings(nicIDs)
+	sort.Strings(netIDs)
+	var out []domain.SecurityGroupReference
+	for _, id := range nicIDs {
+		out = append(out, domain.SecurityGroupReference{ReferrerType: "network_interface", ReferrerID: id})
+	}
+	for _, id := range netIDs {
+		out = append(out, domain.SecurityGroupReference{ReferrerType: "network", ReferrerID: id})
+	}
+	return out, nil
 }
 
 // ---- SecurityGroup writer ----
@@ -131,6 +173,12 @@ func (sw *securityGroupWriter) SetProjectID(_ context.Context, id, folderID stri
 	sg.ProjectID = folderID
 	cp := *sg
 	return &cp, nil
+}
+
+// UsedBy — KAC-239 S2: потребители SG над working-set writer'а (G.2 — видит
+// свои writes), parity с reader.
+func (sw *securityGroupWriter) UsedBy(_ context.Context, sgID string) ([]domain.SecurityGroupReference, error) {
+	return computeSGUsedBy(sgID, sw.w.localNIs, sw.w.local)
 }
 
 // UpdateRules / UpdateRule — упрощённая семантика (без xmin-OCC; mock не

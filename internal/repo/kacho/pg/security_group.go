@@ -128,6 +128,56 @@ func (r *securityGroupReader) List(ctx context.Context, f kacho.SecurityGroupFil
 	return result, nextToken, nil
 }
 
+// UsedBy — KAC-239 S2: потребители SG (derived-on-read). Два скана:
+//   - network_interfaces.security_group_ids @> ["<sgID>"] → тип "network_interface"
+//   - networks.default_security_group_id = <sgID>         → тип "network"
+// Output-only, в security_groups не персистится. Ошибка скана → WrapSGErr.
+func (r *securityGroupReader) UsedBy(ctx context.Context, sgID string) ([]domain.SecurityGroupReference, error) {
+	var out []domain.SecurityGroupReference
+
+	// NIC-потребители: JSONB-containment по security_group_ids.
+	nicRows, err := r.tx.Query(ctx,
+		`SELECT id FROM network_interfaces WHERE security_group_ids @> $1::jsonb ORDER BY id`,
+		fmt.Sprintf("[%q]", sgID),
+	)
+	if err != nil {
+		return nil, helpers.WrapSGErr(err, sgID)
+	}
+	for nicRows.Next() {
+		var id string
+		if err := nicRows.Scan(&id); err != nil {
+			nicRows.Close()
+			return nil, helpers.WrapSGErr(err, sgID)
+		}
+		out = append(out, domain.SecurityGroupReference{ReferrerType: "network_interface", ReferrerID: id})
+	}
+	nicRows.Close()
+	if err := nicRows.Err(); err != nil {
+		return nil, helpers.WrapSGErr(err, sgID)
+	}
+
+	// Network-потребители: сеть, для которой SG — default.
+	netRows, err := r.tx.Query(ctx,
+		`SELECT id FROM networks WHERE default_security_group_id = $1 ORDER BY id`, sgID,
+	)
+	if err != nil {
+		return nil, helpers.WrapSGErr(err, sgID)
+	}
+	for netRows.Next() {
+		var id string
+		if err := netRows.Scan(&id); err != nil {
+			netRows.Close()
+			return nil, helpers.WrapSGErr(err, sgID)
+		}
+		out = append(out, domain.SecurityGroupReference{ReferrerType: "network", ReferrerID: id})
+	}
+	netRows.Close()
+	if err := netRows.Err(); err != nil {
+		return nil, helpers.WrapSGErr(err, sgID)
+	}
+	return out, nil
+}
+
 // securityGroupWriter — DML над security_groups через writer-TX. Embeds
 // securityGroupReader (G.2 — writer видит свои writes).
 //

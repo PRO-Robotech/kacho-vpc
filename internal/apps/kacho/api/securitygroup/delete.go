@@ -44,13 +44,26 @@ func (u *DeleteSecurityGroupUseCase) Execute(ctx context.Context, id string) (*o
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	existing, err := rd.SecurityGroups().Get(ctx, id)
-	_ = rd.Close()
+	sgr := rd.SecurityGroups()
+	existing, err := sgr.Get(ctx, id)
 	if err != nil {
+		_ = rd.Close()
 		return nil, mapRepoErr(err)
 	}
 	if existing.DefaultForNetwork {
+		_ = rd.Close()
 		return nil, status.Errorf(codes.FailedPrecondition, "default security group cannot be deleted")
+	}
+	// KAC-239 S2: safe-delete — SG нельзя удалить, пока к ней кто-то подключён
+	// (used_by непуст). guard на публичном Delete; cascade Network.Delete idёт
+	// своим путём (worker удаляет default-SG до Network безусловно).
+	used, uerr := sgr.UsedBy(ctx, id)
+	_ = rd.Close()
+	if uerr != nil {
+		return nil, mapRepoErr(uerr)
+	}
+	if len(used) > 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, "security group is in use")
 	}
 
 	op, err := operations.NewFromContext(

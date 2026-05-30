@@ -1,6 +1,7 @@
 package toproto
 
 import (
+	referencev1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
@@ -51,6 +52,13 @@ func (securityGroup) toPb(rec kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGro
 			}
 		}
 		p.Rules = append(p.Rules, pr)
+	}
+	// KAC-239 S2: used_by (потребители SG; output-only, derived-on-read).
+	for _, u := range rec.UsedBy {
+		p.UsedBy = append(p.UsedBy, &referencev1.Reference{
+			Referrer: &referencev1.Referrer{Type: u.ReferrerType, Id: u.ReferrerID},
+			Type:     referencev1.Reference_USED_BY,
+		})
 	}
 	return p, nil
 }

@@ -74,6 +74,16 @@ func (s SecurityGroup) Equal(other SecurityGroup) bool {
 	return true
 }
 
+// SecurityGroupReference — потребитель SG (KAC-239 S2): кто ПОДКЛЮЧИЛ эту SG.
+// Output-only, derived-on-read (не персистится, не входит в Equal/Insert).
+// ReferrerType — "network_interface" (NIC.security_group_ids содержит SG) или
+// "network" (networks.default_security_group_id == SG). Зеркалит контракт
+// reference.Reference{referrer{type,id}, type=USED_BY}.
+type SecurityGroupReference struct {
+	ReferrerType string // "network_interface" | "network"
+	ReferrerID   string
+}
+
 // SecurityGroupRule — встроенное правило SG (Wave 2 batch B, KAC-94).
 //
 // Description — newtype `RcDescription` (skill evgeniy §4 D.2). Direction — enum
