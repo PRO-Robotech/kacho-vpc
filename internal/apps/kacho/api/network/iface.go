@@ -74,16 +74,15 @@ type ProjectClient interface {
 	Exists(ctx context.Context, folderID string) (bool, error)
 }
 
-// ListAuthorizer — port-интерфейс для KAC-127 Phase 4 FGA-filtered List.
+// ListAuthorizer — port-интерфейс для KAC-240 project-level List authorization.
 //
-// Реализация — `*authz.ListObjectsService` из kacho-corelib/authz, обёрнутая
-// в Adapter `internal/apps/kacho/authzadapter.NetworkListAuthorizer` (wiring
-// в composition root). Если сервис ListObjects не сконфигурирован
-// (KACHO_VPC_LIST_FILTER_ENABLED=false) — wiring передаёт nil; ListUseCase
-// fall-back'ом возвращает unfiltered list (acceptance §5.4 fail-open mode).
+// Реализация — `*listauthz.Adapter` поверх corelib `authz.CheckClient`
+// (InternalIAMService.Check), wiring в composition root. Если authz не
+// сконфигурирован (KACHO_VPC_LIST_FILTER_ENABLED=false) — wiring передаёт nil;
+// ListUseCase fall-back'ом возвращает unfiltered list (dev / no-authz mode).
 type ListAuthorizer interface {
-	// ListAllowedIDs возвращает allowed-set ids для (subjectID, objectType, action).
-	// subjectID — FGA subject ("user:usr_xxx" / "service_account:sva_xxx").
-	// scopeHint — опц. project_id для cache-key separation.
-	ListAllowedIDs(ctx context.Context, subjectID, objectType, action, scopeHint string) ([]string, error)
+	// CanViewProject возвращает (true, nil), если subject имеет relation
+	// "viewer" на project:<projectID>. (false, nil) → fail-closed empty list.
+	// err != nil → infra недоступна (fail-closed Unavailable у caller'а).
+	CanViewProject(ctx context.Context, subjectID, projectID string) (bool, error)
 }

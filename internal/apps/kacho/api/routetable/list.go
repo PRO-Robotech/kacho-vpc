@@ -13,12 +13,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
-const (
-	FGAObjectTypeRT = "vpc_route_table"
-	FGAActionRTList = "vpc.route_tables.list"
-)
-
 // ListRouteTablesUseCase — list RTs с пагинацией. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94): использует CQRS Reader.
@@ -45,19 +39,15 @@ func (u *ListRouteTablesUseCase) Execute(ctx context.Context, subjectID string, 
 	}
 	defer func() { _ = rd.Close() }()
 
+	// KAC-240: project-level List authorization (see network/list.go).
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeRT, FGAActionRTList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
+		if !ok {
 			return nil, "", nil
 		}
-		rows, nextToken, ferr := rd.RouteTables().List(ctx, f, p)
-		if ferr != nil {
-			return nil, "", ferr
-		}
-		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kacho.RouteTableRecord) string { return rec.ID }), nextToken, nil
 	}
 	return rd.RouteTables().List(ctx, f, p)
 }

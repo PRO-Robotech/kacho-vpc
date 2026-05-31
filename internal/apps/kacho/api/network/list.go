@@ -13,23 +13,12 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGAObjectTypeNetwork — FGA object type для Network (acceptance §2.1, DSL v2).
-const FGAObjectTypeNetwork = "vpc_network"
-
-// FGAActionNetworkList — domain action для ListNetworks (acceptance §2.1).
-const FGAActionNetworkList = "vpc.networks.list"
-
 // ListNetworksUseCase — list networks с пагинацией. project_id обязателен.
 //
 // Wave 5 pilot (KAC-94): использует CQRS Reader.
 //
-// KAC-127 Phase 4: интегрирован FGA-filtered list. Если authz != nil:
-//  1. Получаем allowed-ids set через ListObjects (cache+FGA).
-//  2. Empty allowed-set → return empty response (acceptance D-4, no DB query).
-//  3. Non-empty → repo.ListByIDs(ids).
-//
-// Если authz == nil (LIST_FILTER_ENABLED=false / dev-fallback) — старое
-// поведение repo.List без filter.
+// KAC-240: project-level List authorization. authz != nil → CanViewProject;
+// authz == nil (LIST_FILTER_ENABLED=false / dev-fallback) → unfiltered list.
 type ListNetworksUseCase struct {
 	repo  Repo
 	authz ListAuthorizer
@@ -57,20 +46,23 @@ func (u *ListNetworksUseCase) Execute(ctx context.Context, subjectID string, f N
 	}
 	defer func() { _ = r.Close() }()
 
-	// KAC-127 Phase 4: FGA-filtered list.
+	// KAC-240: project-level List authorization. The repo query below is already
+	// project-scoped (folderID == project_id), so it is the tenant-isolation
+	// boundary; here we only decide whether the subject may view the project at
+	// all. If yes → return ALL project-scoped rows (no per-object tuple needed —
+	// fixes the create→list race). If no → empty (fail-closed). nil-authz /
+	// empty-subject → passthrough (dev / system-principal).
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeNetwork, FGAActionNetworkList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
-			// Empty grant — return 200 OK + empty list (acceptance §3 D-4).
+		if !ok {
+			// No project view — return 200 OK + empty list (fail-closed).
 			return nil, "", nil
 		}
-		return r.Networks().ListByIDs(ctx, f, allowedIDs, p)
 	}
 
-	// Fallback: legacy unfiltered list (LIST_FILTER_ENABLED=false / dev).
 	return r.Networks().List(ctx, f, p)
 }
 

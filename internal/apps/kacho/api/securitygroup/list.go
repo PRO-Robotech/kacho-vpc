@@ -13,12 +13,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
-const (
-	FGAObjectTypeSG = "vpc_security_group"
-	FGAActionSGList = "vpc.security_groups.list"
-)
-
 // ListSecurityGroupsUseCase — список SG с пагинацией. project_id обязателен
 // (закрыто cross-folder enumeration #C1).
 //
@@ -47,19 +41,15 @@ func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, subjectID strin
 	}
 	defer func() { _ = rd.Close() }()
 
+	// KAC-240: project-level List authorization (see network/list.go).
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeSG, FGAActionSGList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
+		if !ok {
 			return nil, "", nil
 		}
-		rows, nextToken, ferr := rd.SecurityGroups().List(ctx, f, p)
-		if ferr != nil {
-			return nil, "", ferr
-		}
-		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kacho.SecurityGroupRecord) string { return rec.ID }), nextToken, nil
 	}
 	return rd.SecurityGroups().List(ctx, f, p)
 }

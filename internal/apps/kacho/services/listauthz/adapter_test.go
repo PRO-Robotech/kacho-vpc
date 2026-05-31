@@ -3,9 +3,7 @@ package listauthz
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,114 +13,106 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 )
 
-type fakeListObjects struct {
-	calls int
-	resp  authz.ListObjectsResponse
-	err   error
+// recordingChecker captures the (subject, relation, object) of the last Check
+// and returns a programmable verdict.
+type recordingChecker struct {
+	allow              bool
+	err                error
+	gotSubject         string
+	gotRelation        string
+	gotObject          string
 }
 
-func (f *fakeListObjects) ListObjects(_ context.Context, _ authz.ListObjectsRequest) (authz.ListObjectsResponse, error) {
-	f.calls++
-	if f.err != nil {
-		return authz.ListObjectsResponse{}, f.err
-	}
-	return f.resp, nil
+func (c *recordingChecker) Check(_ context.Context, subjectID, relation, object string) (bool, error) {
+	c.gotSubject, c.gotRelation, c.gotObject = subjectID, relation, object
+	return c.allow, c.err
 }
 
-func TestAdapter_NilSvcReturnsUnavailable(t *testing.T) {
-	var a *Adapter = nil
-	_, err := a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, authz.ErrUnavailable)
-}
+// TestAdapter_CanViewProject_Allowed — Check allowed → (true, nil); verifies the
+// adapter targets relation "viewer" on object "project:<id>" (the EXACT
+// relation/object the per-RPC gate uses; KAC-240 must not invent a new relation).
+func TestAdapter_CanViewProject_Allowed(t *testing.T) {
+	c := &recordingChecker{allow: true}
+	a := New(c)
 
-func TestAdapter_NilInnerSvcReturnsUnavailable(t *testing.T) {
-	a := New(nil)
-	_, err := a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "")
-	assert.ErrorIs(t, err, authz.ErrUnavailable)
-}
-
-func TestAdapter_PassesThroughToService(t *testing.T) {
-	fake := &fakeListObjects{resp: authz.ListObjectsResponse{ResourceIDs: []string{"id-1"}}}
-	svc := authz.NewListObjectsService(fake, authz.ListObjectsConfig{TTL: time.Second})
-	a := New(svc)
-
-	ids, err := a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "prj_1")
+	ok, err := a.CanViewProject(context.Background(), "user:usr_x", "prj_1")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"id-1"}, ids)
-	assert.Equal(t, 1, fake.calls)
+	assert.True(t, ok)
+	assert.Equal(t, "user:usr_x", c.gotSubject)
+	assert.Equal(t, "viewer", c.gotRelation)
+	assert.Equal(t, "project:prj_1", c.gotObject)
 }
 
-func TestAdapter_ScopeHintCacheSeparation(t *testing.T) {
-	fake := &fakeListObjects{resp: authz.ListObjectsResponse{ResourceIDs: []string{"id-1"}}}
-	svc := authz.NewListObjectsService(fake, authz.ListObjectsConfig{TTL: time.Second})
-	a := New(svc)
-
-	_, _ = a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "prj_1")
-	_, _ = a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "prj_2")
-	assert.Equal(t, 2, fake.calls, "different scope hints should bypass cache")
+// TestAdapter_CanViewProject_Denied — Check allowed=false → (false, nil) (caller
+// returns empty list, fail-closed; NOT an error).
+func TestAdapter_CanViewProject_Denied(t *testing.T) {
+	a := New(&recordingChecker{allow: false})
+	ok, err := a.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.NoError(t, err)
+	assert.False(t, ok)
 }
 
-func TestAdapter_ErrorPropagation(t *testing.T) {
-	fake := &fakeListObjects{err: errors.New("boom")}
-	svc := authz.NewListObjectsService(fake, authz.ListObjectsConfig{TTL: time.Second})
-	a := New(svc)
-
-	_, err := a.ListAllowedIDs(context.Background(), "user:x", "vpc_network", "act", "")
-	assert.ErrorIs(t, err, authz.ErrUnavailable)
+// TestAdapter_CanViewProject_Error — Check error propagates (caller maps to
+// Unavailable, fail-closed).
+func TestAdapter_CanViewProject_Error(t *testing.T) {
+	a := New(&recordingChecker{err: errors.New("iam down")})
+	_, err := a.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.Error(t, err)
 }
 
-func TestAsPort_NilAdapter(t *testing.T) {
-	p := AsPort(nil)
-	assert.Nil(t, p, "nil Adapter → nil Port")
+// TestAdapter_CanViewProject_NilAdapter — nil adapter / nil checker → ErrUnavailable.
+func TestAdapter_CanViewProject_NilAdapter(t *testing.T) {
+	var a *Adapter
+	_, err := a.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.ErrorIs(t, err, authz.ErrUnavailable)
+
+	a2 := New(nil)
+	_, err = a2.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.ErrorIs(t, err, authz.ErrUnavailable)
 }
 
-func TestAsPort_NilSvc(t *testing.T) {
-	a := New(nil)
-	p := AsPort(a)
-	assert.Nil(t, p, "Adapter with nil svc → nil Port")
+// TestAdapter_AsPort_NilWhenCheckerNil — AsPort returns nil-Port when checker nil.
+func TestAdapter_AsPort_NilWhenCheckerNil(t *testing.T) {
+	assert.Nil(t, AsPort(nil))
+	assert.Nil(t, AsPort(New(nil)))
 }
 
-func TestAsPort_ValidAdapter(t *testing.T) {
-	fake := &fakeListObjects{}
-	svc := authz.NewListObjectsService(fake, authz.ListObjectsConfig{TTL: time.Second})
-	a := New(svc)
-	p := AsPort(a)
-	assert.NotNil(t, p)
+// TestAdapter_AsPort_NonNil — AsPort returns a usable Port when checker is set.
+func TestAdapter_AsPort_NonNil(t *testing.T) {
+	p := AsPort(New(&recordingChecker{allow: true}))
+	require.NotNil(t, p)
+	ok, err := p.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
 
-// KAC-178 §1: MapListFilterErr должен разделять PermissionDenied → 403
-// и всё остальное → 503 (legacy behaviour для infra errors). До этого
-// helper'а use-case'ы блиндово wrap'или любой error в Unavailable.
-func TestMapListFilterErr_PermissionDenied_ReturnsPermissionDenied(t *testing.T) {
-	// corelib теперь возвращает PermissionDenied wrap'нутый в ErrPermissionDenied.
-	innerErr := fmt.Errorf("%w: rpc error: code = PermissionDenied desc = permission denied", authz.ErrPermissionDenied)
+// TestNewProjectChecker — returns nil-Port for nil checker, usable Port otherwise.
+func TestNewProjectChecker(t *testing.T) {
+	assert.Nil(t, NewProjectChecker(nil))
 
-	mapped := MapListFilterErr(innerErr)
-	require.Error(t, mapped)
-	assert.Equal(t, codes.PermissionDenied, status.Code(mapped),
-		"PermissionDenied sentinel должен мапиться на gRPC PermissionDenied (HTTP 403), а не Unavailable")
-	assert.Equal(t, "list-filter denied", status.Convert(mapped).Message())
+	p := NewProjectChecker(authz.CheckClientFunc(func(_ context.Context, _, _, _ string) (bool, error) {
+		return true, nil
+	}))
+	require.NotNil(t, p)
+	ok, err := p.CanViewProject(context.Background(), "user:usr_x", "prj_1")
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
 
-func TestMapListFilterErr_Unavailable_ReturnsUnavailable(t *testing.T) {
-	innerErr := fmt.Errorf("%w: connection refused", authz.ErrUnavailable)
-
-	mapped := MapListFilterErr(innerErr)
-	require.Error(t, mapped)
-	assert.Equal(t, codes.Unavailable, status.Code(mapped))
-	assert.Contains(t, status.Convert(mapped).Message(), "list-filter unavailable")
-	assert.Contains(t, status.Convert(mapped).Message(), "connection refused")
+func TestMapListFilterErr_PermissionDenied(t *testing.T) {
+	err := MapListFilterErr(authz.ErrPermissionDenied)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.PermissionDenied, st.Code())
 }
 
-func TestMapListFilterErr_NilReturnsNil(t *testing.T) {
-	assert.Nil(t, MapListFilterErr(nil))
+func TestMapListFilterErr_Unavailable(t *testing.T) {
+	err := MapListFilterErr(authz.ErrUnavailable)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.Unavailable, st.Code())
 }
 
-func TestMapListFilterErr_GenericErrorTreatedAsUnavailable(t *testing.T) {
-	// Errors без ErrPermissionDenied wrap'а — fallback на Unavailable
-	// (defensive: даже если caller передал не-corelib error).
-	mapped := MapListFilterErr(errors.New("boom"))
-	require.Error(t, mapped)
-	assert.Equal(t, codes.Unavailable, status.Code(mapped))
+func TestMapListFilterErr_Nil(t *testing.T) {
+	assert.NoError(t, MapListFilterErr(nil))
 }

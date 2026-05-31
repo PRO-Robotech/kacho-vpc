@@ -1,12 +1,26 @@
-// Package listauthz — KAC-127 Phase 4 wiring helper.
+// Package listauthz — project-level List authorization (KAC-240).
 //
-// Превращает один общий `*authz.ListObjectsService` из corelib (cache+FGA-client)
-// в N узких port-интерфейсов (`network.ListAuthorizer`, `subnet.ListAuthorizer`, …),
-// каждый из которых выставляется в свой use-case в composition root.
+// History: KAC-127 Phase 4 introduced per-object FGA list-filtering — each List
+// use-case resolved the FGA-allowed object-id set via ListObjects and filtered
+// the (already project-scoped) repo rows by it. That coupled List visibility to
+// per-object `view` tuples existing AT List time. Those tuples are emitted best-
+// effort AFTER commit, outside the worker TX, and the corelib allow-set is cached
+// ~5s — so a freshly-created resource was invisible until its tuple landed (a
+// race), and permanently invisible if the tuple-write silently failed.
 //
-// Цель — caller use-case'ы НЕ знают про generic ListAllowedIDs API, они
-// видят только ListAllowedIDs(ctx, subject, objectType, action, scope) → []string.
-// objectType+action — VPC-specific константы в каждом use-case.
+// KAC-240 fix (option 1 — project-scoped List): List is already project-bounded
+// at the repo layer (every use-case calls repo.List(ctx, projectID, …), so all
+// returned rows belong to exactly that one project). Therefore authorize at the
+// PROJECT level: if the subject may `viewer` the project, return ALL the rows;
+// otherwise return empty (fail-closed). This removes the dependency on per-object
+// tuples existing at List time, fixing both the race and the silent-tuple-fail
+// mode, WITHOUT weakening tenant isolation — the repo query remains the boundary.
+//
+// The project-view decision reuses the EXISTING per-RPC authz mechanism: a
+// corelib `authz.CheckClient` (implemented by `check.IAMCheckClient` over
+// `kacho-iam InternalIAMService.Check`) with relation "viewer" on object
+// "project:<project_id>" — identical to the relation/object the per-RPC
+// interceptor checks for the same List RPCs (see internal/apps/kacho/check).
 package listauthz
 
 import (
@@ -19,8 +33,17 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 )
 
-// MapListFilterErr — KAC-178 §1: единая трансляция ошибок ListAllowedIDs
-// (corelib authz.ErrPermissionDenied / authz.ErrUnavailable) в gRPC status,
+// relationViewer / objectTypeProject — reuse the EXACT FGA relation + object type
+// the per-RPC Check gate uses for List RPCs (internal/apps/kacho/check:
+// relationViewer="viewer", objectTypeProject="project"). Do NOT invent a new
+// relation name — the FGA model already grants `viewer on project` to anyone who
+// may list the project's resources.
+const (
+	relationViewer    = "viewer"
+	objectTypeProject = "project"
+)
+
+// MapListFilterErr — единая трансляция ошибок project-authz Check в gRPC status,
 // который list-handler возвращает клиенту.
 //
 //   - authz.ErrPermissionDenied → codes.PermissionDenied (HTTP 403)
@@ -28,11 +51,6 @@ import (
 //   - всё остальное (включая authz.ErrUnavailable, sentinel-free errors) →
 //     codes.Unavailable (HTTP 503) с префиксом "list-filter unavailable:"
 //     — infra сломана, retry имеет смысл.
-//
-// До KAC-178 use-case'ы блиндово оборачивали любой error в Unavailable, что
-// возвращало 503 на легитимные denial'ы; UI/SDK не отличал "нет прав" от
-// "сервис мёртв" → retry-логика делала хуже. После coordinated fix в corelib
-// (errors.Is(err, authz.ErrPermissionDenied)) этот helper разделяет ветки.
 //
 // nil-err → nil (defensive).
 func MapListFilterErr(err error) error {
@@ -45,63 +63,58 @@ func MapListFilterErr(err error) error {
 	return status.Error(codes.Unavailable, "list-filter unavailable: "+err.Error())
 }
 
-// Port — generic интерфейс для FGA list-filter. Используется во всех VPC
-// list-use-case'ах (network/subnet/sg/rt/address/gateway/pe/ni). Adapter
-// реализует его поверх corelib authz.ListObjectsService.
+// Port — generic интерфейс project-level List authorization. Используется во
+// всех VPC list-use-case'ах (network/subnet/sg/rt/address/gateway/pe/ni). Каждый
+// use-case вызывает ровно один метод — CanViewProject.
 type Port interface {
-	ListAllowedIDs(ctx context.Context, subjectID, objectType, action, scopeHint string) ([]string, error)
+	// CanViewProject возвращает (true, nil), если subject имеет relation
+	// "viewer" на project:<projectID>. (false, nil) → fail-closed empty list.
+	// err != nil → infra недоступна (fail-closed Unavailable у caller'а).
+	CanViewProject(ctx context.Context, subjectID, projectID string) (bool, error)
 }
 
-// Adapter — generic adapter поверх *authz.ListObjectsService, удовлетворяющий
-// port-интерфейс `ListAllowedIDs(ctx, subject, objectType, action, scope) → []string`
-// (общая сигнатура для всех VPC use-case'ов: network/subnet/sg/rt/address/...).
+// Adapter — реализация Port поверх corelib `authz.CheckClient`. Thread-safe
+// (CheckClient + его кеш — thread-safe).
 //
-// nil-safe: если svc == nil — все вызовы вернут (nil, ErrUnavailable) сразу
-// (caller'ы обрабатывают это как fail-closed, см. acceptance §5.4).
+// nil-safe: если checker == nil — любой CanViewProject вернёт (false, ErrUnavailable)
+// (fail-closed). Caller'ы должны прежде проверять (adapter == nil) → не выставлять
+// use-case authz (dev / no-authz mode).
 type Adapter struct {
-	svc *authz.ListObjectsService
+	checker authz.CheckClient
 }
 
-// New собирает Adapter. svc == nil — допустимо (LIST_FILTER_ENABLED=false).
-// Caller'ы должны прежде проверять (adapter == nil) → не выставлять use-case authz.
-// Если caller всё-же передал nil-adapter с не-nil-svc, adapter работает как
-// transparent pass-through.
-func New(svc *authz.ListObjectsService) *Adapter {
-	return &Adapter{svc: svc}
+// New собирает Adapter из CheckClient. checker == nil — допустимо (caller'ы
+// должны прежде проверять nil → не выставлять use-case authz).
+func New(checker authz.CheckClient) *Adapter {
+	return &Adapter{checker: checker}
 }
 
-// ListAllowedIDs — fan-out на corelib service. opts.ScopeHint используется
-// для cache-key separation (разные projects → разные cache entries).
-func (a *Adapter) ListAllowedIDs(ctx context.Context, subjectID, objectType, action, scopeHint string) ([]string, error) {
-	if a == nil || a.svc == nil {
-		return nil, authz.ErrUnavailable
+// CanViewProject — single Check на project:<projectID> с relation viewer.
+func (a *Adapter) CanViewProject(ctx context.Context, subjectID, projectID string) (bool, error) {
+	if a == nil || a.checker == nil {
+		return false, authz.ErrUnavailable
 	}
-	return a.svc.ListAllowedIDs(ctx, subjectID, objectType, action, authz.ListAllowedIDsOptions{
-		ScopeHint: scopeHint,
-	})
+	object, err := authz.FormatObject(objectTypeProject, projectID)
+	if err != nil {
+		return false, err
+	}
+	return a.checker.Check(ctx, subjectID, relationViewer, object)
 }
 
 // AsPort — возвращает Adapter как Port (для type-safety wiring).
-// Returns nil-Port если adapter == nil или adapter.svc == nil.
+// Returns nil-Port если adapter == nil или adapter.checker == nil.
 func AsPort(a *Adapter) Port {
-	if a == nil || a.svc == nil {
+	if a == nil || a.checker == nil {
 		return nil
 	}
 	return a
 }
 
-// SubjectFromCtxPrincipal — KAC-127 Phase 4: общий helper extract FGA subject
-// из ctx-Principal. Используется во ВСЕХ public List handlers VPC. Empty
-// subject (system / no auth) → use-case fallback на legacy unfiltered.
-//
-// Импортируется через type-alias: каждый handler-пакет определяет локальный
-// `subjectFromCtx := listauthz.SubjectFromCtx`.
-func SubjectFromCtxPrincipal(p struct {
-	Type string
-	ID   string
-}) string {
-	if p.Type == "" || p.ID == "" || p.Type == "system" {
-		return ""
+// NewProjectChecker — convenience-конструктор: возвращает Port напрямую из
+// CheckClient. checker == nil → nil-Port (use-case fallback на passthrough).
+func NewProjectChecker(checker authz.CheckClient) Port {
+	if checker == nil {
+		return nil
 	}
-	return p.Type + ":" + p.ID
+	return &Adapter{checker: checker}
 }

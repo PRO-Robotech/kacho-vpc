@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,82 +13,92 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/listauthz"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
 
-type fakeFGAClient struct {
-	ids map[string][]string
-	err error
+// KAC-240: Subnet List authorizes at the PROJECT level (viewer on project:<id>),
+// not via per-object FGA tuples. repo.List is already project-scoped (the
+// isolation boundary); CanViewProject only decides whether the subject may view
+// the project. View → all rows; no view → empty (fail-closed). A freshly-created
+// subnet appears in List as soon as the subject may view the project, regardless
+// of whether its per-object tuple has been written yet.
+
+func makeSubnetProjectAuthzUC(kr *kachomock.Repository, checker authz.CheckClient) *ListSubnetsUseCase {
+	return NewListSubnetsUseCase(kr, listauthz.NewProjectChecker(checker))
 }
 
-func (f *fakeFGAClient) ListObjects(_ context.Context, req authz.ListObjectsRequest) (authz.ListObjectsResponse, error) {
-	if f.err != nil {
-		return authz.ListObjectsResponse{}, f.err
+// subnetProjectViewChecker allows `viewer` on the listed projects for subject.
+func subnetProjectViewChecker(subject string, allowedProjects ...string) authz.CheckClient {
+	allow := make(map[string]struct{}, len(allowedProjects))
+	for _, p := range allowedProjects {
+		allow["project:"+p] = struct{}{}
 	}
-	if f.ids == nil {
-		return authz.ListObjectsResponse{}, nil
-	}
-	return authz.ListObjectsResponse{ResourceIDs: f.ids[req.Action]}, nil
+	return authz.CheckClientFunc(func(_ context.Context, s, relation, object string) (bool, error) {
+		if s != subject || relation != "viewer" {
+			return false, nil
+		}
+		_, ok := allow[object]
+		return ok, nil
+	})
 }
 
+// seedSubnets inserts N subnets через writer-TX.
 func seedSubnets(t *testing.T, kr *kachomock.Repository, projectID, networkID string, ids ...string) {
 	t.Helper()
 	w, err := kr.Writer(context.Background())
 	require.NoError(t, err)
 	defer w.Abort()
 	for _, id := range ids {
-		s := &domain.Subnet{
-			ID: id, ProjectID: projectID, NetworkID: networkID,
-			Name: domain.RcNameVPC("sub-" + id),
+		s := &domain.Subnet{ID: id, ProjectID: projectID, NetworkID: networkID, Name: domain.RcNameVPC("sub-" + id)}
+		if _, ierr := w.Subnets().Insert(context.Background(), s); ierr != nil {
+			require.NoError(t, ierr)
 		}
-		_, ierr := w.Subnets().Insert(context.Background(), s)
-		require.NoError(t, ierr)
 	}
 	require.NoError(t, w.Commit())
 }
 
-func makeFilterUC(t *testing.T, kr *kachomock.Repository, fake *fakeFGAClient) *ListSubnetsUseCase {
-	t.Helper()
-	svc := authz.NewListObjectsService(fake, authz.ListObjectsConfig{TTL: time.Second})
-	return NewListSubnetsUseCase(kr, listauthz.New(svc))
-}
-
-func TestListSubnetsFilter_ExactGrant(t *testing.T) {
+// SUB-LF-VIEWABLE: subject can view project → all project subnets returned (no
+// per-object tuples needed — fixes the create→list race, KAC-240).
+func TestSubnetListFilter_ViewableProjectReturnsAll(t *testing.T) {
 	kr := kachomock.NewRepository()
-	seedSubnets(t, kr, "prj_1", "enp_n1", "e9b_a", "e9b_b", "e9b_c")
+	seedSubnets(t, kr, "prj_1", "enp_net1", "e9b_aaa", "e9b_bbb", "e9b_ccc")
 
-	fake := &fakeFGAClient{ids: map[string][]string{FGAActionSubnetList: {"e9b_a", "e9b_c"}}}
-	uc := makeFilterUC(t, kr, fake)
+	uc := makeSubnetProjectAuthzUC(kr, subnetProjectViewChecker("user:usr_alice", "prj_1"))
 
 	subs, _, err := uc.Execute(context.Background(), "user:usr_alice", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
-	require.Len(t, subs, 2)
+	require.Len(t, subs, 3)
 	got := map[string]bool{}
 	for _, s := range subs {
 		got[s.ID] = true
 	}
-	assert.True(t, got["e9b_a"])
-	assert.True(t, got["e9b_c"])
-	assert.False(t, got["e9b_b"])
+	assert.True(t, got["e9b_aaa"])
+	assert.True(t, got["e9b_bbb"])
+	assert.True(t, got["e9b_ccc"])
 }
 
-func TestListSubnetsFilter_EmptyGrant(t *testing.T) {
+// SUB-LF-DENY: subject cannot view project → empty (fail-closed, no leak).
+func TestSubnetListFilter_NonViewableProjectReturnsEmpty(t *testing.T) {
 	kr := kachomock.NewRepository()
-	seedSubnets(t, kr, "prj_1", "enp_n1", "e9b_a", "e9b_b")
+	seedSubnets(t, kr, "prj_2", "enp_net2", "e9b_secret")
 
-	fake := &fakeFGAClient{ids: map[string][]string{FGAActionSubnetList: nil}}
-	uc := makeFilterUC(t, kr, fake)
+	uc := makeSubnetProjectAuthzUC(kr, subnetProjectViewChecker("user:usr_alice", "prj_1"))
 
-	subs, _, err := uc.Execute(context.Background(), "user:usr_bob", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
+	subs, next, err := uc.Execute(context.Background(), "user:usr_alice", SubnetFilter{ProjectID: "prj_2"}, Pagination{})
 	require.NoError(t, err)
 	assert.Empty(t, subs)
+	assert.Empty(t, next)
 }
 
-func TestListSubnetsFilter_FGAError(t *testing.T) {
+// SUB-LF-FAIL: Check infra error → Unavailable (fail-closed).
+func TestSubnetListFilter_CheckError(t *testing.T) {
 	kr := kachomock.NewRepository()
-	fake := &fakeFGAClient{err: errors.New("FGA down")}
-	uc := makeFilterUC(t, kr, fake)
+	seedSubnets(t, kr, "prj_1", "enp_net1", "e9b_aaa")
+
+	checker := authz.CheckClientFunc(func(_ context.Context, _, _, _ string) (bool, error) {
+		return false, errors.New("FGA down")
+	})
+	uc := makeSubnetProjectAuthzUC(kr, checker)
 
 	_, _, err := uc.Execute(context.Background(), "user:usr_alice", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
 	require.Error(t, err)
@@ -97,9 +106,10 @@ func TestListSubnetsFilter_FGAError(t *testing.T) {
 	assert.Equal(t, codes.Unavailable, st.Code())
 }
 
-func TestListSubnetsFilter_NilAuthzFallbackLegacy(t *testing.T) {
+// SUB-LF-NIL: nil-authz → unfiltered passthrough (dev / no-authz mode).
+func TestSubnetListFilter_NilAuthz(t *testing.T) {
 	kr := kachomock.NewRepository()
-	seedSubnets(t, kr, "prj_1", "enp_n1", "e9b_a", "e9b_b")
+	seedSubnets(t, kr, "prj_1", "enp_net1", "e9b_a", "e9b_b")
 
 	uc := NewListSubnetsUseCase(kr, nil)
 	subs, _, err := uc.Execute(context.Background(), "user:usr_alice", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
@@ -107,31 +117,13 @@ func TestListSubnetsFilter_NilAuthzFallbackLegacy(t *testing.T) {
 	assert.Len(t, subs, 2)
 }
 
-func TestListSubnetsFilter_EmptySubjectFallbackLegacy(t *testing.T) {
+// SUB-LF-EMPTYSUBJ: empty subject (system principal) → unfiltered passthrough.
+func TestSubnetListFilter_EmptySubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
-	seedSubnets(t, kr, "prj_1", "enp_n1", "e9b_a", "e9b_b")
+	seedSubnets(t, kr, "prj_1", "enp_net1", "e9b_a", "e9b_b")
 
-	fake := &fakeFGAClient{ids: map[string][]string{FGAActionSubnetList: {"e9b_a"}}}
-	uc := makeFilterUC(t, kr, fake)
-
+	uc := makeSubnetProjectAuthzUC(kr, subnetProjectViewChecker("user:usr_alice", "prj_1"))
 	subs, _, err := uc.Execute(context.Background(), "", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
-	// Empty subject → fallback to unfiltered List → returns both.
 	assert.Len(t, subs, 2)
 }
-
-func TestListSubnetsFilter_OrphanedTuples(t *testing.T) {
-	kr := kachomock.NewRepository()
-	seedSubnets(t, kr, "prj_1", "enp_n1", "e9b_real")
-
-	fake := &fakeFGAClient{ids: map[string][]string{FGAActionSubnetList: {"e9b_real", "e9b_ghost"}}}
-	uc := makeFilterUC(t, kr, fake)
-
-	subs, _, err := uc.Execute(context.Background(), "user:usr_alice", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
-	require.NoError(t, err)
-	require.Len(t, subs, 1)
-	assert.Equal(t, "e9b_real", subs[0].ID)
-}
-
-// Ensure repo type assertions remain stable.
-var _ = kacho.SubnetRecord{}

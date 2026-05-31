@@ -19,7 +19,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 
-	"github.com/PRO-Robotech/kacho-corelib/authz"
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
 	"github.com/PRO-Robotech/kacho-corelib/observability"
@@ -206,48 +205,23 @@ func runServe(cfg config.Config) error {
 	//
 	// Если list-filter disabled — listAuthz остаётся nil; use-case'ы получают
 	// nil-authz и идут по legacy unfiltered path.
+	// KAC-240: List authorizes at the PROJECT level (viewer on project:<id>),
+	// not via per-object FGA tuples. Reuse the SAME CheckClient the per-RPC gate
+	// uses (kacho-iam InternalIAMService.Check over the already-open iamConn): a
+	// freshly-created resource appears in List as soon as the subject may view the
+	// project, without depending on per-object `view` tuples landing first. The
+	// repo query stays project-scoped (the tenant-isolation boundary); this only
+	// decides whether the subject may view the project at all. listAuthz == nil
+	// (LIST_FILTER_ENABLED=false / dev) => use-case fallback to unfiltered list.
 	var listAuthz *listauthz.Adapter
 	if cfg.AuthZ.ListFilter.Enabled {
-		// Endpoint resolution: явный authorize-endpoint > fallback на authz.iam-endpoint
-		// (для compat с existing values.yaml). Public AuthorizeService обычно
-		// на :9090 (internal на :9091). Если оба пусты — fail-closed, не enable'им.
-		endpoint := cfg.AuthZ.ListFilter.AuthorizeEndpoint
-		if endpoint == "" {
-			endpoint = cfg.AuthZ.IAMEndpoint
-		}
-		if endpoint == "" {
-			logger.Warn("authz.list-filter.enabled=true но authorize-endpoint и iam-endpoint пусты — list-filter отключён")
-		} else {
-			listAuthzConn, err := clients.Build(ctx, clients.BuildOptions{
-				Endpoint: endpoint,
-				TLS:      cfg.AuthZ.ListFilter.AuthorizeTLS.Enable,
-			})
-			if err != nil {
-				return fmt.Errorf("dial kacho-iam authorize-endpoint (list-filter): %w", err)
-			}
-			defer listAuthzConn.Close()
-
-			listObjectsClient := clients.NewIAMListObjectsClient(listAuthzConn)
-			listObjectsSvc := authz.NewListObjectsService(listObjectsClient, authz.ListObjectsConfig{
-				TTL:             cfg.AuthZ.ListFilter.CacheTTL,
-				MaxEntries:      cfg.AuthZ.ListFilter.MaxEntries,
-				MaxResults:      safeconv.IntToUint32(cfg.AuthZ.ListFilter.MaxResults),
-				FollowupTimeout: time.Duration(cfg.AuthZ.ListFilter.TimeoutMs) * time.Millisecond,
-				AuthzModelID:    cfg.AuthZ.ListFilter.ModelID,
-				ServiceName:     "kacho-vpc",
-			})
-			listAuthz = listauthz.New(listObjectsSvc)
-			logger.Info("KAC-127 Phase 4 list-filter enabled",
-				"endpoint", endpoint,
-				"cache_ttl", cfg.AuthZ.ListFilter.CacheTTL,
-				"timeout_ms", cfg.AuthZ.ListFilter.TimeoutMs,
-				"max_results", cfg.AuthZ.ListFilter.MaxResults,
-				"model_id", cfg.AuthZ.ListFilter.ModelID,
-				"fail_open", cfg.AuthZ.ListFilter.FailOpen,
-			)
-			if cfg.AuthZ.ListFilter.FailOpen {
-				logger.Warn("authz.list-filter.fail-open=true — FGA errors fallback to unfiltered list; raises Critical alert in production")
-			}
+		listAuthz = listauthz.New(check.NewIAMCheckClient(iamConn))
+		logger.Info("KAC-240 project-level list authorization enabled",
+			"iam_endpoint", iamPeer.Endpoint,
+			"fail_open", cfg.AuthZ.ListFilter.FailOpen,
+		)
+		if cfg.AuthZ.ListFilter.FailOpen {
+			logger.Warn("authz.list-filter.fail-open=true is ignored for project-level list authz (KAC-240); list authz is fail-closed")
 		}
 	}
 

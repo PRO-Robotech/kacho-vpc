@@ -13,12 +13,6 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
-const (
-	FGAObjectTypeAddress = "vpc_address"
-	FGAActionAddressList = "vpc.addresses.list"
-)
-
 // ListAddressesUseCase — list addresses with pagination. project_id обязателен
 // (R10 #C1 closure — закрыт cross-folder enumeration).
 //
@@ -46,21 +40,15 @@ func (u *ListAddressesUseCase) Execute(ctx context.Context, subjectID string, f 
 	}
 	defer func() { _ = r.Close() }()
 
+	// KAC-240: project-level List authorization (see network/list.go).
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeAddress, FGAActionAddressList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
+		if !ok {
 			return nil, "", nil
 		}
-		addrs, nextToken, ferr := r.Addresses().List(ctx, f, p)
-		if ferr != nil {
-			return nil, "", mapRepoErr(ferr)
-		}
-		filtered := listauthz.FilterByAllowedIDs(addrs, allowedIDs, func(rec *kachorepo.AddressRecord) string { return rec.ID })
-		loadUsedBy(ctx, r.Addresses(), filtered)
-		return filtered, nextToken, nil
 	}
 
 	addrs, nextToken, err := r.Addresses().List(ctx, f, p)

@@ -13,12 +13,6 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
-const (
-	FGAObjectTypeSubnet = "vpc_subnet"
-	FGAActionSubnetList = "vpc.subnets.list"
-)
-
 // ListSubnetsUseCase — list subnets с пагинацией. project_id обязателен
 // (R10 #C1 closure).
 //
@@ -53,20 +47,18 @@ func (u *ListSubnetsUseCase) Execute(ctx context.Context, subjectID string, f Su
 	}
 	defer func() { _ = r.Close() }()
 
+	// KAC-240: project-level List authorization (see network/list.go). repo.List
+	// is already project-scoped (the isolation boundary); CanViewProject only
+	// decides whether the subject may view the project. View → all rows; no view
+	// → empty (fail-closed). No dependency on per-object tuples at List time.
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeSubnet, FGAActionSubnetList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
+		if !ok {
 			return nil, "", nil
 		}
-		// Apply FGA-filter on top of project-scoped result.
-		rows, nextToken, ferr := r.Subnets().List(ctx, f, p)
-		if ferr != nil {
-			return nil, "", ferr
-		}
-		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kachorepo.SubnetRecord) string { return rec.ID }), nextToken, nil
 	}
 	return r.Subnets().List(ctx, f, p)
 }

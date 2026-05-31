@@ -12,12 +12,6 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
-// FGA constants — KAC-127 Phase 4 (acceptance §2.1 DSL v2).
-const (
-	FGAObjectTypeNIC = "vpc_network_interface"
-	FGAActionNICList = "vpc.network_interfaces.list"
-)
-
 // ListNetworkInterfacesUseCase — list NICs. project_id обязателен.
 //
 // Wave 5 replicate (KAC-94, NIC batch): открывает reader-TX через CQRS-iface.
@@ -44,19 +38,15 @@ func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, subjectID st
 	}
 	defer func() { _ = rd.Close() }()
 
+	// KAC-240: project-level List authorization (see network/list.go).
 	if u.authz != nil && subjectID != "" {
-		allowedIDs, lerr := u.authz.ListAllowedIDs(ctx, subjectID, FGAObjectTypeNIC, FGAActionNICList, f.ProjectID)
-		if lerr != nil {
-			return nil, "", listauthz.MapListFilterErr(lerr)
+		ok, cerr := u.authz.CanViewProject(ctx, subjectID, f.ProjectID)
+		if cerr != nil {
+			return nil, "", listauthz.MapListFilterErr(cerr)
 		}
-		if len(allowedIDs) == 0 {
+		if !ok {
 			return nil, "", nil
 		}
-		rows, nextToken, ferr := rd.NetworkInterfaces().List(ctx, f, p)
-		if ferr != nil {
-			return nil, "", mapRepoErr(ferr)
-		}
-		return listauthz.FilterByAllowedIDs(rows, allowedIDs, func(rec *kachorepo.NetworkInterfaceRecord) string { return rec.ID }), nextToken, nil
 	}
 
 	out, next, err := rd.NetworkInterfaces().List(ctx, f, p)
