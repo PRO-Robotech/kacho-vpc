@@ -68,6 +68,8 @@ const (
 	defaultUserAgent     = "kacho-vpc"
 )
 
+// withDefaults возвращает копию BuildOptions с проставленными дефолтами для
+// zero-полей (retries / dial-timeout / keepalive / user-agent).
 func (o BuildOptions) withDefaults() BuildOptions {
 	if o.Retries == 0 {
 		o.Retries = defaultRetries

@@ -16,7 +16,9 @@ import (
 type AddressFamily int
 
 const (
+	// FamilyV4 — IPv4-семейство для cascade-resolve.
 	FamilyV4 AddressFamily = iota
+	// FamilyV6 — IPv6-семейство для cascade-resolve.
 	FamilyV6
 )
 
@@ -31,7 +33,9 @@ type ResolvedPool struct {
 type familyStrict int
 
 const (
+	// familyV4Strict — режим строгой проверки IPv4-блока в split-shape CIDR.
 	familyV4Strict familyStrict = iota
+	// familyV6Strict — режим строгой проверки IPv6-блока в split-shape CIDR.
 	familyV6Strict
 )
 

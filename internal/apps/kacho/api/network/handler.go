@@ -344,6 +344,7 @@ func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 	return dst, nil
 }
 
+// routeTableToPb конвертирует RouteTableRecord в proto-сообщение через DTO-реестр.
 func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) {
 	var dst *vpcv1.RouteTable
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
@@ -352,6 +353,7 @@ func routeTableToPb(rec *kachorepo.RouteTableRecord) (*vpcv1.RouteTable, error) 
 	return dst, nil
 }
 
+// securityGroupToPb конвертирует SecurityGroupRecord в proto-сообщение через DTO-реестр.
 func securityGroupToPb(rec *kachorepo.SecurityGroupRecord) (*vpcv1.SecurityGroup, error) {
 	var dst *vpcv1.SecurityGroup
 	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {

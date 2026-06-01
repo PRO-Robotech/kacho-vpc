@@ -35,10 +35,12 @@ type NetworkRepo struct {
 	data map[string]*kachorepo.NetworkRecord
 }
 
+// NewNetworkRepo создаёт пустой in-memory NetworkRepo.
 func NewNetworkRepo() *NetworkRepo {
 	return &NetworkRepo{data: make(map[string]*kachorepo.NetworkRecord)}
 }
 
+// Get возвращает Network по id (repo.ErrNotFound если нет).
 func (r *NetworkRepo) Get(_ context.Context, id string) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -49,6 +51,7 @@ func (r *NetworkRepo) Get(_ context.Context, id string) (*kachorepo.NetworkRecor
 	return n, nil
 }
 
+// List возвращает Network'и, отфильтрованные по ProjectID/Name (без пагинации).
 func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagination) ([]*kachorepo.NetworkRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -62,6 +65,7 @@ func (r *NetworkRepo) List(_ context.Context, f repo.NetworkFilter, _ repo.Pagin
 	return result, "", nil
 }
 
+// Insert сохраняет новую Network, проставляя CreatedAt текущим временем.
 func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -70,6 +74,7 @@ func (r *NetworkRepo) Insert(_ context.Context, n *domain.Network) (*kachorepo.N
 	return rec, nil
 }
 
+// Update перезаписывает mutable domain-поля Network, сохраняя CreatedAt.
 func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -82,6 +87,7 @@ func (r *NetworkRepo) Update(_ context.Context, n *domain.Network) (*kachorepo.N
 	return existing, nil
 }
 
+// Delete удаляет Network по id (repo.ErrNotFound если нет).
 func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -92,6 +98,7 @@ func (r *NetworkRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID Network (используется Move).
 func (r *NetworkRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.NetworkRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -114,8 +121,10 @@ type SubnetRepo struct {
 	data map[string]*kachorepo.SubnetRecord
 }
 
+// NewSubnetRepo создаёт пустой in-memory SubnetRepo.
 func NewSubnetRepo() *SubnetRepo { return &SubnetRepo{data: make(map[string]*kachorepo.SubnetRecord)} }
 
+// Get возвращает Subnet по id (repo.ErrNotFound если нет).
 func (r *SubnetRepo) Get(_ context.Context, id string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,6 +135,7 @@ func (r *SubnetRepo) Get(_ context.Context, id string) (*kachorepo.SubnetRecord,
 	return s, nil
 }
 
+// List возвращает Subnet'ы, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Pagination) ([]*kachorepo.SubnetRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -140,6 +150,7 @@ func (r *SubnetRepo) List(_ context.Context, f repo.SubnetFilter, _ repo.Paginat
 	return result, "", nil
 }
 
+// Insert сохраняет новую Subnet, проставляя CreatedAt текущим временем.
 func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -148,6 +159,7 @@ func (r *SubnetRepo) Insert(_ context.Context, s *domain.Subnet) (*kachorepo.Sub
 	return rec, nil
 }
 
+// Update перезаписывает mutable domain-поля Subnet, сохраняя CreatedAt.
 func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -160,6 +172,7 @@ func (r *SubnetRepo) Update(_ context.Context, s *domain.Subnet) (*kachorepo.Sub
 	return existing, nil
 }
 
+// Delete удаляет Subnet по id (repo.ErrNotFound если нет).
 func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -170,6 +183,7 @@ func (r *SubnetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID Subnet (используется Move).
 func (r *SubnetRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -181,6 +195,7 @@ func (r *SubnetRepo) SetProjectID(_ context.Context, id, folderID string) (*kach
 	return s, nil
 }
 
+// SetCidrBlocks перезаписывает v4/v6 CIDR-блоки Subnet (Add/RemoveCidrBlocks).
 func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -193,6 +208,7 @@ func (r *SubnetRepo) SetCidrBlocks(_ context.Context, id string, v4, v6 []string
 	return s, nil
 }
 
+// SetZoneID меняет ZoneID Subnet (используется Relocate).
 func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*kachorepo.SubnetRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -204,6 +220,7 @@ func (r *SubnetRepo) SetZoneID(_ context.Context, id, zoneID string) (*kachorepo
 	return s, nil
 }
 
+// AddressesBySubnet — mock-stub: всегда возвращает пустой список адресов.
 func (r *SubnetRepo) AddressesBySubnet(_ context.Context, _ string, _ repo.Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	return nil, "", nil
 }
@@ -222,6 +239,7 @@ type AddressRepo struct {
 	v6        map[string]*v6CursorState           // KAC-60: per-pool v6 sparse counter
 }
 
+// NewAddressRepo создаёт пустой in-memory AddressRepo.
 func NewAddressRepo() *AddressRepo {
 	return &AddressRepo{data: make(map[string]*kachorepo.AddressRecord)}
 }
@@ -246,6 +264,7 @@ func (r *AddressRepo) Seed(rec *kachorepo.AddressRecord) {
 	r.data[rec.ID] = rec
 }
 
+// Get возвращает Address по id (repo.ErrNotFound если нет).
 func (r *AddressRepo) Get(_ context.Context, id string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -256,6 +275,7 @@ func (r *AddressRepo) Get(_ context.Context, id string) (*kachorepo.AddressRecor
 	return a, nil
 }
 
+// List возвращает Address'ы, отфильтрованные по ProjectID/Name.
 func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagination) ([]*kachorepo.AddressRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -269,6 +289,7 @@ func (r *AddressRepo) List(_ context.Context, f repo.AddressFilter, _ repo.Pagin
 	return result, "", nil
 }
 
+// Insert сохраняет новый Address, проставляя CreatedAt текущим временем.
 func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -277,6 +298,7 @@ func (r *AddressRepo) Insert(_ context.Context, a *domain.Address) (*kachorepo.A
 	return rec, nil
 }
 
+// Update перезаписывает domain-поля Address, сохраняя CreatedAt.
 func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -288,6 +310,7 @@ func (r *AddressRepo) Update(_ context.Context, a *domain.Address) (*kachorepo.A
 	return existing, nil
 }
 
+// Delete удаляет Address по id (repo.ErrNotFound если нет).
 func (r *AddressRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -329,6 +352,7 @@ func (r *AddressRepo) SetInternalIPv6(_ context.Context, id string, spec *domain
 	return a, nil
 }
 
+// SetProjectID меняет ProjectID Address (используется Move).
 func (r *AddressRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -340,6 +364,7 @@ func (r *AddressRepo) SetProjectID(_ context.Context, id, folderID string) (*kac
 	return a, nil
 }
 
+// ExistsIP сообщает, занят ли IP каким-либо external/internal v4-адресом.
 func (r *AddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -354,6 +379,7 @@ func (r *AddressRepo) ExistsIP(_ context.Context, ip string) (bool, error) {
 	return false, nil
 }
 
+// GetByValue ищет Address по значению external/internal v4-адреса.
 func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*kachorepo.AddressRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -513,6 +539,7 @@ type v6CursorState struct {
 	}
 }
 
+// initV6State лениво создаёт и возвращает per-pool v6-cursor state.
 func (r *AddressRepo) initV6State(poolID string) *v6CursorState {
 	if r.v6 == nil {
 		r.v6 = make(map[string]*v6CursorState)
@@ -527,6 +554,7 @@ func (r *AddressRepo) initV6State(poolID string) *v6CursorState {
 	return r.v6[poolID]
 }
 
+// InitIPv6PoolCursor инициализирует v6-cursor state для pool (idempotent).
 func (r *AddressRepo) InitIPv6PoolCursor(_ context.Context, poolID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -534,6 +562,9 @@ func (r *AddressRepo) InitIPv6PoolCursor(_ context.Context, poolID string) error
 	return nil
 }
 
+// AllocateExternalIPv6 — mock-stub: выдаёт следующий sparse v6-offset (или
+// переиспользует released), формирует mock-IP 2001:db8::<offset> и зеркалит
+// его в ExternalIpv6 адреса.
 func (r *AddressRepo) AllocateExternalIPv6(_ context.Context, poolID, addressID, zoneID string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -564,6 +595,8 @@ func (r *AddressRepo) AllocateExternalIPv6(_ context.Context, poolID, addressID,
 	return ip, nil
 }
 
+// FreeExternalIPv6 — mock-stub: возвращает v6-offset адреса в released-список
+// и очищает ExternalIpv6 (idempotent).
 func (r *AddressRepo) FreeExternalIPv6(_ context.Context, addressID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -594,10 +627,12 @@ type RouteTableRepo struct {
 	data map[string]*kachorepo.RouteTableRecord
 }
 
+// NewRouteTableRepo создаёт пустой in-memory RouteTableRepo.
 func NewRouteTableRepo() *RouteTableRepo {
 	return &RouteTableRepo{data: make(map[string]*kachorepo.RouteTableRecord)}
 }
 
+// Get возвращает RouteTable по id (repo.ErrNotFound если нет).
 func (r *RouteTableRepo) Get(_ context.Context, id string) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -608,6 +643,7 @@ func (r *RouteTableRepo) Get(_ context.Context, id string) (*kachorepo.RouteTabl
 	return rt, nil
 }
 
+// List возвращает RouteTable'ы, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo.Pagination) ([]*kachorepo.RouteTableRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -622,6 +658,7 @@ func (r *RouteTableRepo) List(_ context.Context, f repo.RouteTableFilter, _ repo
 	return result, "", nil
 }
 
+// Insert сохраняет новую RouteTable, проставляя CreatedAt текущим временем.
 func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -630,6 +667,7 @@ func (r *RouteTableRepo) Insert(_ context.Context, rt *domain.RouteTable) (*kach
 	return rec, nil
 }
 
+// Update перезаписывает domain-поля RouteTable, сохраняя CreatedAt.
 func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -641,6 +679,7 @@ func (r *RouteTableRepo) Update(_ context.Context, rt *domain.RouteTable) (*kach
 	return existing, nil
 }
 
+// Delete удаляет RouteTable по id (repo.ErrNotFound если нет).
 func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -651,6 +690,7 @@ func (r *RouteTableRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID RouteTable (используется Move).
 func (r *RouteTableRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.RouteTableRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -672,10 +712,12 @@ type SecurityGroupRepo struct {
 	data map[string]*kachorepo.SecurityGroupRecord
 }
 
+// NewSecurityGroupRepo создаёт пустой in-memory SecurityGroupRepo.
 func NewSecurityGroupRepo() *SecurityGroupRepo {
 	return &SecurityGroupRepo{data: make(map[string]*kachorepo.SecurityGroupRecord)}
 }
 
+// Get возвращает SecurityGroup по id (repo.ErrNotFound если нет).
 func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -686,6 +728,7 @@ func (r *SecurityGroupRepo) Get(_ context.Context, id string) (*kachorepo.Securi
 	return sg, nil
 }
 
+// List возвращает SecurityGroup'ы, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, _ repo.Pagination) ([]*kachorepo.SecurityGroupRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -705,6 +748,7 @@ func (r *SecurityGroupRepo) List(_ context.Context, f repo.SecurityGroupFilter, 
 	return out, "", nil
 }
 
+// Insert сохраняет новую SecurityGroup, проставляя CreatedAt текущим временем.
 func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -713,6 +757,7 @@ func (r *SecurityGroupRepo) Insert(_ context.Context, sg *domain.SecurityGroup) 
 	return rec, nil
 }
 
+// Update перезаписывает domain-поля SecurityGroup, сохраняя CreatedAt.
 func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -724,6 +769,7 @@ func (r *SecurityGroupRepo) Update(_ context.Context, sg *domain.SecurityGroup) 
 	return existing, nil
 }
 
+// Delete удаляет SecurityGroup по id (no-op если нет).
 func (r *SecurityGroupRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -731,6 +777,7 @@ func (r *SecurityGroupRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// UpdateRules — mock-stub: возвращает SG без изменения правил.
 func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []string, _ []domain.SecurityGroupRule) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -741,6 +788,7 @@ func (r *SecurityGroupRepo) UpdateRules(_ context.Context, sgID string, _ []stri
 	return sg, nil
 }
 
+// UpdateRule — mock-stub: возвращает SG без изменения правила.
 func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ string, _ map[string]string, _ []string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -751,6 +799,7 @@ func (r *SecurityGroupRepo) UpdateRule(_ context.Context, sgID, _ string, _ stri
 	return sg, nil
 }
 
+// SetProjectID меняет ProjectID SecurityGroup (используется Move).
 func (r *SecurityGroupRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.SecurityGroupRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -771,10 +820,12 @@ type GatewayRepo struct {
 	data map[string]*kachorepo.GatewayRecord
 }
 
+// NewGatewayRepo создаёт пустой in-memory GatewayRepo.
 func NewGatewayRepo() *GatewayRepo {
 	return &GatewayRepo{data: make(map[string]*kachorepo.GatewayRecord)}
 }
 
+// Get возвращает Gateway по id (repo.ErrNotFound если нет).
 func (r *GatewayRepo) Get(_ context.Context, id string) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -785,6 +836,7 @@ func (r *GatewayRepo) Get(_ context.Context, id string) (*kachorepo.GatewayRecor
 	return g, nil
 }
 
+// List возвращает Gateway'и, отфильтрованные по ProjectID/Name.
 func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagination) ([]*kachorepo.GatewayRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -801,6 +853,7 @@ func (r *GatewayRepo) List(_ context.Context, f repo.GatewayFilter, _ repo.Pagin
 	return out, "", nil
 }
 
+// Insert сохраняет новый Gateway, проставляя CreatedAt текущим временем.
 func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -809,6 +862,7 @@ func (r *GatewayRepo) Insert(_ context.Context, g *domain.Gateway) (*kachorepo.G
 	return rec, nil
 }
 
+// Update перезаписывает domain-поля Gateway, сохраняя CreatedAt.
 func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -820,6 +874,7 @@ func (r *GatewayRepo) Update(_ context.Context, g *domain.Gateway) (*kachorepo.G
 	return existing, nil
 }
 
+// Delete удаляет Gateway по id (no-op если нет).
 func (r *GatewayRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -827,6 +882,7 @@ func (r *GatewayRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID Gateway (используется Move).
 func (r *GatewayRepo) SetProjectID(_ context.Context, id, folderID string) (*kachorepo.GatewayRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -848,10 +904,12 @@ type PrivateEndpointRepo struct {
 	data map[string]*kachorepo.PrivateEndpointRecord
 }
 
+// NewPrivateEndpointRepo создаёт пустой in-memory PrivateEndpointRepo.
 func NewPrivateEndpointRepo() *PrivateEndpointRepo {
 	return &PrivateEndpointRepo{data: make(map[string]*kachorepo.PrivateEndpointRecord)}
 }
 
+// Get возвращает PrivateEndpoint по id (repo.ErrNotFound если нет).
 func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -862,6 +920,7 @@ func (r *PrivateEndpointRepo) Get(_ context.Context, id string) (*kachorepo.Priv
 	return p, nil
 }
 
+// List возвращает PrivateEndpoint'ы, отфильтрованные по ProjectID/Name.
 func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilter, _ repo.Pagination) ([]*kachorepo.PrivateEndpointRecord, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -878,6 +937,7 @@ func (r *PrivateEndpointRepo) List(_ context.Context, f repo.PrivateEndpointFilt
 	return out, "", nil
 }
 
+// Insert сохраняет новый PrivateEndpoint, проставляя CreatedAt текущим временем.
 func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -886,6 +946,7 @@ func (r *PrivateEndpointRepo) Insert(_ context.Context, p *domain.PrivateEndpoin
 	return rec, nil
 }
 
+// Update перезаписывает domain-поля PrivateEndpoint, сохраняя CreatedAt.
 func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoint) (*kachorepo.PrivateEndpointRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -897,6 +958,7 @@ func (r *PrivateEndpointRepo) Update(_ context.Context, p *domain.PrivateEndpoin
 	return existing, nil
 }
 
+// Delete удаляет PrivateEndpoint по id (no-op если нет).
 func (r *PrivateEndpointRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -913,8 +975,10 @@ type ProjectClient struct {
 	CloudID string
 }
 
+// Exists возвращает заранее заданный флаг OK.
 func (c *ProjectClient) Exists(_ context.Context, _ string) (bool, error) { return c.OK, nil }
 
+// GetCloudIDFromProject возвращает заранее заданный CloudID.
 func (c *ProjectClient) GetCloudIDFromProject(_ context.Context, _ string) (string, error) {
 	return c.CloudID, nil
 }
@@ -925,8 +989,10 @@ type ZoneRegistry struct {
 	Known []string // zone_id, которые считаются существующими в таблице `zones`
 }
 
+// NewZoneRegistry создаёт ZoneRegistry с перечисленными известными zone-id.
 func NewZoneRegistry(ids ...string) *ZoneRegistry { return &ZoneRegistry{Known: ids} }
 
+// Get возвращает Zone по id, если он в списке известных (иначе repo.ErrNotFound).
 func (m *ZoneRegistry) Get(_ context.Context, id string) (*domain.Zone, error) {
 	for _, k := range m.Known {
 		if k == id {
@@ -936,6 +1002,7 @@ func (m *ZoneRegistry) Get(_ context.Context, id string) (*domain.Zone, error) {
 	return nil, repo.ErrNotFound
 }
 
+// ListIDs возвращает копию списка известных zone-id.
 func (m *ZoneRegistry) ListIDs(_ context.Context) ([]string, error) {
 	out := make([]string, len(m.Known))
 	copy(out, m.Known)
@@ -950,8 +1017,10 @@ type OpsRepo struct {
 	ops map[string]*operations.Operation
 }
 
+// NewOpsRepo создаёт пустой in-memory OpsRepo.
 func NewOpsRepo() *OpsRepo { return &OpsRepo{ops: make(map[string]*operations.Operation)} }
 
+// Create сохраняет Operation в стор.
 func (r *OpsRepo) Create(_ context.Context, op operations.Operation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -959,6 +1028,7 @@ func (r *OpsRepo) Create(_ context.Context, op operations.Operation) error {
 	return nil
 }
 
+// CreateWithPrincipal сохраняет Operation с привязанным Principal.
 func (r *OpsRepo) CreateWithPrincipal(_ context.Context, op operations.Operation, p operations.Principal) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -967,6 +1037,7 @@ func (r *OpsRepo) CreateWithPrincipal(_ context.Context, op operations.Operation
 	return nil
 }
 
+// Get возвращает shallow-копию Operation по id (operations.ErrNotFound если нет).
 func (r *OpsRepo) Get(_ context.Context, id string) (*operations.Operation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -980,10 +1051,12 @@ func (r *OpsRepo) Get(_ context.Context, id string) (*operations.Operation, erro
 	return &cp, nil
 }
 
+// List — mock-stub: всегда возвращает пустой список Operation'ов.
 func (r *OpsRepo) List(_ context.Context, _ operations.ListFilter) ([]operations.Operation, string, error) {
 	return nil, "", nil
 }
 
+// MarkDone помечает Operation завершённой с success-response.
 func (r *OpsRepo) MarkDone(_ context.Context, id string, resp *anypb.Any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -996,6 +1069,7 @@ func (r *OpsRepo) MarkDone(_ context.Context, id string, resp *anypb.Any) error 
 	return nil
 }
 
+// MarkError помечает Operation завершённой с error-status.
 func (r *OpsRepo) MarkError(_ context.Context, id string, errStatus *status.Status) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1008,6 +1082,7 @@ func (r *OpsRepo) MarkError(_ context.Context, id string, errStatus *status.Stat
 	return nil
 }
 
+// Cancel помечает Operation завершённой (done=true).
 func (r *OpsRepo) Cancel(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

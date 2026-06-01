@@ -212,6 +212,7 @@ func poolHasFamilyRec(rec *kachorepo.AddressPoolRecord, family AddressFamily) bo
 	return poolHasFamily(&rec.AddressPool, family)
 }
 
+// nilOrSecondRec возвращает второй match как runner-up ResolvedPool (nil если < 2).
 func nilOrSecondRec(matches []*kachorepo.AddressPoolRecord) *ResolvedPool {
 	if len(matches) < 2 {
 		return nil

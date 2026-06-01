@@ -75,6 +75,8 @@ func (u *MoveSubnetUseCase) Execute(ctx context.Context, id, destProjectID strin
 	return &op, nil
 }
 
+// doMove — async worker-тело Subnet.Move: проверяет destination-project и
+// переносит Subnet в новый project.
 func (u *MoveSubnetUseCase) doMove(ctx context.Context, id, destProjectID string) (*anypb.Any, error) {
 	exists, err := u.projectClient.Exists(ctx, destProjectID)
 	if err != nil {

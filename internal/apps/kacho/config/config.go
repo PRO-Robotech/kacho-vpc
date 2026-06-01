@@ -373,6 +373,7 @@ func (c Config) SlaveDSN() string {
 // Всегда master — goose не должен писать в реплику.
 func (c Config) MigrateDSN() string { return c.baseDSN() }
 
+// dsnHas сообщает, содержит ли DSN-строка подстроку frag.
 func dsnHas(dsn, frag string) bool {
 	for i := 0; i+len(frag) <= len(dsn); i++ {
 		if dsn[i:i+len(frag)] == frag {

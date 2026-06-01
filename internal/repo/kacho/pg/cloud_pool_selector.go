@@ -19,6 +19,7 @@ type cloudPoolSelectorReader struct {
 	tx pgx.Tx
 }
 
+// Get возвращает CloudPoolSelector облака (helpers.ErrNotFound если не задан).
 func (r *cloudPoolSelectorReader) Get(ctx context.Context, cloudID string) (*domain.CloudPoolSelector, error) {
 	var (
 		out   domain.CloudPoolSelector
@@ -51,6 +52,7 @@ type cloudPoolSelectorWriter struct {
 	emitter kacho.OutboxEmitter
 }
 
+// Set upsert'ит CloudPoolSelector облака (selector + set_by).
 func (w *cloudPoolSelectorWriter) Set(ctx context.Context, cloudID string, selector map[string]string, setBy string) error {
 	js, err := json.Marshal(helpers.NormalizeMap(selector))
 	if err != nil {
@@ -68,6 +70,7 @@ func (w *cloudPoolSelectorWriter) Set(ctx context.Context, cloudID string, selec
 	return nil
 }
 
+// Unset удаляет CloudPoolSelector облака.
 func (w *cloudPoolSelectorWriter) Unset(ctx context.Context, cloudID string) error {
 	_, err := w.tx.Exec(ctx, `DELETE FROM cloud_pool_selector WHERE cloud_id = $1`, cloudID)
 	if err != nil {

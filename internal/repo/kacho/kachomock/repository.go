@@ -424,34 +424,42 @@ type readerImpl struct {
 	csSnap   map[string]*domain.CloudPoolSelector
 }
 
+// Networks возвращает Network-reader поверх read-snapshot'а.
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
 	return &networkReader{snap: rd.netSnap}
 }
 
+// SecurityGroups возвращает SecurityGroup-reader поверх read-snapshot'а.
 func (rd *readerImpl) SecurityGroups() kacho.SecurityGroupReaderIface {
 	return &securityGroupReader{snap: rd.sgSnap}
 }
 
+// Subnets возвращает Subnet-reader поверх read-snapshot'а.
 func (rd *readerImpl) Subnets() kacho.SubnetReaderIface {
 	return &subnetReader{snap: rd.subSnap, addrs: rd.addrSnap}
 }
 
+// RouteTables возвращает RouteTable-reader поверх read-snapshot'а.
 func (rd *readerImpl) RouteTables() kacho.RouteTableReaderIface {
 	return &routeTableReader{snap: rd.rtSnap}
 }
 
+// PrivateEndpoints возвращает PrivateEndpoint-reader поверх read-snapshot'а.
 func (rd *readerImpl) PrivateEndpoints() kacho.PrivateEndpointReaderIface {
 	return &privateEndpointReader{snap: rd.peSnap}
 }
 
+// NetworkInterfaces возвращает NIC-reader поверх read-snapshot'а.
 func (rd *readerImpl) NetworkInterfaces() kacho.NetworkInterfaceReaderIface {
 	return &networkInterfaceReader{snap: rd.niSnap}
 }
 
+// Addresses возвращает Address-reader поверх read-snapshot'а.
 func (rd *readerImpl) Addresses() kacho.AddressReaderIface {
 	return &addressReader{snap: rd.addrSnap}
 }
 
+// Gateways возвращает Gateway-reader поверх read-snapshot'а.
 func (rd *readerImpl) Gateways() kacho.GatewayReaderIface {
 	return &gatewayReader{snap: rd.gwSnap}
 }
@@ -471,6 +479,7 @@ func (rd *readerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorReaderIface {
 	return &cloudPoolSelectorReader{snap: rd.csSnap}
 }
 
+// Close — no-op (Mock-reader не держит ресурсов).
 func (rd *readerImpl) Close() error { return nil }
 
 // writerImpl — write-«TX». local-* — working set'ы, окончательно мерж'атся в
@@ -506,22 +515,27 @@ type writerImpl struct {
 	finalised      bool
 }
 
+// Networks возвращает Network-writer, привязанный к этой «TX».
 func (w *writerImpl) Networks() kacho.NetworkWriterIface {
 	return &networkWriter{w: w}
 }
 
+// SecurityGroups возвращает SecurityGroup-writer, привязанный к этой «TX».
 func (w *writerImpl) SecurityGroups() kacho.SecurityGroupWriterIface {
 	return &securityGroupWriter{w: w}
 }
 
+// Subnets возвращает Subnet-writer, привязанный к этой «TX».
 func (w *writerImpl) Subnets() kacho.SubnetWriterIface {
 	return &subnetWriter{w: w}
 }
 
+// PrivateEndpoints возвращает PrivateEndpoint-writer, привязанный к этой «TX».
 func (w *writerImpl) PrivateEndpoints() kacho.PrivateEndpointWriterIface {
 	return &privateEndpointWriter{w: w}
 }
 
+// RouteTables возвращает RouteTable-writer, привязанный к этой «TX».
 func (w *writerImpl) RouteTables() kacho.RouteTableWriterIface {
 	return &routeTableWriter{w: w}
 }
@@ -533,10 +547,12 @@ func (w *writerImpl) NetworkInterfaces() kacho.NetworkInterfaceWriterIface {
 	return &networkInterfaceWriter{w: w}
 }
 
+// Addresses возвращает Address-writer, привязанный к этой «TX».
 func (w *writerImpl) Addresses() kacho.AddressWriterIface {
 	return &addressWriter{w: w}
 }
 
+// Gateways возвращает Gateway-writer, привязанный к этой «TX».
 func (w *writerImpl) Gateways() kacho.GatewayWriterIface {
 	return &gatewayWriter{w: w}
 }
@@ -556,10 +572,12 @@ func (w *writerImpl) CloudPoolSelectors() kacho.CloudPoolSelectorWriterIface {
 	return &cloudPoolSelectorWriter{w: w}
 }
 
+// Outbox возвращает outbox-emitter, привязанный к этой «TX».
 func (w *writerImpl) Outbox() kacho.OutboxEmitter {
 	return &outboxEmitter{w: w}
 }
 
+// Commit мерж'ит все writer-локальные working-set'ы и outbox-буфер в parent-state.
 func (w *writerImpl) Commit() error {
 	if w.finalised {
 		return nil
@@ -667,6 +685,7 @@ func (w *writerImpl) Commit() error {
 	return nil
 }
 
+// Abort отбрасывает writer-локальные writes без применения к parent-state.
 func (w *writerImpl) Abort() {
 	if w.finalised {
 		return
@@ -681,6 +700,7 @@ type outboxEmitter struct {
 	w *writerImpl
 }
 
+// Emit буферизует outbox-event в writer-локальном localOutbox (применится на Commit).
 func (e *outboxEmitter) Emit(_ context.Context, resource, id, action string, payload map[string]any) error {
 	// Скопируем payload (caller может его мутировать после Emit).
 	cp := make(map[string]any, len(payload))

@@ -28,6 +28,7 @@ type securityGroupReader struct {
 	snap map[string]*kacho.SecurityGroupRecord
 }
 
+// Get возвращает копию SecurityGroup-записи по id (repo.ErrNotFound если нет).
 func (r *securityGroupReader) Get(_ context.Context, id string) (*kacho.SecurityGroupRecord, error) {
 	sg, ok := r.snap[id]
 	if !ok {
@@ -37,6 +38,7 @@ func (r *securityGroupReader) Get(_ context.Context, id string) (*kacho.Security
 	return &cp, nil
 }
 
+// List возвращает SecurityGroup-записи, отфильтрованные по ProjectID/NetworkID/Name.
 func (r *securityGroupReader) List(_ context.Context, f kacho.SecurityGroupFilter, _ kacho.Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
 	var result []*kacho.SecurityGroupRecord
 	for _, sg := range r.snap {
@@ -59,6 +61,7 @@ type securityGroupWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает SecurityGroup-запись из writer-локального стора (исключая удалённые).
 func (sw *securityGroupWriter) Get(_ context.Context, id string) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -71,6 +74,7 @@ func (sw *securityGroupWriter) Get(_ context.Context, id string) (*kacho.Securit
 	return &cp, nil
 }
 
+// List возвращает SecurityGroup-записи из writer-локального стора (исключая удалённые).
 func (sw *securityGroupWriter) List(_ context.Context, f kacho.SecurityGroupFilter, _ kacho.Pagination) ([]*kacho.SecurityGroupRecord, string, error) {
 	var result []*kacho.SecurityGroupRecord
 	for id, sg := range sw.w.localSGs {
@@ -88,6 +92,7 @@ func (sw *securityGroupWriter) List(_ context.Context, f kacho.SecurityGroupFilt
 	return result, "", nil
 }
 
+// Insert сохраняет новую SecurityGroup в writer-локальный стор с CreatedAt = now.
 func (sw *securityGroupWriter) Insert(_ context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
 	rec := &kacho.SecurityGroupRecord{SecurityGroup: *sg, CreatedAt: time.Now().UTC()}
 	sw.w.localSGs[sg.ID] = rec
@@ -95,6 +100,7 @@ func (sw *securityGroupWriter) Insert(_ context.Context, sg *domain.SecurityGrou
 	return &cp, nil
 }
 
+// Update перезаписывает domain-поля SecurityGroup в writer-локальном сторе.
 func (sw *securityGroupWriter) Update(_ context.Context, sg *domain.SecurityGroup) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[sg.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -108,6 +114,7 @@ func (sw *securityGroupWriter) Update(_ context.Context, sg *domain.SecurityGrou
 	return &cp, nil
 }
 
+// Delete помечает SecurityGroup удалённой в writer-локальном сторе.
 func (sw *securityGroupWriter) Delete(_ context.Context, id string) error {
 	if _, ok := sw.w.localSGs[id]; !ok {
 		return repo.ErrNotFound
@@ -120,6 +127,7 @@ func (sw *securityGroupWriter) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// SetProjectID меняет ProjectID SecurityGroup в writer-локальном сторе (Move).
 func (sw *securityGroupWriter) SetProjectID(_ context.Context, id, folderID string) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -135,6 +143,7 @@ func (sw *securityGroupWriter) SetProjectID(_ context.Context, id, folderID stri
 
 // UpdateRules / UpdateRule — упрощённая семантика (без xmin-OCC; mock не
 // моделирует concurrent-conflict). Достаточно для unit-тестов use-case'ов.
+// UpdateRules удаляет правила из deleteIDs и добавляет add к набору правил SG.
 func (sw *securityGroupWriter) UpdateRules(_ context.Context, sgID string, deleteIDs []string, add []domain.SecurityGroupRule) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[sgID]; deleted {
 		return nil, repo.ErrNotFound
@@ -162,6 +171,7 @@ func (sw *securityGroupWriter) UpdateRules(_ context.Context, sgID string, delet
 	return &cp, nil
 }
 
+// UpdateRule обновляет description/labels одного правила SG по update-mask.
 func (sw *securityGroupWriter) UpdateRule(_ context.Context, sgID, ruleID, description string, labels map[string]string, mask []string) (*kacho.SecurityGroupRecord, error) {
 	if _, deleted := sw.w.deletedSGIDs[sgID]; deleted {
 		return nil, repo.ErrNotFound

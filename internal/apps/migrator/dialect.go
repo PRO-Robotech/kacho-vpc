@@ -138,6 +138,7 @@ func RegisterDialect(spec DialectSpec, factory func() Dialect) {
 	registry[spec.Name] = dialectFactory(factory)
 }
 
+// listDialects возвращает имена всех зарегистрированных диалектов.
 func listDialects() []string {
 	out := make([]string, 0, len(registry))
 	for k := range registry {

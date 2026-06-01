@@ -24,6 +24,7 @@ type addressPoolReader struct {
 	snap map[string]*kacho.AddressPoolRecord
 }
 
+// Get возвращает копию AddressPool-записи по id (repo.ErrNotFound если нет).
 func (r *addressPoolReader) Get(_ context.Context, id string) (*kacho.AddressPoolRecord, error) {
 	p, ok := r.snap[id]
 	if !ok {
@@ -33,6 +34,7 @@ func (r *addressPoolReader) Get(_ context.Context, id string) (*kacho.AddressPoo
 	return &cp, nil
 }
 
+// List возвращает AddressPool-записи, отфильтрованные по Kind/ZoneID.
 func (r *addressPoolReader) List(_ context.Context, f kacho.AddressPoolFilter, _ kacho.Pagination) ([]*kacho.AddressPoolRecord, string, error) {
 	var result []*kacho.AddressPoolRecord
 	for _, p := range r.snap {
@@ -49,6 +51,7 @@ func (r *addressPoolReader) List(_ context.Context, f kacho.AddressPoolFilter, _
 	return result, "", nil
 }
 
+// GetDefaultForZone возвращает default-pool для пары (zone, kind).
 func (r *addressPoolReader) GetDefaultForZone(_ context.Context, zoneID string, kind domain.AddressPoolKind) (*kacho.AddressPoolRecord, error) {
 	for _, p := range r.snap {
 		if p.Kind == kind && p.IsDefault && p.ZoneID == zoneID {
@@ -59,6 +62,8 @@ func (r *addressPoolReader) GetDefaultForZone(_ context.Context, zoneID string, 
 	return nil, repo.ErrNotFound
 }
 
+// FindBySelectorMatch ищет pool'ы, чьи selector_labels содержат sel (containment),
+// отсортированные по точности совпадения и selector_priority.
 func (r *addressPoolReader) FindBySelectorMatch(_ context.Context, sel map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*kacho.AddressPoolRecord, error) {
 	if len(sel) == 0 {
 		return nil, repo.ErrNotFound
@@ -108,18 +113,22 @@ func (r *addressPoolReader) FindBySelectorMatch(_ context.Context, sel map[strin
 	return out, nil
 }
 
+// FindAmbiguousSelectorGroups — mock-stub: всегда возвращает nil (нет ambiguity).
 func (r *addressPoolReader) FindAmbiguousSelectorGroups(_ context.Context, _ string) ([][]*kacho.AddressPoolRecord, error) {
 	return nil, nil
 }
 
+// CountAddressesByPool — mock-stub: всегда возвращает 0.
 func (r *addressPoolReader) CountAddressesByPool(_ context.Context, _ string) (int64, error) {
 	return 0, nil
 }
 
+// CountAddressesByPoolPerCIDR — mock-stub: всегда возвращает nil.
 func (r *addressPoolReader) CountAddressesByPoolPerCIDR(_ context.Context, _ string) (map[string]int64, error) {
 	return nil, nil
 }
 
+// ListAddressesByPool — mock-stub: всегда возвращает пустой список.
 func (r *addressPoolReader) ListAddressesByPool(_ context.Context, _ string, _ string, _ kacho.Pagination) ([]*kacho.AddressRecord, string, error) {
 	return nil, "", nil
 }
@@ -130,6 +139,7 @@ type addressPoolWriter struct {
 	w *writerImpl
 }
 
+// Get возвращает AddressPool-запись из writer-локального стора (исключая удалённые).
 func (aw *addressPoolWriter) Get(_ context.Context, id string) (*kacho.AddressPoolRecord, error) {
 	if _, deleted := aw.w.deletedAPIDs[id]; deleted {
 		return nil, repo.ErrNotFound
@@ -142,6 +152,7 @@ func (aw *addressPoolWriter) Get(_ context.Context, id string) (*kacho.AddressPo
 	return &cp, nil
 }
 
+// List возвращает AddressPool-записи из writer-локального стора (исключая удалённые).
 func (aw *addressPoolWriter) List(ctx context.Context, f kacho.AddressPoolFilter, p kacho.Pagination) ([]*kacho.AddressPoolRecord, string, error) {
 	// Делегируем reader-семантике поверх writer'овского working-set'а.
 	rd := &addressPoolReader{snap: aw.w.localAPs}
@@ -160,6 +171,7 @@ func (aw *addressPoolWriter) List(ctx context.Context, f kacho.AddressPoolFilter
 	return filtered, tok, nil
 }
 
+// GetDefaultForZone возвращает default-pool для (zone, kind) из writer-локального стора.
 func (aw *addressPoolWriter) GetDefaultForZone(_ context.Context, zoneID string, kind domain.AddressPoolKind) (*kacho.AddressPoolRecord, error) {
 	for id, p := range aw.w.localAPs {
 		if _, deleted := aw.w.deletedAPIDs[id]; deleted {
@@ -173,6 +185,7 @@ func (aw *addressPoolWriter) GetDefaultForZone(_ context.Context, zoneID string,
 	return nil, repo.ErrNotFound
 }
 
+// FindBySelectorMatch ищет pool'ы по selector-containment из writer-локального стора.
 func (aw *addressPoolWriter) FindBySelectorMatch(_ context.Context, sel map[string]string, zoneID string, kind domain.AddressPoolKind, limit int) ([]*kacho.AddressPoolRecord, error) {
 	rd := &addressPoolReader{snap: aw.w.localAPs}
 	out, err := rd.FindBySelectorMatch(context.Background(), sel, zoneID, kind, limit)
@@ -192,22 +205,27 @@ func (aw *addressPoolWriter) FindBySelectorMatch(_ context.Context, sel map[stri
 	return filtered, nil
 }
 
+// FindAmbiguousSelectorGroups — mock-stub: всегда возвращает nil (нет ambiguity).
 func (aw *addressPoolWriter) FindAmbiguousSelectorGroups(_ context.Context, _ string) ([][]*kacho.AddressPoolRecord, error) {
 	return nil, nil
 }
 
+// CountAddressesByPool — mock-stub: всегда возвращает 0.
 func (aw *addressPoolWriter) CountAddressesByPool(_ context.Context, _ string) (int64, error) {
 	return 0, nil
 }
 
+// CountAddressesByPoolPerCIDR — mock-stub: всегда возвращает nil.
 func (aw *addressPoolWriter) CountAddressesByPoolPerCIDR(_ context.Context, _ string) (map[string]int64, error) {
 	return nil, nil
 }
 
+// ListAddressesByPool — mock-stub: всегда возвращает пустой список.
 func (aw *addressPoolWriter) ListAddressesByPool(_ context.Context, _ string, _ string, _ kacho.Pagination) ([]*kacho.AddressRecord, string, error) {
 	return nil, "", nil
 }
 
+// Insert сохраняет новый AddressPool в writer-локальный стор (CreatedAt = now если zero).
 func (aw *addressPoolWriter) Insert(_ context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
 	cp := *p
 	if cp.CreatedAt.IsZero() {
@@ -219,6 +237,7 @@ func (aw *addressPoolWriter) Insert(_ context.Context, p *domain.AddressPool) (*
 	return &out, nil
 }
 
+// Update перезаписывает domain-поля AddressPool в writer-локальном сторе.
 func (aw *addressPoolWriter) Update(_ context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
 	if _, deleted := aw.w.deletedAPIDs[p.ID]; deleted {
 		return nil, repo.ErrNotFound
@@ -232,6 +251,7 @@ func (aw *addressPoolWriter) Update(_ context.Context, p *domain.AddressPool) (*
 	return &out, nil
 }
 
+// Delete помечает AddressPool удалённым в writer-локальном сторе.
 func (aw *addressPoolWriter) Delete(_ context.Context, id string) error {
 	if _, ok := aw.w.localAPs[id]; !ok {
 		return repo.ErrNotFound

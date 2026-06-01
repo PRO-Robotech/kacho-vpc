@@ -61,6 +61,7 @@ func (u *DeleteNetworkInterfaceUseCase) Execute(ctx context.Context, id string) 
 	return &op, nil
 }
 
+// doDelete — async worker-тело NetworkInterface.Delete: удаляет NIC в writer-TX.
 func (u *DeleteNetworkInterfaceUseCase) doDelete(ctx context.Context, id string) (*anypb.Any, error) {
 	w, err := u.repo.Writer(ctx)
 	if err != nil {

@@ -34,7 +34,9 @@ type AddressPool struct {
 type AddressPoolKind int16
 
 const (
-	AddressPoolKindUnspecified    AddressPoolKind = 0
+	// AddressPoolKindUnspecified — категория пула не задана.
+	AddressPoolKindUnspecified AddressPoolKind = 0
+	// AddressPoolKindExternalPublic — пул публичных внешних адресов.
 	AddressPoolKindExternalPublic AddressPoolKind = 1
 	// KAC-70: значения 2 (EXTERNAL_TEST) и 100 (RESERVED_INTERNAL) удалены —
 	// не использовались ни backend'ом, ни UI. В proto оба зарезервированы

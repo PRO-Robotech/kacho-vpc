@@ -234,5 +234,7 @@ func listenAddress(endpoint string) string {
 }
 
 // ListenAddress — публичная обёртка над listenAddress (для cmd/vpc/main.go).
-func (c APIServerConfig) ListenAddress() string         { return listenAddress(c.Endpoint) }
+func (c APIServerConfig) ListenAddress() string { return listenAddress(c.Endpoint) }
+
+// InternalListenAddress — listen-адрес internal-порта (9091, для Internal*-сервисов).
 func (c APIServerConfig) InternalListenAddress() string { return listenAddress(c.InternalEndpoint) }

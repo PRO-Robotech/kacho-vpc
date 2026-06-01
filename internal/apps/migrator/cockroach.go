@@ -61,10 +61,13 @@ import (
 // выше для production-readiness.
 type cockroachDialect struct{}
 
+// newCockroachDialect создаёт cockroachDialect.
 func newCockroachDialect() *cockroachDialect { return &cockroachDialect{} }
 
+// Spec возвращает DialectSpec CockroachDB.
 func (c *cockroachDialect) Spec() DialectSpec { return SpecCockroach }
 
+// Up применяет миграции (до target-версии либо все) через goose.
 func (c *cockroachDialect) Up(ctx context.Context, dsn string, fsys fs.FS, dir string, target string) error {
 	db, err := openPgxDB(dsn, c.Spec())
 	if err != nil {
@@ -85,6 +88,7 @@ func (c *cockroachDialect) Up(ctx context.Context, dsn string, fsys fs.FS, dir s
 	return goose.UpToContext(ctx, db, dir, version)
 }
 
+// Down откатывает миграции (до target-версии либо на шаг назад) через goose.
 func (c *cockroachDialect) Down(ctx context.Context, dsn string, fsys fs.FS, dir string, target string) error {
 	db, err := openPgxDB(dsn, c.Spec())
 	if err != nil {
@@ -105,6 +109,7 @@ func (c *cockroachDialect) Down(ctx context.Context, dsn string, fsys fs.FS, dir
 	return goose.DownToContext(ctx, db, dir, version)
 }
 
+// Status печатает applied/pending миграции через goose.
 func (c *cockroachDialect) Status(ctx context.Context, dsn string, fsys fs.FS, dir string, out io.Writer) error {
 	db, err := openPgxDB(dsn, c.Spec())
 	if err != nil {
@@ -119,6 +124,7 @@ func (c *cockroachDialect) Status(ctx context.Context, dsn string, fsys fs.FS, d
 	return goose.StatusContext(ctx, db, dir)
 }
 
+// Create создаёт новый пустой SQL-файл миграции на диске (без подключения к БД).
 func (c *cockroachDialect) Create(physDir, name string) error {
 	if name == "" {
 		return errors.New("migration name is empty")

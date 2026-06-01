@@ -78,6 +78,8 @@ func NewInternalAddressAllocateHandler(allocate AddressAllocator, refs AddressRe
 	return &InternalAddressAllocateHandler{allocate: allocate, refs: refs}
 }
 
+// AllocateInternalIP обрабатывает RPC InternalAddressService.AllocateInternalIP —
+// аллоцирует internal IPv4 для адреса.
 func (h *InternalAddressAllocateHandler) AllocateInternalIP(ctx context.Context, req *vpcv1.AllocateInternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -92,6 +94,8 @@ func (h *InternalAddressAllocateHandler) AllocateInternalIP(ctx context.Context,
 	}, nil
 }
 
+// AllocateInternalIPv6 обрабатывает RPC InternalAddressService.AllocateInternalIPv6 —
+// аллоцирует internal IPv6 для адреса.
 func (h *InternalAddressAllocateHandler) AllocateInternalIPv6(ctx context.Context, req *vpcv1.AllocateInternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -106,6 +110,8 @@ func (h *InternalAddressAllocateHandler) AllocateInternalIPv6(ctx context.Contex
 	}, nil
 }
 
+// AllocateExternalIP обрабатывает RPC InternalAddressService.AllocateExternalIP —
+// аллоцирует внешний IP из resolved pool.
 func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context, req *vpcv1.AllocateExternalIPRequest) (*vpcv1.AllocateIPResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -121,6 +127,8 @@ func (h *InternalAddressAllocateHandler) AllocateExternalIP(ctx context.Context,
 	}, nil
 }
 
+// SetAddressReference обрабатывает RPC InternalAddressService.SetAddressReference —
+// привязывает referrer к адресу.
 func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context, req *vpcv1.SetAddressReferenceRequest) (*vpcv1.AddressReference, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -137,6 +145,8 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 	return addressReferenceToProto(ref), nil
 }
 
+// ClearAddressReference обрабатывает RPC InternalAddressService.ClearAddressReference —
+// снимает referrer-привязку с адреса.
 func (h *InternalAddressAllocateHandler) ClearAddressReference(ctx context.Context, req *vpcv1.ClearAddressReferenceRequest) (*vpcv1.ClearAddressReferenceResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -147,6 +157,8 @@ func (h *InternalAddressAllocateHandler) ClearAddressReference(ctx context.Conte
 	return &vpcv1.ClearAddressReferenceResponse{}, nil
 }
 
+// GetAddressReference обрабатывает RPC InternalAddressService.GetAddressReference —
+// возвращает текущую referrer-привязку адреса.
 func (h *InternalAddressAllocateHandler) GetAddressReference(ctx context.Context, req *vpcv1.GetAddressReferenceRequest) (*vpcv1.AddressReference, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -158,6 +170,8 @@ func (h *InternalAddressAllocateHandler) GetAddressReference(ctx context.Context
 	return addressReferenceToProto(ref), nil
 }
 
+// MarkAddressEphemeralInUse обрабатывает RPC InternalAddressService.MarkAddressEphemeralInUse —
+// атомарно снимает reserved и проставляет referrer для эфемерного адреса.
 func (h *InternalAddressAllocateHandler) MarkAddressEphemeralInUse(ctx context.Context, req *vpcv1.MarkAddressEphemeralInUseRequest) (*vpcv1.MarkAddressEphemeralInUseResponse, error) {
 	if req.GetAddressId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
@@ -173,6 +187,7 @@ func (h *InternalAddressAllocateHandler) MarkAddressEphemeralInUse(ctx context.C
 	return &vpcv1.MarkAddressEphemeralInUseResponse{}, nil
 }
 
+// addressReferenceToProto конвертирует domain.AddressReference в proto-сообщение.
 func addressReferenceToProto(r *domain.AddressReference) *vpcv1.AddressReference {
 	if r == nil {
 		return nil
@@ -186,6 +201,7 @@ func addressReferenceToProto(r *domain.AddressReference) *vpcv1.AddressReference
 	}
 }
 
+// mapAllocErr транслирует ошибки аллокатора в gRPC-status (NotFound/Internal).
 func mapAllocErr(err error) error {
 	if err == nil {
 		return nil
