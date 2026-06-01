@@ -79,7 +79,7 @@ jobs:
             ${{ runner.os }}-buildx-amd64-
 
       - name: Build and push (amd64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./kacho-vpc/Dockerfile
@@ -136,7 +136,7 @@ jobs:
             ${{ runner.os }}-buildx-arm64-
 
       - name: Build and push (arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./kacho-vpc/Dockerfile
