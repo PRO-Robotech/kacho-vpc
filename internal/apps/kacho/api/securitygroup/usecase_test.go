@@ -28,6 +28,21 @@ import (
 
 // ---- builders ----
 
+// sgReaderMock — SecurityGroupReader adapter поверх kachomock.Repository (KAC-243
+// §C): резолвит SG-record через committed reader-snapshot мока.
+type sgReaderMock struct{ repo *kachomock.Repository }
+
+func newSGReaderMock(r *kachomock.Repository) *sgReaderMock { return &sgReaderMock{repo: r} }
+
+func (m *sgReaderMock) Get(ctx context.Context, id string) (*kacho.SecurityGroupRecord, error) {
+	rd, err := m.repo.Reader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rd.Close() }()
+	return rd.SecurityGroups().Get(ctx, id)
+}
+
 func makeHandler(
 	t *testing.T,
 	sgr *kachomock.Repository,
@@ -36,10 +51,11 @@ func makeHandler(
 	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateSecurityGroupUseCase(sgr, nr, fc, or)
+	sgReader := newSGReaderMock(sgr)
+	create := NewCreateSecurityGroupUseCase(sgr, nr, fc, or).WithSGReader(sgReader)
 	update := NewUpdateSecurityGroupUseCase(sgr, or)
-	updateRules := NewUpdateRulesUseCase(sgr, or)
-	updateRule := NewUpdateRuleUseCase(sgr, or)
+	updateRules := NewUpdateRulesUseCase(sgr, or, sgReader)
+	updateRule := NewUpdateRuleUseCase(sgr, or, sgReader)
 	deleteUC := NewDeleteSecurityGroupUseCase(sgr, or)
 	move := NewMoveSecurityGroupUseCase(sgr, fc, or)
 	get := NewGetSecurityGroupUseCase(sgr)
@@ -145,7 +161,8 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 func TestCreateUseCase_ValidationError(t *testing.T) {
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: true}, or)
+	nr := repomock.NewNetworkRepo()
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or)
 
 	// project_id required.
 	_, err := uc.Execute(context.Background(), domain.SecurityGroup{Name: "test"})
@@ -153,9 +170,20 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 
+	// network_id required (KAC-243 §A): пустой network_id → sync InvalidArgument.
+	_, err = uc.Execute(context.Background(), domain.SecurityGroup{ProjectID: "f1", Name: "test"})
+	require.Error(t, err)
+	st, _ = status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "network_id required", st.Message())
+
 	// invalid name (digit start, NameVPC permissive но цифра в начале — нет).
+	// Seed a valid network so we get past the network_id required/existence gate.
+	netID := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, ProjectID: "f1", Name: domain.RcNameVPC("net")})
 	_, err = uc.Execute(context.Background(), domain.SecurityGroup{
 		ProjectID: "f1",
+		NetworkID: netID,
 		Name:      domain.RcNameVPC("1bad"),
 	})
 	require.Error(t, err)
@@ -171,10 +199,14 @@ func TestCreateUseCase_ValidationError(t *testing.T) {
 func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: false}, or)
+	nr := repomock.NewNetworkRepo()
+	netID := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, ProjectID: "f1", Name: domain.RcNameVPC("net")})
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: false}, or)
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
 		ProjectID: "f1",
+		NetworkID: netID,
 		Name:      domain.RcNameVPC("sg1"),
 	})
 	require.NoError(t, err)
@@ -186,14 +218,19 @@ func TestCreateUseCase_FolderNotFound(t *testing.T) {
 	assert.Equal(t, int32(codes.NotFound), saved.Error.Code)
 }
 
-func TestCreateUseCase_OK_FolderLevel(t *testing.T) {
-	// network_id пустой → folder-level / unbound SG.
+// TestCreateUseCase_OK — KAC-243 §A: network_id обязателен; happy-path Create
+// с валидной существующей Network.
+func TestCreateUseCase_OK(t *testing.T) {
 	sgr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateSecurityGroupUseCase(sgr, repomock.NewNetworkRepo(), &repomock.ProjectClient{OK: true}, or)
+	nr := repomock.NewNetworkRepo()
+	netID := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netID, ProjectID: "f1", Name: domain.RcNameVPC("net")})
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
 		ProjectID:   "f1",
+		NetworkID:   netID,
 		Name:        domain.RcNameVPC("sg1"),
 		Description: domain.RcDescription("desc"),
 	})
@@ -232,7 +269,7 @@ func TestListUseCase_RequiresFolder(t *testing.T) {
 }
 
 func TestUpdateRulesUseCase_InvalidArg(t *testing.T) {
-	uc := NewUpdateRulesUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
+	uc := NewUpdateRulesUseCase(kachomock.NewRepository(), repomock.NewOpsRepo(), nil)
 	// security_group_id required (resource-id validation).
 	_, err := uc.Execute(context.Background(), UpdateRulesInput{SecurityGroupID: "bad"})
 	require.Error(t, err)
@@ -240,8 +277,128 @@ func TestUpdateRulesUseCase_InvalidArg(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
+// ---- KAC-243 same-network SG-target rule validation (fast, mock-based) ----
+
+// seedMockSG inserts a SecurityGroup into the kachomock via a committed writer-TX.
+func seedMockSG(t *testing.T, sgr *kachomock.Repository, projectID, networkID, name string) string {
+	t.Helper()
+	id := ids.NewID(ids.PrefixSecurityGroup)
+	w, err := sgr.Writer(context.Background())
+	require.NoError(t, err)
+	_, err = w.SecurityGroups().Insert(context.Background(), &domain.SecurityGroup{
+		ID: id, ProjectID: projectID, NetworkID: networkID, Status: domain.SecurityGroupStatusActive,
+		Name: domain.RcNameVPC(name),
+	})
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
+	return id
+}
+
+func sgTargetRule(targetSGID string) domain.SecurityGroupRule {
+	return domain.SecurityGroupRule{
+		Direction: domain.SecurityGroupRuleDirectionIngress, FromPort: -1, ToPort: -1,
+		SecurityGroupID: targetSGID,
+	}
+}
+
+// SG-NET-07: Create with cross-network SG-target rule → sync InvalidArgument.
+func TestCreateUseCase_CrossNetworkRule_InvalidArgument(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	nr := repomock.NewNetworkRepo()
+	netA := ids.NewID(ids.PrefixNetwork)
+	netB := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netA, ProjectID: "P", Name: "net-A"})
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netB, ProjectID: "P", Name: "net-B"})
+	sgB := seedMockSG(t, sgr, "P", netB, "sg-target-B")
+
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or).WithSGReader(newSGReaderMock(sgr))
+	_, err := uc.Execute(context.Background(), domain.SecurityGroup{
+		ProjectID: "P", NetworkID: netA, Name: domain.RcNameVPC("sg-7"),
+		Rules: []domain.SecurityGroupRule{sgTargetRule(sgB)},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "security group rule can only reference a security group in the same network", st.Message())
+}
+
+// SG-NET-08: Create with same-network SG-target rule → OK (no sync error).
+func TestCreateUseCase_SameNetworkRule_OK(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	nr := repomock.NewNetworkRepo()
+	netA := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netA, ProjectID: "P", Name: "net-A"})
+	sgA := seedMockSG(t, sgr, "P", netA, "sg-target-A")
+
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or).WithSGReader(newSGReaderMock(sgr))
+	op, err := uc.Execute(context.Background(), domain.SecurityGroup{
+		ProjectID: "P", NetworkID: netA, Name: domain.RcNameVPC("sg-8"),
+		Rules: []domain.SecurityGroupRule{sgTargetRule(sgA)},
+	})
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	assert.True(t, saved.Done)
+	assert.Nil(t, saved.Error)
+}
+
+// SG-NET-11: Create with non-existent SG-target → sync InvalidArgument.
+func TestCreateUseCase_TargetNotFound_InvalidArgument(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	nr := repomock.NewNetworkRepo()
+	netA := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: netA, ProjectID: "P", Name: "net-A"})
+
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or).WithSGReader(newSGReaderMock(sgr))
+	_, err := uc.Execute(context.Background(), domain.SecurityGroup{
+		ProjectID: "P", NetworkID: netA, Name: domain.RcNameVPC("sg-x"),
+		Rules: []domain.SecurityGroupRule{sgTargetRule("enp11111111111111111")},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "security group rule references a non-existent security group", st.Message())
+}
+
+// SG-NET-09: UpdateRules with cross-network SG-target → sync InvalidArgument.
+func TestUpdateRulesUseCase_CrossNetworkRule_InvalidArgument(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	netA := ids.NewID(ids.PrefixNetwork)
+	netB := ids.NewID(ids.PrefixNetwork)
+	sg8 := seedMockSG(t, sgr, "P", netA, "sg-8")
+	sgB := seedMockSG(t, sgr, "P", netB, "sg-target-B")
+
+	uc := NewUpdateRulesUseCase(sgr, or, newSGReaderMock(sgr))
+	_, err := uc.Execute(context.Background(), UpdateRulesInput{
+		SecurityGroupID:   sg8,
+		AdditionRuleSpecs: []domain.SecurityGroupRule{sgTargetRule(sgB)},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "security group rule can only reference a security group in the same network", st.Message())
+}
+
+// SG-NET-19: Move of network-bound SG → sync FailedPrecondition.
+func TestMoveUseCase_NetworkBound_FailedPrecondition(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	netA := ids.NewID(ids.PrefixNetwork)
+	sg19 := seedMockSG(t, sgr, "P", netA, "sg-19")
+
+	uc := NewMoveSecurityGroupUseCase(sgr, &repomock.ProjectClient{OK: true}, or)
+	_, err := uc.Execute(context.Background(), sg19, "Q")
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	assert.Equal(t, "security group cannot be moved between projects while bound to a network", st.Message())
+}
+
 func TestUpdateRuleUseCase_InvalidArg(t *testing.T) {
-	uc := NewUpdateRuleUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
+	uc := NewUpdateRuleUseCase(kachomock.NewRepository(), repomock.NewOpsRepo(), nil)
 	_, err := uc.Execute(context.Background(), UpdateRuleInput{SecurityGroupID: "bad"})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
