@@ -197,28 +197,41 @@ func runServe(cfg config.Config) error {
 	defer computeConn.Close()
 	geoClient := clients.NewComputeGeographyClient(computeConn)
 
-	// KAC-127 Phase 4 — FGA-filtered List handlers.
+	// authz internal IAM conn (E3 / KAC-108): cfg.AuthZ.IAMEndpoint →
+	// kacho-iam **internal** listener (:9091), the ONLY listener that serves
+	// InternalIAMService.Check. Shared by BOTH the per-RPC authz gate (below) and
+	// the project-level List authz (KAC-240). Empty endpoint → nil conn (dev /
+	// no-authz: per-RPC gate is skipped and list-filter must be disabled too).
+	var authzConn clients.Conn
+	if cfg.AuthZ.IAMEndpoint != "" {
+		authzConn, err = clients.Build(ctx, clients.BuildOptions{
+			Endpoint: cfg.AuthZ.IAMEndpoint,
+			TLS:      cfg.AuthZ.IAMTLS.Enable,
+		})
+		if err != nil {
+			return fmt.Errorf("dial kacho-iam (authz): %w", err)
+		}
+		defer authzConn.Close()
+	}
+
+	// KAC-127 Phase 4 / KAC-240 — project-level List authorization.
 	//
-	// Композиция: gRPC-conn к kacho-iam **public** AuthorizeService → corelib
-	// authz.ListObjectsService (cache 5s LRU + LISTEN-invalidate) → узкий
-	// adapter `listauthz.Adapter` → каждый list-use-case.
-	//
-	// Если list-filter disabled — listAuthz остаётся nil; use-case'ы получают
-	// nil-authz и идут по legacy unfiltered path.
-	// KAC-240: List authorizes at the PROJECT level (viewer on project:<id>),
-	// not via per-object FGA tuples. Reuse the SAME CheckClient the per-RPC gate
-	// uses (kacho-iam InternalIAMService.Check over the already-open iamConn): a
-	// freshly-created resource appears in List as soon as the subject may view the
-	// project, without depending on per-object `view` tuples landing first. The
-	// repo query stays project-scoped (the tenant-isolation boundary); this only
-	// decides whether the subject may view the project at all. listAuthz == nil
-	// (LIST_FILTER_ENABLED=false / dev) => use-case fallback to unfiltered list.
-	var listAuthz *listauthz.Adapter
-	if cfg.AuthZ.ListFilter.Enabled {
-		listAuthz = listauthz.New(check.NewIAMCheckClient(iamConn))
+	// If list-filter is enabled, every List RPC authorizes the caller as `viewer`
+	// on `project:<id>` via InternalIAMService.Check — the SAME relation/object AND
+	// the SAME internal conn (authzConn → :9091) the per-RPC gate uses, NOT the
+	// public ProjectService conn (iamConn → :9090, which does NOT serve
+	// InternalIAMService → "unknown service" 503). The repo query stays
+	// project-scoped (the tenant-isolation boundary); this only decides whether the
+	// caller may view the project at all. listAuthz == nil (list-filter disabled /
+	// dev) => use-case fallback to unfiltered list. See
+	// internal/apps/kacho/services/listauthz.
+	listAuthz, err := newListAuthz(cfg.AuthZ.ListFilter.Enabled, authzConn)
+	if err != nil {
+		return err
+	}
+	if listAuthz != nil {
 		logger.Info("KAC-240 project-level list authorization enabled",
-			"iam_endpoint", iamPeer.Endpoint,
-			"fail_open", cfg.AuthZ.ListFilter.FailOpen,
+			"iam_endpoint", cfg.AuthZ.IAMEndpoint,
 		)
 		if cfg.AuthZ.ListFilter.FailOpen {
 			logger.Warn("authz.list-filter.fail-open=true is ignored for project-level list authz (KAC-240); list authz is fail-closed")
@@ -257,17 +270,8 @@ func runServe(cfg config.Config) error {
 		handler.TenantStreamInterceptor(false, productionMode),
 	}
 
-	var authzConn clients.Conn
-	if cfg.AuthZ.IAMEndpoint != "" {
-		authzConn, err = clients.Build(ctx, clients.BuildOptions{
-			Endpoint: cfg.AuthZ.IAMEndpoint,
-			TLS:      cfg.AuthZ.IAMTLS.Enable,
-		})
-		if err != nil {
-			return fmt.Errorf("dial kacho-iam (authz): %w", err)
-		}
-		defer authzConn.Close()
-	}
+	// authzConn (kacho-iam internal :9091, InternalIAMService.Check) is built
+	// once above and shared with the project-level List authz (KAC-240).
 	authzIntr, err := check.NewInterceptor(check.Options{
 		ServiceName:         "kacho-vpc",
 		IAMConn:             authzConn,
@@ -398,6 +402,30 @@ func runServe(cfg config.Config) error {
 
 // buildServices создаёт все repo'ы поверх pool и собирает из них бизнес-сервисы.
 // defaultSGRepo: nil при network.default-sg-inline=false → Network.Create не создаёт
+// newListAuthz builds the project-level List authorization adapter (KAC-240).
+//
+// It MUST be wired over a conn to the kacho-iam **internal** listener (:9091),
+// which is the only listener that serves InternalIAMService.Check — NOT the
+// public ProjectService conn (`extapi.iam` :9090), where InternalIAMService is
+// unregistered and every Check returns Unimplemented "unknown service ...",
+// surfacing to the caller as `503 list-filter unavailable: ...`.
+//
+//   - enabled == false                 → (nil, nil): list-filter off, use-cases
+//     fall back to the legacy unfiltered (project-scoped) list path.
+//   - enabled && internalIAMConn == nil → error: a misconfiguration (list-filter
+//     on but authz.iam-endpoint unset) — fail fast at startup, not per request.
+//   - enabled && internalIAMConn != nil → adapter over InternalIAMService.Check.
+func newListAuthz(enabled bool, internalIAMConn grpc.ClientConnInterface) (*listauthz.Adapter, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if internalIAMConn == nil {
+		return nil, fmt.Errorf("authz.list-filter.enabled=true requires authz.iam-endpoint " +
+			"(kacho-iam internal listener serving InternalIAMService.Check)")
+	}
+	return listauthz.New(check.NewIAMCheckClient(internalIAMConn)), nil
+}
+
 // inline default SG.
 //
 // slavePool — опц. read-replica pool (skill evgeniy §6 G.4); nil → kachopg.New

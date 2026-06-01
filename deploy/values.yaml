@@ -35,7 +35,9 @@ repository:
 authn:
   mode: dev
 # KAC-119: per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
-# KAC-127 Phase 4: list-filter через kacho-iam.AuthorizeService.ListObjects (port 9090).
+# KAC-240: project-level list-filter тоже идёт через InternalIAMService.Check на
+#   INTERNAL :9091 (iamEndpoint) — НЕ на public :9090. listFilter.authorizeEndpoint
+#   и пр. — наследие KAC-127 ListObjects, код их больше не читает (cleanup отдельно).
 authz:
   iamEndpoint: ""           # default cluster-internal kacho-iam-internal:9091
   breakglass: false          # dev override — пропустить все Check
@@ -46,8 +48,8 @@ authz:
   # Production: enabled=true и authorizeEndpoint указан явно. Dev / legacy: enabled=false →
   # use-case'ы возвращают unfiltered list (legacy behavior).
   listFilter:
-    enabled: false           # Toggle FGA list-filter (production: true)
-    authorizeEndpoint: ""    # Public AuthorizeService :9090 (fallback на iamEndpoint)
+    enabled: false           # Toggle list-filter (production: true). KAC-240: использует authz.iamEndpoint (:9091).
+    authorizeEndpoint: ""    # DEAD (KAC-127 ListObjects): код больше не читает; list-filter идёт через iamEndpoint :9091.
     authorizeTls:
       enable: false
     timeoutMs: 500           # Per-call FGA timeout (acceptance §4.3)

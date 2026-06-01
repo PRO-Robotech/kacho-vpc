@@ -43,7 +43,11 @@ data:
       mode: {{ default "dev" .Values.authn.mode | quote }}
 
     # KAC-119: per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
-    # KAC-127 Phase 4: list-filter через kacho-iam.AuthorizeService.ListObjects (port 9090).
+    # KAC-240: project-level list-filter тоже идёт через InternalIAMService.Check
+    #   (relation viewer on project:<id>) на INTERNAL :9091 — НЕ на public :9090.
+    #   list-filter.authorize-endpoint / .timeout-ms / .cache-ttl / .max-* / .model-id
+    #   ниже — наследие KAC-127 ListObjects-подхода, заменённого KAC-240; код их
+    #   больше не читает (использует authz.iam-endpoint). Удаляются отдельным cleanup.
     authz:
       iam-endpoint: {{ default "kacho-iam-internal.kacho.svc.cluster.local:9091" .Values.authz.iamEndpoint | quote }}
       breakglass: {{ default false .Values.authz.breakglass }}
