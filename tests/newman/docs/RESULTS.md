@@ -1,18 +1,18 @@
-# newman — финальный прогон (v20: KAC-71 AddressPool split CIDR family)
+# newman — финальный прогон (v21: KAC-243 SG network mandatory + same-network rules)
 
-## Сводка (cases-count актуален на v20; assertions/requests — ориентир, перепрогнать suite)
+## Сводка (cases-count актуален на v21; assertions/requests — ориентир, перепрогнать suite)
 
 | Сервис | Cases | Assertions | Failed | Requests | % к 100/рес |
 |---|---|---|---|---|---|
 | subnet | 140 | ~960 | 0 | ~680 | **140%** ✅ |
 | network | 109 | ~390 | 0 | ~265 | **109%** ✅ |
 | address | 106 | ~366 | 0 | ~245 | **106%** ✅ (+2 ADR-CR-EXT-FALLTHROUGH-V4/V6 — KAC-71) |
-| security-group | 99 | ~525 | 0 | ~375 | 99% |
+| security-group | 106 | ~560 | 0 | ~400 | 106% (+9 SG-NET-* KAC-243; -2 переписан/удалён SG-инстанс Move) |
 | route-table | 92 | 434 | 0 | 309 | 92% |
 | gateway | 89 | ~262 | 0 | ~177 | 89% |
 | private-endpoint | 64 | ~250 | 0 | ~185 | 64% (3 explicit-дубля убраны → helper-блоки) |
 | internal-pool | 40 | ~210 | 0 | ~140 | (admin; +14 IPL-* KAC-71 split-shape) |
-| network-interface | 14 | ~80 | 0 | ~55 | (nic — first-class, эпик KAC-2; KAC-48: NIC-CR-MAC-OK) |
+| network-interface | 19 | ~110 | 0 | ~75 | (nic — first-class, эпик KAC-2; KAC-48: NIC-CR-MAC-OK; KAC-243: NIC-CR-WITH-UNBOUND-SG-OK → SG bound к сети) |
 | internal-cloud | 4 | 31 | 0 | 17 | (admin) |
 | operation | 5 | ~20 | 0 | ~9 | (n/a) |
 | **Итого** | **747** | **~3508** | **0** | **~2425** | — |
@@ -48,6 +48,7 @@
 | v18 (KAC-2 NetworkInterface first-class + v6-Subnet / optional-CIDR-Subnet / SG-без-network / NIC↔Subnet-RESTRICT / multi-resource delete-chain / operation-history-survives-delete / Network-public-без-vpn_id / v6-CIDR-через-verbs; KAC-38: дедуп case-id (3 PE + 1 NET explicit-дубля helper'ов убраны) + mandatory `scripts/validate-cases.py` (dup-id + каталогизация в CASES-INDEX) в CI до newman) | 736 | ~3380 | — | — |
 | v19 (KAC-48: `NetworkInterface.mac_address` — output-only, cloud-wide UNIQUE, префикс `0e:` + 40 бит `crypto/rand`, retry-on-collision; миграция 0014; новый `NIC-CR-MAC-OK` (формат + стабильность при Update name) + `REQ-NIC-08`) | 737 | ~3385 | — | — |
 | **v20 (KAC-71 / KAC-76: AddressPool `cidr_blocks` → `v4_cidr_blocks` + `v6_cidr_blocks` split. +18 net new case-id: 14 IPL-* (Create v4/v6/DS-OK, VAL-CROSS / -BOTH-EMPTY, UPD-REPLACE-V4/V6 / -CLEAR-V6-DUALSTACK-TO-V4-ONLY / -NO-FLAGS-NOOP / -EMPTY-BOTH-REPLACE, RESOLVE-{SELECTOR,OVERRIDE,NETWORK-DEFAULT}-FAMILY-SKIP, RESOLVE-DUALSTACK-OK, BIND-FAMILY-AGNOSTIC, EXPLAIN-NONE) + 2 ADR-CR-EXT-FALLTHROUGH-V4/V6 + 2 IPL-* rename (`IPL-CR-CRUD-OK → IPL-CR-CRUD-V4-OK`, `IPL-CR-VAL-MISSING-CIDR → IPL-CR-VAL-BOTH-EMPTY`). Все остальные IPL-* кейсы — payload обновлён на split-shape. Новые REQ: REQ-IPL-CR-01..06, REQ-IPL-UPD-01/02/03/05/06, REQ-IPL-BIND-FAMILY-AGNOSTIC, REQ-RESOLVE-01/02/04/06/07. Newman не прогонялся — код пока не доехал на стенд)** | **762** | **~3585** | — | — |
+| **v21 (KAC-243: SG `network_id` mandatory+immutable + SG→SG rules same-network + Move guard. +9 net new SG-NET-* case-id: 01-NEG-CREATE-NO-NETWORK, 02-CREATE-OK, 03-NEG-NETWORK-NOTFOUND, 04-NEG-UPDATE-MASK-NETWORK, 07-NEG-RULE-CROSS-NETWORK-CREATE, 08-RULE-SAME-NETWORK-OK, 09-NEG-RULE-CROSS-NETWORK-UPDATERULES, 09-RULE-SAME-NETWORK-UPDATERULES-OK, 19-NEG-MOVE-FORBIDDEN. Переписаны под mandatory-контракт: `SG-CR-NO-NETWORK-OK`→`SG-NET-01` (200→400), `SG-LIST-FILTER-NETWORK-OK` (unbound→SG другой сети), `SG-MV-CRUD-OK` (happy Move→NEG guard, `# index: SG-NET-19`), `NIC-CR-WITH-UNBOUND-SG-OK` (SG bound к сети NIC'а). Удалён SG-инстанс `move_same_folder` (`SG-MV-IDM-SAME-FOLDER` — guard бьёт раньше same-folder check). Новые REQ: REQ-SG-RULE-SAME-NETWORK, REQ-SG-MOVE-NETWORK-BOUND; REQ-RES-07 переписан (network mandatory). Newman не прогонялся — feature-код на ветке KAC-243, ещё не задеплоен на стенд; прогон после deploy)** | **766** | **~3620** | — | — |
 
 ## Sкилл-mapping (testing-product-coach §3, §4)
 

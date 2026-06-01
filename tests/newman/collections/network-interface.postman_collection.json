@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "8fc2812e-0d2b-47aa-849d-4709002a120f",
+    "_postman_id": "40ac2352-139e-41ea-9018-f900c626b183",
     "name": "kacho-vpc / newman / network-interface",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -9808,7 +9808,7 @@
       ]
     },
     {
-      "name": "NIC-CR-WITH-UNBOUND-SG-OK — Create network-less SG → create NIC c этим SG в securityGroupIds → get → echoed",
+      "name": "NIC-CR-WITH-UNBOUND-SG-OK — Create SG (bound к сети NIC) → create NIC c этим SG в securityGroupIds → get → echoed",
       "description": "class:CRUD | priority:P2",
       "item": [
         {
@@ -10018,7 +10018,7 @@
           ]
         },
         {
-          "name": "create-unbound-sg",
+          "name": "create-sg",
           "request": {
             "method": "POST",
             "header": [
@@ -10040,7 +10040,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"name\": \"nic-wsg-sg-{{runId}}\", \"ruleSpecs\": []}",
+              "raw": "{\"projectId\": \"{{_suiteFolderId}}\", \"networkId\": \"{{netId}}\", \"name\": \"nic-wsg-sg-{{runId}}\", \"ruleSpecs\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10251,7 +10251,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const j = pm.response.json();",
-                  "pm.test('NIC create with unbound SG done no error', () => pm.expect(j.done && !j.error).to.eql(true));"
+                  "pm.test('NIC create with SG done no error', () => pm.expect(j.done && !j.error).to.eql(true));"
                 ]
               }
             }

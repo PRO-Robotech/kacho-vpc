@@ -50,25 +50,20 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    # kacho-proto#8: network_id больше не (required) — SG может быть "глобальной"
-    # (folder-level, unbound). Без networkId Create проходит; GET → networkId пуст/отсутствует.
-    id="SG-CR-NO-NETWORK-OK",
-    title="Create SG без networkId → success → get → networkId пуст",
-    classes=["CRUD"],
-    priority="P1",
+    # KAC-243 (sub-phase securitygroup-network-mandatory): network_id ОБЯЗАТЕЛЕН на Create
+    # (реверт kacho-proto#8). Был кейс SG-CR-NO-NETWORK-OK (network optional → 200) —
+    # отброшенный контракт, переписан под mandatory: Create без networkId → sync 400
+    # INVALID_ARGUMENT "network_id required" (D2), Operation НЕ создаётся.
+    # verifies SG-NET-01
+    id="SG-NET-01-NEG-CREATE-NO-NETWORK",
+    title="Create SG без networkId → sync 400 INVALID_ARGUMENT 'network_id required' (KAC-243)",
+    classes=["VAL", "NEG"],
+    priority="P0",
     steps=[
         Step(name="create-no-net", method="POST", path="/vpc/v1/securityGroups",
              body={"projectId": "{{_suiteFolderId}}", "name": "sg-nonet-{{runId}}", "ruleSpecs": []},
-             test_script=[*assert_status(200), *assert_operation_envelope(),
-                          *save_from_response("j.id", "opId"),
-                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
-        poll_operation_until_done(),
-        Step(name="get-no-net", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
-             test_script=[*assert_status(200),
-                          "pm.test('networkId empty/absent', () => pm.expect(pm.response.json().networkId || '').to.eql(''));"]),
-        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
-             test_script=[*save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
+             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                          "pm.test('verbatim text network_id required', () => pm.expect(pm.response.json().message).to.eql('network_id required'));"]),
     ],
 ))
 
@@ -96,35 +91,46 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    # filter=network_id="<id>" (proto: "filter by network_id is here") — bound SG
-    # матчится, unbound (network-less, NULL network_id) — нет.
+    # filter=network_id="<id>" (proto: "filter by network_id is here") — SG в net-A
+    # матчится, SG в другой сети net-B — нет.
+    # KAC-243: network_id mandatory — «unbound SG» больше не существует, поэтому
+    # negative-сторона фильтра проверяется SG из ДРУГОЙ сети (а не network-less SG).
     id="SG-LIST-FILTER-NETWORK-OK",
-    title="List?filter=network_id=\"<id>\" — bound SG present, unbound absent",
-    classes=["CRUD"],
+    title="List?filter=network_id=\"<netA>\" — SG net-A present, SG net-B absent (KAC-243)",
+    classes=["CRUD", "FILTER"],
     priority="P2",
     steps=[
-        *_net_steps("fltnet"),
-        Step(name="create-bound", method="POST", path="/vpc/v1/securityGroups",
-             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
-                   "name": "sg-fltbound-{{runId}}", "ruleSpecs": []},
+        *_net_steps("fltneta"),  # net-A → {{netId}}
+        Step(name="pre-net-b", method="POST", path="/vpc/v1/networks",
+             body={"projectId": "{{_suiteFolderId}}", "name": "sg-fltnetb-net-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
-                          *save_from_response("j.metadata && j.metadata.securityGroupId", "boundSgId")]),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netBId")]),
         poll_operation_until_done(),
-        Step(name="create-unbound", method="POST", path="/vpc/v1/securityGroups",
-             body={"projectId": "{{_suiteFolderId}}", "name": "sg-fltunbound-{{runId}}", "ruleSpecs": []},
+        Step(name="create-in-a", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-flta-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
-                          *save_from_response("j.metadata && j.metadata.securityGroupId", "unboundSgId")]),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgAId")]),
+        poll_operation_until_done(),
+        Step(name="create-in-b", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netBId}}",
+                   "name": "sg-fltb-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgBId")]),
         poll_operation_until_done(),
         Step(name="list-by-network", method="GET",
              path="/vpc/v1/securityGroups?projectId={{_suiteFolderId}}&pageSize=1000&filter=network_id%3D%22{{netId}}%22",
              test_script=[*assert_status(200),
                           "const ids = (pm.response.json().securityGroups || []).map(s => s.id);",
-                          "pm.test('bound SG present', () => pm.expect(ids).to.include(pm.environment.get('boundSgId')));",
-                          "pm.test('unbound SG absent', () => pm.expect(ids).to.not.include(pm.environment.get('unboundSgId')));"]),
-        Step(name="cleanup-bound", method="DELETE", path="/vpc/v1/securityGroups/{{boundSgId}}",
+                          "pm.test('SG in net-A present', () => pm.expect(ids).to.include(pm.environment.get('sgAId')));",
+                          "pm.test('SG in net-B absent', () => pm.expect(ids).to.not.include(pm.environment.get('sgBId')));"]),
+        Step(name="cleanup-sg-a", method="DELETE", path="/vpc/v1/securityGroups/{{sgAId}}",
              test_script=[*save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
-        Step(name="cleanup-unbound", method="DELETE", path="/vpc/v1/securityGroups/{{unboundSgId}}",
+        Step(name="cleanup-sg-b", method="DELETE", path="/vpc/v1/securityGroups/{{sgBId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-net-b", method="DELETE", path="/vpc/v1/networks/{{netBId}}",
              test_script=[*save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
         _cleanup_net(),
@@ -308,9 +314,16 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
+    # KAC-243: happy cross-project Move отброшен — все SG network-bound, Move запрещён (D5).
+    # Переписан: Move в ТОТ ЖЕ проект тоже бьёт network-bound guard ПЕРВЫМ (move.go:60 — до
+    # checkMoveDestination/same-folder check на :64) → FAILED_PRECONDITION «...while bound to a
+    # network» (не «Destination folder is the same as the source»). Фиксирует guard-precedence;
+    # cross-project negative — отдельно в SG-NET-19.
+    # verifies SG-NET-19 (guard precedence variant — same-project)
+    # index: SG-NET-19-NEG-MOVE-FORBIDDEN
     id="SG-MV-CRUD-OK",
-    title="Move SG в другой folder",
-    classes=["CRUD"], priority="P1",
+    title="Move network-bound SG в тот же проект → FAILED_PRECONDITION (guard перед same-folder check, KAC-243)",
+    classes=["NEG", "CONF", "STATE"], priority="P1",
     steps=[
         *_net_steps("mv"),
         Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
@@ -319,10 +332,13 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
-        Step(name="move", method="POST", path="/vpc/v1/securityGroups/{{sgId}}:move",
-             body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        poll_operation_until_done(),
+        Step(name="move-same-proj", method="POST", path="/vpc/v1/securityGroups/{{sgId}}:move",
+             body={"destinationProjectId": "{{_suiteFolderId}}"},
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('network-bound guard fires before same-folder check', () => pm.expect(pm.response.json().message).to.eql('security group cannot be moved between projects while bound to a network'));"]),
+        Step(name="verify-unchanged", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('projectId unchanged', () => pm.expect(pm.response.json().projectId).to.eql(pm.environment.get('_suiteFolderId')));"]),
         Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -507,9 +523,11 @@ CASES.extend(perf_baseline_block("SG", "/vpc/v1/securityGroups"))
 CASES.extend(verbatim_text_pack("SG", "SecurityGroup", "/vpc/v1/securityGroups", text_template="Security group SecurityGroup.Id(value={id}) not found"))
 CASES.extend(authz_caller_headers_block("SG", "/vpc/v1/securityGroups"))
 
-CASES.append(_sg_wrap("SG", "mvself",
-    move_same_folder("SG", "/vpc/v1/securityGroups",
-        {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []})))
+# KAC-243: move_same_folder («Destination folder is the same as the source») для SG
+# больше НЕ применим — network-bound Move-guard (move.go:60) бьёт ПЕРВЫМ, до same-folder
+# check (:64), на любой SG (все network-bound). Same-project Move SG теперь покрыт
+# переписанным SG-MV-CRUD-OK (FAILED_PRECONDITION). Паттерн *-MV-IDM-SAME-FOLDER остаётся
+# валиден для прочих ресурсов (net/rt/...), поэтому удалён только SG-инстанс.
 
 CASES.append(_sg_wrap("SG", "v8m",
     update_happy_multi_field("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
@@ -764,3 +782,302 @@ CASES.extend(immutable_fields_matrix("SG", "/vpc/v1/securityGroups",
 for c in security_injection_block("SG", "/vpc/v1/securityGroups", "/vpc/v1/securityGroups",
     {"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}", "ruleSpecs": []}):
     CASES.append(_sg_wrap("SG", "sec", c))
+
+
+# ===========================================================================
+# KAC-243 — SecurityGroup: network_id mandatory+immutable + same-network SG-rules
+#   Acceptance: docs/specs/sub-phase-securitygroup-network-mandatory-and-same-network-rules-acceptance.md
+#   Newman-able scenarios (DoD #7): 01, 02, 03, 04, 07, 08, 19 (+ 09 UpdateRules variants).
+#   Concurrency (12) и migration backfill (15/16) — integration-only, в newman НЕ покрываются.
+#   Контракт детерминирован sync fast-fail (D4): отказы — синхронные 4xx, Operation НЕ создаётся.
+#   (SG-NET-01 / SG-LIST-FILTER-NETWORK-OK переписаны выше под новый mandatory-контракт.)
+# ===========================================================================
+
+
+def _two_net_steps(suffix):
+    """net-A → {{netId}}, net-B → {{netBId}} в _suiteFolderId. Для cross-network SG-rule кейсов."""
+    return [
+        *_net_steps(suffix + "a"),  # net-A → {{netId}}
+        Step(name="pre-net-b", method="POST", path="/vpc/v1/networks",
+             body={"projectId": "{{_suiteFolderId}}", "name": f"sg-{suffix}b-net-{{{{runId}}}}"},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.networkId", "netBId")]),
+        poll_operation_until_done(),
+    ]
+
+
+def _cleanup_net_b():
+    return Step(name="cleanup-net-b", method="DELETE", path="/vpc/v1/networks/{{netBId}}",
+                test_script=[*save_from_response("j.id", "opId")])
+
+
+# --- Сценарий 02: Create SG с валидным networkId → Operation → done (happy) ---
+CASES.append(Case(
+    # verifies SG-NET-02
+    id="SG-NET-02-CREATE-OK",
+    title="Create SG c валидным networkId → Operation done → networkId echoed (KAC-243 happy)",
+    classes=["CRUD"], priority="P0",
+    steps=[
+        *_net_steps("net02"),
+        Step(name="create", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net02-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *assert_operation_envelope(),
+                          *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="assert-op-ok", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('networkId echoed', () => pm.expect(pm.response.json().networkId).to.eql(pm.environment.get('netId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 03: Create SG с несуществующим (well-formed) networkId → sync 404 ---
+CASES.append(Case(
+    # verifies SG-NET-03
+    # well-formed enp… id, которого нет → sync fast-fail NOT_FOUND "Network <id> not found" (D4).
+    # Отличается от существующего SG-CR-CONF-NET-NF-TEXT (garbageVpcId) — фиксирует new-contract
+    # sync-путь именно для KAC-243 (Operation НЕ создаётся).
+    id="SG-NET-03-NEG-NETWORK-NOTFOUND",
+    title="Create SG с well-formed несуществующим networkId → sync 404 'Network ... not found' (KAC-243)",
+    classes=["CONF", "NEG"], priority="P1",
+    steps=[
+        Step(name="create-nf-net", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "enp00000000000000000",
+                   "name": "sg-net03-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND"),
+                          "pm.test('verbatim Network ... not found', () => pm.expect(pm.response.json().message).to.match(/^Network .* not found$/));"]),
+    ],
+))
+
+
+# --- Сценарий 04: Update mask=network_id (на РЕАЛЬНОЙ SG) → sync 400 INVALID_ARGUMENT ---
+CASES.append(Case(
+    # verifies SG-NET-04
+    # network_id НЕ в known-mask validateSGUpdate ({name,description,labels,rule_specs}) → unknown-field
+    # → sync INVALID_ARGUMENT (immutable+mandatory). На реальной SG (детерминированный 400, не 404 от
+    # AuthZ-Get — в отличие от generic SG-UPD-STATE-IMMUTABLE-NETWORK-ID на garbage id).
+    id="SG-NET-04-NEG-UPDATE-MASK-NETWORK",
+    title="Update реальной SG с mask=network_id → sync 400 INVALID_ARGUMENT (immutable, KAC-243)",
+    classes=["STATE", "VAL", "NEG"], priority="P1",
+    steps=[
+        *_net_steps("net04"),
+        Step(name="create", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net04-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="patch-mask-network", method="PATCH", path="/vpc/v1/securityGroups/{{sgId}}",
+             body={"updateMask": "network_id", "networkId": "{{netId}}"},
+             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
+        Step(name="verify-unchanged", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('networkId unchanged', () => pm.expect(pm.response.json().networkId).to.eql(pm.environment.get('netId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 07: Create SG с SG-target rule на SG из ДРУГОЙ сети → 400 + field_violations ---
+CASES.append(Case(
+    # verifies SG-NET-07
+    # SG-target rule (oneof target = security_group_id) на SG из net-B при создании SG в net-A →
+    # sync INVALID_ARGUMENT (D1) + BadRequest.field_violations[].field="rule_specs[0].security_group_id".
+    id="SG-NET-07-NEG-RULE-CROSS-NETWORK-CREATE",
+    title="Create SG в net-A с SG-rule на SG из net-B → 400 INVALID_ARGUMENT same-network + field_violations (KAC-243)",
+    classes=["VAL", "NEG", "CONF"], priority="P1",
+    steps=[
+        *_two_net_steps("net07"),
+        # target SG в net-B
+        Step(name="create-target-b", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netBId}}",
+                   "name": "sg-net07-tgt-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgBId")]),
+        poll_operation_until_done(),
+        # Create SG в net-A с rule, таргетящим SG из net-B → отказ
+        Step(name="create-cross-net", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net07-{{runId}}",
+                   "ruleSpecs": [{"direction": "INGRESS", "securityGroupId": "{{sgBId}}"}]},
+             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                          "pm.test('same-network text', () => pm.expect(pm.response.json().message).to.eql('security group rule can only reference a security group in the same network'));",
+                          *assert_field_violation("rule_specs[0].security_group_id")]),
+        Step(name="cleanup-target-b", method="DELETE", path="/vpc/v1/securityGroups/{{sgBId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net_b(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 08: Create SG с SG-target rule на SG из ТОЙ ЖЕ сети → OK ---
+CASES.append(Case(
+    # verifies SG-NET-08
+    id="SG-NET-08-RULE-SAME-NETWORK-OK",
+    title="Create SG в net-A с SG-rule на SG из той же net-A → Operation done, rule сохранён (KAC-243 happy)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        *_net_steps("net08"),
+        # target SG в той же net-A
+        Step(name="create-target-a", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net08-tgt-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgAId")]),
+        poll_operation_until_done(),
+        Step(name="create-same-net", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net08-{{runId}}",
+                   "ruleSpecs": [{"direction": "INGRESS", "securityGroupId": "{{sgAId}}"}]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="assert-op-ok", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('same-network rule create op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "const rules = pm.response.json().rules || [];",
+                          "pm.test('rule targets same-network SG', () => pm.expect(rules.map(r => r.securityGroupId)).to.include(pm.environment.get('sgAId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-target-a", method="DELETE", path="/vpc/v1/securityGroups/{{sgAId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 09 (negative): UpdateRules добавляет SG-rule cross-network → 400 + field_violations ---
+CASES.append(Case(
+    # verifies SG-NET-09
+    # addition_rule_specs[0].security_group_id таргетит SG из другой сети → sync INVALID_ARGUMENT (D1),
+    # field="addition_rule_specs[0].security_group_id". Набор правил не изменён (атомарная замена не применена).
+    id="SG-NET-09-NEG-RULE-CROSS-NETWORK-UPDATERULES",
+    title="UpdateRules SG(net-A) добавляет SG-rule на SG из net-B → 400 INVALID_ARGUMENT same-network + field_violations (KAC-243)",
+    classes=["VAL", "NEG", "STATE"], priority="P1",
+    steps=[
+        *_two_net_steps("net09n"),
+        Step(name="create-target-b", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netBId}}",
+                   "name": "sg-net09n-tgt-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgBId")]),
+        poll_operation_until_done(),
+        Step(name="create-sg-a", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net09n-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="update-rules-cross", method="PATCH", path="/vpc/v1/securityGroups/{{sgId}}/rules",
+             body={"additionRuleSpecs": [{"direction": "INGRESS", "securityGroupId": "{{sgBId}}"}]},
+             test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
+                          "pm.test('same-network text', () => pm.expect(pm.response.json().message).to.eql('security group rule can only reference a security group in the same network'));",
+                          *assert_field_violation("addition_rule_specs[0].security_group_id")]),
+        Step(name="verify-no-rules", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "pm.test('rules unchanged (none added)', () => pm.expect((pm.response.json().rules || []).length).to.eql(0));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-target-b", method="DELETE", path="/vpc/v1/securityGroups/{{sgBId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net_b(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 09 (positive): UpdateRules добавляет SG-rule same-network → OK ---
+CASES.append(Case(
+    # verifies SG-NET-09
+    # Зеркало сценария 08 через UpdateRules (positive per-endpoint): same-network SG-target → done.
+    id="SG-NET-09-RULE-SAME-NETWORK-UPDATERULES-OK",
+    title="UpdateRules SG(net-A) добавляет SG-rule на SG из той же net-A → Operation done, rule виден (KAC-243 happy)",
+    classes=["CRUD", "STATE"], priority="P1",
+    steps=[
+        *_net_steps("net09p"),
+        Step(name="create-target-a", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net09p-tgt-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgAId")]),
+        poll_operation_until_done(),
+        Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net09p-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="update-rules-same", method="PATCH", path="/vpc/v1/securityGroups/{{sgId}}/rules",
+             body={"additionRuleSpecs": [{"direction": "INGRESS", "securityGroupId": "{{sgAId}}"}]},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="assert-op-ok", method="GET", path="/operations/{{opId}}",
+             test_script=["const j = pm.response.json();",
+                          "pm.test('same-network updateRules op done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+        Step(name="get", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "const rules = pm.response.json().rules || [];",
+                          "pm.test('rule targets same-network SG', () => pm.expect(rules.map(r => r.securityGroupId)).to.include(pm.environment.get('sgAId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        Step(name="cleanup-target-a", method="DELETE", path="/vpc/v1/securityGroups/{{sgAId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))
+
+
+# --- Сценарий 19: Move (cross-project) network-bound SG → FAILED_PRECONDITION ---
+CASES.append(Case(
+    # verifies SG-NET-19
+    # Все SG в новой модели network-bound → Move между проектами активно запрещён (D5):
+    # sync FAILED_PRECONDITION, SG неизменна. (Существующий SG-MV-CRUD-OK ожидал успешный Move —
+    # он тоже сетевой; см. finding в отчёте: SG-MV-CRUD-OK становится несовместим с KAC-243.)
+    id="SG-NET-19-NEG-MOVE-FORBIDDEN",
+    title="Move network-bound SG в другой проект → FAILED_PRECONDITION, SG неизменна (KAC-243)",
+    classes=["NEG", "CONF", "STATE"], priority="P1",
+    steps=[
+        *_net_steps("net19"),
+        Step(name="create", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "sg-net19-{{runId}}", "ruleSpecs": []},
+             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
+                          *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
+        poll_operation_until_done(),
+        Step(name="move-forbidden", method="POST", path="/vpc/v1/securityGroups/{{sgId}}:move",
+             body={"destinationProjectId": "{{_suiteFolderCrossId}}"},
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
+                          "pm.test('verbatim move-bound text', () => pm.expect(pm.response.json().message).to.eql('security group cannot be moved between projects while bound to a network'));"]),
+        Step(name="verify-unchanged", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*assert_status(200),
+                          "const j = pm.response.json();",
+                          "pm.test('projectId unchanged', () => pm.expect(j.projectId).to.eql(pm.environment.get('_suiteFolderId')));",
+                          "pm.test('networkId unchanged', () => pm.expect(j.networkId).to.eql(pm.environment.get('netId')));"]),
+        Step(name="cleanup-sg", method="DELETE", path="/vpc/v1/securityGroups/{{sgId}}",
+             test_script=[*save_from_response("j.id", "opId")]),
+        poll_operation_until_done(),
+        _cleanup_net(),
+    ],
+))

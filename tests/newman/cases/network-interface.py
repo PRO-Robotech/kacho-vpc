@@ -563,15 +563,18 @@ CASES.append(Case(
 ))
 
 CASES.append(Case(
-    # Network-less (unbound, kacho-proto#8) SG, приаттаченная к NIC в той же folder.
+    # KAC-243: network_id у SG теперь mandatory (реверт kacho-proto#8) — «network-less»
+    # SG больше не существует. SG создаётся привязанной к сети NIC'а ({{netId}}); кейс
+    # по-прежнему проверяет, что NIC ссылается на SG через securityGroupIds[] (REQ-NIC-05).
     id="NIC-CR-WITH-UNBOUND-SG-OK",
-    title="Create network-less SG → create NIC c этим SG в securityGroupIds → get → echoed",
+    title="Create SG (bound к сети NIC) → create NIC c этим SG в securityGroupIds → get → echoed",
     classes=["CRUD"],
     priority="P2",
     steps=[
         *_net_subnet_steps("wsg"),
-        Step(name="create-unbound-sg", method="POST", path="/vpc/v1/securityGroups",
-             body={"projectId": "{{_suiteFolderId}}", "name": "nic-wsg-sg-{{runId}}", "ruleSpecs": []},
+        Step(name="create-sg", method="POST", path="/vpc/v1/securityGroups",
+             body={"projectId": "{{_suiteFolderId}}", "networkId": "{{netId}}",
+                   "name": "nic-wsg-sg-{{runId}}", "ruleSpecs": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.securityGroupId", "sgId")]),
         poll_operation_until_done(),
@@ -583,7 +586,7 @@ CASES.append(Case(
         poll_operation_until_done(),
         Step(name="assert-create-ok", method="GET", path="/operations/{{opId}}",
              test_script=["const j = pm.response.json();",
-                          "pm.test('NIC create with unbound SG done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
+                          "pm.test('NIC create with SG done no error', () => pm.expect(j.done && !j.error).to.eql(true));"]),
         Step(name="get-nic", method="GET", path="/vpc/v1/networkInterfaces/{{nicId}}",
              test_script=[*assert_status(200),
                           "pm.test('securityGroupIds echoed', () => pm.expect(pm.response.json().securityGroupIds || []).to.include(pm.environment.get('sgId')));"]),
