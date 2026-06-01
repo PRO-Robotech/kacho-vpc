@@ -100,7 +100,11 @@ type SecurityGroupRule struct {
 	ProtocolNumber int64
 	V4CidrBlocks   []string
 	V6CidrBlocks   []string
-	// Для упрощения: только cidrBlocks; SG-target / predefined-target — TODO в следующей итерации.
+	// Rule target — взаимоисключающие виды (proto oneof): cidr_blocks
+	// (V4CidrBlocks/V6CidrBlocks), security_group_id (SG-target) или
+	// predefined_target. SG-target (`SecurityGroupID`) разрешён ТОЛЬКО в пределах
+	// той же Network, что и владеющая правилом SG (KAC-243 §C; валидация —
+	// `securitygroup.validateSGTargetSameNetwork`).
 	SecurityGroupID  string
 	PredefinedTarget string
 }

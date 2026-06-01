@@ -626,10 +626,13 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Network.Delete (отдельная TX от Network writer'а).
 	sgHandler := sgapp.NewHandler(
 		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo).
-			WithFGAWriter(fgaTupleWriter, logger),
+			WithFGAWriter(fgaTupleWriter, logger).
+			WithSGReader(sgAdapter),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo),
-		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo),
-		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo),
+		// KAC-243 §C/D4: sgAdapter (SecurityGroupReader) — same-network-валидация
+		// SG-target-правил на UpdateRules/UpdateRule (net-new wiring).
+		sgapp.NewUpdateRulesUseCase(kachoRepo, opsRepo, sgAdapter),
+		sgapp.NewUpdateRuleUseCase(kachoRepo, opsRepo, sgAdapter),
 		sgapp.NewDeleteSecurityGroupUseCase(kachoRepo, opsRepo),
 		sgapp.NewMoveSecurityGroupUseCase(kachoRepo, projectClient, opsRepo),
 		sgapp.NewGetSecurityGroupUseCase(kachoRepo),

@@ -52,6 +52,15 @@ func (u *MoveSecurityGroupUseCase) Execute(ctx context.Context, id, destProjectI
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
+	// Move-guard (KAC-243 §G / D5): network_id mandatory+immutable, а Network
+	// привязана к своему проекту → cross-project Move сделал бы network_id
+	// dangling. Поэтому network-bound SG нельзя двигать между проектами. В новой
+	// модели все SG network-bound, поэтому Move практически запрещён — но причина
+	// формулируется через «bound to a network». Sync fast-fail (до Operation).
+	if cur.NetworkID != "" {
+		return nil, status.Error(codes.FailedPrecondition,
+			"security group cannot be moved between projects while bound to a network")
+	}
 	if err := checkMoveDestination(ctx, u.projectClient, cur.ProjectID, destProjectID); err != nil {
 		return nil, err
 	}

@@ -37,13 +37,18 @@ type UpdateRuleInput struct {
 // Skill evgeniy §2 B.1: SG-специфика — отдельный use-case рядом с handler'ом
 // (response-type расходится с обычным Update, и input-тип тоже свой).
 type UpdateRuleUseCase struct {
-	repo    Repo
-	opsRepo operations.Repo
+	repo     Repo
+	opsRepo  operations.Repo
+	sgReader SecurityGroupReader
 }
 
 // NewUpdateRuleUseCase создаёт UpdateRuleUseCase.
-func NewUpdateRuleUseCase(r Repo, opsRepo operations.Repo) *UpdateRuleUseCase {
-	return &UpdateRuleUseCase{repo: r, opsRepo: opsRepo}
+//
+// sgReader (KAC-243 §C / D4 net-new wiring) резолвит network_id редактируемой SG
+// + target-SG её SG-target-правила для same-network-валидации (сценарий 10).
+// Composition-root инжектит `cqrsadapter.SecurityGroupAdapter`; nil = пропуск.
+func NewUpdateRuleUseCase(r Repo, opsRepo operations.Repo, sgReader SecurityGroupReader) *UpdateRuleUseCase {
+	return &UpdateRuleUseCase{repo: r, opsRepo: opsRepo, sgReader: sgReader}
 }
 
 // Execute — sync-валидация id и domain self-validation
@@ -75,11 +80,31 @@ func (u *UpdateRuleUseCase) Execute(ctx context.Context, in UpdateRuleInput) (*o
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if _, gerr := rd.SecurityGroups().Get(ctx, in.SecurityGroupID); gerr != nil {
+	cur, gerr := rd.SecurityGroups().Get(ctx, in.SecurityGroupID)
+	if gerr != nil {
 		_ = rd.Close()
 		return nil, mapRepoErr(gerr)
 	}
 	_ = rd.Close()
+
+	// Same-network-валидация SG-target правила, которое редактируется (KAC-243
+	// §C / сценарий 10, D3/D4): если у целевого rule выбран SG-target
+	// (`security_group_id`), он обязан указывать на SG из той же Network, что и
+	// редактируемая SG. UpdateRule (proto) меняет только description/labels, так
+	// что target не переписывается — проверка валидирует итоговое (= текущее)
+	// правило как defense-in-depth и ловит унаследованный cross-network target.
+	if u.sgReader != nil {
+		for _, r := range cur.Rules {
+			if r.ID != in.RuleID || r.SecurityGroupID == "" {
+				continue
+			}
+			if verr := validateSGTargetSameNetwork(ctx, u.sgReader, cur.NetworkID,
+				[]domain.SecurityGroupRule{r},
+				func(int) string { return "security_group_id" }); verr != nil {
+				return nil, verr
+			}
+		}
+	}
 
 	op, err := operations.NewFromContext(
 		ctx,

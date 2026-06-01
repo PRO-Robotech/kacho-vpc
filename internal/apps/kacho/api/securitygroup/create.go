@@ -35,6 +35,7 @@ import (
 type CreateSecurityGroupUseCase struct {
 	repo          Repo
 	networkReader NetworkReader
+	sgReader      SecurityGroupReader
 	projectClient ProjectClient
 	opsRepo       operations.Repo
 
@@ -48,6 +49,14 @@ type CreateSecurityGroupUseCase struct {
 func (u *CreateSecurityGroupUseCase) WithFGAWriter(w fgawrite.HierarchyTupleWriter, logger *slog.Logger) *CreateSecurityGroupUseCase {
 	u.fgaWriter = w
 	u.logger = logger
+	return u
+}
+
+// WithSGReader wires the SecurityGroupReader port used to validate SG-target
+// rules against the owning SG's network (KAC-243 §C). Composition-root injects
+// it (cqrsadapter.SecurityGroupAdapter); nil = validation skipped.
+func (u *CreateSecurityGroupUseCase) WithSGReader(r SecurityGroupReader) *CreateSecurityGroupUseCase {
+	u.sgReader = r
 	return u
 }
 
@@ -71,12 +80,15 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 	if sg.ProjectID == "" {
 		return nil, status.Error(codes.InvalidArgument, "project_id required")
 	}
-	// network_id опционален (kacho-proto#8): пустой → folder-level unbound SG.
-	// Если задан — обязан быть well-formed (`enp...`) и существовать.
-	if sg.NetworkID != "" {
-		if err := corevalidate.ResourceID("network", ids.PrefixNetwork, sg.NetworkID); err != nil {
-			return nil, err
-		}
+	// network_id ОБЯЗАТЕЛЕН (KAC-243 §A / D2): SG обязана принадлежать ровно
+	// одной Network своего проекта. Reverts «optional network_id» (kacho-proto#8).
+	// Sync required-check — до создания Operation, в одном ряду с
+	// `project_id required` (D2: lower-case, без «is»).
+	if sg.NetworkID == "" {
+		return nil, status.Error(codes.InvalidArgument, "network_id required")
+	}
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, sg.NetworkID); err != nil {
+		return nil, err
 	}
 
 	// Status — выставляем явно, если caller не задал (он не должен — это
@@ -104,13 +116,21 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 	// NotFound теперь возвращается через `operation.error` из async `doCreate`.
 	// Sync network-existence/uniqueness-проверки (через DB-state в той же сервис-БД)
 	// остаются — они race-free относительно peer-сервисов.
-	if sg.NetworkID != "" && u.networkReader != nil {
+	if u.networkReader != nil {
 		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
 			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 			}
 			return nil, mapRepoErr(err)
 		}
+	}
+
+	// Same-network-валидация SG-target-правил (KAC-243 §C, D3/D4): каждое
+	// правило с `security_group_id` обязано ссылаться на SG из той же Network,
+	// что и создаваемая SG. Sync fast-fail; async backstop — в doCreate.
+	if err := validateSGTargetSameNetwork(ctx, u.sgReader, sg.NetworkID, sg.Rules,
+		func(i int) string { return fmt.Sprintf("rule_specs[%d].security_group_id", i) }); err != nil {
+		return nil, err
 	}
 	name := string(sg.Name)
 	if name != "" {
@@ -160,10 +180,16 @@ func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, 
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Folder with id %s not found", sg.ProjectID)
 	}
-	if sg.NetworkID != "" && u.networkReader != nil {
+	if u.networkReader != nil {
 		if _, gerr := u.networkReader.Get(ctx, sg.NetworkID); gerr != nil {
 			return nil, mapRepoErr(gerr)
 		}
+	}
+	// Async backstop для same-network SG-target-правил (KAC-243 §C, D4): ловит
+	// гонку «target-SG удалена / создана в другой сети после sync-precheck».
+	if err := validateSGTargetSameNetwork(ctx, u.sgReader, sg.NetworkID, sg.Rules,
+		func(i int) string { return fmt.Sprintf("rule_specs[%d].security_group_id", i) }); err != nil {
+		return nil, err
 	}
 
 	sg.ID = sgID

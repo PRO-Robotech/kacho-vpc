@@ -128,6 +128,54 @@ func validateSGRule(field string, r domain.SecurityGroupRule) error {
 	return nil
 }
 
+// Error texts for SG-target same-network validation (KAC-243 §C / D1).
+const (
+	errRuleCrossNetwork  = "security group rule can only reference a security group in the same network"
+	errRuleTargetMissing = "security group rule references a non-existent security group"
+)
+
+// validateSGTargetSameNetwork проверяет, что каждое SG-target-правило (`oneof
+// target = security_group_id`) ссылается на SecurityGroup из той же Network,
+// что и редактируемая SG (KAC-243 §C, D1/D3).
+//
+// `ownerNetworkID` — network_id редактируемой SG (на Create приходит из
+// request'а; на UpdateRules/UpdateRule резолвится use-case'ом из самой SG).
+// `fieldFor(i)` строит имя поля для BadRequest.field_violations (напр.
+// `rule_specs[0].security_group_id` / `addition_rule_specs[0].security_group_id`).
+//
+// CIDR / predefined правила не затрагиваются (нет `SecurityGroupID`). Cross-network
+// → InvalidArgument; несуществующая target-SG (`repo.ErrNotFound`) →
+// InvalidArgument (единый класс с cross-network, D1) — НЕ NotFound, НЕ wrapSGErr.
+// Проверка не TOCTOU-prone (network_id immutable, §B); удаление target-SG —
+// грациозный dangling-ref или negative InvalidArgument (сценарий 12).
+func validateSGTargetSameNetwork(
+	ctx context.Context,
+	reader SecurityGroupReader,
+	ownerNetworkID string,
+	rules []domain.SecurityGroupRule,
+	fieldFor func(i int) string,
+) error {
+	if reader == nil {
+		return nil
+	}
+	for i, r := range rules {
+		if r.SecurityGroupID == "" {
+			continue // CIDR / predefined / no target — not an SG-target rule.
+		}
+		target, err := reader.Get(ctx, r.SecurityGroupID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return invalidArg(fieldFor(i), errRuleTargetMissing)
+			}
+			return mapRepoErr(err)
+		}
+		if target.NetworkID != ownerNetworkID {
+			return invalidArg(fieldFor(i), errRuleCrossNetwork)
+		}
+	}
+	return nil
+}
+
 // assignRuleIDs присваивает каждому rule UID если он пустой.
 func assignRuleIDs(rules []domain.SecurityGroupRule) []domain.SecurityGroupRule {
 	out := make([]domain.SecurityGroupRule, len(rules))

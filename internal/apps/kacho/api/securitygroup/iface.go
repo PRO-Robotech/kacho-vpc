@@ -58,6 +58,21 @@ type NetworkReader interface {
 	Get(ctx context.Context, id string) (*kachorepo.NetworkRecord, error)
 }
 
+// SecurityGroupReader — узкое чтение SecurityGroup для same-network-валидации
+// SG-target-правил (KAC-243, §C). Резолвит `network_id`:
+//   - редактируемой SG (для UpdateRules / UpdateRule — на Create network_id
+//     приходит прямо из request'а);
+//   - каждой target-SG, на которую ссылается SG-target-правило
+//     (`oneof target = security_group_id`).
+//
+// Cross-network target (`target.NetworkID != self.NetworkID`) → InvalidArgument;
+// несуществующая target-SG (`repo.ErrNotFound`) → InvalidArgument (D1). Проверка
+// не TOCTOU-prone: network_id immutable (§B). Удовлетворяется
+// `cqrsadapter.SecurityGroupAdapter` (Get) — wired в composition-root.
+type SecurityGroupReader interface {
+	Get(ctx context.Context, id string) (*kachorepo.SecurityGroupRecord, error)
+}
+
 // ProjectClient — peer-сервис kacho-iam: проверка существования
 // folder'а на request-path и в worker'е.
 type ProjectClient interface {
