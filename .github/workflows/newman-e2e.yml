@@ -141,7 +141,7 @@ jobs:
           docker image inspect kacho-ui:dev >/dev/null 2>&1 \
             && kind load docker-image kacho-ui:dev --name kacho || true
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       - name: helm install umbrella
         working-directory: kacho-deploy
