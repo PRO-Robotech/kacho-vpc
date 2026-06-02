@@ -8,7 +8,9 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 
+	"github.com/PRO-Robotech/kacho-corelib/grpcclient"
 	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	privatelinkv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1/privatelink"
@@ -59,14 +61,34 @@ func NewClient(addr string, opts ...grpc.DialOption) (*Client, error) {
 	if strings.TrimSpace(addr) == "" {
 		return nil, fmt.Errorf("vpcsdk: empty addr")
 	}
-	if len(opts) == 0 {
-		opts = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	}
-	conn, err := grpc.NewClient(addr, opts...)
+	conn, err := grpc.NewClient(addr, sdkDialOpts(opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("vpcsdk: grpc.NewClient %q: %w", addr, err)
 	}
 	return newClientFromConn(conn), nil
+}
+
+// sdkKeepalive — keepalive-параметры SDK-conn (KAC-244). SDK-conn обычно активно
+// используется (интегратор делает RPC) → PermitWithoutStream=false; keepalive
+// держит conn здоровым и обнаруживает half-open после пауз между всплесками.
+func sdkKeepalive() keepalive.ClientParameters {
+	return grpcclient.KeepaliveParams(false)
+}
+
+// sdkDialOpts — собирает итоговый набор grpc.DialOption для NewClient (KAC-244):
+//   - keepalive-дефолт prepend'ится ПЕРВЫМ → вызывающий может переопределить его
+//     своим grpc.WithKeepaliveParams (gRPC применяет опции last-wins);
+//   - если вызывающий не передал НИ ОДНОЙ опции → добавляем insecure creds
+//     (dev / port-forward back-compat, как было до KAC-244);
+//   - явные опции вызывающего (TLS creds, собственный keepalive, …) сохраняются
+//     и идут после дефолта.
+func sdkDialOpts(opts ...grpc.DialOption) []grpc.DialOption {
+	out := []grpc.DialOption{grpcclient.KeepaliveDialOption(false)}
+	if len(opts) == 0 {
+		out = append(out, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		return out
+	}
+	return append(out, opts...)
 }
 
 // NewClientFromConn оборачивает уже открытое gRPC-соединение в SDK Client.
