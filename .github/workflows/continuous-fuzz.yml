@@ -46,7 +46,7 @@ jobs:
         with: { go-version-file: kacho-vpc/go.mod }
 
       - name: restore fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: kacho-vpc/internal/fuzz/testdata/fuzz/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}

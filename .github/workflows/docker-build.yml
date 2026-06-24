@@ -82,7 +82,7 @@ jobs:
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
 
       - name: Configure Buildx cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.ref_name }}
