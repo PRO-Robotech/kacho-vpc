@@ -1,0 +1,273 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: kacho
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.name }}
+      annotations:
+        # ConfigMap-content hash → pod rolling-restart при изменении config.yaml.
+        kacho.cloud/config-checksum: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.name }}-config
+        {{- if .Values.mtls.enable }}
+        # mTLS — cert-manager internal-CA secrets (server + client),
+        # раздельные volume'ы. cert-manager пишет tls.crt/tls.key/ca.crt.
+        - name: mtls-server
+          secret:
+            secretName: {{ .Values.mtls.serverSecretName | quote }}
+        - name: mtls-client
+          secret:
+            secretName: {{ .Values.mtls.clientSecretName | quote }}
+        {{- end }}
+        {{- if .Values.opa.enabled }}
+        # OPA sidecar для guardrails. Bundle подтягивается с kacho-iam Internal :9091
+        # + signed JWS verification.
+        - name: opa-config
+          configMap:
+            name: {{ .Values.name }}-opa-config
+        {{- end }}
+      initContainers:
+        # Миграции БД исполняет отдельный binary `kacho-migrator` (cobra-based CLI),
+        # не subcommand основного. Тот же image — оба binary build'ятся в Dockerfile
+        # multi-stage. DSN собирается мигратором из KACHO_VPC_DB_* env (через
+        # config-fallback в cmd/migrator/main.go) — одно helm-values покрывает оба binary.
+        - name: migrate
+          image: "{{ .Values.image }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["/usr/local/bin/kacho-migrator", "up"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kacho-vpc
+              readOnly: true
+          env:
+            - name: KACHO_VPC_CONFIG_PATH
+              value: /etc/kacho-vpc/config.yaml
+            - name: KACHO_VPC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.passwordSecretName }}
+                  key: {{ .Values.db.passwordSecretKey }}
+      containers:
+        - name: {{ .Values.name }}
+          image: "{{ .Values.image }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["/usr/local/bin/kacho-vpc", "serve"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.ports.grpc }}
+            - name: grpc-internal
+              containerPort: {{ .Values.ports.internalGrpc }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kacho-vpc
+              readOnly: true
+            {{- if .Values.mtls.enable }}
+            - name: mtls-server
+              mountPath: {{ printf "%s/server" .Values.mtls.mountPath | quote }}
+              readOnly: true
+            - name: mtls-client
+              mountPath: {{ printf "%s/client" .Values.mtls.mountPath | quote }}
+              readOnly: true
+            {{- end }}
+          env:
+            - name: KACHO_VPC_CONFIG_PATH
+              value: /etc/kacho-vpc/config.yaml
+            - name: KACHO_VPC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.passwordSecretName }}
+                  key: {{ .Values.db.passwordSecretKey }}
+            {{- if .Values.mtls.enable }}
+            {{- $srv := printf "%s/server" .Values.mtls.mountPath }}
+            {{- $cli := printf "%s/client" .Values.mtls.mountPath }}
+            # mTLS server-creds (both listeners) — corelib grpcsrv.TLSServer
+            # via config.LoadPrefixed("KACHO_VPC"). RequireAndVerifyClientCert
+            # against the internal-CA bundle (ca.crt in the server secret).
+            - name: KACHO_VPC_PUBLIC_SERVER_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_PUBLIC_SERVER_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $srv | quote }}
+            - name: KACHO_VPC_PUBLIC_SERVER_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $srv | quote }}
+            - name: KACHO_VPC_PUBLIC_SERVER_MTLS_CLIENTCAFILES
+              value: {{ printf "%s/ca.crt" $srv | quote }}
+            - name: KACHO_VPC_INTERNAL_SERVER_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_INTERNAL_SERVER_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $srv | quote }}
+            - name: KACHO_VPC_INTERNAL_SERVER_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $srv | quote }}
+            - name: KACHO_VPC_INTERNAL_SERVER_MTLS_CLIENTCAFILES
+              value: {{ printf "%s/ca.crt" $srv | quote }}
+            {{- if .Values.mtls.edges.iamRegister }}
+            # vpc→iam (register-drainer) client-creds — grpcclient.TLSClient.
+            - name: KACHO_VPC_IAM_REGISTER_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_IAM_REGISTER_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_REGISTER_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $cli | quote }}
+            - name: KACHO_VPC_IAM_REGISTER_MTLS_CAFILES
+              value: {{ printf "%s/ca.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_REGISTER_MTLS_SERVERNAME
+              value: {{ .Values.mtls.serverName.iamRegister | quote }}
+            {{- end }}
+            {{- if .Values.mtls.edges.iamProject }}
+            # vpc→iam ProjectService.Get (existence/leaf-owner) client-creds —
+            # grpcclient.TLSClient. Reuses the SAME already-mounted client secret
+            # ($cli = kacho-vpc-client-tls); ServerName = kacho-iam (:9090 dial-host).
+            - name: KACHO_VPC_IAM_PROJECT_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_IAM_PROJECT_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_PROJECT_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $cli | quote }}
+            - name: KACHO_VPC_IAM_PROJECT_MTLS_CAFILES
+              value: {{ printf "%s/ca.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_PROJECT_MTLS_SERVERNAME
+              value: {{ .Values.mtls.serverName.iamProject | quote }}
+            {{- end }}
+            {{- if .Values.mtls.edges.iamAuthz }}
+            # vpc→iam InternalIAMService.Check (per-RPC authz gate +
+            # project-level list-filter — one conn) client-creds. Reuses the SAME
+            # $cli secret; ServerName = kacho-iam-internal (:9091 dial-host).
+            - name: KACHO_VPC_IAM_AUTHZ_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_IAM_AUTHZ_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_AUTHZ_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $cli | quote }}
+            - name: KACHO_VPC_IAM_AUTHZ_MTLS_CAFILES
+              value: {{ printf "%s/ca.crt" $cli | quote }}
+            - name: KACHO_VPC_IAM_AUTHZ_MTLS_SERVERNAME
+              value: {{ .Values.mtls.serverName.iamAuthz | quote }}
+            {{- end }}
+            {{- if .Values.mtls.edges.geo }}
+            # vpc→geo (geo.v1.ZoneService.Get) client-creds. Geography —
+            # leaf-домен kacho-geo.
+            - name: KACHO_VPC_GEO_MTLS_ENABLE
+              value: "true"
+            - name: KACHO_VPC_GEO_MTLS_CERTFILE
+              value: {{ printf "%s/tls.crt" $cli | quote }}
+            - name: KACHO_VPC_GEO_MTLS_KEYFILE
+              value: {{ printf "%s/tls.key" $cli | quote }}
+            - name: KACHO_VPC_GEO_MTLS_CAFILES
+              value: {{ printf "%s/ca.crt" $cli | quote }}
+            - name: KACHO_VPC_GEO_MTLS_SERVERNAME
+              value: {{ .Values.mtls.serverName.geo | quote }}
+            {{- end }}
+            {{- end }}
+            {{- /* write-side FGA — store-id / model-id are
+                   bootstrap-job-populated Secrets, injected as config ENV-override
+                   (KACHO_VPC_AUTHZ__TUPLE_WRITE__*).
+                   `optional: true` — на fresh install эти Secret'ы создает
+                   post-install openfga-bootstrap-job, т.е. их еще нет к моменту
+                   первого старта vpc-pod'а (помним: helm --wait ждет vpc
+                   Deployment ДО запуска post-install hook). Без optional kubelet
+                   отдает CreateContainerConfigError и pod не стартует никогда →
+                   `helm install --wait` упирается в Progress-deadline. Тот же
+                   паттерн optional уже у kacho-iam / api-gateway; bootstrap-job
+                   после WriteAuthorizationModel бампает annotation
+                   kacho.cloud/openfga-model-id-rev → rolling-restart подхватывает
+                   реальные значения. */}}
+            {{- if .Values.authz.tupleWrite.enabled }}
+            {{- if .Values.authz.tupleWrite.storeIdSecretName }}
+            - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__STORE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.tupleWrite.storeIdSecretName }}
+                  key: {{ default "store_id" .Values.authz.tupleWrite.storeIdSecretKey }}
+                  optional: true
+            {{- end }}
+            {{- if .Values.authz.tupleWrite.modelIdSecretName }}
+            - name: KACHO_VPC_AUTHZ__TUPLE_WRITE__MODEL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.authz.tupleWrite.modelIdSecretName }}
+                  key: {{ default "model_id" .Values.authz.tupleWrite.modelIdSecretKey }}
+                  optional: true
+            {{- end }}
+            {{- end }}
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+        {{- if .Values.opa.enabled }}
+        # OPA sidecar.
+        #
+        # Pull-mode: signed bundle from kacho-iam Internal :9091 endpoint
+        # `/v1/bundles/kacho-iam-guardrails`. Decision logs → stdout
+        # (`decision_logs.console=true`).
+        #
+        # Sidecar accessible from kacho-vpc on localhost:{{ .Values.opa.port }} for OPA-based
+        # checks beyond FGA (rate-limit guardrails, complex conditions); FGA-filtered
+        # List handlers использует kacho-iam AuthorizeService directly, не OPA.
+        - name: opa
+          image: "{{ .Values.opa.image }}"
+          imagePullPolicy: {{ .Values.opa.imagePullPolicy }}
+          args:
+            - "run"
+            - "--server"
+            - "--addr=127.0.0.1:{{ .Values.opa.port }}"
+            - "--config-file=/etc/opa/config.yaml"
+            - "--log-level={{ .Values.opa.logLevel }}"
+            - "--log-format=json"
+          ports:
+            - name: opa-http
+              containerPort: {{ .Values.opa.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: opa-config
+              mountPath: /etc/opa
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health?bundles=true
+              port: opa-http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: opa-http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: {{ .Values.opa.resources.requests.cpu }}
+              memory: {{ .Values.opa.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.opa.resources.limits.cpu }}
+              memory: {{ .Values.opa.resources.limits.memory }}
+        {{- end }}

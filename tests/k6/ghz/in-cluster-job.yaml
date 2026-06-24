@@ -1,0 +1,39 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+# In-cluster ghz Job — бьет прямо в vpc.kacho.svc:9090, минуя api-gateway
+# И port-forward (port-forward падает под нагрузкой concurrency >300).
+#
+# Build образа: docker build -t ghz-local:dev <dir с ghz binary> ; kind load docker-image ghz-local:dev --name kacho
+#
+# Применение: kubectl apply -f in-cluster-job.yaml ; kubectl -n kacho wait --for=condition=complete job/ghz-create-burst --timeout=300s
+# Результаты: kubectl -n kacho logs -l job-name=ghz-create-burst
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ghz-create-burst
+  namespace: kacho
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: ghz
+        image: ghz-local:dev
+        imagePullPolicy: Never
+        args:
+          - "--insecure"
+          - "--call"
+          - "kacho.cloud.vpc.v1.NetworkService.Create"
+          - "--total"
+          - "600000"
+          - "--concurrency"
+          - "600"
+          - "--connections"
+          - "40"
+          - "--metadata"
+          - '{"x-kacho-actor":"ghz-loadtest","x-kacho-project-id":"<PROJECT_ID>"}'
+          - "--data"
+          - '{"project_id":"<PROJECT_ID>","name":"ghz-{{.RequestNumber}}-{{.TimestampUnixNano}}"}'
+          - "vpc.kacho.svc.cluster.local:9090"

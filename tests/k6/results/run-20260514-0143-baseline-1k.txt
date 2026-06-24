@@ -1,0 +1,25 @@
+time="2026-05-13T22:42:34Z" level=warning msg="The test has generated metrics with 100189 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+time="2026-05-13T22:42:45Z" level=warning msg="The test has generated metrics with 200062 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+time="2026-05-13T22:43:07Z" level=warning msg="The test has generated metrics with 400348 unique time series, which is higher than the suggested limit of 100000 and could cause high memory usage. Consider not using high-cardinality values like unique IDs as metric tags or, if you need them in the URL, use the name metric tag or URL grouping. See https://grafana.com/docs/k6/latest/using-k6/tags-and-groups/ for details." component=metrics-engine-ingester
+
+   ✓ address_alloc_latency..........: min=1ms     avg=7.02ms  med=2ms     p(90)=11ms    p(95)=22ms     p(99)=106ms    max=455ms   
+   ✓ address_alloc_ok...............: 100.00% 60000 out of 60000
+     addresses_allocated............: 60000   999.513969/s
+     cleanup_ok.....................: 99.72%  59834 out of 60000
+     data_received..................: 65 MB   1.1 MB/s
+     data_sent......................: 37 MB   619 kB/s
+     http_req_blocked...............: min=1.58µs  avg=26.03µs med=5.7µs   p(90)=11.86µs p(95)=21.87µs  p(99)=253.87µs max=31.8ms  
+     http_req_connecting............: min=0s      avg=8.85µs  med=0s      p(90)=0s      p(95)=0s       p(99)=167.46µs max=26.45ms 
+     http_req_duration..............: min=1.19ms  avg=8.04ms  med=2.84ms  p(90)=12.19ms p(95)=25.2ms   p(99)=127.44ms max=490.4ms 
+       { expected_response:true }...: min=1.19ms  avg=7.99ms  med=2.83ms  p(90)=12.04ms p(95)=24.87ms  p(99)=127.57ms max=490.4ms 
+   ✓ http_req_failed................: 0.13%   166 out of 120000
+     http_req_receiving.............: min=11.12µs avg=60.99µs med=46.4µs  p(90)=95.74µs p(95)=131.48µs p(99)=262.25µs max=33.75ms 
+     http_req_sending...............: min=5.45µs  avg=27.9µs  med=18.77µs p(90)=42.04µs p(95)=61.83µs  p(99)=160.27µs max=27.79ms 
+     http_req_tls_handshaking.......: min=0s      avg=0s      med=0s      p(90)=0s      p(95)=0s       p(99)=0s       max=0s      
+     http_req_waiting...............: min=1.12ms  avg=7.95ms  med=2.75ms  p(90)=12.09ms p(95)=25.09ms  p(99)=127.07ms max=490.33ms
+     http_reqs......................: 120000  1999.027939/s
+     iteration_duration.............: min=23.46ms avg=36.88ms med=26.7ms  p(90)=46.38ms p(95)=63.8ms   p(99)=298.17ms max=704.82ms
+     iterations.....................: 60000   999.513969/s
+     vus............................: 26      min=24             max=396 
+     vus_max........................: 2000    min=2000           max=2000
+

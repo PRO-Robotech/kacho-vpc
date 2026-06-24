@@ -1,0 +1,318 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+package subnet
+
+import (
+	"context"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/pbconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+
+	// Blank-import регистрирует Subnet/Address/time DTO-трансферы.
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
+	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
+)
+
+// Handler — реализация vpcv1.SubnetServiceServer на основе use-case'ов.
+// Тонкий transport-слой: proto-request → domain → use-case → proto-response.
+// Никакой бизнес-логики.
+type Handler struct {
+	vpcv1.UnimplementedSubnetServiceServer
+
+	create            *CreateSubnetUseCase
+	update            *UpdateSubnetUseCase
+	delete            *DeleteSubnetUseCase
+	get               *GetSubnetUseCase
+	list              *ListSubnetsUseCase
+	addCidrBlocks     *AddCidrBlocksUseCase
+	removeCidrBlocks  *RemoveCidrBlocksUseCase
+	listUsedAddresses *ListUsedAddressesUseCase
+	listOperations    *ListOperationsUseCase
+}
+
+// NewHandler собирает Handler из готовых use-case'ов. Конструктор намеренно
+// принимает все use-case'ы — composition-root (cmd/vpc/main.go) собирает их
+// с одинаковыми зависимостями (repo / networkReader / projectClient / zoneReg /
+// opsRepo / addrRefRepo / nicRepo).
+func NewHandler(
+	create *CreateSubnetUseCase,
+	update *UpdateSubnetUseCase,
+	deleteUC *DeleteSubnetUseCase,
+	get *GetSubnetUseCase,
+	list *ListSubnetsUseCase,
+	addCidr *AddCidrBlocksUseCase,
+	removeCidr *RemoveCidrBlocksUseCase,
+	listUsedAddrs *ListUsedAddressesUseCase,
+	listOps *ListOperationsUseCase,
+) *Handler {
+	return &Handler{
+		create:            create,
+		update:            update,
+		delete:            deleteUC,
+		get:               get,
+		list:              list,
+		addCidrBlocks:     addCidr,
+		removeCidrBlocks:  removeCidr,
+		listUsedAddresses: listUsedAddrs,
+		listOperations:    listOps,
+	}
+}
+
+// Get — sync read + AuthZ + per-object no-leak (ungranted ресурс → NotFound).
+func (h *Handler) Get(ctx context.Context, req *vpcv1.GetSubnetRequest) (*vpcv1.Subnet, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	subject := pbconv.SubjectFromContext(ctx)
+	s, err := h.get.Execute(ctx, subject, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	return subnetToPb(s)
+}
+
+// List — project_id required + AuthZ + per-object FGA list-filter.
+func (h *Handler) List(ctx context.Context, req *vpcv1.ListSubnetsRequest) (*vpcv1.ListSubnetsResponse, error) {
+	if err := tenant.AssertProjectOwnership(ctx, req.ProjectId); err != nil {
+		return nil, err
+	}
+	subject := pbconv.SubjectFromContext(ctx)
+	subs, nextToken, err := h.list.Execute(ctx, subject, SubnetFilter{
+		ProjectID: req.ProjectId,
+		Filter:    req.Filter,
+	}, Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListSubnetsResponse{NextPageToken: nextToken}
+	for _, s := range subs {
+		pb, err := subnetToPb(s)
+		if err != nil {
+			return nil, err
+		}
+		resp.Subnets = append(resp.Subnets, pb)
+	}
+	return resp, nil
+}
+
+// Create — AuthZ → proto → domain → use-case.
+func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*operationpb.Operation, error) {
+	if err := tenant.AssertProjectOwnership(ctx, req.ProjectId); err != nil {
+		return nil, err
+	}
+	s := domain.Subnet{
+		ProjectID:    req.ProjectId,
+		Name:         domain.RcNameVPC(req.Name),
+		Description:  domain.RcDescription(req.Description),
+		Labels:       domain.LabelsFromMap(req.Labels),
+		NetworkID:    req.NetworkId,
+		ZoneID:       req.ZoneId,
+		V4CidrBlocks: req.V4CidrBlocks,
+		V6CidrBlocks: req.V6CidrBlocks,
+		RouteTableID: req.RouteTableId,
+	}
+	if req.DhcpOptions != nil {
+		s.DhcpOptions = &domain.DhcpOptions{
+			DomainNameServers: req.DhcpOptions.DomainNameServers,
+			DomainName:        req.DhcpOptions.DomainName,
+			NtpServers:        req.DhcpOptions.NtpServers,
+		}
+	}
+	op, err := h.create.Execute(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.OperationToProto(op), nil
+}
+
+// Update — sync repo.Get + AuthZ + use-case.
+func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	s, err := h.get.Execute(ctx, "", req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	var mask []string
+	if req.UpdateMask != nil {
+		mask = req.UpdateMask.Paths
+	}
+	in := UpdateInput{
+		SubnetID: req.SubnetId,
+		Subnet: domain.Subnet{
+			Name:         domain.RcNameVPC(req.Name),
+			Description:  domain.RcDescription(req.Description),
+			Labels:       domain.LabelsFromMap(req.Labels),
+			RouteTableID: req.RouteTableId,
+		},
+		V4CidrBlocks: req.V4CidrBlocks,
+		UpdateMask:   mask,
+	}
+	if req.DhcpOptions != nil {
+		in.Subnet.DhcpOptions = &domain.DhcpOptions{
+			DomainNameServers: req.DhcpOptions.DomainNameServers,
+			DomainName:        req.DhcpOptions.DomainName,
+			NtpServers:        req.DhcpOptions.NtpServers,
+		}
+	}
+	op, err := h.update.Execute(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.OperationToProto(op), nil
+}
+
+// Delete — sync repo.Get для AuthZ, затем use-case.
+func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteSubnetRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	s, err := h.get.Execute(ctx, "", req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	op, err := h.delete.Execute(ctx, req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.OperationToProto(op), nil
+}
+
+// AddCidrBlocks — sync repo.Get для AuthZ, затем use-case.
+func (h *Handler) AddCidrBlocks(ctx context.Context, req *vpcv1.AddSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	s, err := h.get.Execute(ctx, "", req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	op, err := h.addCidrBlocks.Execute(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.OperationToProto(op), nil
+}
+
+// RemoveCidrBlocks — sync repo.Get для AuthZ, затем use-case.
+func (h *Handler) RemoveCidrBlocks(ctx context.Context, req *vpcv1.RemoveSubnetCidrBlocksRequest) (*operationpb.Operation, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	s, err := h.get.Execute(ctx, "", req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	op, err := h.removeCidrBlocks.Execute(ctx, req.SubnetId, req.GetV4CidrBlocks(), req.GetV6CidrBlocks())
+	if err != nil {
+		return nil, err
+	}
+	return pbconv.OperationToProto(op), nil
+}
+
+// ListUsedAddresses — sync read; AuthZ через parent Subnet.
+func (h *Handler) ListUsedAddresses(ctx context.Context, req *vpcv1.ListUsedAddressesRequest) (*vpcv1.ListUsedAddressesResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	s, err := h.get.Execute(ctx, "", req.SubnetId)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+		return nil, err
+	}
+	addrs, refs, nextToken, err := h.listUsedAddresses.Execute(ctx, req.SubnetId, Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListUsedAddressesResponse{NextPageToken: nextToken}
+	for _, a := range addrs {
+		ua := &vpcv1.UsedAddress{
+			IpVersion: vpcv1.IpVersion(a.IpVersion),
+		}
+		if a.InternalIpv4 != nil {
+			ua.Address = a.InternalIpv4.Address
+		} else if a.ExternalIpv4 != nil {
+			ua.Address = a.ExternalIpv4.Address
+		}
+		// references[] — кто использует адрес (referrer-tracking).
+		if ref, ok := refs[a.ID]; ok && ref != nil {
+			ua.References = []*reference.Reference{{
+				Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID},
+				Type:     reference.Reference_USED_BY,
+			}}
+		}
+		resp.Addresses = append(resp.Addresses, ua)
+	}
+	return resp, nil
+}
+
+// ListOperations — best-effort AuthZ: ресурс жив → project-ownership проверяем;
+// удален (NotFound от get) → пропускаем (история операций должна оставаться
+// доступной).
+func (h *Handler) ListOperations(ctx context.Context, req *vpcv1.ListSubnetOperationsRequest) (*vpcv1.ListSubnetOperationsResponse, error) {
+	if req.SubnetId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subnet_id required")
+	}
+	if s, gerr := h.get.Execute(ctx, "", req.SubnetId); gerr == nil {
+		if err := tenant.AssertProjectOwnership(ctx, s.ProjectID); err != nil {
+			return nil, err
+		}
+	} else if status.Code(gerr) != codes.NotFound {
+		return nil, gerr
+	}
+	ops, nextToken, err := h.listOperations.Execute(ctx, req.SubnetId, Pagination{
+		PageToken: req.PageToken,
+		PageSize:  req.PageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := &vpcv1.ListSubnetOperationsResponse{NextPageToken: nextToken}
+	for i := range ops {
+		resp.Operations = append(resp.Operations, pbconv.OperationToProto(&ops[i]))
+	}
+	return resp, nil
+}
+
+// subnetToPb — repo-entity Subnet → proto Subnet через DTO-реестр.
+func subnetToPb(rec *kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
+	var dst *vpcv1.Subnet
+	if err := dto.Transfer(dto.FromTo(*rec, &dst)); err != nil {
+		return nil, status.Error(codes.Internal, "dto.Transfer Subnet failed")
+	}
+	return dst, nil
+}

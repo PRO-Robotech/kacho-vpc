@@ -1,0 +1,96 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+{{/*
+ConfigMap с YAML-конфигом kacho-vpc.
+
+Сервис читает config из /etc/kacho-vpc/config.yaml; конкретные поля можно
+override'ить через ENV (`KACHO_VPC_REPOSITORY__POSTGRES__URL` и т.п.).
+
+Содержимое рендерится из values.yaml: смотри ключ `config` или legacy-ключи
+`ports.*` / `db.*` / `resourceManagerAddr` (см. deploy/values.yaml).
+
+DB-пароль НЕ кладется сюда (secret); подтягивается через
+`repository.postgres.password-from-env: KACHO_VPC_DB_PASSWORD` и Secret-ENV
+в deployment.yaml.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-config
+  namespace: kacho
+data:
+  config.yaml: |
+    logger:
+      level: {{ default "INFO" .Values.logger.level | quote }}
+
+    api-server:
+      endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.grpc | quote }}
+      internal-endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.internalGrpc | quote }}
+      graceful-shutdown: {{ default "10s" .Values.apiServer.gracefulShutdown | quote }}
+
+    metrics:
+      enable: {{ default true .Values.metrics.enable }}
+    healthcheck:
+      enable: {{ default true .Values.healthcheck.enable }}
+
+    repository:
+      type: POSTGRES
+      postgres:
+        url: {{ printf "postgres://%s@%s:%v/%s" .Values.db.user .Values.db.host .Values.db.port .Values.db.name | quote }}
+        max-conns: {{ default 0 .Values.repository.postgres.maxConns }}
+        ssl-mode: {{ default "disable" .Values.repository.postgres.sslMode | quote }}
+        password-from-env: KACHO_VPC_DB_PASSWORD
+
+    authn:
+      mode: {{ default "dev" .Values.authn.mode | quote }}
+
+    # per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
+    # project-level list-filter тоже идет через InternalIAMService.Check
+    #   (relation viewer on project:<id>) на INTERNAL :9091 — НЕ на public :9090.
+    #   list-filter.authorize-endpoint / .timeout-ms / .cache-ttl / .max-* / .model-id
+    #   ниже — наследие ListObjects-подхода; код их больше не читает (использует
+    #   authz.iam-endpoint). Удаляются отдельным cleanup.
+    authz:
+      iam-endpoint: {{ default "kacho-iam-internal.kacho.svc.cluster.local:9091" .Values.authz.iamEndpoint | quote }}
+      breakglass: {{ default false .Values.authz.breakglass }}
+      check-timeout: {{ default "2s" .Values.authz.checkTimeout | quote }}
+      cache-ttl: {{ default "5s" .Values.authz.cacheTtl | quote }}
+      deny-rate-limit-per-sec: {{ default 100 .Values.authz.denyRateLimitPerSec }}
+      list-filter:
+        enabled: {{ default false .Values.authz.listFilter.enabled }}
+        authorize-endpoint: {{ default "" .Values.authz.listFilter.authorizeEndpoint | quote }}
+        authorize-tls:
+          enable: {{ default false .Values.authz.listFilter.authorizeTls.enable }}
+        timeout-ms: {{ default 500 .Values.authz.listFilter.timeoutMs }}
+        cache-ttl: {{ default "5s" .Values.authz.listFilter.cacheTtl | quote }}
+        max-entries: {{ default 10000 .Values.authz.listFilter.maxEntries }}
+        max-results: {{ default 10000 .Values.authz.listFilter.maxResults }}
+        model-id: {{ default "" .Values.authz.listFilter.modelId | quote }}
+        fail-open: {{ default false .Values.authz.listFilter.failOpen }}
+      # write-side FGA: publish per-resource hierarchy tuples on Create.
+      tuple-write:
+        enabled: {{ default false .Values.authz.tupleWrite.enabled }}
+        openfga-endpoint: {{ default "" .Values.authz.tupleWrite.openfgaEndpoint | quote }}
+        store-id: {{ default "" .Values.authz.tupleWrite.storeId | quote }}
+        model-id: {{ default "" .Values.authz.tupleWrite.modelId | quote }}
+        timeout-ms: {{ default 2000 .Values.authz.tupleWrite.timeoutMs }}
+
+    extapi:
+      def-dial-duration: 10s
+      iam:
+        endpoint: {{ default "kacho-iam.kacho.svc.cluster.local:9090" .Values.iamAddr | quote }}
+        tls:
+          enable: {{ default false .Values.extapi.iam.tls.enable }}
+        dns-lb: {{ default false .Values.extapi.iam.dnsLb }}
+      geo:
+        endpoint: {{ default "kacho-geo.kacho.svc.cluster.local:9090" .Values.extapi.geo.endpoint | quote }}
+        tls:
+          enable: {{ default false .Values.extapi.geo.tls.enable }}
+
+    network:
+      default-sg-inline: {{ default true .Values.network.defaultSgInline }}
+      project-cache:
+        positive-ttl: {{ default "30s" .Values.network.projectCache.positiveTtl | quote }}
+        negative-ttl: {{ default "5s" .Values.network.projectCache.negativeTtl | quote }}
+        max-size: {{ default 10000 .Values.network.projectCache.maxSize }}

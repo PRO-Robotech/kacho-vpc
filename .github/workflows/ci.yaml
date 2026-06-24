@@ -1,0 +1,119 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# polyrepo: go.mod несет `replace github.com/PRO-Robotech/kacho-{corelib,proto} => ../...`
+# и Dockerfile'ы COPY ../kacho-corelib и т.п. → CI должен воспроизвести local layout
+# (project/{kacho-vpc, kacho-corelib, ...}). actions/checkout не пускает path вне
+# $GITHUB_WORKSPACE, поэтому: main-репо в подкаталог `kacho-vpc/`, siblings рядом
+# (`kacho-corelib/`, `kacho-proto/`, ...), все `run:`-шаги в `working-directory: kacho-vpc`.
+# Siblings чекаутятся с `ref: main`. Если появится незакрытая кросс-репо зависимость —
+# временно пиннить нужный sibling к его feature-ветке (`ref: feat/...`) и вернуть на
+# `ref: main` после merge.
+
+defaults:
+  run:
+    working-directory: kacho-vpc
+
+jobs:
+  build-vet-test:
+    name: build + vet + test (unit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: go mod download
+      - run: go build ./...
+      - run: go vet ./...
+      # Каждый публичный List обязан гейтиться через listauthz.
+      - run: make audit-list-filter
+      - run: go test -race -short -count=1 -timeout 5m ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: kacho-vpc
+          args: --timeout 5m
+
+  govuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+        continue-on-error: true   # informational, пока не fail-on-vuln
+
+  integration:
+    name: integration (testcontainers Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { path: kacho-vpc }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
+      - run: go mod download
+      # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
+      # (Docker есть на ubuntu-latest runner'ах). Без -cover (covdata-инструменты в
+      # отдельных toolchain-сборках бывают неполны; coverage здесь не нужен).
+      - run: go test ./internal/repo/... -race -count=1 -timeout 300s
+
+  authz-deny-suite:
+    name: authz-deny suite — generate + validate
+    runs-on: ubuntu-latest
+    needs: [build-vet-test]
+    steps:
+      - uses: actions/checkout@v6
+        with: { path: kacho-vpc }
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: generate authz-deny collection
+        run: python3 tests/newman/scripts/gen.py authz-deny
+      - name: assert collection non-empty
+        run: |
+          test -s tests/newman/collections/authz-deny.postman_collection.json
+          # must have at least 200 cases
+          n=$(python3 -c "import json; print(len(json.load(open('tests/newman/collections/authz-deny.postman_collection.json'))['item']))")
+          echo "authz-deny cases: $n"
+          test "$n" -ge 200
+      - uses: actions/upload-artifact@v7
+        with:
+          name: authz-deny-collection
+          path: kacho-vpc/tests/newman/collections/authz-deny.postman_collection.json

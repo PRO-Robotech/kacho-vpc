@@ -1,0 +1,5 @@
+apiVersion: v2
+name: vpc-docs
+version: 0.1.0
+appVersion: 0.1.0
+description: Kachō VPC docs — Docusaurus (AntD-flavored) static site, nginx-served

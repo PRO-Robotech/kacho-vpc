@@ -1,0 +1,8 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+apiVersion: v2
+name: vpc
+version: 1.0.0
+appVersion: 1.0.0
+description: Kachō VPC (Network, Subnet, Address, RouteTable) — flat-resource proto + Operations

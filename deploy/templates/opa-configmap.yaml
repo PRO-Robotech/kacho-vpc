@@ -1,0 +1,55 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+{{- if .Values.opa.enabled }}
+# OPA sidecar configuration.
+#
+# Bundle pulled from kacho-iam Internal :9091 endpoint
+# `/v1/bundles/kacho-iam-guardrails` with signed JWS verification.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-opa-config
+  namespace: kacho
+data:
+  config.yaml: |
+    services:
+      kacho-iam-bundle:
+        url: {{ .Values.opa.bundleSource.url | quote }}
+        {{- if .Values.opa.bundleSource.headers }}
+        headers:
+          {{- range $k, $v := .Values.opa.bundleSource.headers }}
+          {{ $k }}: {{ $v | quote }}
+          {{- end }}
+        {{- end }}
+    bundles:
+      kacho-iam-guardrails:
+        resource: "/v1/bundles/kacho-iam-guardrails"
+        service: kacho-iam-bundle
+        polling:
+          min_delay_seconds: {{ .Values.opa.bundlePolling.minDelaySeconds }}
+          max_delay_seconds: {{ .Values.opa.bundlePolling.maxDelaySeconds }}
+        signing:
+          keyid: {{ .Values.opa.bundleSigning.keyID | quote }}
+          {{- if .Values.opa.bundleSigning.excludeFiles }}
+          exclude_files:
+            {{- range .Values.opa.bundleSigning.excludeFiles }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- end }}
+    keys:
+      {{ .Values.opa.bundleSigning.keyID }}:
+        algorithm: {{ .Values.opa.bundleSigning.algorithm | quote }}
+        key: |
+{{ .Values.opa.bundleSigning.publicKey | indent 10 }}
+    decision_logs:
+      console: {{ .Values.opa.decisionLogs.console }}
+      reporting:
+        min_delay_seconds: 5
+        max_delay_seconds: 10
+    status:
+      console: {{ .Values.opa.statusLogs.console }}
+    plugins:
+      health:
+        check_interval: 10s
+{{- end }}

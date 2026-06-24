@@ -1,0 +1,310 @@
+---
+id: deploy
+sidebar_position: 1
+title: Развертывание
+---
+
+import { Codes } from '@site/src/components/commonBlocks/Codes'
+import CodeBlock from '@theme/CodeBlock'
+import dedent from 'ts-dedent'
+
+# Развертывание kacho-vpc
+
+**kacho-vpc** поставляется как один контейнерный образ с **двумя независимыми binary**
+и Helm-чартом (`deploy/`), который входит в umbrella-чарт платформы Kachō. Этот раздел
+описывает сборку образа, схему миграций БД, состав Helm-релиза и поднятие локального
+dev-стенда на kind.
+
+:::info Control-plane сервис
+kacho-vpc — stateless control-plane сервис: все состояние живет в выделенном PostgreSQL
+(`kacho_vpc`). Pod можно масштабировать горизонтально (HPA до 10 реплик).
+:::
+
+## Два binary
+
+Сервис собран по правилу «отдельная точка сборки на use-case»: API-сервер и
+раннер миграций — **разные** исполняемые файлы, оба лежат в одном образе.
+
+<table>
+  <thead><tr><th>Binary</th><th>Точка сборки</th><th>Назначение</th><th>Команды</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>kacho-vpc</code></td>
+      <td><code>cmd/vpc</code></td>
+      <td>gRPC API-сервер (public <code>:9090</code> + internal <code>:9091</code>)</td>
+      <td><code>serve</code></td>
+    </tr>
+    <tr>
+      <td><code>kacho-migrator</code></td>
+      <td><code>cmd/migrator</code></td>
+      <td>CLI миграций БД (cobra)</td>
+      <td><code>up</code> · <code>down</code> · <code>status</code> · <code>create</code></td>
+    </tr>
+  </tbody>
+</table>
+
+:::note Только `serve`
+`kacho-vpc` обслуживает **исключительно** API — миграции в него больше не вшиты.
+Запуск с любой другой командой завершается ошибкой: миграции живут в отдельном
+binary `kacho-migrator`.
+:::
+
+### kacho-migrator — CLI
+
+API повторяет goose-flavour. DSN берется из флага `--dsn`, иначе из переменной
+`KACHO_MIGRATOR_DSN`, иначе fallback на конфиг kacho-vpc (`cfg.MigrateDSN()`) — одно
+helm-values покрывает оба binary.
+
+<table>
+  <thead><tr><th>Команда</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>kacho-migrator up [--target &lt;version&gt;]</code></td><td>Применить миграции до последней (или до указанной версии)</td></tr>
+    <tr><td><code>kacho-migrator down [--target &lt;version&gt;]</code></td><td>Откатить последнюю миграцию (или вниз до версии)</td></tr>
+    <tr><td><code>kacho-migrator status</code></td><td>Показать примененные / ожидающие миграции</td></tr>
+    <tr><td><code>kacho-migrator create &lt;name&gt; [--dir &lt;path&gt;]</code></td><td>Сгенерировать файл новой миграции</td></tr>
+  </tbody>
+</table>
+
+Верхнеуровневые флаги: `--dialect postgres|cockroach` (по умолчанию `postgres`),
+`--dsn <connection-string>`.
+
+## Миграции БД
+
+Боевые миграции лежат в `internal/migrations/*.sql` и встраиваются в образ через
+`embed.FS` — отдельный том не нужен. Текущий baseline — `0001` (squashed), поверх него
+накатаны инкрементные `0002`..`0009`.
+
+<table>
+  <thead><tr><th>Файл</th><th>Содержание</th></tr></thead>
+  <tbody>
+    <tr><td><code>0001\_initial.sql</code></td><td>Единый clean-baseline: все таблицы схемы <code>kacho\_vpc</code> с CHECK / FK / UNIQUE / EXCLUDE / generated-колонками / индексами / триггерами inline</td></tr>
+    <tr><td><code>0002\_drop\_override\_and\_cloud\_pool\_selector.sql</code></td><td>Удаление неиспользуемых таблиц IPAM-каскада (address-override, cloud-pool-selector)</td></tr>
+    <tr><td><code>0003\_drop\_security\_group\_status.sql</code></td><td>Удаление поля <code>status</code> у SecurityGroup</td></tr>
+    <tr><td><code>0004\_address\_pool\_cidrs.sql</code></td><td>Таблица <code>address\_pool\_cidrs</code> + EXCLUDE gist — CIDR пулов одного kind не пересекаются</td></tr>
+    <tr><td><code>0005\_default\_sg\_fk\_and\_unique.sql</code></td><td><code>default\_security\_group\_id</code> → nullable + FK ON DELETE SET NULL + partial UNIQUE «≤1 default-SG на сеть»</td></tr>
+    <tr><td><code>0006\_fga\_register\_outbox.sql</code></td><td>Transactional-outbox <code>fga\_register\_outbox</code> — owner-tuple register/unregister-intents, co-commit'ятся в writer-TX ресурса</td></tr>
+    <tr><td><code>0007\_network\_vrf\_id.sql</code></td><td>Sequence-backed <code>networks.vrf\_id</code> (UNIQUE) — авторитетный per-network data-plane-идентификатор, отдается только через internal-проекцию Network</td></tr>
+    <tr><td><code>0008\_fga\_register\_outbox\_resource\_cols.sql</code></td><td>Доп. колонки <code>fga\_register\_outbox</code> для reconciler/observability</td></tr>
+    <tr><td><code>0009\_operations\_account\_id.sql</code></td><td>Колонка <code>operations.account\_id</code> — атрибуция асинхронных операций к аккаунту</td></tr>
+  </tbody>
+</table>
+
+:::tip Не редактируем примененные миграции
+Изменение схемы — это **новый** файл с инкрементным номером (следующий — `0010_*`).
+Примененную миграцию править нельзя — только накатывать новую (защита от
+рассинхронизации БД между средами).
+:::
+
+### Схема и search_path
+
+Все таблицы, user-функции и `goose_db_version` живут в схеме **`kacho_vpc`** —
+не в `public`. Каждое соединение обязано выставить `search_path TO kacho_vpc, public`;
+это делается автоматически через libpq-параметр `options=-c search_path=kacho_vpc,public`,
+который добавляется в DSN (`cfg.DSN()` / `cfg.MigrateDSN()`).
+
+:::note Раздельные DSN для migrate и pool
+`kacho-migrator` использует `cfg.MigrateDSN()` (без `pool_max_conns` — иначе
+`database/sql` шлет серверу неизвестный PG-параметр и соединение падает с `FATAL`),
+а pgxpool API-сервера — `cfg.DSN()` (с `pool_max_conns`, если задан
+`KACHO_VPC_DB_MAX_CONNS > 0`).
+:::
+
+## Docker-образ
+
+Сборка — multi-stage (`Dockerfile`): build-stage на `golang:1.25-alpine` копирует
+сиблинг-репозитории (`kacho-corelib`, `kacho-proto`, `kacho-vpc`) и собирает **оба**
+binary; runtime-stage — минимальный `alpine` с non-root пользователем.
+
+<CodeBlock language="dockerfile">
+  {dedent`
+    FROM golang:1.25-alpine AS builder
+    WORKDIR /src
+    COPY kacho-corelib /src/kacho-corelib
+    COPY kacho-proto   /src/kacho-proto
+    COPY kacho-vpc     /src/kacho-vpc
+    WORKDIR /src/kacho-vpc
+    RUN go mod download
+    RUN CGO_ENABLED=0 go build -o /kacho-vpc       ./cmd/vpc \\
+     && CGO_ENABLED=0 go build -o /kacho-migrator  ./cmd/migrator
+
+    FROM alpine:3.20
+    RUN apk add --no-cache ca-certificates
+    COPY --from=builder /kacho-vpc       /usr/local/bin/kacho-vpc
+    COPY --from=builder /kacho-migrator  /usr/local/bin/kacho-migrator
+    USER 65532
+    ENTRYPOINT ["/usr/local/bin/kacho-vpc"]
+  `}
+</CodeBlock>
+
+:::note Build-context — родительская директория
+Поскольку Dockerfile копирует сиблинг-репозитории, образ собирается из **родительского**
+каталога (`project/`), а не из `kacho-vpc/`. Тег dev-образа — `kacho-vpc:dev`.
+:::
+
+<CodeBlock language="bash">
+  {dedent`
+    # из каталога project/ (где лежат kacho-vpc, kacho-corelib, kacho-proto)
+    docker build -f kacho-vpc/Dockerfile -t kacho-vpc:dev .
+  `}
+</CodeBlock>
+
+## Helm-чарт
+
+Чарт `deploy/` (name `vpc`, входит в umbrella-релиз платформы) разворачивает один
+Deployment, два Service-порта и ConfigMap с YAML-конфигом.
+
+<table>
+  <thead><tr><th>Объект</th><th>Шаблон</th><th>Назначение</th></tr></thead>
+  <tbody>
+    <tr><td>Deployment</td><td><code>templates/deployment.yaml</code></td><td>init-container <code>migrate</code> + контейнер <code>vpc</code> (+ опц. OPA-sidecar)</td></tr>
+    <tr><td>Service</td><td><code>templates/service.yaml</code></td><td>Порты <code>grpc</code> (9090) и <code>grpc-internal</code> (9091)</td></tr>
+    <tr><td>ConfigMap</td><td><code>templates/configmap.yaml</code></td><td><code>/etc/kacho-vpc/config.yaml</code> из <code>values.yaml</code></td></tr>
+    <tr><td>HPA</td><td><code>templates/hpa.yaml</code></td><td>Автоскейл 1→10 реплик по CPU 70%</td></tr>
+  </tbody>
+</table>
+
+### Поток развертывания
+
+```mermaid
+flowchart TD
+  helm["helm install / umbrella"] --> cm["ConfigMap<br/>config.yaml"]
+  helm --> dep["Deployment vpc"]
+  dep --> init["init-container: migrate<br/>kacho-migrator up"]
+  init -->|"баз. + инкрем. миграции"| pg[("PostgreSQL<br/>pg-vpc · kacho_vpc")]
+  init -->|"success → exit 0"| main["container: vpc<br/>kacho-vpc serve"]
+  main -->|":9090 public"| svc["Service vpc"]
+  main -->|":9091 internal"| svc
+  main -->|"pgxpool"| pg
+  cm -.->|"mount /etc/kacho-vpc"| init
+  cm -.->|"mount /etc/kacho-vpc"| main
+```
+
+:::tip Миграции — init-container, не subcommand
+init-container `migrate` запускает `kacho-migrator up` **до** старта основного
+контейнера. DSN собирается из тех же `KACHO_VPC_DB_*` (через config-fallback в
+`cmd/migrator`), пароль БД — из Secret (`KACHO_VPC_DB_PASSWORD`). Основной контейнер
+стартует `kacho-vpc serve` только после успешного завершения миграций.
+:::
+
+### Ключевые values
+
+<table>
+  <thead><tr><th>Ключ</th><th>Default</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>image</code></td><td><code>kacho-vpc:dev</code></td><td>Образ (оба binary внутри)</td></tr>
+    <tr><td><code>replicas</code></td><td><code>1</code></td><td>Стартовое число реплик (далее — HPA)</td></tr>
+    <tr><td><code>ports.grpc</code> / <code>ports.internalGrpc</code></td><td><code>9090</code> / <code>9091</code></td><td>Public / internal gRPC</td></tr>
+    <tr><td><code>db.host</code> / <code>db.name</code> / <code>db.user</code></td><td><code>kacho-umbrella-pg-vpc</code> / <code>kacho\_vpc</code> / <code>vpc</code></td><td>Подключение к PostgreSQL</td></tr>
+    <tr><td><code>repository.postgres.maxConns</code></td><td><code>200</code></td><td>Размер pgxpool (тюнинг под Address.Create)</td></tr>
+    <tr><td><code>network.defaultSgInline</code></td><td><code>true</code></td><td>Inline-создание default-SG при Network.Create</td></tr>
+    <tr><td><code>autoscaling.maxReplicas</code></td><td><code>10</code></td><td>Верхняя граница HPA (CPU 70%)</td></tr>
+  </tbody>
+</table>
+
+:::note Конфиг — YAML + ENV-override
+Сервис читает конфиг из `/etc/kacho-vpc/config.yaml` (рендерится из `values.yaml`).
+Любой ключ переопределяется переменной окружения вида
+`KACHO_VPC_<SECTION>__<KEY>` (двойное подчеркивание — разделитель
+вложенности). Пароль БД в ConfigMap не кладется — только через Secret-ENV.
+:::
+
+## PostgreSQL
+
+kacho-vpc следует принципу **database-per-service**: владеет собственным инстансом
+`pg-vpc` и схемой `kacho_vpc`. Cross-service FK запрещены — связи с другими доменами
+только по API.
+
+<table>
+  <thead><tr><th>Параметр</th><th>Значение</th></tr></thead>
+  <tbody>
+    <tr><td>StatefulSet / Service</td><td><code>pg-vpc</code> (umbrella: <code>kacho-umbrella-pg-vpc</code>)</td></tr>
+    <tr><td>База / пользователь</td><td>`kacho_vpc` / `vpc`</td></tr>
+    <tr><td>Схема</td><td>`kacho_vpc` (`search_path = kacho_vpc, public`)</td></tr>
+    <tr><td>Extension</td><td>`btree_gist` (в <code>public</code>; нужно для EXCLUDE-overlap CIDR)</td></tr>
+  </tbody>
+</table>
+
+## Локальный dev-стенд (kind)
+
+Стенд поднимается одной командой из репозитория `kacho-deploy` — kind-кластер +
+PostgreSQL + ingress + все сервисы umbrella-чарта.
+
+<CodeBlock language="bash">
+  {dedent`
+    # поднять стенд целиком (kind + helm + Postgres)
+    cd ../kacho-deploy && make dev-up
+
+    # пересобрать образ и перекатить только VPC
+    cd ../kacho-deploy && make reload-svc SVC=vpc
+
+    # логи сервиса
+    cd ../kacho-deploy && make logs-svc SVC=vpc
+
+    # psql в БД kacho_vpc
+    cd ../kacho-deploy && make psql SVC=vpc
+
+    # снести стенд
+    cd ../kacho-deploy && make dev-down
+  `}
+</CodeBlock>
+
+`reload-svc SVC=vpc` собирает `kacho-vpc:dev` из build-context родительского каталога,
+загружает образ в kind (`kind load docker-image`) и делает
+`kubectl rollout restart deployment/vpc` — init-container `migrate` при этом
+повторно прогоняет `kacho-migrator up` (миграции идемпотентны: уже примененные
+пропускаются).
+
+:::tip Greenfield-пересоздание БД
+Baseline `0001` задает схему «с нуля»: dev-БД, поднятая на несовместимой старой схеме,
+пересоздается полностью (`make dev-down` + `make dev-up`, либо удалить PVC и переустановить
+чарт). Инкрементные миграции `0002`..`0009` накатываются поверх baseline идемпотентно.
+:::
+
+### Ручной запуск миграций (вне kind)
+
+<CodeBlock language="bash">
+  {dedent`
+    # применить все миграции к локальной БД
+    KACHO_MIGRATOR_DSN='postgres://vpc:secret@localhost:5432/kacho_vpc?options=-c%20search_path%3Dkacho_vpc,public' \\
+      kacho-migrator up
+
+    # статус
+    KACHO_MIGRATOR_DSN='postgres://vpc:secret@localhost:5432/kacho_vpc' kacho-migrator status
+  `}
+</CodeBlock>
+
+## Проверка работоспособности
+
+После `make dev-up` проверьте доступность API (через port-forward api-gateway на
+`localhost:18080`):
+
+<CodeBlock language="bash">
+  {dedent`
+    # port-forward api-gateway → localhost:18080
+    kubectl -n kacho port-forward svc/api-gateway 18080:8080 &
+
+    # список сетей проекта (200 OK при здоровом сервисе)
+    curl 'http://localhost:18080/vpc/v1/networks?projectId={projectId}' \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+readiness/liveness-пробы в Deployment — TCP по порту `grpc` (9090); pod считается
+готовым только после успешного init-container `migrate` и старта gRPC-листенеров.
+
+## Типичные ошибки развертывания
+
+<table>
+  <thead><tr><th>Симптом</th><th>Причина</th><th>Решение</th></tr></thead>
+  <tbody>
+    <tr><td>init-container <code>migrate</code> в CrashLoopBackOff</td><td>Недоступна БД / неверный пароль в Secret</td><td>Проверить <code>pg-vpc</code> и Secret <code>kacho-umbrella-pg-vpc</code></td></tr>
+    <tr><td><code>FATAL: unknown parameter pool\_max\_conns</code> в миграторе</td><td>В migrate-DSN попал <code>pool\_max\_conns</code></td><td>Использовать <code>cfg.MigrateDSN()</code> (без pool-параметров)</td></tr>
+    <tr><td>Таблицы не находятся (<code>relation does not exist</code>)</td><td>Не выставлен <code>search\_path</code></td><td>Добавить <code>options=-c search\_path=kacho\_vpc,public</code> в DSN</td></tr>
+    <tr><td>Pod не стартует, основной контейнер не запускается</td><td>init-container не завершился успешно</td><td>Смотреть логи init-container <code>migrate</code></td></tr>
+  </tbody>
+</table>
+
+Коды ошибок, которые API возвращает при недоступности зависимостей (например, БД
+или peer-сервиса при валидации ссылок):
+
+<Codes codes={['unavailable', 'failedPrecondition', 'internal']} />
