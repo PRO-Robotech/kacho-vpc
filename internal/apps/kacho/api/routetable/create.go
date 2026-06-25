@@ -168,9 +168,13 @@ func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt 
 	}
 	// Записываем INTENT на owner-hierarchy-tuple vpc_route_table→project в той же
 	// writer-TX — at-least-once через transactional-outbox, без best-effort-потери
-	// при ошибке.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterIntent(
-		fgaregister.ProjectHierarchy(string(rt.ProjectID), "vpc_route_table", created.ID),
+	// при ошибке. В mirror-feed несем labels RouteTable + parent_project_id
+	// (ProjectHierarchyItem), а не голый tuple — иначе resource_mirror в kacho-iam
+	// остается без labels и ARM_LABELS-селектор не матчит даже свежесозданную
+	// RouteTable. Симметрично network/subnet/securitygroup create.
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+		fgaregister.ProjectHierarchyItem(string(rt.ProjectID), "vpc_route_table", created.ID,
+			domain.LabelsToMap(created.Labels)),
 	)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}

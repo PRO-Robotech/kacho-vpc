@@ -214,9 +214,14 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
 		}
 		// Публикуем intent на owner-hierarchy-tuple vpc_network_interface→project
-		// в той же writer-TX — чтобы он не терялся при ошибке после commit.
-		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterIntent(
-			fgaregister.ProjectHierarchy(string(n.ProjectID), "vpc_network_interface", created.ID),
+		// в той же writer-TX — чтобы он не терялся при ошибке после commit. В
+		// mirror-feed несем labels NIC + parent_project_id (ProjectHierarchyItem),
+		// а не голый tuple — иначе resource_mirror в kacho-iam остается без labels и
+		// ARM_LABELS-селектор не матчит даже свежесозданный NIC. Симметрично
+		// network/subnet/securitygroup create.
+		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+			fgaregister.ProjectHierarchyItem(string(n.ProjectID), "vpc_network_interface", created.ID,
+				domain.LabelsToMap(created.Labels)),
 		)); rerr != nil {
 			w.Abort()
 			u.detachAddresses(ctx, allAddrs)

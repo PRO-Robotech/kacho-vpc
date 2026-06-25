@@ -16,6 +16,7 @@ import (
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -147,10 +148,40 @@ func (u *UpdateNetworkInterfaceUseCase) doUpdate(ctx context.Context, in UpdateI
 	if oerr := w.Outbox().Emit(ctx, "NetworkInterface", updated.ID, "UPDATED", helpers.DomainToMap(updated)); oerr != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
 	}
+	// Если labels попали в update_mask (или это full-object PATCH), переэмитим
+	// register-intent с обновленными метками в ТОЙ ЖЕ writer-TX, чтобы kacho-iam
+	// держал resource_mirror в актуальном виде для ARM_LABELS-селектора (revoke
+	// при снятии метки). Update без labels → переэмита нет. Полное снятие labels →
+	// upsert с пустыми метками (НЕ Unregister: NIC все еще существует). Эталон —
+	// network/subnet/securitygroup update.
+	if labelsInMask(in.UpdateMask) {
+		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+			fgaregister.ProjectHierarchyItem(string(updated.ProjectID), "vpc_network_interface", updated.ID,
+				domain.LabelsToMap(updated.Labels)),
+		)); rerr != nil {
+			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, rerr))
+		}
+	}
 	if cerr := w.Commit(); cerr != nil {
 		return nil, serviceerr.MapRepoErr(cerr)
 	}
 	return marshalNetworkInterfaceRecord(updated)
+}
+
+// labelsInMask — затрагивает ли update_mask поле `labels`: пустая маска значит
+// full-object PATCH (labels применяются), явная маска матчится, если содержит
+// "labels". Управляет переэмитом register-intent — держать в синхроне с
+// full-PATCH-набором полей в applyNICMask.
+func labelsInMask(updateMask []string) bool {
+	if len(updateMask) == 0 {
+		return true // full-object PATCH writes labels
+	}
+	for _, f := range updateMask {
+		if f == "labels" {
+			return true
+		}
+	}
+	return false
 }
 
 // derefName — name to apply: либо из mask (если включен), либо текущее имя.

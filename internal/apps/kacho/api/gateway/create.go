@@ -128,8 +128,13 @@ func (u *CreateGatewayUseCase) doCreate(ctx context.Context, gwID string, g doma
 	}
 	// Записываем INTENT hierarchy-tuple vpc_gateway→project в той же writer-TX,
 	// чтобы register-намерение было атомарно с Insert и не терялось при ошибке.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterIntent(
-		fgaregister.ProjectHierarchy(string(g.ProjectID), "vpc_gateway", created.ID),
+	// В mirror-feed несем labels Gateway + parent_project_id (ProjectHierarchyItem),
+	// а не голый tuple — иначе resource_mirror в kacho-iam остается без labels и
+	// ARM_LABELS-селектор не матчит даже свежесозданный Gateway. Симметрично
+	// network/subnet/securitygroup create.
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+		fgaregister.ProjectHierarchyItem(string(g.ProjectID), "vpc_gateway", created.ID,
+			domain.LabelsToMap(created.Labels)),
 	)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
