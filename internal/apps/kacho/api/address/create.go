@@ -467,9 +467,13 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	}
 	// Публикуем INTENT на owner-tuple vpc_address→project в той же writer-TX
 	// (atomic с Insert + IPAM allocate). Так intent не теряется при ошибке,
-	// в отличие от best-effort emit после commit.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterIntent(
-		fgaregister.ProjectHierarchy(in.ProjectID, "vpc_address", created.ID),
+	// в отличие от best-effort emit после commit. В mirror-feed несем labels
+	// Address + parent_project_id (ProjectHierarchyItem), а не голый tuple — иначе
+	// resource_mirror в kacho-iam остается без labels и ARM_LABELS-селектор не
+	// матчит даже свежесозданный Address. Симметрично network/subnet/securitygroup.
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+		fgaregister.ProjectHierarchyItem(in.ProjectID, "vpc_address", created.ID,
+			domain.LabelsToMap(created.Labels)),
 	)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}

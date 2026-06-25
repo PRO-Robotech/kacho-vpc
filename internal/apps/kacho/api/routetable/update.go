@@ -15,6 +15,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -96,10 +97,41 @@ func (u *UpdateRouteTableUseCase) doUpdate(ctx context.Context, in UpdateInput) 
 	if err := w.Outbox().Emit(ctx, "RouteTable", updated.ID, "UPDATED", helpers.RouteTablePayload(updated)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err))
 	}
+	// Если labels попали в update_mask (или это full-object PATCH), переэмитим
+	// register-intent с обновленными метками в ТОЙ ЖЕ writer-TX, чтобы kacho-iam
+	// держал resource_mirror в актуальном виде для ARM_LABELS-селектора (revoke
+	// при снятии метки). Update без labels → переэмита нет. Полное снятие labels →
+	// upsert с пустыми метками (НЕ Unregister: RouteTable все еще существует,
+	// mirror-row остается, просто перестает матчиться селектором). Эталон —
+	// network/subnet/securitygroup update.
+	if labelsInMask(in.UpdateMask) {
+		if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+			fgaregister.ProjectHierarchyItem(string(updated.ProjectID), "vpc_route_table", updated.ID,
+				domain.LabelsToMap(updated.Labels)),
+		)); err != nil {
+			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
+		}
+	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}
 	return marshalRouteTableRecord(updated)
+}
+
+// labelsInMask — затрагивает ли update_mask поле `labels`: пустая маска значит
+// full-object PATCH (labels применяются), явная маска матчится, если содержит
+// "labels". Управляет переэмитом register-intent — держать в синхроне с
+// full-PATCH-набором полей в applyRouteTableMask.
+func labelsInMask(updateMask []string) bool {
+	if len(updateMask) == 0 {
+		return true // full-object PATCH writes labels
+	}
+	for _, f := range updateMask {
+		if f == "labels" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateRouteTableUpdate проверяет name/description/labels/static_routes в Update.
