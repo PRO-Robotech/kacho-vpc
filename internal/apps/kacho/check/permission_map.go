@@ -51,8 +51,28 @@ const clusterRootID = "cluster_kacho_root"
 // source of truth); тут — backend view-only, чтобы не плодить cross-repo import
 // просто ради двух строк.
 const (
+	// relationViewer / relationEditor — tier-relations. Сохраняются для
+	// create-child (на parent project, F-7) и top-level project-List (visibility
+	// per-object идёт через iam ListObjects `viewer ∪ v_list`, не через per-RPC
+	// Check). Для object-self CRUD энфорс — verb-bearing relations ниже.
 	relationViewer = "viewer"
 	relationEditor = "editor"
+
+	// verb-bearing relations (v_*) — enforcement резолвит object-self action на
+	// verb, а не на tier (см. anchor-эпик «Explicit RBAC model 2026», D-6/D-6a:
+	// доступ по verb развязан с tier). Материализуются per-object reconciler'ом
+	// kacho-iam; consumer гейтит ими object-self RPC. Дублируют relation-имена из
+	// kacho-iam/internal/authzmap (там — source of truth); тут — backend view-only.
+	//
+	//	v_get    — чтение содержимого самого ресурса (Get / GetByValue);
+	//	v_list   — видимость дочерних/операций на самом ресурсе (ListSubnets,
+	//	           ListOperations, …) — НЕ top-level project-List;
+	//	v_update — мутация самого ресурса (Update + domain-mutate verb'ы);
+	//	v_delete — удаление самого ресурса.
+	relationVGet    = "v_get"
+	relationVList   = "v_list"
+	relationVUpdate = "v_update"
+	relationVDelete = "v_delete"
 
 	// system_* — cluster-tier relations для internal admin/cluster-RPC.
 	// `system_viewer` — read-tier (инфра-чувствительный read, напр. vrf_id);
@@ -76,25 +96,30 @@ func clusterScoped(relation string) authz.RPCEntry {
 
 // PermissionMap — карта RPC → required relation+extract.
 //
-// Семантика per-RPC:
-//   - Create / List / *Operations            — на parent scope `project:<project_id>` (из request)
-//   - Get/Update/Delete/Move/<verb>          — на самом ресурсе `<resource_type>:<resource_id>`
-//   - OperationService.Get                   — на `vpc_operation:<operation_id>` (viewer)
+// Семантика per-RPC (enforcement по verb, развязан с tier — D-6/D-6a):
+//   - Create                          — parent scope `project:<project_id>`, tier `editor` (F-7:
+//     create-authority = write-authz на parent, не v_create)
+//   - top-level List                  — parent scope `project:<project_id>`, tier `viewer`;
+//     visibility per-object — через iam ListObjects `viewer ∪ v_list`
+//   - Get / GetByValue                — на самом ресурсе, `v_get`
+//   - ListSubnets/ListOps/… (on res)  — на самом ресурсе, `v_list`
+//   - Update + domain-mutate verb'ы   — на самом ресурсе, `v_update`
+//   - Delete                          — на самом ресурсе, `v_delete`
+//   - OperationService.Get            — Public (op-id opaque, поллится creator'ом)
 //
-// Update/Delete/Move — relation=editor, все read-only — relation=viewer.
-//
-// Для Update/Delete/Move/<verb> мы НЕ резолвим project_id из БД заранее — это
-// лишний DB-trip на каждый RPC. Проверяем relation на самом ресурсе
-// (`vpc_network:enp_xxx`). FGA-модель настроена так, что `editor on vpc_network`
-// → computed через `editor on project` → `member on group`. Это эквивалентно
-// проверке на project'е, но без лишнего DB-lookup'а.
+// Для object-self RPC мы НЕ резолвим project_id из БД заранее — это лишний DB-trip
+// на каждый RPC. Проверяем v_*-relation на самом ресурсе (`vpc_network:enp_xxx`):
+// reconciler kacho-iam материализует per-object `v_get/v_list/v_update/v_delete`
+// для grant'а соответствующего verb'а; владелец/grantee аккаунта получает их
+// forward-материализацией. cluster-admin резолвится через iam short-circuit
+// (consumer short-circuit не держит).
 func PermissionMap() authz.RPCMap {
 	return authz.RPCMap{
 		// =========================
 		// NetworkService
 		// =========================
 		"/kacho.cloud.vpc.v1.NetworkService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.GetNetworkRequest).GetNetworkId(), nil
 			}),
@@ -120,37 +145,37 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateNetworkRequest).GetNetworkId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteNetworkRequest).GetNetworkId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/ListSubnets": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworkSubnetsRequest).GetNetworkId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/ListSecurityGroups": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworkSecurityGroupsRequest).GetNetworkId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/ListRouteTables": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworkRouteTablesRequest).GetNetworkId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeNetwork, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworkOperationsRequest).GetNetworkId(), nil
 			}),
@@ -160,7 +185,7 @@ func PermissionMap() authz.RPCMap {
 		// SubnetService
 		// =========================
 		"/kacho.cloud.vpc.v1.SubnetService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.GetSubnetRequest).GetSubnetId(), nil
 			}),
@@ -178,37 +203,37 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateSubnetRequest).GetSubnetId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteSubnetRequest).GetSubnetId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/AddCidrBlocks": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.AddSubnetCidrBlocksRequest).GetSubnetId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/RemoveCidrBlocks": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.RemoveSubnetCidrBlocksRequest).GetSubnetId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/ListUsedAddresses": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.ListUsedAddressesRequest).GetSubnetId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SubnetService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.ListSubnetOperationsRequest).GetSubnetId(), nil
 			}),
@@ -218,13 +243,13 @@ func PermissionMap() authz.RPCMap {
 		// AddressService
 		// =========================
 		"/kacho.cloud.vpc.v1.AddressService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
 				return req.(*vpcv1.GetAddressRequest).GetAddressId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.AddressService/GetByValue": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			// GetByValue lookup'ит Address по значению IP (без address_id заранее).
 			// В request'е есть oneof scope { subnet_id } — если subnet_id передан,
 			// проверяем viewer на subnet'е (caller с access на subnet получает
@@ -246,7 +271,7 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.AddressService/ListBySubnet": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeSubnet, func(req any) (string, error) {
 				return req.(*vpcv1.ListAddressesBySubnetRequest).GetSubnetId(), nil
 			}),
@@ -258,19 +283,19 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.AddressService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateAddressRequest).GetAddressId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.AddressService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteAddressRequest).GetAddressId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.AddressService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
 				return req.(*vpcv1.ListAddressOperationsRequest).GetAddressId(), nil
 			}),
@@ -280,7 +305,7 @@ func PermissionMap() authz.RPCMap {
 		// RouteTableService
 		// =========================
 		"/kacho.cloud.vpc.v1.RouteTableService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeRouteTable, func(req any) (string, error) {
 				return req.(*vpcv1.GetRouteTableRequest).GetRouteTableId(), nil
 			}),
@@ -298,19 +323,19 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.RouteTableService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeRouteTable, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateRouteTableRequest).GetRouteTableId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.RouteTableService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeRouteTable, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteRouteTableRequest).GetRouteTableId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.RouteTableService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeRouteTable, func(req any) (string, error) {
 				return req.(*vpcv1.ListRouteTableOperationsRequest).GetRouteTableId(), nil
 			}),
@@ -320,7 +345,7 @@ func PermissionMap() authz.RPCMap {
 		// SecurityGroupService
 		// =========================
 		"/kacho.cloud.vpc.v1.SecurityGroupService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.GetSecurityGroupRequest).GetSecurityGroupId(), nil
 			}),
@@ -338,31 +363,31 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SecurityGroupService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateSecurityGroupRequest).GetSecurityGroupId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SecurityGroupService/UpdateRules": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateSecurityGroupRulesRequest).GetSecurityGroupId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SecurityGroupService/UpdateRule": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateSecurityGroupRuleRequest).GetSecurityGroupId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SecurityGroupService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteSecurityGroupRequest).GetSecurityGroupId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.SecurityGroupService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeSecurityGroup, func(req any) (string, error) {
 				return req.(*vpcv1.ListSecurityGroupOperationsRequest).GetSecurityGroupId(), nil
 			}),
@@ -372,7 +397,7 @@ func PermissionMap() authz.RPCMap {
 		// GatewayService
 		// =========================
 		"/kacho.cloud.vpc.v1.GatewayService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeGateway, func(req any) (string, error) {
 				return req.(*vpcv1.GetGatewayRequest).GetGatewayId(), nil
 			}),
@@ -390,19 +415,19 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.GatewayService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeGateway, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateGatewayRequest).GetGatewayId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.GatewayService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeGateway, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteGatewayRequest).GetGatewayId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.GatewayService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeGateway, func(req any) (string, error) {
 				return req.(*vpcv1.ListGatewayOperationsRequest).GetGatewayId(), nil
 			}),
@@ -412,7 +437,7 @@ func PermissionMap() authz.RPCMap {
 		// NetworkInterfaceService
 		// =========================
 		"/kacho.cloud.vpc.v1.NetworkInterfaceService/Get": {
-			Relation: relationViewer,
+			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
 				return req.(*vpcv1.GetNetworkInterfaceRequest).GetNetworkInterfaceId(), nil
 			}),
@@ -430,19 +455,19 @@ func PermissionMap() authz.RPCMap {
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkInterfaceService/Update": {
-			Relation: relationEditor,
+			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
 				return req.(*vpcv1.UpdateNetworkInterfaceRequest).GetNetworkInterfaceId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkInterfaceService/Delete": {
-			Relation: relationEditor,
+			Relation: relationVDelete,
 			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
 				return req.(*vpcv1.DeleteNetworkInterfaceRequest).GetNetworkInterfaceId(), nil
 			}),
 		},
 		"/kacho.cloud.vpc.v1.NetworkInterfaceService/ListOperations": {
-			Relation: relationViewer,
+			Relation: relationVList,
 			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworkInterfaceOperationsRequest).GetNetworkInterfaceId(), nil
 			}),

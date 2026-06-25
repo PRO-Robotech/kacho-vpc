@@ -79,7 +79,7 @@ func TestInterceptor_Unary_Allow_NetworkCreate(t *testing.T) {
 func TestInterceptor_Unary_Deny_NetworkDelete(t *testing.T) {
 	intr, calls := newTestInterceptor(t, func(_ context.Context, subject, relation, object string) (bool, error) {
 		require.Equal(t, "user:usr_bob", subject)
-		require.Equal(t, "editor", relation)
+		require.Equal(t, "v_delete", relation)
 		require.Equal(t, "vpc_network:enp_xxx", object)
 		return false, nil
 	})
