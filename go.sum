@@ -10,10 +10,6 @@ github.com/H-BF/corlib v1.2.31-dev h1:8EjCkkiZ02Em77buzIQp1chKPWkWvi40jz0mpx/Lkj
 github.com/H-BF/corlib v1.2.31-dev/go.mod h1:YrRyr4LXSng+HzqIo4HfI3+833UrI9xW3qJcIoXwc04=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260618025241-a8dbc86653dc h1:t3jZADVoumuzdUWd7bLCi87dSfde2hMUCJzCJWsuFkU=
-github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260618025241-a8dbc86653dc/go.mod h1:oQSbiJ3zpfoBA+Ma1sN3FOt6e3OjwzzPFSspoznie4o=
-github.com/PRO-Robotech/kacho-proto v0.1.1-0.20260624203923-05d1904e3797 h1:WmhdjjonEK/j9WUExIq1yTY2P7vEKquQApjGvEnDtv4=
-github.com/PRO-Robotech/kacho-proto v0.1.1-0.20260624203923-05d1904e3797/go.mod h1:eivh1UziyP3E4fqTBzz6687eowDr9zPIqhCeeCofAQ4=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

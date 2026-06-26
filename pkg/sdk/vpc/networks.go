@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	operationv1 "github.com/PRO-Robotech/kacho-corelib/proto/gen/go/kacho/cloud/operation"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
