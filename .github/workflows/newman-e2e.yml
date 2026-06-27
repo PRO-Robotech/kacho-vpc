@@ -119,22 +119,26 @@ jobs:
           sudo tar -xzf /tmp/grpcurl.tar.gz -C /usr/local/bin grpcurl
           grpcurl --version
 
-      # Build every kacho-* :dev image.
+      # Build every kacho-* :dev image. Сервисы в monorepo-дереве разъезжаются
+      # по build-режиму: single-repo (Dockerfile `COPY . .` + `go mod download`
+      # тянет зависимости с public proxy → context = свой checkout) vs legacy
+      # multi-sibling (Dockerfile `COPY ../kacho-corelib …` → context =
+      # workspace root). Режим определяем по самому Dockerfile, чтобы петля была
+      # устойчива к независимой миграции каждого репо. umbrella chart включает
+      # kacho-nlb sub-chart.
       - name: build service images
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          # kacho-vpc — single-repo: Dockerfile `COPY . .` + `go mod download`
-          # тянет kacho-corelib/kacho-iam/kacho-geo с public proxy, поэтому
-          # build-context = свой checkout (НЕ workspace root).
-          echo "=== build kacho-vpc:dev (single-repo) ==="
-          docker build -f kacho-vpc/Dockerfile -t kacho-vpc:dev kacho-vpc
-          # Остальные сервисы пока собираются из workspace root (их Dockerfile
-          # COPY ../kacho-corelib / ../kacho-proto). umbrella chart включает
-          # kacho-nlb sub-chart.
-          for svc in iam compute api-gateway nlb; do
-            echo "=== build kacho-$svc:dev ==="
-            docker build -f "kacho-$svc/Dockerfile" -t "kacho-$svc:dev" .
+          for svc in vpc iam compute api-gateway nlb; do
+            df="kacho-$svc/Dockerfile"
+            if grep -qE '^[[:space:]]*COPY[[:space:]]+\.[[:space:]]+\.' "$df"; then
+              echo "=== build kacho-$svc:dev (single-repo, context=kacho-$svc) ==="
+              docker build -f "$df" -t "kacho-$svc:dev" "kacho-$svc"
+            else
+              echo "=== build kacho-$svc:dev (multi-sibling, context=workspace root) ==="
+              docker build -f "$df" -t "kacho-$svc:dev" .
+            fi
           done
           if [ -f kacho-ui/Dockerfile ]; then
             echo "=== build kacho-ui:dev ==="
