@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/netip"
 	"strings"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,10 +14,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
-
-// nowUTC — единая точка получения текущего времени (UTC) для use-case'ов
-// AddressPool. Вынесено для читаемости (parity со стилем create/update).
-func nowUTC() time.Time { return time.Now().UTC() }
 
 // appendNewCIDRs добавляет в existing блоки из add, пропуская уже присутствующие
 // (дедуп). Возвращает объединенный набор и подмножество реально новых блоков

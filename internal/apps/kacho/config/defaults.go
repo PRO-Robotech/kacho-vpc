@@ -45,8 +45,11 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("api-server.internal-endpoint", "tcp://0.0.0.0:9091")
 	v.SetDefault("api-server.graceful-shutdown", 10*time.Second)
 
-	// metrics / healthcheck (placeholders)
+	// metrics / healthcheck — cluster-internal diagnostic listener (/metrics +
+	// /healthz + /readyz). endpoint=:9095 зеркалит kacho-iam; enable=false ИЛИ
+	// пустой endpoint → listener не поднимается.
 	v.SetDefault("metrics.enable", true)
+	v.SetDefault("metrics.endpoint", ":9095")
 	v.SetDefault("healthcheck.enable", true)
 
 	// repository

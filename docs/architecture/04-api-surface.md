@@ -9,7 +9,6 @@
 |---|---|---|
 | Public домены (8: 7 + `NetworkInterfaceService`) | `:9090` (public gRPC) | ✅ да, через api-gateway (оба listener'а) |
 | Internal admin (kacho-only) | `:9091` (internal gRPC) | ✅ выборочно — только cluster-internal listener (CRUD + admin actions) |
-| Outbox stream (`InternalWatchService`) | `:9091` | ❌ только server-to-server |
 
 ## Public сервисы (`:9090`)
 
@@ -34,9 +33,8 @@ REST mapping — `google.api.http` аннотации в proto, см. `kacho-pro
 | Сервис | RPC | Что делает |
 |---|---|---|
 | `InternalAddressPoolService` | CRUD пулов + binding (BindAsNetworkDefault / UnbindNetworkDefault) + observability (ListAddresses, GetUtilization) | |
-| `InternalNetworkService` | SetDefaultSecurityGroupId (admin-only computed-field setter) | у `Network` нет инфра-проекции |
+| `InternalNetworkService` | GetNetwork (internal-only `vrf_id`) + SetDefaultSecurityGroupId (admin-only computed-field setter) | публичная проекция `Network` инфра-полей не содержит |
 | `InternalAddressService` | AllocateInternalIP / **AllocateInternalIPv6** / AllocateExternalIP + SetAddressReference / ClearAddressReference / GetAddressReference (referrer-tracking «кто использует адрес» — отражается в `Address.used` и `SubnetService.ListUsedAddresses.references[]`; referrer'ы: `compute_instance`, `network_interface`) | |
-| `InternalWatchService` | Watch outbox stream | server-to-server only |
 | ~~`InternalRegionService` / `InternalZoneService`~~ | — | Geography (Region/Zone) живет в leaf-домене `kacho-geo`; в kacho-vpc этих сервисов нет |
 
 ## REST endpoints (через api-gateway)
@@ -116,8 +114,7 @@ DELETE /vpc/v1/networks/{network_id}/addressPoolBinding
 
 ```
 InternalAddressService.AllocateInternalIP / AllocateInternalIPv6 / AllocateExternalIP / SetAddressReference / ClearAddressReference / GetAddressReference
-InternalWatchService.Watch
-InternalNetworkService.SetDefaultSecurityGroupId
+InternalNetworkService.GetNetwork / SetDefaultSecurityGroupId
 ```
 
 Эти RPC дергают только сервисы (kacho-vpc сам себя через wiring или
@@ -164,9 +161,8 @@ kacho-proto/proto/kacho/cloud/vpc/v1/
 ├── network_interface.proto / network_interface_service.proto   NetworkInterface
 │
 ├── internal_address_pool_service.proto AddressPool admin + observability
-├── internal_network_service.proto      SetDefaultSecurityGroupId (admin-only setter)
-├── internal_address_service.proto      Allocate*IP (v4/v6/ext), {Set,Clear,Get}AddressReference
-└── internal_watch_service.proto        Watch outbox
+├── internal_network_service.proto      GetNetwork (internal-only vrf_id) + SetDefaultSecurityGroupId
+└── internal_address_service.proto      Allocate*IP (v4/v6/ext), {Set,Clear,Get}AddressReference
 # (Region/Zone — домен kacho-geo: proto/kacho/cloud/geo/v1/)
 ```
 

@@ -59,7 +59,7 @@ IPAM-cascade. Никакой прямой доступ к чужой БД.
 | `kacho-iam` | gRPC client | `ProjectClient.Exists(projectID)`, `ProjectClient.GetCloudIDFromProject(projectID)` (project existence + account-id lookup; `projectID` = id владельца-проекта) |
 | `kacho-compute`, прочие IP-потребители | gRPC `:9091` | `InternalAddressService.AllocateInternalIP` / `AllocateInternalIPv6` / `AllocateExternalIP` + referrer-tracking; валидация NIC-spec (Subnet/SG) |
 | `kacho-geo` (Geography owner, leaf) | gRPC client (исходящий) | `geo.v1.ZoneService.Get` — валидация `zone_id` (Region/Zone — leaf-домен geo) |
-| Внутренние подписчики на изменения | gRPC server-stream `:9091` | `InternalWatchService.Watch` отдает события из outbox |
+| Внутрикластерные потребители событий | Postgres `LISTEN/NOTIFY` (`vpc_outbox`) | Транзакционный outbox-журнал доменных мутаций; публичного Watch RPC нет — клиенты узнают об изменениях через polling `List` / `OperationService.Get` |
 | Postgres (своя БД `kacho_vpc`) | pgx + LISTEN/NOTIFY | Источник истины |
 | Admin-инструменты (UI, curl/REST на api-gateway internal mux) | gRPC `:9091` через api-gateway internal listener | Управление AddressPool; admin-операции Network (default-SG setter) |
 
@@ -83,7 +83,7 @@ IPAM-cascade. Никакой прямой доступ к чужой БД.
 | Стабильность контракта | Фиксированные regex, status codes и error texts — часть контракта, меняются осознанно |
 | Graceful shutdown | До 30 секунд на drain LRO-worker'ов |
 | Latency бюджет | Не зафиксирован формально; sync-валидация в request-path, async-IO в worker |
-| Concurrent watch streams | Лимит `KACHO_VPC_WATCH_MAX_STREAMS` (по умолчанию 32) |
+| Наблюдение состояния | Polling: `OperationService.Get` (результат мутации) + периодический `List` (Watch RPC не существует) |
 
 ---
 
@@ -105,7 +105,8 @@ vpc serve                        — запуск gRPC-серверов
 - Воркеров операций `kacho-corelib/operations.Run` — одна горутина на каждую
   in-flight LRO; пул не явный.
 - Подключение к Postgres через `pgxpool` (один пул).
-- Per-Watch-stream dedicated `pgx.Conn` (вне пула) с открытым `LISTEN`.
+- FGA register-drainer (`kacho-corelib/outbox/drainer`) — слушает
+  `kacho_vpc_fga_register_outbox` и применяет owner-tuple intents через `kacho-iam`.
 
 ### 2.2 Хранилище
 
@@ -159,7 +160,6 @@ IPAM-allocate и default-SG creation выполняются inline в service-с
 | `KACHO_VPC_DB_MAX_CONNS` | `0` (pgx default = `max(4, NumCPU)`) | Размер pgx pool'а. Прокидывается в DSN как `pool_max_conns` **только** для pgxpool — миграции используют DSN без него (иначе `database/sql` передает `pool_max_conns` серверу как unknown PG-параметр → fatal) |
 | `KACHO_VPC_GRPC_PORT` | `9090` | Публичный gRPC |
 | `KACHO_VPC_INTERNAL_PORT` | `9091` | Internal gRPC |
-| `KACHO_VPC_WATCH_MAX_STREAMS` | `32` | Лимит конкурентных Watch |
 | `KACHO_VPC_IAM_GRPC_ADDR` | `iam.kacho.svc.cluster.local:9090` | Endpoint kacho-iam (`extapi.iam.endpoint`) |
 | `KACHO_VPC_IAM_TLS` | `false` | TLS на канале к kacho-iam (`extapi.iam.tls.enable`) |
 | `KACHO_VPC_DEFAULT_SG_INLINE` | `true` | `true` — `Network.doCreate` синхронно создает default SG. `false` — Network.Create НЕ создает SG (убирает 2 INSERT + 1 UPDATE из hot-path, +30-40% write-throughput; для load-тестов и deploy с внешним SG-reconciler'ом). При `false` newman-кейсы `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` краснеют |
@@ -255,26 +255,37 @@ Pgx-адаптеры. Один файл на таблицу. Использую�
 | `paging.go` | Кодирование/декодирование cursor-based page_token |
 | `jsonb.go` | Хелперы для безопасной JSON-сериализации |
 
-### 3.5 Слой `handler/`
+### 3.5 Transport-слой (gRPC handlers)
 
-Тонкий transport-слой. Один файл на gRPC-сервис.
+Тонкий transport: parse req → use-case → format resp. Public per-resource handler'ы
+живут рядом со своими use-case'ами в `internal/apps/kacho/api/<resource>/handler.go`;
+cross-cutting и internal-only transport — в `internal/handler/`.
+
+Public per-resource handler'ы (`internal/apps/kacho/api/<resource>/handler.go`):
 
 | Файл | Сервис |
 |---|---|
-| `network_handler.go` | `NetworkService` (публичный) |
-| `subnet_handler.go` | `SubnetService` |
-| `address_handler.go` | `AddressService` |
-| `route_table_handler.go` | `RouteTableService` |
-| `security_group_handler.go` | `SecurityGroupService` |
-| `gateway_handler.go` | `GatewayService` |
-| `operation_handler.go` | `OperationService.Get` |
-| `internal_watch_handler.go` | `InternalWatchService.Watch` |
-| `internal_address_allocate_handler.go` | `InternalAddressService.AllocateInternalIP/External` |
-| `internal_address_pool_handler.go` | `InternalAddressPoolService` |
-| `internal_network_handler.go` | `InternalNetworkService` (default-SG setter; отдает internal-only `vrf_id`) |
-| `tenant_interceptor.go` | `TenantUnaryInterceptor`, `TenantStreamInterceptor`, `TenantCtx`, `AssertProjectOwnership` |
-| `mapping.go` | `operationToProto` и общие конверторы |
+| `network/handler.go` | `NetworkService` |
+| `subnet/handler.go` | `SubnetService` |
+| `address/handler.go` | `AddressService` |
+| `routetable/handler.go` | `RouteTableService` |
+| `securitygroup/handler.go` | `SecurityGroupService` |
+| `gateway/handler.go` | `GatewayService` |
+| `networkinterface/handler.go` | `NetworkInterfaceService` |
+| `addresspool/handler.go` | `InternalAddressPoolService` (admin-only, :9091) |
+
+Cross-cutting и internal transport (`internal/handler/`):
+
+| Файл | Сервис / роль |
+|---|---|
+| `operation_handler.go` | `OperationService.Get` / `Cancel` |
+| `internal_address_allocate_handler.go` | `InternalAddressService.AllocateInternalIP/IPv6/External` + referrer-tracking |
+| `internal_network_handler.go` | `InternalNetworkService` (`GetNetwork` — internal-only `vrf_id`; `SetDefaultSecurityGroupId`) |
+| `tenant_interceptor.go` | `TenantUnaryInterceptor`, `TenantStreamInterceptor` (tenant-context из gRPC metadata; `TenantCtx` / `AssertProjectOwnership` — в `internal/tenant`) |
 | `internal_maperr.go` | Общий маппер ошибок internal-handlers без info-leak |
+
+Конвертация `Operation` в proto — пакет `internal/apps/kacho/shared/pbconv`
+(`OperationToProto`).
 
 ### 3.6 Слой `clients/`
 
@@ -372,8 +383,9 @@ outbox-emit, формирование response).
 | `processed_at` | timestamptz | Зарезервировано на будущее |
 
 Триггер `vpc_outbox_notify_trg` на каждый INSERT выполняет
-`pg_notify('vpc_outbox', sequence_no::text)`. Подписчики через
-`InternalWatchService.Watch` получают пуш почти realtime.
+`pg_notify('vpc_outbox', sequence_no::text)` — это in-cluster `LISTEN/NOTIFY`-канал
+доменных событий. Публичного per-resource Watch RPC в Kachō нет: клиенты узнают об
+изменениях через polling `List` / `OperationService.Get`.
 
 **Транзакционная атомарность.** Repo-операции, эмитирующие outbox-событие,
 обязаны:
@@ -390,56 +402,20 @@ outbox-emit, формирование response).
 outbox, но notification отправляется в момент commit'а транзакции).
 Подписчик гарантированно увидит ресурс в БД к моменту обработки события.
 
-### 4.3 Watch stream
+### 4.3 Наблюдение состояния — polling-модель (без Watch RPC)
 
-`InternalWatchHandler.Watch` принимает `WatchRequest{from_sequence_no, kinds}`
-и стримит обратно записи из outbox.
+Публичного per-resource Watch RPC в API Kachō нет — server-streaming-слежения за
+состоянием ресурса сервис не предоставляет. Клиенты узнают об изменениях двумя
+способами:
 
-```
-   subscriber                 watch handler              postgres
-        |                          |                        |
-        |--Watch(from=X, kinds=[]) |                        |
-        |                          |--acquire slot-------->semaphore
-        |                          |--pgx.Connect (2s)---->dedicated conn
-        |                          |--LISTEN vpc_outbox--->pg
-        |                          |--catchup SELECT------>events from X
-        |<--stream batches---------|                        |
-        |                          |--WaitForNotification->pg
-        |                          |<-pg_notify-----------|
-        |                          |--re-read since cursor>events
-        |<--stream batch-----------|                        |
-        |--cancel/disconnect------>|                        |
-        |                          |--UNLISTEN + Close---->release
-        |                          |--release slot-------->semaphore
-```
+- **Результат мутации** — поллинг `OperationService.Get(operationId)` до `done=true`
+  (см. §6 — Operations LRO worker).
+- **Текущее состояние** — периодический `List<Resource>` (рекомендуемый интервал 2–5 c).
 
-Особенности:
-
-- Соединение под `LISTEN` берется отдельно через `pgx.Connect`, не из
-  pool'а (иначе на abnormal exit conn вернется в pool «грязным»).
-- Connect под inner timeout 2 секунды; защита от удержания семафора при
-  перегруженной БД.
-- Семафор `streamSlot` ограничивает число конкурентных подписок.
-- WaitForNotification под timeout 30 секунд для periodic re-poll
-  на случай missed-notify (GC-пауза listener'а).
-- Курсор шагает строго вперед по `sequence_no`.
-- Catchup batch size — 100 записей за один SELECT; loop продолжается до
-  batch < 100 (end-of-data).
-
-Формат `vpcv1.Event` на проводе:
-
-| Поле | Тип | Семантика |
-|---|---|---|
-| `sequence_no` | int64 | Monotonic id, курсор для resume |
-| `resource_kind` | string | `Network`, `Subnet`, `Address`, ... |
-| `resource_id` | string | ID ресурса |
-| `event_type` | string | `CREATED`, `UPDATED`, `DELETED` |
-| `payload` | `google.protobuf.Struct` | Snapshot ресурса (raw jsonb → structpb через `json.Unmarshal → structpb.NewStruct`) |
-| `created_at` | `google.protobuf.Timestamp` | Время записи в outbox |
-
-`WatchRequest` принимает опциональный `kinds []string` — если задан, в
-catchup-SELECT добавляется `AND resource_kind = ANY($2)`. Пустой `kinds`
-= стримим все.
+`vpc_outbox` остается транзакционным журналом доменных событий: каждая мутация в той
+же TX пишет строку (`resource_kind/resource_id/event_type/payload`), триггер
+`vpc_outbox_notify_trg` шлет `pg_notify('vpc_outbox', sequence_no)`. Это in-cluster
+`LISTEN/NOTIFY`-канал; наружу как Watch RPC он не публикуется.
 
 ### 4.4 Inline IPAM allocation
 
@@ -599,13 +575,13 @@ api-gateway смотрит на первые 3 символа Operation.id и н
 | `address_pool_network_default` | `network_id` | Default-pool для Network (explicit per-network) |
 | `cloud_pool_selector` | `cloud_id` | Admin-labels Cloud (legacy-таблица; в текущем cascade не используется) |
 
-### 5.4 Operations + Outbox + WatchCursors
+### 5.4 Operations + Outbox
 
 | Таблица | Назначение | PK |
 |---|---|---|
 | `operations` | Long-running operations (синхронизирована с corelib) | `id` |
-| `vpc_outbox` | Журнал событий | `sequence_no` |
-| `vpc_watch_cursors` | Курсоры subscriber-ов (на будущее, если потребуется persistent cursor) | `subscriber_id` |
+| `vpc_outbox` | Транзакционный журнал доменных событий (in-cluster `LISTEN/NOTIFY`; Watch RPC не публикуется) | `sequence_no` |
+| `vpc_watch_cursors` | Vestigial-таблица из baseline-схемы; кодом не используется (Watch RPC удален) | `subscriber_id` |
 
 ### 5.5 Связи между ресурсами (FK contract)
 
@@ -711,7 +687,7 @@ Source of truth — `internal/migrations/*.sql`: `0001_initial.sql` (baseline-с
 - `address_pools_selector_labels_gin` — GIN-индекс с `jsonb_path_ops` для
   `@>`-запроса в label-cascade.
 - `cloud_pool_selector_gin` — то же для CloudPoolSelector.
-- `vpc_outbox_seq_idx`, `vpc_outbox_kind_idx` — для catchup-запросов в Watch.
+- `vpc_outbox_seq_idx`, `vpc_outbox_kind_idx` — для выборок по `sequence_no` / `resource_kind` в outbox-журнале.
 - `operations_resource_idx` — для `ListOperations` per-resource.
 
 ### 6.4 Triggers и функции
@@ -856,10 +832,9 @@ selector_priority)` — резолв возвращает первый по phys
 
 | Service | RPC | Назначение |
 |---|---|---|
-| `InternalWatchService` | Watch (server-stream) | Outbox stream (server-to-server only) |
 | `InternalAddressService` | AllocateInternalIP, **AllocateInternalIPv6**, AllocateExternalIP, {Set,Clear,Get}AddressReference | IPAM + referrer-tracking; вызывается in-process из `AddressService.doCreate` и kacho-compute (referrer'ы: `compute_instance`, `network_interface`) |
 | `InternalAddressPoolService` | CRUD пулов + BindAsNetworkDefault/UnbindNetworkDefault + ListAddresses/GetUtilization | Управление IPAM (cluster-internal listener) |
-| `InternalNetworkService` | SetDefaultSecurityGroupId | admin-only computed-field setter (default SG) |
+| `InternalNetworkService` | GetNetwork (internal-only `vrf_id`), SetDefaultSecurityGroupId | read инфра-чувствительного поля + admin-only computed-field setter (default SG) |
 | ~~`InternalRegionService` / `InternalZoneService`~~ | — | Geography (Region/Zone) живет в leaf-домене `kacho-geo`; в kacho-vpc этих сервисов нет |
 
 ### 8.3 REST mapping (через api-gateway)
@@ -954,30 +929,27 @@ caller         addrSvc       poolSvc       addrPoolRepo    bindRepo    addrRepo 
   |<--AllocResult{ip, pool_id, already_allocated=false}                              |
 ```
 
-### 9.3 Watch outbox stream
+### 9.3 Наблюдение состояния (polling)
+
+Server-streaming Watch RPC в API Kachō нет. Клиент узнает о результате мутации
+поллингом `OperationService.Get(operationId)` до `done=true`, а текущее состояние —
+периодическим `List<Resource>`:
 
 ```
-subscriber      watch handler         pg (pool)       pg (dedicated)
-   |                  |                  |                  |
-   |--Watch(from=X)-->|                  |                  |
-   |                  |--acquire slot--->|                  |
-   |                  |--pgx.Connect---->|                  |
-   |                  |                  |                  |--TCP open
-   |                  |--LISTEN vpc_outbox------------------>|
-   |                  |--SELECT * FROM vpc_outbox WHERE seq_no > X LIMIT 100
-   |                  |                  |                  |
-   |<--batch----------|                  |                  |
-   |                  |  while batch_size == 100: повторить |
-   |                  |--WaitForNotification (30s)--------->|
-   |                  |                                     ⟵ pg_notify (от trigger)
-   |                  |<-- notification                     |
-   |                  |--SELECT new events---------+|       |
-   |<--batch----------|                            +|       |
-   |                  | ... loop                                |
-   |--cancel--------->|                                         |
-   |                  |--UNLISTEN + Close---------------------->|
-   |                  |--release slot                           |
+client                      kacho-vpc                 pg
+  |                            |                       |
+  |--Create/Update/Delete----->|--INSERT ресурс + vpc_outbox (одна TX)-->|
+  |<--Operation{done=false}----|                       |
+  |  loop до done=true:        |                       |
+  |--OperationService.Get----->|--SELECT operations--->|
+  |<--Operation{done?, result}-|                       |
+  |  периодический re-List:    |                       |
+  |--List<Resource>----------->|--SELECT ресурсы------>|
+  |<--текущее состояние--------|                       |
 ```
+
+`vpc_outbox` остается транзакционным журналом доменных событий (`pg_notify`
+in-cluster); наружу как Watch RPC он не публикуется.
 
 ### 9.4 Subnet AddCidrBlocks (с EXCLUDE constraint защитой)
 
@@ -1005,7 +977,7 @@ client       handler        service             subnetRepo      pg
 ### 9.5 Graceful shutdown
 
 ```
-                    main goroutine        shutdown goroutine        watch goroutine     LRO worker
+                    main goroutine        shutdown goroutine        register-drainer    LRO worker
                           |                       |                      |                  |
 SIGTERM ------>           |                       |                      |                  |
                           |--ctx cancel--->       |                      |                  |
@@ -1255,20 +1227,21 @@ baseline в `tests/k6/results/BASELINE.md`.)
 
 - `UpdateRules` использует xmin для optimistic concurrency.
 
-### 14.8 Слой handler
+### 14.8 Transport-слой
 
-1. По одному файлу на gRPC-сервис.
+1. Public per-resource handler — `internal/apps/kacho/api/<resource>/handler.go`
+   рядом со своим use-case'ом; internal/cross-cutting — в `internal/handler/`.
 2. Handler — thin transport: parse req → call service → format resp.
 3. Каждый Get/Update/Delete делает `AssertProjectOwnership(ctx, resource.ProjectID)`
-   после `repo.Get` (через service).
-4. В `tenant_interceptor.go` реализовать unary и stream interceptors с
-   `TenantCtx` и тремя AuthMode.
-5. В `internal_watch_handler.go` реализовать Watch с dedicated pgx.Conn,
-   семафором, catchup + WaitForNotification.
-6. В `internal_address_allocate_handler.go` — обертка над `AddressService.Allocate*`.
-7. В `operation_handler.go` — `Get` через `ops.Get`.
-8. В `mapping.go` — `operationToProto` с обязательным маппингом `CreatedBy`.
-9. В `internal_maperr.go` — generic info-leak-safe mapper.
+   (`internal/tenant`) после `repo.Get` (через service).
+4. В `internal/handler/tenant_interceptor.go` — unary и stream interceptors поверх
+   `TenantCtx` и AuthMode.
+5. В `internal/handler/internal_address_allocate_handler.go` — обертка над
+   `AddressService.Allocate*`.
+6. В `internal/handler/operation_handler.go` — `Get` / `Cancel` через `ops`.
+7. Конвертация `Operation` в proto — пакет `internal/apps/kacho/shared/pbconv`
+   (`OperationToProto`, с маппингом `CreatedBy`).
+8. В `internal/handler/internal_maperr.go` — generic info-leak-safe mapper.
 
 ### 14.9 Composition root
 
@@ -1301,7 +1274,7 @@ baseline в `tests/k6/results/BASELINE.md`.)
 | Миграции | `bin/kacho-vpc migrate up` идемпотентен |
 | Service start | `bin/kacho-vpc serve` слушает 9090 и 9091 |
 | Newman | `python3 tests/newman/scripts/gen.py && tests/newman/scripts/run.sh` — 0 failures (нужен port-forward api-gateway → 18080 + `KACHO_VPC_DEFAULT_SG_INLINE=true`) |
-| Watch stream | Создание Network → событие в outbox → пришло в подписку |
+| Polling-наблюдение | Создание Network → `OperationService.Get` доходит до `done=true`, ресурс виден в `List` (Watch RPC нет) |
 | Allocate IP | `InternalAddressService.AllocateExternalIP` возвращает IP из настроенного pool'а |
 | Cascade | Изменение network-default binding / is_default-пула меняет выбираемый pool без рестарта |
 | Graceful shutdown | SIGTERM завершает процесс в пределах 30 секунд, in-flight LRO дорабатывают |
@@ -1309,14 +1282,12 @@ baseline в `tests/k6/results/BASELINE.md`.)
 | EXCLUDE constraint | Параллельный Create двух Subnet с overlap → один успешный, один `FailedPrecondition` |
 | Idempotent Allocate | Повторный Allocate того же address — same IP, `already_allocated=true` |
 | Outbox TX atomicity | Если worker падает между INSERT ресурса и `emitVPC`, оба откатываются (одна TX) |
-| Watch resume | Перезапуск подписчика с сохраненным cursor не пропускает события |
 | garbage id | malformed/нераспознанный id (нет известного 3-char prefix `net/sub/adr/rtb/sgr/gtw/nic/apl/enp`) → sync `INVALID_ARGUMENT "invalid <res> id '<X>'"` (`corevalidate.ResourceID`). Well-formed-но-несуществующий → `NOT_FOUND` через `repo.Get`. Family-agnostic |
 | timestamp truncation | Все `created_at` в proto-response обрезаны до секунд |
 | empty mask | `UpdateNetwork` с пустой mask применяет mutable поля и игнорирует immutable из body |
 | Operation response type | `Delete*` возвращают `Operation` с `response = google.protobuf.Empty` (а не `Delete*Metadata`) |
 | Cross-tenant denied | Caller с `x-kacho-project-id: f1` не видит ресурс из `f2` → `PERMISSION_DENIED` |
 | Internal listener camouflage | Non-admin caller на :9091 для не-Internal RPC получает `NOT_FOUND`, не `PERMISSION_DENIED` |
-| Watch resource exhaustion | 33-й одновременный Watch (при лимите 32) получает `RESOURCE_EXHAUSTED` сразу |
 
 ---
 
@@ -1338,7 +1309,8 @@ kacho-vpc/
 │   │   ├── address/               — create.go (allocator consts), allocate.go, ...
 │   │   ├── addresspool/           — resolve.go (cascade resolve), ...
 │   │   ├── networkinterface/      — create.go, update.go, helpers.go (validateNICAddressCardinality), ...
-│   │   ├── route_table/, security_group/, gateway/
+│   │   ├── routetable/, securitygroup/, gateway/, addresspool/ (InternalAddressPoolService)
+│   │   ├── <resource>/handler.go    — public per-resource gRPC handlers
 │   │   ├── shared/serviceerr/     — errors.go, map.go (MapRepoErr); per-resource mapRepoErr — в <resource>/helpers.go
 │   │   ├── shared/macutil/mac.go  — MAC-аллокация (package macutil)
 │   │   ├── config/validate.go     — общие проверки (CIDR host-bits, IP в CIDR)
@@ -1349,10 +1321,11 @@ kacho-vpc/
 │   │   └── *_integration_test.go  — testcontainers
 │   ├── clients/
 │   │   └── iam_client.go (+ project_cache.go) — ProjectClient через gRPC к kacho-iam
-│   ├── handler/                   — gRPC handlers (см. §3.5)
-│   │   ├── 14 *_handler.go файлов
+│   ├── handler/                   — cross-cutting / internal transport (см. §3.5)
+│   │   ├── operation_handler.go             — OperationService.Get/Cancel
+│   │   ├── internal_address_allocate_handler.go — InternalAddressService (IPAM)
+│   │   ├── internal_network_handler.go     — InternalNetworkService (vrf_id / default-SG)
 │   │   ├── tenant_interceptor.go  — AuthN/AuthZ scaffolding
-│   │   ├── mapping.go             — operation/anypb conversion
 │   │   └── internal_maperr.go     — info-leak-safe mapper
 │   └── migrations/
 │       ├── 0001_initial.sql       — baseline schema

@@ -82,24 +82,68 @@ func TestPermissionMap_InternalAddressPool_Get_ClusterObject(t *testing.T) {
 	require.Equal(t, clusterRootID, objID)
 }
 
-// TestPermissionMap_InternalAddressService_NotMapped — IPAM-примитивы
-// InternalAddressService НЕ в Map: они остаются exempt (skip через
-// methodIsInternal в interceptor'е), авторизуются in-handler. Добавление их в
-// Map сломало бы service→service IPAM-аллокацию.
-func TestPermissionMap_InternalAddressService_NotMapped(t *testing.T) {
+// TestPermissionMap_InternalAddressService_Mapped — IPAM-примитивы
+// InternalAddressService гейтятся per-RPC FGA-Check'ом на самом ресурсе Address
+// (object-scoped verb-bearing, зеркало публичного AddressService.{Get,Update}):
+// мутации → v_update на vpc_address, чтение referrer'а → v_get. Это закрывает
+// authz-bypass на internal listener'е :9091 (security-инвариант: authN+authZ и
+// на internal'е тоже), не отклоняя легитимный cross-service IPAM-флоу от имени
+// конечного пользователя-владельца Address.
+func TestPermissionMap_InternalAddressService_Mapped(t *testing.T) {
 	m := check.PermissionMap()
-	ipamRPCs := []string{
+
+	mutate := []string{
 		"AllocateInternalIP",
 		"AllocateInternalIPv6",
 		"AllocateExternalIP",
 		"SetAddressReference",
 		"ClearAddressReference",
-		"GetAddressReference",
 		"MarkAddressEphemeralInUse",
 	}
-	for _, rpc := range ipamRPCs {
+	for _, rpc := range mutate {
 		full := "/kacho.cloud.vpc.v1.InternalAddressService/" + rpc
-		_, ok := m.Lookup(full)
-		require.Falsef(t, ok, "%s НЕ должен быть в PermissionMap (IPAM-примитив, остается exempt)", full)
+		e, ok := m.Lookup(full)
+		require.Truef(t, ok, "%s должен быть в PermissionMap (FGA-гейт на internal listener'е)", full)
+		require.Equalf(t, "v_update", e.Relation, "%s relation", full)
+		require.Falsef(t, e.Public, "%s гейтится Check'ом, не Public-skip", full)
+		require.Falsef(t, e.ScopeFiltered, "%s не scope-filtered", full)
+	}
+
+	get, ok := m.Lookup("/kacho.cloud.vpc.v1.InternalAddressService/GetAddressReference")
+	require.True(t, ok)
+	require.Equal(t, "v_get", get.Relation, "чтение referrer'а гейтится v_get")
+	require.False(t, get.Public)
+
+	// Extract извлекает (vpc_address, <address_id>) из каждого request'а.
+	objType, objID, err := m["/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIP"].
+		Extract(&vpcv1.AllocateExternalIPRequest{AddressId: "adr_alpha"})
+	require.NoError(t, err)
+	require.Equal(t, "vpc_address", objType)
+	require.Equal(t, "adr_alpha", objID)
+
+	objType, objID, err = m["/kacho.cloud.vpc.v1.InternalAddressService/SetAddressReference"].
+		Extract(&vpcv1.SetAddressReferenceRequest{AddressId: "adr_beta"})
+	require.NoError(t, err)
+	require.Equal(t, "vpc_address", objType)
+	require.Equal(t, "adr_beta", objID)
+
+	objType, objID, err = m["/kacho.cloud.vpc.v1.InternalAddressService/GetAddressReference"].
+		Extract(&vpcv1.GetAddressReferenceRequest{AddressId: "adr_gamma"})
+	require.NoError(t, err)
+	require.Equal(t, "vpc_address", objType)
+	require.Equal(t, "adr_gamma", objID)
+}
+
+// TestPermissionMap_InternalAddressService_NoExemptGuard — блокирующий drift-guard:
+// КАЖДЫЙ метод InternalAddressService (из proto-дескриптора) обязан присутствовать
+// в Map и не быть exempt (Public=false). Если в сервис добавят RPC и забудут его
+// замапить — гейт упадёт здесь, а не молча пропустит запрос через methodIsInternal.
+func TestPermissionMap_InternalAddressService_NoExemptGuard(t *testing.T) {
+	m := check.PermissionMap()
+	for _, md := range vpcv1.InternalAddressService_ServiceDesc.Methods {
+		full := "/" + vpcv1.InternalAddressService_ServiceDesc.ServiceName + "/" + md.MethodName
+		e, ok := m.Lookup(full)
+		require.Truef(t, ok, "%s обязан быть в PermissionMap (drift-guard: не оставлять IPAM RPC exempt)", full)
+		require.Falsef(t, e.Public, "%s не должен быть exempt (Public=false)", full)
 	}
 }

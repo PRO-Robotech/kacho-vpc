@@ -209,7 +209,8 @@ sequence_no::text)`.
 
 - в той же транзакции, что и мутация ресурса, делать `INSERT INTO vpc_outbox
   (event_type, resource_kind, resource_id, data) VALUES (...)`. Без этого
-  `InternalWatchService` не отдаст событие наружу.
+  событие не попадет в транзакционный outbox-журнал (in-cluster `LISTEN/NOTIFY`;
+  публичного Watch RPC нет — клиенты наблюдают через polling `List` / `OperationService.Get`).
 
 Если будущий ресурс требует **другой** outbox-таблицы (например,
 data-plane-ивенты на `network_interfaces_dataplane_outbox`) — она создается в

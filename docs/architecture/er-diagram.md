@@ -370,10 +370,11 @@ resource может быть удален до завершения op). `accoun
 0009; для vpc остается NULL).
 
 #### `vpc_outbox`
-Транзакционный outbox для domain-событий (Watch/realtime). PK `sequence_no BIGINT` (DEFAULT
+Транзакционный outbox-журнал domain-событий. PK `sequence_no BIGINT` (DEFAULT
 `nextval(vpc_outbox_sequence_no_seq)`). Trigger `vpc_outbox_notify_trg` AFTER INSERT →
-`pg_notify('vpc_outbox', NEW.sequence_no::text)`. `InternalWatchService` использует dedicated
-pgx-conn вне pool с `LISTEN vpc_outbox`.
+`pg_notify('vpc_outbox', NEW.sequence_no::text)` — in-cluster `LISTEN/NOTIFY`-канал.
+Публичного Watch RPC в Kachō нет: клиенты наблюдают изменения через polling
+`List` / `OperationService.Get`.
 
 #### `fga_register_outbox` (миграция 0006/0008)
 Отдельный transactional-outbox для регистрации owner-tuple в FGA через `kacho-iam`. Независим
@@ -382,7 +383,8 @@ pgx-conn вне pool с `LISTEN vpc_outbox`.
 `resource_id` (миграция 0008) нужны reconciler'у для адресации intent по ресурсу.
 
 #### `vpc_watch_cursors`
-Per-subscriber cursor для LISTEN/NOTIFY restart-сценария. PK `subscriber_id`.
+Vestigial-таблица из baseline-схемы (`0001_initial.sql`); кодом не используется — Watch RPC
+в API Kachō нет. PK `subscriber_id`.
 
 ---
 

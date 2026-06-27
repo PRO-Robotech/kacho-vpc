@@ -145,23 +145,21 @@ flowchart LR
   end
   ins --> obx
   obx -->|"AFTER INSERT trigger<br/>vpc_outbox_notify_trg"| notify["pg_notify('vpc_outbox', seq)"]
-  notify --> watch["InternalWatchService<br/>(dedicated pgx.Conn · LISTEN)"]
-  watch -->|"Event{seq,type,id,op,payload}"| peer["peer-сервис<br/>(admin-tooling / UI)"]
+  notify --> chan["LISTEN/NOTIFY vpc_outbox<br/>(in-cluster канал)"]
+  op[("operations")] -.->|"poll OperationService.Get"| cli["клиент / peer"]
 ```
 
-После `COMMIT` триггер `vpc_outbox_notify_trg` (AFTER INSERT) шлет `pg_notify('vpc_outbox', sequence_no)`.
-`InternalWatchService` слушает этот канал на **выделенном** соединении (`pgx.Connect`, вне пула —
-`LISTEN` некорректен на pooled-conn), делает catch-up по `sequence_no` и стримит события подписчику.
+После `COMMIT` триггер `vpc_outbox_notify_trg` (AFTER INSERT) шлет `pg_notify('vpc_outbox', sequence_no)` —
+`vpc_outbox` остается транзакционным журналом доменных событий с in-cluster `LISTEN/NOTIFY`-каналом.
 
-:::info Outbox — для server-to-server, не для клиента
-Поток `vpc_outbox` через `InternalWatchService` — **внутренний** (порт `:9091`), для peer-сервисов
-и admin-tooling. **Tenant-клиенты его не используют** —
-они **поллят** `OperationService.Get` (Watch RPC в API Kachō не существует). Подробнее об outbox-стриме —
-[Архитектура](/architecture/overview).
+:::info Наблюдение состояния — через polling, не Watch
+Публичного per-resource Watch RPC в API Kachō нет. Клиенты (tenant-клиенты и peer-сервисы) узнают
+о результате мутации **поллингом** `OperationService.Get(operationId)` до `done=true`, а текущее
+состояние — периодическим `List`. Подробнее — [Архитектура](/architecture/overview).
 :::
 
 :::note Второй outbox — регистрация owner-tuple в FGA
-Помимо доменного `vpc_outbox` (Watch/realtime) worker на Create/Delete пишет — **в той же
+Помимо доменного `vpc_outbox` (журнал событий) worker на Create/Delete пишет — **в той же
 writer-TX** — строку-намерение в отдельную таблицу `fga_register_outbox`: «зарегистрировать /
 снять owner-hierarchy-tuple ресурса в FGA». Отдельный register-drainer применяет каждое намерение
 через `kacho-iam.InternalIAMService.RegisterResource` / `UnregisterResource` (idempotent,

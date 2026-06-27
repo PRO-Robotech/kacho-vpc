@@ -70,13 +70,13 @@ EXCLUDE / generated-колонки / индексы / триггеры — inlin
     <tr><td><code>network\_interfaces</code></td><td>NetworkInterface (first-class NIC, отдельно от Instance)</td><td><code>id</code></td><td>partial <code>UNIQUE</code> + <code>mac\_address</code> cloud-wide</td></tr>
     <tr><td><code>address\_pools</code></td><td><em>(admin)</em> глобальный пул CIDR для IPAM</td><td><code>id</code></td><td>partial <code>UNIQUE</code> на default-pool</td></tr>
     <tr><td><code>operations</code></td><td>Long-running async-операции (LRO)</td><td><code>id</code></td><td>—</td></tr>
-    <tr><td><code>vpc\_outbox</code></td><td>Доменный транзакционный outbox + <code>pg\_notify</code> (Watch)</td><td><code>sequence\_no</code></td><td>—</td></tr>
+    <tr><td><code>vpc\_outbox</code></td><td>Доменный транзакционный журнал событий + <code>pg\_notify</code> (in-cluster <code>LISTEN/NOTIFY</code>; Watch RPC не публикуется)</td><td><code>sequence\_no</code></td><td>—</td></tr>
     <tr><td><code>fga\_register\_outbox</code></td><td>Транзакционный outbox для регистрации owner-tuple в FGA (через kacho-iam)</td><td><code>id</code></td><td>—</td></tr>
   </tbody>
 </table>
 
 :::tip Полный список
-Помимо перечисленных, IPAM добавляет вспомогательные таблицы: <code>address\_pool\_network\_default</code>, <code>address\_pool\_cidrs</code>, <code>address\_pool\_free\_ips</code>, <code>ipv6\_pool\_cursors</code>, <code>ipv6\_allocated\_ips</code>, <code>ipv6\_released\_offsets</code>, а Watch — <code>vpc\_watch\_cursors</code>. Полная ER-схема — в <code>docs/architecture/er-diagram.md</code> репозитория.
+Помимо перечисленных, IPAM добавляет вспомогательные таблицы: <code>address\_pool\_network\_default</code>, <code>address\_pool\_cidrs</code>, <code>address\_pool\_free\_ips</code>, <code>ipv6\_pool\_cursors</code>, <code>ipv6\_allocated\_ips</code>, <code>ipv6\_released\_offsets</code>. Полная ER-схема — в <code>docs/architecture/er-diagram.md</code> репозитория.
 :::
 
 ## FK-контракт (within-service)
@@ -228,7 +228,7 @@ writers / багов в app-коде):
   <thead><tr><th>Таблица</th><th>Роль</th></tr></thead>
   <tbody>
     <tr><td><code>operations</code></td><td>LRO-envelope: каждая мутация создает строку (<code>done=false</code>), worker-горутина переводит в <code>done=true</code> с <code>response</code> (созданный ресурс) либо <code>error</code> (<code>google.rpc.Status</code>). Без FK на ресурсы — <code>resource\_id</code> хранится как plain TEXT (ресурс может быть удален до завершения op). Подробнее — <a href="/architecture/operations">Операции</a>.</td></tr>
-    <tr><td><code>vpc\_outbox</code></td><td>Транзакционный outbox: каждая успешная мутация пишет событие в outbox <strong>в той же TX</strong>, что и сам ресурс. Триггер <code>vpc\_outbox\_notify\_trg</code> делает <code>pg\_notify('vpc\_outbox', sequence\_no::text)</code>; <code>InternalWatchService</code> читает через <code>LISTEN vpc\_outbox</code> на dedicated-соединении.</td></tr>
+    <tr><td><code>vpc\_outbox</code></td><td>Транзакционный outbox-журнал: каждая успешная мутация пишет событие в outbox <strong>в той же TX</strong>, что и сам ресурс. Триггер <code>vpc\_outbox\_notify\_trg</code> делает <code>pg\_notify('vpc\_outbox', sequence\_no::text)</code> — in-cluster <code>LISTEN/NOTIFY</code>-канал. Публичного Watch RPC в Kachō нет: клиенты наблюдают изменения через polling <code>List</code> / <code>OperationService.Get</code>.</td></tr>
   </tbody>
 </table>
 
@@ -239,8 +239,9 @@ flowchart LR
   op -.->|"worker goroutine"| work["doCreate / doUpdate / doDelete"]
   work -->|"TX: INSERT resource + INSERT vpc_outbox"| res[("resource table")]
   work -->|"same TX"| ob[("vpc_outbox")]
-  ob -->|"trigger pg_notify"| watch["InternalWatchService<br/>LISTEN vpc_outbox"]
+  ob -->|"trigger pg_notify"| notify["LISTEN/NOTIFY vpc_outbox<br/>(in-cluster, без Watch RPC)"]
   work -->|"UPDATE operations SET done=true"| op
+  op -.->|"poll OperationService.Get"| cli
 ```
 
 ## Cross-service ссылки (no FK)

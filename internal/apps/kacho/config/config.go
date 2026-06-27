@@ -159,9 +159,23 @@ type APIServerConfig struct {
 	GracefulShutdown time.Duration `mapstructure:"graceful-shutdown"`
 }
 
-// MetricsConfig — секция metrics (placeholder под будущий /metrics endpoint).
+// MetricsConfig — секция metrics: cluster-internal diagnostic HTTP-listener
+// (/metrics + /healthz + /readyz). Endpoint пуст ИЛИ Enable=false → listener не
+// поднимается (byte-identical back-compat).
 type MetricsConfig struct {
 	Enable bool `mapstructure:"enable"`
+	// Endpoint — адрес diagnostic-listener'а (напр. ":9095"). Cluster-internal,
+	// НЕ публикуется на external endpoint и НЕ проксируется api-gateway.
+	Endpoint string `mapstructure:"endpoint"`
+}
+
+// MetricsEndpoint возвращает адрес diagnostic-listener'а, либо "" если метрики
+// выключены (Enable=false) — composition root тогда не поднимает listener.
+func (c Config) MetricsEndpoint() string {
+	if !c.Metrics.Enable {
+		return ""
+	}
+	return listenAddress(c.Metrics.Endpoint)
 }
 
 // HealthcheckConfig — секция healthcheck (placeholder под /healthz).

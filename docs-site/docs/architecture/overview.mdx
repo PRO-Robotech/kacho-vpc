@@ -230,12 +230,12 @@ Geography вынесена в самостоятельный leaf-сервис k
     <tr>
       <td>Сервисы</td>
       <td><code>NetworkService</code>, <code>SubnetService</code>, <code>AddressService</code>, <code>RouteTableService</code>, <code>SecurityGroupService</code>, <code>GatewayService</code>, <code>NetworkInterfaceService</code></td>
-      <td><code>InternalAddressService</code>, <code>InternalAddressPoolService</code>, <code>InternalNetworkService</code>, <code>InternalWatchService</code>, <code>InternalResourceLifecycleService</code></td>
+      <td><code>InternalAddressService</code>, <code>InternalAddressPoolService</code>, <code>InternalNetworkService</code></td>
     </tr>
     <tr>
       <td>Данные</td>
       <td>Lean tenant-вью: id / name / labels / привязки / адреса / <code>status</code></td>
-      <td>Admin/IPAM-операции (пулы, allocate, default-SG setter, outbox). Инфра-проекций нет — control-plane only</td>
+      <td>Admin/IPAM-операции (пулы, allocate, default-SG setter, internal-only <code>vrf_id</code>). Инфра-проекций нет — control-plane only</td>
     </tr>
   </tbody>
 </table>
