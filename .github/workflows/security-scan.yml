@@ -48,7 +48,7 @@ jobs:
         run: |
           # gosec мапит severity HIGH → SARIF level "error"; блокируем job при любой
           # HIGH-находке (MEDIUM/LOW остаются информативными в code-scanning).
-          n=$(jq '[.runs[].results[]? | select(.level=="error")] | length' kacho-vpc/gosec.sarif)
+          n=$(jq '[.runs[].results[]? | select(.level=="error")] | length' gosec.sarif)
           echo "gosec HIGH (error-level) findings: $n"
           test "$n" -eq 0
 
