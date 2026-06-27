@@ -40,11 +40,11 @@ EXPECT = {
     # Garbage per-resource: non-existent ID has no FGA tuple → authz sees `no path`
     # → returns NOT_FOUND (404) for all authenticated users; ANON → 401.
     "garbage-perresource-vpc": {"ANON":"DENY","NOB":"NF","PA1":"NF","AAA":"NF","AAB":"NF","INV":"NF"},
-    # Phase 1 bootstrap: permission_catalog has empty permission field → all authenticated users allowed.
-    # AddressPool is nominally admin-only, but catalog enforcement is Phase 2+.
-    "addresspool-phase1-allow": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
-    # AddressPool.List: also open in Phase 1 (empty catalog permission).
-    "addresspool-list-phase1-allow": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
+    # Пустое permission-поле в permission_catalog: любой аутентифицированный субъект
+    # допущен. AddressPool номинально admin-only, но при пустом каталоге доступ открыт.
+    "addresspool-open-catalog": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
+    # AddressPool.List при пустом каталоге так же открыт аутентифицированным субъектам.
+    "addresspool-list-open-catalog": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
 }
 
 
@@ -198,9 +198,9 @@ define_resource_cases("nic", "networkInterfaces", create_body_extra={
 # ---------------------------------------------------------------------------
 
 for subj in SUBJECTS:
-    # Phase 1: empty permission catalog → all authenticated users can create AddressPool.
-    # Admin-only enforcement is Phase 2+. ANON still gets 401.
-    emit("APL-CR", "Create AddressPool (Phase 1 — all authenticated ALLOW)", "addresspool-phase1-allow",
+    # Пустой permission-каталог → любой аутентифицированный субъект может создать
+    # AddressPool; ANON по-прежнему получает 401.
+    emit("APL-CR", "Create AddressPool (empty catalog — all authenticated ALLOW)", "addresspool-open-catalog",
          "POST", "/vpc/v1/addressPools",
          {"name": f"authz-apl-{subj[0].lower()}-{{{{runId}}}}",
           "kind": "EXTERNAL_PUBLIC",
@@ -218,7 +218,7 @@ for subj in SUBJECTS:
 # ---------------------------------------------------------------------------
 
 EXPECT["cross-domain-subnet-from-victim"] = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
-# Phase 1: AddressPool.List open to authenticated users (empty catalog permission).
+# AddressPool.List открыт аутентифицированным субъектам при пустом каталоге permission.
 EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"}
 
 # CD-1: AAA пытается создать Subnet в project-A1 ссылаясь на network-B1 (cross-account)

@@ -36,7 +36,7 @@ func countFreeIPs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, poolID 
 	return n
 }
 
-func mkCidrPool(t *testing.T, ctx context.Context, r kacho.Repository, name string, v4 []string) *domain.AddressPool {
+func mkCidrPool(t *testing.T, ctx context.Context, r kacho.Repository, name string, v4 []string) *kacho.AddressPoolRecord {
 	t.Helper()
 	// Через use-case: Insert + PopulateFreelistForPool + outbox в одной TX.
 	uc := addresspool.NewCreateAddressPoolUseCase(r, nil) // nil zoneReg → skip zone-check

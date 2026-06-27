@@ -19,8 +19,21 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
 )
+
+// TestLROWorker_ReadyAfterBootWiring — composition root проводит package-level
+// default-registry LRO-worker'а (ConfigureDefault + Start) ДО приёма трафика:
+// readiness-чекер lro-worker зелёный без единой мутации. Без этой проводки под в
+// k8s залипал бы NotReady (нет трафика → нет Run → dispatcher лениво не стартует →
+// NotReady навсегда — boot-deadlock).
+func TestLROWorker_ReadyAfterBootWiring(t *testing.T) {
+	require.False(t, operations.Ready(), "до boot-wiring default-registry dispatcher не запущен")
+	require.NoError(t, startLROWorker(operations.NewMemRecorder(), discardLogger()))
+	require.True(t, operations.Ready(),
+		"после boot-wiring operations.Ready()=true — readiness lro-worker зелёный до трафика")
+}
 
 // dialLoopback — возвращает closed-loop grpc-conn (живой сервер не нужен:
 // buildListFilter только конструирует FGAFilter поверх conn, но не вызывает его).

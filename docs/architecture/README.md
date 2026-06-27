@@ -11,7 +11,7 @@
 |---|---|---|
 | 00 | [Overview](00-overview.md) | Что делает VPC, какие ресурсы owns, его место в общей системе |
 | 01 | [Resources](01-resources.md) | Детально по каждому ресурсу: Network, Subnet, Address (v4/v6), NetworkInterface, RouteTable, SecurityGroup, Gateway, AddressPool |
-| 02 | [Data Flows](02-data-flows.md) | Sequence-диаграммы VPC-сценариев: Network create + default-SG, Address allocate cascade, Internal alloc (v4/v6), Watch outbox, Cloud-selector set, NIC create/attach/detach, delete-blocking chain |
+| 02 | [Data Flows](02-data-flows.md) | Sequence-диаграммы VPC-сценариев: Network create + default-SG, Address allocate cascade, Internal alloc (v4/v6), outbox-журнал + polling-наблюдение, Cloud-selector set, NIC create/attach/detach, delete-blocking chain |
 | 03 | [IPAM Model](03-ipam.md) | Pool + cascade resolve + internal v4/v6 allocate + utilization (Region/Zone — домен kacho-geo) |
 | 04 | [API Surface](04-api-surface.md) | Все RPC (public домены + internal kacho-only, в т.ч. `NetworkInterfaceService` + Internal* internal-проекции), REST endpoints, верстки путей |
 | 05 | [Database](05-database.md) | Схема pg-vpc, миграции, ключевые constraints (EXCLUDE для CIDR, partial UNIQUE, generated col, JSONB GIN) |

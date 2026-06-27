@@ -22,16 +22,17 @@ import (
 
 // AddCidrBlocksUseCase — атомарное добавление CIDR-блоков к подсети.
 // Возвращает Operation; внутри worker'а:
-//   - Get subnet → если не найден → NotFound.
+//   - Get subnet (FOR UPDATE) → если не найден → NotFound.
 //   - Validate каждого CIDR (host-bits=0).
 //   - Проверка overlap внутри новой объединенной коллекции (v4 + v6).
-//   - SetCidrBlocks (DB UPDATE). EXCLUDE constraint subnets_no_overlap_v4
-//     проверяет primary CIDR на overlap с другими подсетями этой сети.
+//   - SetCidrBlocks (DB UPDATE) — внутри него child-таблица subnet_cidr_blocks
+//     пересобирается и её EXCLUDE gist ловит пересечение ЛЮБОГО блока (primary и
+//     вторичного) с блоками других подсетей той же сети.
 //
-// Ограничение: EXCLUDE проверяет только array[1]. Если v4_cidr_primary
-// неизменен (добавляем не в начало), overlap с соседними подсетями по
-// добавляемым CIDR на DB-уровне не ловится — покрываем service-level
-// проверкой через repo.List.
+// Cross-subnet non-overlap гарантируется только на DB-уровне (network-scoped
+// EXCLUDE): GetForUpdate сериализует лишь операции над ОДНОЙ подсетью, поэтому
+// пересечение блоков РАЗНЫХ подсетей одной сети ловит declarative-инвариант,
+// а не software-проверка (она была бы TOCTOU-prone между подсетями).
 //
 // Get + SetCidrBlocks + outbox-emit UPDATED атомарны в одной writer-TX.
 type AddCidrBlocksUseCase struct {

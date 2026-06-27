@@ -276,8 +276,11 @@ type subnetWriter struct {
 // БД-колонка имеет DEFAULT now() — это нужно для детерминированности тестов.
 //
 // Race-protection на пересечение CIDR: sync-проверка checkCIDRDisjoint в service
-// может пропустить параллельный Create, но EXCLUDE constraint в БД его поймает.
-// SQLSTATE 23P01 маппим на ErrFailedPrecondition с "Subnet CIDRs can not overlap".
+// может пропустить параллельный Create, но DB-инвариант его поймает. Primary-блок
+// каждого семейства ловит baseline EXCLUDE subnets_no_overlap_v4/v6; ВСЕ блоки
+// (включая вторичные) — нормализованная child-таблица subnet_cidr_blocks, в
+// которую syncCidrBlocks материализует набор в той же writer-TX. SQLSTATE 23P01
+// из любого источника маппим на ErrFailedPrecondition "Subnet CIDRs can not overlap".
 //
 // outbox-write — не здесь, а в use-case'е через `writer.Outbox().Emit(...)`.
 func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.SubnetRecord, error) {
@@ -309,6 +312,9 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 	}
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Subnet", string(s.Name))
+	}
+	if err := w.syncCidrBlocks(ctx, result.ID, result.NetworkID, result.V4CidrBlocks, result.V6CidrBlocks); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -347,9 +353,11 @@ func (w *subnetWriter) Update(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 }
 
 // SetCidrBlocks атомарно обновляет v4_cidr_blocks и v6_cidr_blocks у Subnet
-// (для AddCidrBlocks/RemoveCidrBlocks). EXCLUDE constraint'ы
-// subnets_no_overlap_v4 / subnets_no_overlap_v6 проверяют primary CIDR (array[1])
-// каждого семейства на пересечение с другими подсетями той же сети.
+// (для AddCidrBlocks/RemoveCidrBlocks). Non-overlap-инвариант на ВЕСЬ набор блоков
+// подсетей сети держит child-таблица subnet_cidr_blocks (EXCLUDE gist по
+// (network_id, block)) — syncCidrBlocks пересобирает её строки в той же writer-TX.
+// Baseline EXCLUDE subnets_no_overlap_v4/v6 остаётся redundant backstop'ом на
+// primary-блок. Переданный набор уже disjoint/dedup'нут use-case'ом.
 //
 // outbox-write — в use-case'е.
 func (w *subnetWriter) SetCidrBlocks(ctx context.Context, id string, v4, v6 []string) (*kacho.SubnetRecord, error) {
@@ -365,7 +373,50 @@ func (w *subnetWriter) SetCidrBlocks(ctx context.Context, id string, v4, v6 []st
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Subnet", id)
 	}
+	if err := w.syncCidrBlocks(ctx, s.ID, s.NetworkID, s.V4CidrBlocks, s.V6CidrBlocks); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// syncCidrBlocks пересобирает строки subnet_cidr_blocks для подсети: снимает все
+// прежние и вставляет актуальный набор v4+v6. Держит child-таблицу (EXCLUDE gist
+// по (network_id, block)) консистентной с массивами v*_cidr_blocks в той же
+// writer-TX, что и subnet DML — один commit, без dual-write. delete-then-insert
+// внутри одной TX означает, что собственные старые блоки подсети не конфликтуют с
+// её же новым набором (нужно для idempotent re-add: use-case передаёт dedup'нутый
+// v6-набор, а для v4 self-overlap отсекается sync-проверкой ещё до вызова).
+//
+// Источник 23P01 (cross-subnet пересечение) или 23505 (PK-дубль) → frozen
+// "Subnet CIDRs can not overlap" (паритет с baseline EXCLUDE). Прочие SQLSTATE —
+// через общий WrapPgErr (raw PG наружу не утекает).
+func (w *subnetWriter) syncCidrBlocks(ctx context.Context, subnetID, networkID string, v4, v6 []string) error {
+	if _, err := w.tx.Exec(ctx, `DELETE FROM subnet_cidr_blocks WHERE subnet_id = $1`, subnetID); err != nil {
+		return helpers.WrapPgErr(err, "Subnet", subnetID)
+	}
+	blocks := make([]string, 0, len(v4)+len(v6))
+	for _, b := range v4 {
+		if b != "" {
+			blocks = append(blocks, b)
+		}
+	}
+	for _, b := range v6 {
+		if b != "" {
+			blocks = append(blocks, b)
+		}
+	}
+	for _, block := range blocks {
+		if _, err := w.tx.Exec(ctx, `
+			INSERT INTO subnet_cidr_blocks (subnet_id, network_id, block)
+			VALUES ($1, $2, $3::cidr)
+		`, subnetID, networkID, block); err != nil {
+			if helpers.IsExclusionViolation(err) || helpers.IsUniqueViolation(err) {
+				return fmt.Errorf("%w: Subnet CIDRs can not overlap", helpers.ErrFailedPrecondition)
+			}
+			return helpers.WrapPgErr(err, "Subnet", subnetID)
+		}
+	}
+	return nil
 }
 
 // GetForUpdate — Get с row-lock (`FOR UPDATE`) в writer-TX. Конкурентный

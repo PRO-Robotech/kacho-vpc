@@ -11,8 +11,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
-	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // AddCidrBlocksUseCase — admin-only добавление CIDR-блоков к пулу. AddressPool —
@@ -34,7 +34,7 @@ func NewAddCidrBlocksUseCase(r Repo) *AddCidrBlocksUseCase {
 
 // Execute добавляет v4/v6 CIDR-блоки. Дубли уже существующих блоков
 // игнорируются (idempotent append). Возвращает обновленный AddressPool.
-func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []string) (*domain.AddressPool, error) {
+func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []string) (*kachorepo.AddressPoolRecord, error) {
 	if id == "" {
 		return nil, status.Error(codes.InvalidArgument, "address_pool_id required")
 	}
@@ -74,7 +74,6 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 	v6First := len(cur.V6CIDRBlocks) == 0 && len(mergedV6) > 0
 	cur.V4CIDRBlocks = mergedV4
 	cur.V6CIDRBlocks = mergedV6
-	cur.ModifiedAt = nowUTC()
 
 	updated, err := w.AddressPools().Update(ctx, &cur)
 	if err != nil {
@@ -110,6 +109,5 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 	if err := w.Commit(); err != nil {
 		return nil, err
 	}
-	out := updated.AddressPool
-	return &out, nil
+	return updated, nil
 }

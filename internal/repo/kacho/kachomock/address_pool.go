@@ -134,11 +134,8 @@ func (aw *addressPoolWriter) ListAddressesByPool(_ context.Context, _ string, _ 
 }
 
 func (aw *addressPoolWriter) Insert(_ context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
-	cp := *p
-	if cp.CreatedAt.IsZero() {
-		cp.CreatedAt = time.Now().UTC()
-	}
-	rec := &kacho.AddressPoolRecord{AddressPool: cp}
+	now := time.Now().UTC()
+	rec := &kacho.AddressPoolRecord{AddressPool: *p, CreatedAt: now, ModifiedAt: now}
 	aw.w.localAPs[p.ID] = rec
 	out := *rec
 	return &out, nil
@@ -152,7 +149,9 @@ func (aw *addressPoolWriter) Update(_ context.Context, p *domain.AddressPool) (*
 	if !ok {
 		return nil, repo.ErrNotFound
 	}
+	// CreatedAt сохраняется (DB-managed, не трогается на Update), modified_at = now.
 	existing.AddressPool = *p
+	existing.ModifiedAt = time.Now().UTC()
 	out := *existing
 	return &out, nil
 }

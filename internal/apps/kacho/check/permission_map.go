@@ -474,13 +474,19 @@ func PermissionMap() authz.RPCMap {
 		},
 
 		// =========================
-		// Internal cluster-scoped RPC (cluster-internal listener :9091).
+		// Internal RPC (cluster-internal listener :9091).
 		//
 		// FGA-гейт на internal listener'е (security-инвариант: authN+authZ и на
-		// internal'е тоже). object — singleton `cluster:cluster_kacho_root`,
-		// relation из proto-аннотации required_relation. IPAM-примитивы
-		// InternalAddressService.* сюда НЕ добавляются — они остаются exempt
-		// (skip через methodIsInternal), авторизуются in-handler.
+		// internal'е тоже — internal не освобождён). Admin/cluster-RPC
+		// (InternalNetworkService / InternalAddressPoolService) гейтятся на
+		// singleton `cluster:cluster_kacho_root` (system_viewer/system_admin).
+		// IPAM-примитивы InternalAddressService.* гейтятся object-scoped на самом
+		// ресурсе Address (vpc_address:<address_id>, verb-bearing v_update/v_get —
+		// зеркало публичного AddressService.{Update,Get}): они обслуживают мутацию/
+		// чтение tenant-ресурса Address от имени конечного пользователя (Instance
+		// NAT, Listener VIP), а не admin-операцию над платформой, поэтому
+		// cluster-scoped system_admin отклонил бы каждого нормального владельца
+		// Address. Наличие в Map снимает их с methodIsInternal-bypass'а.
 		// =========================
 
 		// InternalNetworkService — GetNetwork (read инфра-чувствительного vrf_id,
@@ -503,21 +509,70 @@ func PermissionMap() authz.RPCMap {
 		"/kacho.cloud.vpc.v1.InternalAddressPoolService/ListAddresses":        clusterScoped(relationSystemAdmin),
 		"/kacho.cloud.vpc.v1.InternalAddressPoolService/GetUtilization":       clusterScoped(relationSystemAdmin),
 
+		// InternalAddressService — IPAM-примитивы на конкретном Address
+		// (object-scoped, не cluster-scoped): мутации (atomic IP-allocate +
+		// referrer-tracking) → v_update, чтение referrer'а → v_get. object —
+		// `vpc_address:<address_id>` из request-поля address_id; пустой id →
+		// FormatObject-ошибка → DecisionDenied (как у публичного AddressService.Get).
+		"/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIP": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.AllocateInternalIPRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIPv6": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.AllocateInternalIPRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIP": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.AllocateExternalIPRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/SetAddressReference": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.SetAddressReferenceRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/ClearAddressReference": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.ClearAddressReferenceRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/MarkAddressEphemeralInUse": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.MarkAddressEphemeralInUseRequest).GetAddressId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/GetAddressReference": {
+			Relation: relationVGet,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.GetAddressReferenceRequest).GetAddressId(), nil
+			}),
+		},
+
 		// =========================
 		// OperationService (LRO poll RPC).
 		//
 		// Proto-пакет — `kacho.cloud.operation` (без `.v1`); gRPC fullMethod
 		// соответственно `/kacho.cloud.operation.OperationService/*`.
 		//
-		// Operation poll НЕ гейтится per-RPC. В FGA-модели нет object type
-		// `vpc_operation` и per-operation tuple'ы не эмитятся, поэтому Check
-		// `viewer on vpc_operation:<id>` не имеет пути и любой poll — включая
-		// тот, что создавший клиент шлет сразу после успешной мутации — был бы
-		// отклонен. Operation id'шники opaque и неугадываемы; api-gateway уже
-		// помечает `OperationService/Get` и `/Cancel` как `<exempt>`. Пометка
-		// Public здесь делает interceptor vpc-сервиса согласованным с gateway
-		// (map-miss дал бы fail-closed ErrUnmapped, поэтому записи оставлены, но
-		// помечены Public).
+		// Operation Get/Cancel НЕ гейтятся per-RPC ReBAC-Check'ом: в FGA-модели нет
+		// object type `vpc_operation` и per-operation tuple'ы не эмитятся, поэтому
+		// `Check viewer on vpc_operation:<id>` не имеет пути и отверг бы даже
+		// owner-poll. Здесь `Public` означает «ReBAC-exempt», а НЕ «unauthenticated»:
+		// anti-anon (TenantUnaryInterceptor в production-mode) сохраняется, а
+		// ownership энфорсится В HANDLER'е (OperationHandler.Get/Cancel через
+		// ownership-scoped GetOwned/CancelOwned: owner — creator-principal из
+		// доверенного ctx; чужой id → NotFound, no-leak). Анти-регресс: пометка
+		// Public тут НЕ освобождает Operation RPC ни от anti-anon, ни от
+		// ownership — она лишь снимает их с ReBAC-Check'а (которого для них нет).
 		"/kacho.cloud.operation.OperationService/Get":    {Public: true},
 		"/kacho.cloud.operation.OperationService/Cancel": {Public: true},
 	}

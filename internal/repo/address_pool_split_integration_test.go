@@ -14,7 +14,6 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
@@ -123,7 +122,6 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 	defer r.Close()
 
 	const concurrency = 5
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	var (
 		okCount   int32
 		errCount  int32
@@ -137,13 +135,11 @@ func TestAddressPoolSplit_H1_DefaultPerZoneKindUniqueUnderConcurrency(t *testing
 			defer wg.Done()
 			p := &domain.AddressPool{
 				ID:           ids.NewID("apl"),
-				Name:         "def-h1-" + ids.NewID("apl")[:6],
+				Name:         domain.RcNameVPC("def-h1-" + ids.NewID("apl")[:6]),
 				V4CIDRBlocks: []string{cidrFor(i)},
 				Kind:         domain.AddressPoolKindExternalPublic,
 				ZoneID:       "zone-c",
 				IsDefault:    true,
-				CreatedAt:    now,
-				ModifiedAt:   now,
 			}
 			e := splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 				_, ie := w.AddressPools().Insert(ctx, p)
@@ -257,9 +253,7 @@ func TestAddressPoolSplit_H3_FreelistAllocateConcurrentNoDup(t *testing.T) {
 		V4CIDRBlocks: []string{"203.0.113.0/28"}, // 14 usable IPs
 		Kind:         domain.AddressPoolKindExternalPublic,
 		ZoneID:       "zone-c",
-		CreatedAt:    time.Now().UTC().Truncate(time.Microsecond),
 	}
-	p.ModifiedAt = p.CreatedAt
 	require.NoError(t, splitWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.AddressPools().Insert(ctx, p)
 		return e

@@ -203,7 +203,7 @@ flowchart TD
 <table>
   <thead><tr><th></th><th>Public (<code>:9090</code>)</th><th>Internal (<code>:9091</code>)</th></tr></thead>
   <tbody>
-    <tr><td><strong>Сервисы</strong></td><td><code>NetworkService</code>, <code>SubnetService</code>, <code>AddressService</code>, <code>RouteTableService</code>, <code>SecurityGroupService</code>, <code>GatewayService</code>, <code>NetworkInterfaceService</code></td><td><code>Internal\*Service</code> (AddressPool, Address-allocate, Network admin, Watch)</td></tr>
+    <tr><td><strong>Сервисы</strong></td><td><code>NetworkService</code>, <code>SubnetService</code>, <code>AddressService</code>, <code>RouteTableService</code>, <code>SecurityGroupService</code>, <code>GatewayService</code>, <code>NetworkInterfaceService</code></td><td><code>Internal\*Service</code> (AddressPool, Address-allocate, Network admin)</td></tr>
     <tr><td><strong>REST через api-gateway</strong></td><td>да — оба listener'а (TLS + plain)</td><td>выборочно — <strong>только</strong> plain (cluster-internal) listener</td></tr>
     <tr><td><strong>На external TLS endpoint</strong></td><td>да</td><td><strong>нет</strong> (запрет публикации Internal* наружу)</td></tr>
     <tr><td><strong>Назначение</strong></td><td>tenant-facing CRUD + Operations</td><td>admin-UI, IPAM, peer-сервисы</td></tr>

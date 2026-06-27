@@ -51,7 +51,8 @@
 ## gRPC и observability
 
 - `grpcsrv` из corelib (recovery + logging interceptors). `FromError`-маппинг в handler.
-  Streaming — только в `InternalWatchService` (один-к-одному с pgx LISTEN/NOTIFY).
+  Все RPC unary (read — sync, мутации — async через `Operation`); server-streaming RPC нет —
+  изменения наблюдаются через polling `List` / `OperationService.Get`.
 - `slog` (json) — стандарт логирования.
 
 ## Тестирование

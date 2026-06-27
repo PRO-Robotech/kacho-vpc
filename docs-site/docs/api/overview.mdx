@@ -133,9 +133,10 @@ project-level (обязательный `projectId`), у каждого — св
 </CodeBlock>
 
 :::note Internal-поверхность — без JWT-gate
-`Internal*`-сервисы (IPAM, `AddressPool`, `InternalWatchService`, …) живут на cluster-internal
-listener (`:9091`) и не публикуются на external TLS endpoint. Они предназначены для
-peer-сервисов / admin-UI, см. [Авторизация и приватность](/architecture/authz).
+`Internal*`-сервисы (IPAM `InternalAddressService`, `InternalAddressPoolService`,
+`InternalNetworkService`) живут на cluster-internal listener (`:9091`) и не публикуются на
+external TLS endpoint. Они предназначены для peer-сервисов / admin-UI, см.
+[Авторизация и приватность](/architecture/authz).
 :::
 
 ## Авторизация
@@ -314,8 +315,9 @@ backend (остальные RPC маршрутизируются по REST-пу�
 ## Публичные сервисы и их RPC
 
 Ниже — карта всех **публичных** сервисов VPC и их методов с REST-маппингом. Мутации (выделены
-жирным) возвращают `Operation`. `Internal*`-сервисы (IPAM, `AddressPool`, `InternalWatchService`
-и пр.) сюда не входят — они доступны только на cluster-internal listener.
+жирным) возвращают `Operation`. `Internal*`-сервисы (IPAM `InternalAddressService`,
+`InternalAddressPoolService`, `InternalNetworkService`) сюда не входят — они доступны только на
+cluster-internal listener.
 
 ### NetworkService
 

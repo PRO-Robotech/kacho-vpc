@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "ed2ab37f-e885-4fac-b903-67bf08c2716f",
+    "_postman_id": "ba93d63c-3b4e-4851-8d3a-d95ad62b2025",
     "name": "kacho-vpc / newman / authz-deny",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -17873,7 +17873,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-ANON — [DENY] Create AddressPool (Phase 1 — all authenticated ALLOW) as anon (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-ANON — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as anon (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
@@ -18049,7 +18049,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-NOB — [ALLOW] Create AddressPool (Phase 1 — all authenticated ALLOW) as no-bind (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-NOB — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as no-bind (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -18240,7 +18240,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-PA1 — [ALLOW] Create AddressPool (Phase 1 — all authenticated ALLOW) as proj-adm (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-PA1 — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as proj-adm (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -18431,7 +18431,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-AAA — [ALLOW] Create AddressPool (Phase 1 — all authenticated ALLOW) as acct-adm-a (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-AAA — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-a (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -18622,7 +18622,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-AAB — [ALLOW] Create AddressPool (Phase 1 — all authenticated ALLOW) as acct-adm-b (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-AAB — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-b (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -18813,7 +18813,7 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-INV — [ALLOW] Create AddressPool (Phase 1 — all authenticated ALLOW) as invitee (addresspool-phase1-allow)",
+      "name": "AUTHZ-APL-CR-INV — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as invitee (addresspool-open-catalog)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {

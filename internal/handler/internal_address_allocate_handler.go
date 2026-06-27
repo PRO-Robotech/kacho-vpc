@@ -18,6 +18,11 @@
 // напрямую (тот импортирует `internal/handler` ради AssertProjectOwnership):
 // вместо этого определены узкие port-абстракции `AddressAllocator` (ее
 // удовлетворяет `*address.AllocateUseCase`) и `AddressReferenceManager`.
+//
+// AuthZ: per-RPC FGA-Check (object-scoped на `vpc_address:<address_id>`,
+// v_update для мутаций / v_get для чтения referrer'а) выполняет authz-interceptor
+// на internal listener'е :9091 — см. check.PermissionMap. Handler сам
+// авторизацию НЕ делает и НЕ дублирует.
 package handler
 
 import (

@@ -63,8 +63,15 @@ sentinel'ы классифицируются, raw `pgErr` → generic `Internal`
 hostname/db/query-fragment в тексте. Прямых `status.Errorf(codes.Internal, "...: %v", err)`
 в `internal_*_handler.go` не осталось.
 
-### Transport-security — env-gated
+### Transport-security — per-edge / per-listener mTLS (opt-in)
 
+- **mTLS на обоих listener'ах** — `internal/apps/kacho/config/mtls.go` несет
+  `PublicServerMTLS` (:9090) и `InternalServerMTLS` (:9091); `cmd/vpc/main.go`
+  поднимает оба через `PublicServerCreds()` / `InternalServerCreds()`. Каждое ребро
+  независимо: `enable=false` (default) → insecure (dev backward-compat); `enable=true`
+  → `RequireAndVerifyClientCert` (server-cert + client-CA), fail-closed при отсутствии
+  cert-тройки (без тихого downgrade в insecure). Исходящие client-ребра
+  (`vpc→iam` register/project/authz, `vpc→geo`) — тот же per-edge opt-in.
 - `KACHO_VPC_DB_SSLMODE` (default `disable` для dev; в production helm-values — `verify-full`) — `internal/config/config.go`.
 - `KACHO_VPC_RESOURCE_MANAGER_TLS` (default `false`; true в production) — TLS-credentials
   для gRPC-клиента к resource-manager (`cmd/vpc/main.go::dialResourceManager`).
@@ -78,13 +85,19 @@ hostname/db/query-fragment в тексте. Прямых `status.Errorf(codes.In
   `AssertProjectOwnership` спроектирован так, чтобы interceptor можно было
   заменить без правок handler'ов.
 - **`OperationService.Get(operation_id)` без project-ownership-check** —
-  единственный public RPC без проверки. Требует `project_id` на таблице `operations`
-  (она в `kacho-corelib`, shared) либо резолва через `metadata.resource_id` →
-  ресурс → project.
-- **mTLS на `:9091`** — слой поверх NetworkPolicy + admin-check + prod-mode;
-  требует cert-management (issuer/ротация/mount).
-- **`InternalWatchService.Watch` без project-filter** — раздает весь outbox
-  (admin-tooling это и нужно, но при ослаблении изоляции `:9091` — exfil-вектор);
-  опциональный required `project_filter` либо отдельный admin-only RPC.
+  единственный public RPC без проверки (`internal/handler/operation_handler.go`).
+  Требует `project_id` на таблице `operations` (она в `kacho-corelib`, shared) либо
+  резолва через `metadata.resource_id` → ресурс → project.
+- **Per-RPC FGA-gate на IPAM** — `InternalAddressService.*`
+  (`AllocateInternalIP`/`AllocateExternalIP`/референс-tracking) пока exempt от
+  interceptor-level FGA-Check (skip через `methodIsInternal`, не в
+  `internal/apps/kacho/check/permission_map.go`) — авторизуются in-handler. Прочие
+  internal RPC (`InternalNetworkService`, `InternalAddressPoolService`) уже гейтятся
+  cluster-scoped FGA-Check на `:9091`.
+- **Production boot fail-fast по authz** — при отсутствии `authz.iam-endpoint`
+  authz-interceptor молча не поднимается (Warn, dev-fallback); жесткий отказ старта в
+  production-mode без сконфигурированного IAM делегирован deploy-values, а не
+  code-уровневым boot-gate'ом. `KACHO_VPC_REQUIRE_IAM` закрывает только мутирующий
+  `Create` (UNAVAILABLE, пока register-drainer не подключен к IAM).
 </content>
 </invoke>

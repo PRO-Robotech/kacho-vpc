@@ -30,9 +30,9 @@ Owns:
                   │   ├─ AddressPool (глобальный admin)           │
                   │   └─ binding: network/default                 │
                   │                                               │
-     internal ──► │   InternalWatchService (outbox stream)        │
-                  │   InternalAddressService (allocate v4/v6/ext) │
-                  │   InternalNetworkService (default-SG setter)  │
+     internal ──► │   InternalAddressService (allocate v4/v6/ext) │
+                  │   InternalNetworkService (vrf_id / default-SG)│
+                  │   InternalAddressPoolService (admin пулы)     │
                   └───────────────────────────────────────────────┘
 ```
 

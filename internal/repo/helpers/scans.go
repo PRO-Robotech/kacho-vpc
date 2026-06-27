@@ -288,44 +288,42 @@ func ScanNI(row Scannable) (*kachorepo.NetworkInterfaceRecord, error) {
 }
 
 // ScanAddressPool — row-scanner для AddressPoolRecord. Принимает pgx.Row
-// (Repo использует QueryRow с pgxpool — pgx.Row API), а не интерфейс Scannable.
-// Обертка над domain-сканером ScanAddressPoolDomain: упаковывает результат
-// в Record (embed-struct).
+// (Repo использует QueryRow с pgxpool — pgx.Row API). created_at/modified_at
+// сканируются в собственные поля Record (DB-managed timestamps), domain-поля —
+// в embed'нутый domain.AddressPool; name/description/labels конвертируются в
+// self-validating newtypes (паритет с ScanSubnet).
 func ScanAddressPool(row pgx.Row) (*kachorepo.AddressPoolRecord, error) {
-	dom, err := ScanAddressPoolDomain(row)
-	if err != nil {
-		return nil, err
-	}
-	return &kachorepo.AddressPoolRecord{AddressPool: *dom}, nil
-}
-
-// ScanAddressPoolDomain — row-scanner, возвращающий plain *domain.AddressPool.
-// Используется внутри ScanAddressPool.
-func ScanAddressPoolDomain(row pgx.Row) (*domain.AddressPool, error) {
 	var (
-		p            domain.AddressPool
+		rec          kachorepo.AddressPoolRecord
+		name         string
+		description  string
 		labelsJSON   []byte
 		selectorJSON []byte
 		kindByte     int16
 		zoneIDPtr    *string
 	)
 	err := row.Scan(
-		&p.ID, &p.Name, &p.Description, &labelsJSON,
-		&p.V4CIDRBlocks, &p.V6CIDRBlocks, &kindByte, &zoneIDPtr, &p.IsDefault,
-		&selectorJSON, &p.SelectorPriority, &p.CreatedAt, &p.ModifiedAt,
+		&rec.ID, &name, &description, &labelsJSON,
+		&rec.V4CIDRBlocks, &rec.V6CIDRBlocks, &kindByte, &zoneIDPtr, &rec.IsDefault,
+		&selectorJSON, &rec.SelectorPriority, &rec.CreatedAt, &rec.ModifiedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	rec.Name = domain.RcNameVPC(name)
+	rec.Description = domain.RcDescription(description)
 	if zoneIDPtr != nil {
-		p.ZoneID = *zoneIDPtr
+		rec.ZoneID = *zoneIDPtr
 	}
-	p.Kind = domain.AddressPoolKind(kindByte)
-	if err := UnmarshalJSONB(labelsJSON, &p.Labels, "address_pools.labels"); err != nil {
+	rec.Kind = domain.AddressPoolKind(kindByte)
+	var labels, selector map[string]string
+	if err := UnmarshalJSONB(labelsJSON, &labels, "address_pools.labels"); err != nil {
 		return nil, err
 	}
-	if err := UnmarshalJSONB(selectorJSON, &p.SelectorLabels, "address_pools.selector_labels"); err != nil {
+	if err := UnmarshalJSONB(selectorJSON, &selector, "address_pools.selector_labels"); err != nil {
 		return nil, err
 	}
-	return &p, nil
+	rec.Labels = domain.LabelsFromMap(labels)
+	rec.SelectorLabels = domain.LabelsFromMap(selector)
+	return &rec, nil
 }

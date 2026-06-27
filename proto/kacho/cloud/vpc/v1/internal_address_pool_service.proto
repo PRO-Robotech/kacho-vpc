@@ -6,6 +6,7 @@ syntax = "proto3";
 package kacho.cloud.vpc.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "kacho/cloud/validation.proto";
 import "kacho/iam/authz/v1/authz_options.proto";
@@ -297,23 +298,25 @@ message UpdateAddressPoolRequest {
   reserved 13, 14, 15, 16;
   reserved "v4_cidr_blocks", "v6_cidr_blocks", "replace_v4_cidr_blocks", "replace_v6_cidr_blocks";
 
+  // Прежняя двойная модель partial-update (per-field-флаги вместо update_mask)
+  // удалена — partial-update теперь идёт ТОЛЬКО через update_mask, единой
+  // дисциплиной со всеми прочими ресурсами VPC. Tags 4/7/9/11 не переиспользовать.
+  reserved 4, 7, 9, 11;
+  reserved "replace_labels", "update_is_default", "replace_selector_labels", "update_selector_priority";
+
   string pool_id = 1;
-  // Если непустой — обновить name.
   string name = 2;
-  // Если непустой — обновить description.
   string description = 3;
-  // Если задан (даже пустой map) — заменить labels.
-  bool replace_labels = 4;
   map<string, string> labels = 5;
-  // Если задан — обновить is_default.
-  bool update_is_default = 7;
   bool is_default = 8;
-  // Если задан — заменить selector_labels (даже пустым).
-  bool replace_selector_labels = 9;
   map<string, string> selector_labels = 10;
-  // Если задан — обновить selector_priority.
-  bool update_selector_priority = 11;
   int32 selector_priority = 12;
+
+  // update_mask — список изменяемых полей (snake_case). Применяются только поля
+  // из mask; immutable/unknown в mask → InvalidArgument; пустой/отсутствующий
+  // mask → full-object PATCH мутабельных полей (значения берутся из тела).
+  // Единая update_mask-дисциплина со всеми ресурсами VPC.
+  google.protobuf.FieldMask update_mask = 17;
 }
 
 message AddAddressPoolCidrBlocksRequest {

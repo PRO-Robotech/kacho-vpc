@@ -93,8 +93,12 @@ make lint         # golangci-lint
 - **unit** — use-case'ы через mock-порты, домен, конфиг;
 - **integration** (`*_integration_test.go`) — реальный Postgres через testcontainers:
   CRUD, ограничения БД, конкурентные CAS/UNIQUE/EXCLUDE-сценарии;
-- **e2e** (`tests/newman/`) — black-box через api-gateway: декларативные кейсы
-  `cases/*.py` → Postman-коллекции (`gen.py`);
+- **e2e** (`tests/newman/`) — полный набор regression-коллекций (Newman/Postman),
+  black-box через api-gateway: декларативные кейсы `cases/*.py` → Postman-коллекции
+  (`gen.py`). 14 коллекций покрывают ресурсы и сквозные сценарии — `network`, `subnet`,
+  `address`, `route-table`, `security-group`, `gateway`, `network-interface`,
+  `operation`, `internal-network`, `internal-pool`, `list-filter-d`, `authz-deny`,
+  `concurrency`, `observability`;
 - **нагрузка** (`tests/k6/`) — k6 (HTTP) и ghz (gRPC), baseline в `tests/k6/results/`.
 
 ## Структура репозитория

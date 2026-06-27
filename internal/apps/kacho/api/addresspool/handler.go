@@ -6,6 +6,7 @@ package addresspool
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Handler — реализация vpcv1.InternalAddressPoolServiceServer поверх use-case'ов.
@@ -118,43 +120,14 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListAddressPoolsRequest) 
 }
 
 func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateAddressPoolRequest) (*vpcv1.AddressPool, error) {
-	// Partial-update AddressPool по per-field-флагам запроса: name/description
-	// обновляются при непустом значении; labels/selector_labels — при replace_*
-	// флаге (включая очистку пустым map); is_default/selector_priority — при
-	// update_* флаге. Тонкий transport: из выставленных флагов строим snake_case
-	// набор полей, дисциплину применения держит use-case.
-	var mask []string
-	if req.GetName() != "" {
-		mask = append(mask, "name")
-	}
-	if req.GetDescription() != "" {
-		mask = append(mask, "description")
-	}
-	if req.GetReplaceLabels() {
-		mask = append(mask, "labels")
-	}
-	if req.GetUpdateIsDefault() {
-		mask = append(mask, "is_default")
-	}
-	if req.GetReplaceSelectorLabels() {
-		mask = append(mask, "selector_labels")
-	}
-	if req.GetUpdateSelectorPriority() {
-		mask = append(mask, "selector_priority")
-	}
-	// Пустой набор флагов = no-op: клиент ничего не просил изменить. Пустой mask в
-	// use-case означал бы full-PATCH с деструктивным затиранием полей пустым телом,
-	// поэтому возвращаем текущий ресурс без записи.
-	if len(mask) == 0 {
-		p, err := h.get.Execute(ctx, req.GetPoolId())
-		if err != nil {
-			return nil, mapPoolErr(err)
-		}
-		return poolToProto(p), nil
-	}
+	// Единая update_mask-дисциплина (как у всех ресурсов VPC). Тонкий transport:
+	// читаем paths из update_mask, нормализуем camelCase→snake_case (REST шлёт
+	// camelCase, gRPC — snake_case; нормализация идемпотентна), пробрасываем в
+	// use-case. Применение/валидацию mask (immutable/unknown → InvalidArgument,
+	// пустой mask → full-PATCH) держит use-case.
 	in := UpdatePoolReq{
 		ID:               req.GetPoolId(),
-		UpdateMask:       mask,
+		UpdateMask:       normalizeMaskPaths(req.GetUpdateMask().GetPaths()),
 		Name:             req.GetName(),
 		Description:      req.GetDescription(),
 		Labels:           req.GetLabels(),
@@ -162,11 +135,46 @@ func (h *Handler) Update(ctx context.Context, req *vpcv1.UpdateAddressPoolReques
 		SelectorLabels:   req.GetSelectorLabels(),
 		SelectorPriority: req.GetSelectorPriority(),
 	}
-	p, err := h.update.Execute(ctx, in)
+	rec, err := h.update.Execute(ctx, in)
 	if err != nil {
 		return nil, mapPoolErr(err)
 	}
-	return poolToProto(p), nil
+	return poolToProto(rec), nil
+}
+
+// normalizeMaskPaths приводит каждый путь update_mask к snake_case (canonical
+// proto field name). REST/protojson сериализует FieldMask camelCase'ом
+// (`isDefault`), gRPC-клиент — snake_case'ом (`is_default`); use-case работает
+// в snake_case, поэтому нормализуем здесь. camelToSnake идемпотентна на
+// уже-snake входе.
+func normalizeMaskPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, camelToSnake(p))
+	}
+	return out
+}
+
+// camelToSnake — lowerCamelCase → snake_case (`isDefault`→`is_default`,
+// `bogusField`→`bogus_field`). На входе без uppercase возвращает строку без
+// изменений (`is_default`→`is_default`, `name`→`name`).
+func camelToSnake(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r - 'A' + 'a')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (h *Handler) Delete(ctx context.Context, req *vpcv1.DeleteAddressPoolRequest) (*vpcv1.DeleteAddressPoolResponse, error) {
@@ -270,26 +278,28 @@ func (h *Handler) GetUtilization(ctx context.Context, req *vpcv1.GetAddressPoolU
 
 // -- helpers --
 
-// poolToProto — domain.AddressPool → *vpcv1.AddressPool. Локальный inline-помощник
+// poolToProto — AddressPoolRecord → *vpcv1.AddressPool. Локальный inline-помощник
 // (а не через `dto.Transfer`): AddressPool — admin-only ресурс, единственный
 // consumer этой проекции — handler ниже, поэтому в DTO-реестре он пока не нужен.
-func poolToProto(p *domain.AddressPool) *vpcv1.AddressPool {
-	if p == nil {
+// CreatedAt берётся из record (DB-managed timestamp); name/labels из
+// self-validating newtypes конвертируются в proto-представление.
+func poolToProto(rec *kachorepo.AddressPoolRecord) *vpcv1.AddressPool {
+	if rec == nil {
 		return nil
 	}
 	return &vpcv1.AddressPool{
-		Id:               p.ID,
-		CreatedAt:        timestamppb.New(p.CreatedAt),
-		Name:             p.Name,
-		Description:      p.Description,
-		Labels:           p.Labels,
-		V4CidrBlocks:     p.V4CIDRBlocks,
-		V6CidrBlocks:     p.V6CIDRBlocks,
-		Kind:             vpcv1.AddressPoolKind(p.Kind),
-		ZoneId:           p.ZoneID,
-		IsDefault:        p.IsDefault,
-		SelectorLabels:   p.SelectorLabels,
-		SelectorPriority: p.SelectorPriority,
+		Id:               rec.ID,
+		CreatedAt:        timestamppb.New(rec.CreatedAt),
+		Name:             string(rec.Name),
+		Description:      string(rec.Description),
+		Labels:           domain.LabelsToMap(rec.Labels),
+		V4CidrBlocks:     rec.V4CIDRBlocks,
+		V6CidrBlocks:     rec.V6CIDRBlocks,
+		Kind:             vpcv1.AddressPoolKind(rec.Kind),
+		ZoneId:           rec.ZoneID,
+		IsDefault:        rec.IsDefault,
+		SelectorLabels:   domain.LabelsToMap(rec.SelectorLabels),
+		SelectorPriority: rec.SelectorPriority,
 	}
 }
 
