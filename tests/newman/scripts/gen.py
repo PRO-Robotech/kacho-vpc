@@ -1562,7 +1562,58 @@ def _zone_setup_item() -> Dict:
     }
 
 
+# Suites that exercise external-pool IPAM (internal-pool admin CRUD + address
+# external allocation) assume a pre-seeded default EXTERNAL_PUBLIC AddressPool for
+# the primary zone. The dev stand's seed-ipam is a NOOP, so seed it here, once,
+# as cluster-admin (idempotent: 200 first time, 409 thereafter). Soft (no failing
+# assertion) — if seeding cannot run, the dependent cases surface it themselves.
+_POOL_SEED_TEST = [
+    "if (pm.response && pm.response.code === 200) {",
+    "  try { pm.environment.set('_seededDefaultPoolId', pm.response.json().id); } catch (e) {}",
+    "}",
+]
+
+_POOL_SEED_BODY = {
+    "name": "seed-default-external-zonea",
+    "kind": "EXTERNAL_PUBLIC",
+    "zoneId": "{{zoneA}}",
+    "v4CidrBlocks": ["198.51.100.0/24"],
+    "v6CidrBlocks": [],
+    "isDefault": True,
+}
+
+# Collections that depend on a seeded default external pool.
+_POOL_SEED_SERVICES = {"internal-pool", "address"}
+
+
+def _pool_seed_item() -> Dict:
+    """Idempotent setup item: ensure a default EXTERNAL_PUBLIC pool exists at zoneA."""
+    return {
+        "name": "_SETUP-POOL — ensure default EXTERNAL_PUBLIC pool at zoneA",
+        "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": _POOL_SEED_TEST},
+        }],
+        "request": {
+            "method": "POST",
+            "header": [
+                {"key": "Authorization", "value": "Bearer {{jwtBootstrap}}"},
+                {"key": "Content-Type", "value": "application/json"},
+            ],
+            "body": {"mode": "raw", "raw": json.dumps(_POOL_SEED_BODY)},
+            "url": {
+                "raw": "{{baseUrl}}/vpc/v1/addressPools",
+                "host": ["{{baseUrl}}"],
+                "path": ["vpc", "v1", "addressPools"],
+            },
+        },
+    }
+
+
 def build_collection(service: str, cases: List[Case]) -> Dict:
+    setup_items = [_zone_setup_item()]
+    if service in _POOL_SEED_SERVICES:
+        setup_items.append(_pool_seed_item())
     return {
         "info": {
             "_postman_id": str(uuid.uuid4()),
@@ -1575,7 +1626,7 @@ def build_collection(service: str, cases: List[Case]) -> Dict:
                 "script": {"type": "text/javascript", "exec": PRE_GLOBAL},
             },
         ],
-        "item": [_zone_setup_item()] + [case_to_postman(c) for c in cases],
+        "item": setup_items + [case_to_postman(c) for c in cases],
         "variable": [],
     }
 
