@@ -33,6 +33,8 @@ on:
     branches:
       - main
       - "KAC-*"
+      - "feat/*"
+      - "fix/*"
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
@@ -50,10 +52,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { path: kacho-vpc }
-      - uses: actions/checkout@v4
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
-      - uses: actions/checkout@v4
-        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
 
       - uses: benjlevesque/short-sha@v3.0
         id: short-sha
@@ -92,7 +90,7 @@ jobs:
       - name: Build and push (multiarch)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: kacho-vpc
           file: ./kacho-vpc/Dockerfile
           push: true
           provenance: false
