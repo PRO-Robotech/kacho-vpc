@@ -4,8 +4,9 @@ go 1.25.11
 
 require (
 	github.com/H-BF/corlib v1.2.31-dev
-	github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260618025241-a8dbc86653dc
-	github.com/PRO-Robotech/kacho-iam v0.0.0-00010101000000-000000000000
+	github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260627132909-f6782af68bb7
+	github.com/PRO-Robotech/kacho-geo v0.0.0-20260627135501-91749bab7263
+	github.com/PRO-Robotech/kacho-iam v1.0.2-0.20260627095713-09310cc50004
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pressly/goose/v3 v3.27.1
@@ -23,7 +24,6 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/PRO-Robotech/kacho-geo v0.0.0-00010101000000-000000000000
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
@@ -95,9 +95,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260427160629-7cedc36a6bc4
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/PRO-Robotech/kacho-iam => ../kacho-iam
-
-replace github.com/PRO-Robotech/kacho-corelib => ../kacho-corelib
-
-replace github.com/PRO-Robotech/kacho-geo => ../kacho-geo

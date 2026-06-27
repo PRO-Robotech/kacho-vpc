@@ -6,11 +6,9 @@ ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
 
-COPY kacho-corelib /src/kacho-corelib
-COPY kacho-proto /src/kacho-proto
-COPY kacho-vpc /src/kacho-vpc
-
-WORKDIR /src/kacho-vpc
+# Single-repo build: зависимости (kacho-corelib, kacho-iam, kacho-geo) тянутся
+# как versioned-модули из GitHub (go.mod без replace), build-context — этот репо.
+COPY . .
 RUN go mod download
 # Два независимых binary в одном образе:
 # kacho-vpc — gRPC API-сервер (только `serve`).

@@ -119,16 +119,26 @@ jobs:
           sudo tar -xzf /tmp/grpcurl.tar.gz -C /usr/local/bin grpcurl
           grpcurl --version
 
-      # Build every kacho-* :dev image. Go services build with context = the
-      # workspace root (Dockerfile COPY kacho-corelib / kacho-proto / kacho-<svc>).
+      # Build every kacho-* :dev image. Сервисы в monorepo-дереве разъезжаются
+      # по build-режиму: single-repo (Dockerfile `COPY . .` + `go mod download`
+      # тянет зависимости с public proxy → context = свой checkout) vs legacy
+      # multi-sibling (Dockerfile `COPY ../kacho-corelib …` → context =
+      # workspace root). Режим определяем по самому Dockerfile, чтобы петля была
+      # устойчива к независимой миграции каждого репо. umbrella chart включает
+      # kacho-nlb sub-chart.
       - name: build service images
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          # umbrella chart включает kacho-nlb sub-chart.
           for svc in vpc iam compute api-gateway nlb; do
-            echo "=== build kacho-$svc:dev ==="
-            docker build -f "kacho-$svc/Dockerfile" -t "kacho-$svc:dev" .
+            df="kacho-$svc/Dockerfile"
+            if grep -qE '^[[:space:]]*COPY[[:space:]]+\.[[:space:]]+\.' "$df"; then
+              echo "=== build kacho-$svc:dev (single-repo, context=kacho-$svc) ==="
+              docker build -f "$df" -t "kacho-$svc:dev" "kacho-$svc"
+            else
+              echo "=== build kacho-$svc:dev (multi-sibling, context=workspace root) ==="
+              docker build -f "$df" -t "kacho-$svc:dev" .
+            fi
           done
           if [ -f kacho-ui/Dockerfile ]; then
             echo "=== build kacho-ui:dev ==="
