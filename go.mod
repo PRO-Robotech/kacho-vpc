@@ -5,7 +5,7 @@ go 1.25.11
 require (
 	github.com/H-BF/corlib v1.2.31-dev
 	github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260618025241-a8dbc86653dc
-	github.com/PRO-Robotech/kacho-proto v0.1.1-0.20260624203923-05d1904e3797
+	github.com/PRO-Robotech/kacho-iam v0.0.0-00010101000000-000000000000
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pressly/goose/v3 v3.27.1
@@ -43,7 +43,7 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -92,11 +92,11 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260427160629-7cedc36a6bc4 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260427160629-7cedc36a6bc4
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/PRO-Robotech/kacho-proto => ../kacho-proto
+replace github.com/PRO-Robotech/kacho-iam => ../kacho-iam
 
 replace github.com/PRO-Robotech/kacho-corelib => ../kacho-corelib
 
