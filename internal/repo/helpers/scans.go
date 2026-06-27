@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
@@ -65,7 +66,9 @@ func ScanNetwork(row Scannable) (*kachorepo.NetworkRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	n.VRFID = uint32(vrf)
+	// vrf_id хранится в БД int64, домен — uint32; safe-conversion исключает
+	// integer-overflow (G115): DB-CHECK держит значение в диапазоне uint32.
+	n.VRFID = safeconv.IntToUint32(int(vrf))
 	n.Name = domain.RcNameVPC(name)
 	n.Description = domain.RcDescription(description)
 	var labels map[string]string
