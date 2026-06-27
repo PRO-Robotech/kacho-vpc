@@ -44,6 +44,11 @@ type CreateNetworkUseCase struct {
 	defaultSGInline bool // KACHO_VPC_DEFAULT_SG_INLINE
 	createDefaultSG *CreateDefaultSGUseCase
 
+	// registrar — синхронная регистрация owner-tuple'а в kacho-iam после commit
+	// (sync-primary; outbox-intent остаётся at-least-once backstop'ом). nil →
+	// sync-путь пропускается (dev/no-iam), регистрация только через drainer.
+	registrar fgaregister.Registrar
+
 	// logger — диагностический trail async-worker'а (panic-recover до того, как
 	// op-worker замаскирует причину). FGA owner-tuple эмитится как intent в
 	// writer-TX, а не пишется напрямую отсюда.
@@ -69,6 +74,15 @@ func NewCreateNetworkUseCase(r Repo, projectClient ProjectClient, opsRepo operat
 // Nil logger → диагностический trail отключен.
 func (u *CreateNetworkUseCase) WithLogger(logger *slog.Logger) *CreateNetworkUseCase {
 	u.logger = logger
+	return u
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2). После
+// коммита Network (+ inline default-SG) те же Item'ы, что эмитятся в
+// outbox-intent, синхронно регистрируются в kacho-iam — owner-grant доступен
+// сразу. Nil registrar → sync-путь пропускается (только async drainer).
+func (u *CreateNetworkUseCase) WithRegistrar(r fgaregister.Registrar) *CreateNetworkUseCase {
+	u.registrar = r
 	return u
 }
 
@@ -228,6 +242,16 @@ func (u *CreateNetworkUseCase) doCreate(ctx context.Context, netID string, n dom
 
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+
+	// Sync-primary owner-tuple registration (после durable commit ресурса +
+	// outbox-intent). Грант доступен сразу — без гонки с async drainer'ом.
+	// Fail-closed: сбой регистрации → Operation error (ресурс закоммичен,
+	// intent durable → backstop drainer дорегистрирует при восстановлении iam).
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 
 	return marshalNetworkRecord(finalRec)

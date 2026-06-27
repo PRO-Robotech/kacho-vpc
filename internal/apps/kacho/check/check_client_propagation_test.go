@@ -30,6 +30,7 @@ type fakeInternalIAM struct {
 	lastMD  metadata.MD
 	lastReq *iamv1.CheckRequest
 	resp    *iamv1.CheckResponse
+	err     error
 }
 
 func (f *fakeInternalIAM) Check(ctx context.Context, req *iamv1.CheckRequest) (*iamv1.CheckResponse, error) {
@@ -40,6 +41,9 @@ func (f *fakeInternalIAM) Check(ctx context.Context, req *iamv1.CheckRequest) (*
 		f.lastMD = md.Copy()
 	}
 	f.lastReq = req
+	if f.err != nil {
+		return nil, f.err
+	}
 	if f.resp == nil {
 		return &iamv1.CheckResponse{Allowed: true}, nil
 	}

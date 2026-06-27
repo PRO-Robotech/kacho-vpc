@@ -35,6 +35,15 @@ type CreateRouteTableUseCase struct {
 	repo          Repo
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+	registrar     fgaregister.Registrar
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit RouteTable owner-tuple синхронно регистрируется в kacho-iam. Nil →
+// sync-путь пропускается (только async drainer).
+func (u *CreateRouteTableUseCase) WithRegistrar(r fgaregister.Registrar) *CreateRouteTableUseCase {
+	u.registrar = r
+	return u
 }
 
 // NewCreateRouteTableUseCase создает CreateRouteTableUseCase.
@@ -172,14 +181,21 @@ func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt 
 	// (ProjectHierarchyItem), а не голый tuple — иначе resource_mirror в kacho-iam
 	// остается без labels и ARM_LABELS-селектор не матчит даже свежесозданную
 	// RouteTable. Симметрично network/subnet/securitygroup create.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+	items := []fgaregister.Item{
 		fgaregister.ProjectHierarchyItem(string(rt.ProjectID), "vpc_route_table", created.ID,
 			domain.LabelsToMap(created.Labels)),
-	)); err != nil {
+	}
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Sync-primary owner-tuple registration (после durable commit); fail-closed.
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return marshalRouteTableRecord(created)
 }

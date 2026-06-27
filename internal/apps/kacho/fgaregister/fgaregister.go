@@ -23,10 +23,22 @@
 package fgaregister
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// Registrar — порт синхронной регистрации owner-tuple'ов в kacho-iam. Create-flow
+// после успешного коммита ресурса синхронно регистрирует те же Item'ы, что
+// эмитятся в outbox-intent, чтобы owner-grant был доступен сразу — без гонки с
+// async register-drainer'ом. Реализация — adapter поверх
+// InternalIAMService.RegisterResource (idempotent); drainer остаётся
+// at-least-once backstop'ом. nil-registrar (dev/no-iam) → sync-путь
+// пропускается, остаётся только async.
+type Registrar interface {
+	Register(ctx context.Context, items []Item) error
+}
 
 // Типы событий в колонке `event_type` таблицы fga_register_outbox; передаются
 // drainer-Applier'у и определяют, что он вызовет: RegisterResource (записать

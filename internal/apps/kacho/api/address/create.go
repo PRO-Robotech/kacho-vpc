@@ -96,6 +96,15 @@ type CreateAddressUseCase struct {
 	projectClient ProjectClient
 	opsRepo       operations.Repo
 	pools         PoolService // nil → external IPAM недоступна (test-only)
+	registrar     fgaregister.Registrar
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit Address owner-tuple синхронно регистрируется в kacho-iam. Nil →
+// sync-путь пропускается (только async drainer).
+func (u *CreateAddressUseCase) WithRegistrar(r fgaregister.Registrar) *CreateAddressUseCase {
+	u.registrar = r
+	return u
 }
 
 // NewCreateAddressUseCase создает CreateAddressUseCase.
@@ -471,14 +480,21 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	// Address + parent_project_id (ProjectHierarchyItem), а не голый tuple — иначе
 	// resource_mirror в kacho-iam остается без labels и ARM_LABELS-селектор не
 	// матчит даже свежесозданный Address. Симметрично network/subnet/securitygroup.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+	items := []fgaregister.Item{
 		fgaregister.ProjectHierarchyItem(in.ProjectID, "vpc_address", created.ID,
 			domain.LabelsToMap(created.Labels)),
-	)); err != nil {
+	}
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Sync-primary owner-tuple registration (после durable commit); fail-closed.
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return marshalAddressRecord(created)
 }

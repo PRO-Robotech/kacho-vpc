@@ -38,6 +38,15 @@ type CreateSecurityGroupUseCase struct {
 	sgReader      SecurityGroupReader
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+	registrar     fgaregister.Registrar
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit SecurityGroup owner-tuple синхронно регистрируется в kacho-iam. Nil →
+// sync-путь пропускается (только async drainer).
+func (u *CreateSecurityGroupUseCase) WithRegistrar(r fgaregister.Registrar) *CreateSecurityGroupUseCase {
+	u.registrar = r
+	return u
 }
 
 // WithSGReader подключает порт SecurityGroupReader для проверки SG-target-правил
@@ -193,14 +202,21 @@ func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, 
 	// не голый tuple — иначе resource_mirror в kacho-iam остается без labels и
 	// ARM_LABELS-селектор не матчит даже только что созданную SG. Симметрично
 	// network/create.go и subnet/create.go.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+	items := []fgaregister.Item{
 		fgaregister.ProjectHierarchyItem(string(sg.ProjectID), "vpc_security_group", created.ID,
 			domain.LabelsToMap(created.Labels)),
-	)); err != nil {
+	}
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Sync-primary owner-tuple registration (после durable commit); fail-closed.
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return marshalSecurityGroupRecord(created)
 }
