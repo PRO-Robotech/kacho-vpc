@@ -204,17 +204,15 @@ func (f *useCasesFixture) seedPool(t *testing.T, name string, isDefault bool, zo
 	now := time.Now().UTC()
 	p := &domain.AddressPool{
 		ID:             ids.NewID(ids.PrefixAddressPool),
-		Name:           name,
+		Name:           domain.RcNameVPC(name),
 		V4CIDRBlocks:   v4,
 		V6CIDRBlocks:   v6,
 		Kind:           domain.AddressPoolKindExternalPublic,
 		ZoneID:         zone,
 		IsDefault:      isDefault,
-		SelectorLabels: selector,
-		CreatedAt:      now,
-		ModifiedAt:     now,
+		SelectorLabels: domain.LabelsFromMap(selector),
 	}
-	f.kr.inner.SeedAddressPool(&kachorepo.AddressPoolRecord{AddressPool: *p})
+	f.kr.inner.SeedAddressPool(&kachorepo.AddressPoolRecord{AddressPool: *p, CreatedAt: now, ModifiedAt: now})
 	return p
 }
 
@@ -391,7 +389,7 @@ func TestAddressPool_KAC269_Update_DoesNotTouchCIDR(t *testing.T) {
 		Description: "kac-269 update probe",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "kac-269 update probe", updated.Description)
+	assert.Equal(t, "kac-269 update probe", string(updated.Description))
 	assert.Equal(t, []string{"198.51.100.0/24"}, updated.V4CIDRBlocks, "v4 untouched by Update")
 	assert.Equal(t, []string{"2001:db8:ff::/64"}, updated.V6CIDRBlocks, "v6 untouched by Update")
 }
@@ -444,7 +442,7 @@ func TestAddressPool_UpdateMask_FieldNotInMask_Ignored(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.True(t, updated.IsDefault)
-	assert.Equal(t, "keep me", updated.Description, "description not in mask → untouched")
+	assert.Equal(t, "keep me", string(updated.Description), "description not in mask → untouched")
 }
 
 func TestAddressPool_UpdateMask_ImmutableZone_InvalidArgument(t *testing.T) {
@@ -503,8 +501,8 @@ func TestAddressPool_UpdateMask_Empty_FullPatch(t *testing.T) {
 		SelectorPriority: 7,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "renamed", updated.Name)
-	assert.Equal(t, "new", updated.Description)
+	assert.Equal(t, "renamed", string(updated.Name))
+	assert.Equal(t, "new", string(updated.Description))
 	assert.True(t, updated.IsDefault)
 	assert.Equal(t, int32(7), updated.SelectorPriority)
 }

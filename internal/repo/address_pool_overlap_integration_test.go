@@ -86,13 +86,13 @@ func TestIntegration_AddressPoolOverlap_AddCidrOverlapExisting(t *testing.T) {
 	createUC := addresspool.NewCreateAddressPoolUseCase(r, nil)
 
 	_, err = createUC.Execute(ctx, addresspool.CreatePoolReq{
-		Name: "pool-a-" + t.Name(), Kind: domain.AddressPoolKindExternalPublic,
+		Name: "pool-a-addcidr-overlap", Kind: domain.AddressPoolKindExternalPublic,
 		ZoneID: "zone-a", V4CIDRBlocks: []string{"10.0.0.0/24"},
 	})
 	require.NoError(t, err)
 
 	poolB, err := createUC.Execute(ctx, addresspool.CreatePoolReq{
-		Name: "pool-b-" + t.Name(), Kind: domain.AddressPoolKindExternalPublic,
+		Name: "pool-b-addcidr-overlap", Kind: domain.AddressPoolKindExternalPublic,
 		ZoneID: "zone-a", V4CIDRBlocks: []string{"10.1.0.0/24"},
 	})
 	require.NoError(t, err)

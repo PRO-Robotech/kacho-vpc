@@ -15,6 +15,7 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -518,26 +519,21 @@ func (x *ListAddressPoolsResponse) GetNextPageToken() string {
 }
 
 type UpdateAddressPoolRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	PoolId string                 `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
-	// Если непустой — обновить name.
-	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// Если непустой — обновить description.
-	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	// Если задан (даже пустой map) — заменить labels.
-	ReplaceLabels bool              `protobuf:"varint,4,opt,name=replace_labels,json=replaceLabels,proto3" json:"replace_labels,omitempty"`
-	Labels        map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Если задан — обновить is_default.
-	UpdateIsDefault bool `protobuf:"varint,7,opt,name=update_is_default,json=updateIsDefault,proto3" json:"update_is_default,omitempty"`
-	IsDefault       bool `protobuf:"varint,8,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
-	// Если задан — заменить selector_labels (даже пустым).
-	ReplaceSelectorLabels bool              `protobuf:"varint,9,opt,name=replace_selector_labels,json=replaceSelectorLabels,proto3" json:"replace_selector_labels,omitempty"`
-	SelectorLabels        map[string]string `protobuf:"bytes,10,rep,name=selector_labels,json=selectorLabels,proto3" json:"selector_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Если задан — обновить selector_priority.
-	UpdateSelectorPriority bool  `protobuf:"varint,11,opt,name=update_selector_priority,json=updateSelectorPriority,proto3" json:"update_selector_priority,omitempty"`
-	SelectorPriority       int32 `protobuf:"varint,12,opt,name=selector_priority,json=selectorPriority,proto3" json:"selector_priority,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	PoolId           string                 `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description      string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Labels           map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	IsDefault        bool                   `protobuf:"varint,8,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	SelectorLabels   map[string]string      `protobuf:"bytes,10,rep,name=selector_labels,json=selectorLabels,proto3" json:"selector_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SelectorPriority int32                  `protobuf:"varint,12,opt,name=selector_priority,json=selectorPriority,proto3" json:"selector_priority,omitempty"`
+	// update_mask — список изменяемых полей (snake_case). Применяются только поля
+	// из mask; immutable/unknown в mask → InvalidArgument; пустой/отсутствующий
+	// mask → full-object PATCH мутабельных полей (значения берутся из тела).
+	// Единая update_mask-дисциплина со всеми ресурсами VPC.
+	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,17,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateAddressPoolRequest) Reset() {
@@ -591,13 +587,6 @@ func (x *UpdateAddressPoolRequest) GetDescription() string {
 	return ""
 }
 
-func (x *UpdateAddressPoolRequest) GetReplaceLabels() bool {
-	if x != nil {
-		return x.ReplaceLabels
-	}
-	return false
-}
-
 func (x *UpdateAddressPoolRequest) GetLabels() map[string]string {
 	if x != nil {
 		return x.Labels
@@ -605,23 +594,9 @@ func (x *UpdateAddressPoolRequest) GetLabels() map[string]string {
 	return nil
 }
 
-func (x *UpdateAddressPoolRequest) GetUpdateIsDefault() bool {
-	if x != nil {
-		return x.UpdateIsDefault
-	}
-	return false
-}
-
 func (x *UpdateAddressPoolRequest) GetIsDefault() bool {
 	if x != nil {
 		return x.IsDefault
-	}
-	return false
-}
-
-func (x *UpdateAddressPoolRequest) GetReplaceSelectorLabels() bool {
-	if x != nil {
-		return x.ReplaceSelectorLabels
 	}
 	return false
 }
@@ -633,18 +608,18 @@ func (x *UpdateAddressPoolRequest) GetSelectorLabels() map[string]string {
 	return nil
 }
 
-func (x *UpdateAddressPoolRequest) GetUpdateSelectorPriority() bool {
-	if x != nil {
-		return x.UpdateSelectorPriority
-	}
-	return false
-}
-
 func (x *UpdateAddressPoolRequest) GetSelectorPriority() int32 {
 	if x != nil {
 		return x.SelectorPriority
 	}
 	return 0
+}
+
+func (x *UpdateAddressPoolRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.UpdateMask
+	}
+	return nil
 }
 
 type AddAddressPoolCidrBlocksRequest struct {
@@ -1405,7 +1380,7 @@ var File_kacho_cloud_vpc_v1_internal_address_pool_service_proto protoreflect.Fil
 
 const file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_rawDesc = "" +
 	"\n" +
-	"6kacho/cloud/vpc/v1/internal_address_pool_service.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1ckacho/cloud/validation.proto\x1a&kacho/iam/authz/v1/authz_options.proto\"\xbe\x05\n" +
+	"6kacho/cloud/vpc/v1/internal_address_pool_service.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1cgoogle/api/annotations.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1ckacho/cloud/validation.proto\x1a&kacho/iam/authz/v1/authz_options.proto\"\xbe\x05\n" +
 	"\vAddressPool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x129\n" +
 	"\n" +
@@ -1460,27 +1435,26 @@ const file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_rawDesc = "" +
 	"project_id\"y\n" +
 	"\x18ListAddressPoolsResponse\x125\n" +
 	"\x05pools\x18\x01 \x03(\v2\x1f.kacho.cloud.vpc.v1.AddressPoolR\x05pools\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb0\x06\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x96\x06\n" +
 	"\x18UpdateAddressPoolRequest\x12\x17\n" +
 	"\apool_id\x18\x01 \x01(\tR\x06poolId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12%\n" +
-	"\x0ereplace_labels\x18\x04 \x01(\bR\rreplaceLabels\x12P\n" +
-	"\x06labels\x18\x05 \x03(\v28.kacho.cloud.vpc.v1.UpdateAddressPoolRequest.LabelsEntryR\x06labels\x12*\n" +
-	"\x11update_is_default\x18\a \x01(\bR\x0fupdateIsDefault\x12\x1d\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12P\n" +
+	"\x06labels\x18\x05 \x03(\v28.kacho.cloud.vpc.v1.UpdateAddressPoolRequest.LabelsEntryR\x06labels\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\b \x01(\bR\tisDefault\x126\n" +
-	"\x17replace_selector_labels\x18\t \x01(\bR\x15replaceSelectorLabels\x12i\n" +
+	"is_default\x18\b \x01(\bR\tisDefault\x12i\n" +
 	"\x0fselector_labels\x18\n" +
-	" \x03(\v2@.kacho.cloud.vpc.v1.UpdateAddressPoolRequest.SelectorLabelsEntryR\x0eselectorLabels\x128\n" +
-	"\x18update_selector_priority\x18\v \x01(\bR\x16updateSelectorPriority\x12+\n" +
-	"\x11selector_priority\x18\f \x01(\x05R\x10selectorPriority\x1a9\n" +
+	" \x03(\v2@.kacho.cloud.vpc.v1.UpdateAddressPoolRequest.SelectorLabelsEntryR\x0eselectorLabels\x12+\n" +
+	"\x11selector_priority\x18\f \x01(\x05R\x10selectorPriority\x12;\n" +
+	"\vupdate_mask\x18\x11 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
+	"updateMask\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aA\n" +
 	"\x13SelectorLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\vcidr_blocksR\x0ev4_cidr_blocksR\x0ev6_cidr_blocksR\x16replace_v4_cidr_blocksR\x16replace_v6_cidr_blocks\"\xa3\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x06\x10\aJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11J\x04\b\x04\x10\x05J\x04\b\a\x10\bJ\x04\b\t\x10\n" +
+	"J\x04\b\v\x10\fR\vcidr_blocksR\x0ev4_cidr_blocksR\x0ev6_cidr_blocksR\x16replace_v4_cidr_blocksR\x16replace_v6_cidr_blocksR\x0ereplace_labelsR\x11update_is_defaultR\x17replace_selector_labelsR\x18update_selector_priority\"\xa3\x01\n" +
 	"\x1fAddAddressPoolCidrBlocksRequest\x124\n" +
 	"\x0faddress_pool_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\raddressPoolId\x12$\n" +
 	"\x0ev4_cidr_blocks\x18\x02 \x03(\tR\fv4CidrBlocks\x12$\n" +
@@ -1603,6 +1577,7 @@ var file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_goTypes = []any{
 	nil,                                        // 24: kacho.cloud.vpc.v1.UpdateAddressPoolRequest.LabelsEntry
 	nil,                                        // 25: kacho.cloud.vpc.v1.UpdateAddressPoolRequest.SelectorLabelsEntry
 	(*timestamppb.Timestamp)(nil),              // 26: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),              // 27: google.protobuf.FieldMask
 }
 var file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_depIdxs = []int32{
 	26, // 0: kacho.cloud.vpc.v1.AddressPool.created_at:type_name -> google.protobuf.Timestamp
@@ -1616,36 +1591,37 @@ var file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_depIdxs = []int3
 	1,  // 8: kacho.cloud.vpc.v1.ListAddressPoolsResponse.pools:type_name -> kacho.cloud.vpc.v1.AddressPool
 	24, // 9: kacho.cloud.vpc.v1.UpdateAddressPoolRequest.labels:type_name -> kacho.cloud.vpc.v1.UpdateAddressPoolRequest.LabelsEntry
 	25, // 10: kacho.cloud.vpc.v1.UpdateAddressPoolRequest.selector_labels:type_name -> kacho.cloud.vpc.v1.UpdateAddressPoolRequest.SelectorLabelsEntry
-	26, // 11: kacho.cloud.vpc.v1.AddressPoolAddressEntry.created_at:type_name -> google.protobuf.Timestamp
-	15, // 12: kacho.cloud.vpc.v1.ListAddressPoolAddressesResponse.addresses:type_name -> kacho.cloud.vpc.v1.AddressPoolAddressEntry
-	18, // 13: kacho.cloud.vpc.v1.AddressPoolUtilization.cidrs:type_name -> kacho.cloud.vpc.v1.CIDRUtilization
-	2,  // 14: kacho.cloud.vpc.v1.InternalAddressPoolService.Create:input_type -> kacho.cloud.vpc.v1.CreateAddressPoolRequest
-	3,  // 15: kacho.cloud.vpc.v1.InternalAddressPoolService.Get:input_type -> kacho.cloud.vpc.v1.GetAddressPoolRequest
-	4,  // 16: kacho.cloud.vpc.v1.InternalAddressPoolService.List:input_type -> kacho.cloud.vpc.v1.ListAddressPoolsRequest
-	6,  // 17: kacho.cloud.vpc.v1.InternalAddressPoolService.Update:input_type -> kacho.cloud.vpc.v1.UpdateAddressPoolRequest
-	9,  // 18: kacho.cloud.vpc.v1.InternalAddressPoolService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteAddressPoolRequest
-	7,  // 19: kacho.cloud.vpc.v1.InternalAddressPoolService.AddCidrBlocks:input_type -> kacho.cloud.vpc.v1.AddAddressPoolCidrBlocksRequest
-	8,  // 20: kacho.cloud.vpc.v1.InternalAddressPoolService.RemoveCidrBlocks:input_type -> kacho.cloud.vpc.v1.RemoveAddressPoolCidrBlocksRequest
-	11, // 21: kacho.cloud.vpc.v1.InternalAddressPoolService.BindAsNetworkDefault:input_type -> kacho.cloud.vpc.v1.BindAsNetworkDefaultRequest
-	12, // 22: kacho.cloud.vpc.v1.InternalAddressPoolService.UnbindNetworkDefault:input_type -> kacho.cloud.vpc.v1.UnbindNetworkDefaultRequest
-	14, // 23: kacho.cloud.vpc.v1.InternalAddressPoolService.ListAddresses:input_type -> kacho.cloud.vpc.v1.ListAddressPoolAddressesRequest
-	17, // 24: kacho.cloud.vpc.v1.InternalAddressPoolService.GetUtilization:input_type -> kacho.cloud.vpc.v1.GetAddressPoolUtilizationRequest
-	1,  // 25: kacho.cloud.vpc.v1.InternalAddressPoolService.Create:output_type -> kacho.cloud.vpc.v1.AddressPool
-	1,  // 26: kacho.cloud.vpc.v1.InternalAddressPoolService.Get:output_type -> kacho.cloud.vpc.v1.AddressPool
-	5,  // 27: kacho.cloud.vpc.v1.InternalAddressPoolService.List:output_type -> kacho.cloud.vpc.v1.ListAddressPoolsResponse
-	1,  // 28: kacho.cloud.vpc.v1.InternalAddressPoolService.Update:output_type -> kacho.cloud.vpc.v1.AddressPool
-	10, // 29: kacho.cloud.vpc.v1.InternalAddressPoolService.Delete:output_type -> kacho.cloud.vpc.v1.DeleteAddressPoolResponse
-	1,  // 30: kacho.cloud.vpc.v1.InternalAddressPoolService.AddCidrBlocks:output_type -> kacho.cloud.vpc.v1.AddressPool
-	1,  // 31: kacho.cloud.vpc.v1.InternalAddressPoolService.RemoveCidrBlocks:output_type -> kacho.cloud.vpc.v1.AddressPool
-	13, // 32: kacho.cloud.vpc.v1.InternalAddressPoolService.BindAsNetworkDefault:output_type -> kacho.cloud.vpc.v1.BindResponse
-	13, // 33: kacho.cloud.vpc.v1.InternalAddressPoolService.UnbindNetworkDefault:output_type -> kacho.cloud.vpc.v1.BindResponse
-	16, // 34: kacho.cloud.vpc.v1.InternalAddressPoolService.ListAddresses:output_type -> kacho.cloud.vpc.v1.ListAddressPoolAddressesResponse
-	19, // 35: kacho.cloud.vpc.v1.InternalAddressPoolService.GetUtilization:output_type -> kacho.cloud.vpc.v1.AddressPoolUtilization
-	25, // [25:36] is the sub-list for method output_type
-	14, // [14:25] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	27, // 11: kacho.cloud.vpc.v1.UpdateAddressPoolRequest.update_mask:type_name -> google.protobuf.FieldMask
+	26, // 12: kacho.cloud.vpc.v1.AddressPoolAddressEntry.created_at:type_name -> google.protobuf.Timestamp
+	15, // 13: kacho.cloud.vpc.v1.ListAddressPoolAddressesResponse.addresses:type_name -> kacho.cloud.vpc.v1.AddressPoolAddressEntry
+	18, // 14: kacho.cloud.vpc.v1.AddressPoolUtilization.cidrs:type_name -> kacho.cloud.vpc.v1.CIDRUtilization
+	2,  // 15: kacho.cloud.vpc.v1.InternalAddressPoolService.Create:input_type -> kacho.cloud.vpc.v1.CreateAddressPoolRequest
+	3,  // 16: kacho.cloud.vpc.v1.InternalAddressPoolService.Get:input_type -> kacho.cloud.vpc.v1.GetAddressPoolRequest
+	4,  // 17: kacho.cloud.vpc.v1.InternalAddressPoolService.List:input_type -> kacho.cloud.vpc.v1.ListAddressPoolsRequest
+	6,  // 18: kacho.cloud.vpc.v1.InternalAddressPoolService.Update:input_type -> kacho.cloud.vpc.v1.UpdateAddressPoolRequest
+	9,  // 19: kacho.cloud.vpc.v1.InternalAddressPoolService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteAddressPoolRequest
+	7,  // 20: kacho.cloud.vpc.v1.InternalAddressPoolService.AddCidrBlocks:input_type -> kacho.cloud.vpc.v1.AddAddressPoolCidrBlocksRequest
+	8,  // 21: kacho.cloud.vpc.v1.InternalAddressPoolService.RemoveCidrBlocks:input_type -> kacho.cloud.vpc.v1.RemoveAddressPoolCidrBlocksRequest
+	11, // 22: kacho.cloud.vpc.v1.InternalAddressPoolService.BindAsNetworkDefault:input_type -> kacho.cloud.vpc.v1.BindAsNetworkDefaultRequest
+	12, // 23: kacho.cloud.vpc.v1.InternalAddressPoolService.UnbindNetworkDefault:input_type -> kacho.cloud.vpc.v1.UnbindNetworkDefaultRequest
+	14, // 24: kacho.cloud.vpc.v1.InternalAddressPoolService.ListAddresses:input_type -> kacho.cloud.vpc.v1.ListAddressPoolAddressesRequest
+	17, // 25: kacho.cloud.vpc.v1.InternalAddressPoolService.GetUtilization:input_type -> kacho.cloud.vpc.v1.GetAddressPoolUtilizationRequest
+	1,  // 26: kacho.cloud.vpc.v1.InternalAddressPoolService.Create:output_type -> kacho.cloud.vpc.v1.AddressPool
+	1,  // 27: kacho.cloud.vpc.v1.InternalAddressPoolService.Get:output_type -> kacho.cloud.vpc.v1.AddressPool
+	5,  // 28: kacho.cloud.vpc.v1.InternalAddressPoolService.List:output_type -> kacho.cloud.vpc.v1.ListAddressPoolsResponse
+	1,  // 29: kacho.cloud.vpc.v1.InternalAddressPoolService.Update:output_type -> kacho.cloud.vpc.v1.AddressPool
+	10, // 30: kacho.cloud.vpc.v1.InternalAddressPoolService.Delete:output_type -> kacho.cloud.vpc.v1.DeleteAddressPoolResponse
+	1,  // 31: kacho.cloud.vpc.v1.InternalAddressPoolService.AddCidrBlocks:output_type -> kacho.cloud.vpc.v1.AddressPool
+	1,  // 32: kacho.cloud.vpc.v1.InternalAddressPoolService.RemoveCidrBlocks:output_type -> kacho.cloud.vpc.v1.AddressPool
+	13, // 33: kacho.cloud.vpc.v1.InternalAddressPoolService.BindAsNetworkDefault:output_type -> kacho.cloud.vpc.v1.BindResponse
+	13, // 34: kacho.cloud.vpc.v1.InternalAddressPoolService.UnbindNetworkDefault:output_type -> kacho.cloud.vpc.v1.BindResponse
+	16, // 35: kacho.cloud.vpc.v1.InternalAddressPoolService.ListAddresses:output_type -> kacho.cloud.vpc.v1.ListAddressPoolAddressesResponse
+	19, // 36: kacho.cloud.vpc.v1.InternalAddressPoolService.GetUtilization:output_type -> kacho.cloud.vpc.v1.AddressPoolUtilization
+	26, // [26:37] is the sub-list for method output_type
+	15, // [15:26] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_kacho_cloud_vpc_v1_internal_address_pool_service_proto_init() }

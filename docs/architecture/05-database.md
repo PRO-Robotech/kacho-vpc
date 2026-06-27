@@ -17,7 +17,7 @@ search_path устанавливается через libpq-параметр `op
 | Partial UNIQUE index | `security_groups_one_default_per_network` | один default-SG на сеть |
 | Computed column | `subnets.v4_cidr_primary` / `v6_cidr_primary`, `addresses.internal_subnet_id` | для использования в EXCLUDE / UNIQUE / FK |
 | `jsonb_path_ops` GIN index | `address_pools_selector_labels_gin` | быстрые `@>` запросы |
-| `LISTEN/NOTIFY` | `vpc_outbox_notify_trg`, `fga_register_outbox_notify_trg` | InternalWatchService stream + FGA register-drainer |
+| `LISTEN/NOTIFY` | `vpc_outbox_notify_trg`, `fga_register_outbox_notify_trg` | in-cluster канал доменного outbox-журнала (Watch RPC не публикуется) + FGA register-drainer |
 | `xmin::text` | optimistic locking (SecurityGroup.UpdateRules) | zero-overhead version-check |
 | `FOR UPDATE SKIP LOCKED` | IPv4 freelist / IPv6 released-offsets pop | contention-free аллокация из пула |
 

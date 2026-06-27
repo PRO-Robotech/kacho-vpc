@@ -52,6 +52,8 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/fgaboot"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
+	"github.com/PRO-Robotech/kacho-vpc/internal/observability/health"
+	vpcmetrics "github.com/PRO-Robotech/kacho-vpc/internal/observability/metrics"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
@@ -112,7 +114,8 @@ func runServe(cfg config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	logger := observability.NewSlogger(os.Stdout)
+	// logger.level из конфига уважается (валидность проверена в cfg.Validate()).
+	logger := observability.NewSloggerLevel(os.Stdout, cfg.SlogLevel())
 	slog.SetDefault(logger)
 
 	// Логируем insecure dev-defaults.
@@ -124,6 +127,10 @@ func runServe(cfg config.Config) error {
 	}
 	if cfg.AuthN.Mode == config.ModeProductionStrict {
 		logger.Warn("authn.mode=production-strict: anonymous rejected + TLS+SSL strictly validated")
+	}
+	// Громкое предупреждение, когда authz целиком обойдён в production (emergency).
+	if cfg.AuthN.Mode.IsProduction() && cfg.AuthZ.Breakglass {
+		logger.Warn(fmt.Sprintf(config.WarnBreakglassProduction, cfg.AuthN.Mode))
 	}
 
 	pool, err := coredb.NewPool(ctx, cfg.DSN())
@@ -154,12 +161,23 @@ func runServe(cfg config.Config) error {
 	// дополнительно передает схему явно для квалификации SQL-операций.
 	opsRepo := operations.NewRepo(pool, "kacho_vpc")
 
+	// Prometheus observability adapter: приватный реестр, питает outbox-recorder,
+	// reconciler-recorder и diagnostic /metrics. Заменяет in-memory MemRecorder —
+	// метрики теперь экспортируются наружу (scrape).
+	metricsAdapter := vpcmetrics.New(buildVersion, buildCommit)
+
 	// Per-edge opt-in mTLS-конфиг из env (KACHO_VPC_*). enable=false на ребре →
 	// insecure (dev backward-compat). Используется для ребер vpc→iam
 	// register-drainer, vpc→geo (zone_id) и для public/internal server-листенеров.
 	mtlsCfg, err := config.LoadMTLS()
 	if err != nil {
 		return fmt.Errorf("load mTLS config: %w", err)
+	}
+	// Fail-closed boot-гардрейл S2: production-strict требует server-mTLS на обоих
+	// листенерах. MTLSConfig грузится вне viper-Config, поэтому проверка — здесь,
+	// ДО привязки листенеров (отказ старта вместо insecure-listener'а).
+	if err := cfg.ValidateServerMTLS(mtlsCfg); err != nil {
+		return fmt.Errorf("config validate (server mTLS): %w", err)
 	}
 
 	// Cross-service gRPC dial — через единый builder: retries=3 / dialTimeout=10s /
@@ -291,10 +309,10 @@ func runServe(cfg config.Config) error {
 	// неподключенным; SetConnected(true) срабатывает ниже, как только dial drainer'а
 	// успешен.
 	bootGate := bootgate.New(bootgate.Config{RequireIAM: requireIAM(), Service: "kacho-vpc"})
-	// metrics-recorder для outbox-backstop. MemRecorder — легкий default без
-	// зависимостей; Prometheus-backed Recorder можно подключить здесь, в composition
-	// root, не трогая drainer/collector.
-	outboxRec := metrics.NewMemRecorder()
+	// Prometheus-backed outbox-recorder: backlog/oldest/poisoned register-outbox
+	// экспортируются на /metrics (заменяет in-memory MemRecorder). Тот же adapter
+	// — operations.Recorder для reconciler'а ниже.
+	outboxRec := metricsAdapter
 
 	// register-drainer: применяет FGA owner-tuple register/unregister intents
 	// (kacho_vpc.fga_register_outbox, записанные транзакционно в writer-TX ресурса)
@@ -334,9 +352,10 @@ func runServe(cfg config.Config) error {
 	//
 	// internal :9091 listener — С тем же authz-interceptor'ом (security-инвариант:
 	// authN+authZ и на internal'е). cluster-scoped admin RPC (InternalNetworkService,
-	// InternalAddressPoolService) проходят FGA Check на `cluster:cluster_kacho_root`
-	// (см. PermissionMap); IPAM-примитивы InternalAddressService.* остаются exempt
-	// (skip через methodIsInternal — не в Map, авторизуются in-handler).
+	// InternalAddressPoolService) проходят FGA Check на `cluster:cluster_kacho_root`;
+	// IPAM-примитивы InternalAddressService.* — object-scoped verb-bearing Check на
+	// самом ресурсе `vpc_address` (v_update/v_get, как публичный AddressService) — все
+	// они в PermissionMap, exempt-путей больше нет.
 	productionMode := cfg.AuthN.Mode.IsProduction()
 
 	// principal-extract ОБЯЗАН стоять ПЕРВЫМ в public-цепочке: authz-interceptor и
@@ -366,8 +385,8 @@ func runServe(cfg config.Config) error {
 	// — admin-metadata gate, сохраняется для defense-in-depth. authzIntr навешивается
 	// ниже (когда != nil): mapped cluster-scoped internal RPC
 	// (InternalNetworkService.GetNetwork/..., InternalAddressPoolService.*) проходят
-	// Check; IPAM InternalAddressService.* остаются exempt (skip через
-	// methodIsInternal — не в Map).
+	// Check; IPAM InternalAddressService.* — object-scoped verb-bearing Check на
+	// `vpc_address` (v_update/v_get), все в PermissionMap.
 	internalUnary := []grpc.UnaryServerInterceptor{
 		grpcsrv.UnaryPrincipalExtract(),
 		handler.TenantUnaryInterceptor(true, productionMode),
@@ -388,8 +407,15 @@ func runServe(cfg config.Config) error {
 		DenyRateLimitPerSec: cfg.AuthZ.DenyRateLimitPerSec,
 		CacheTTL:            cfg.AuthZ.CacheTTL,
 	})
-	switch {
-	case err == nil && authzIntr != nil:
+	// Fail-fast (S3): в production отсутствие authz-interceptor'а — фатально (не
+	// продолжаем как раньше с Warn). Защита от регрессии, обходящей S1-гард: без
+	// Check подделанная x-kacho-* metadata дала бы эскалацию. В dev — graceful
+	// Warn+continue.
+	authzIntr, err = authzWiringDecision(productionMode, authzIntr, err)
+	if err != nil {
+		return fmt.Errorf("authz wiring: %w", err)
+	}
+	if authzIntr != nil {
 		publicUnary = append(publicUnary, authzIntr.Unary())
 		publicStream = append(publicStream, authzIntr.Stream())
 		// Тот же authzIntr instance на internal listener'е (общий cache/метрики).
@@ -400,13 +426,9 @@ func runServe(cfg config.Config) error {
 			"breakglass", cfg.AuthZ.Breakglass,
 			"cache_ttl", cfg.AuthZ.CacheTTL,
 		)
-	case errors.Is(err, check.ErrIAMConnNotConfigured):
-		// Dev-стенд без kacho-iam — продолжаем без authz-interceptor'а. В production
-		// cfg.AuthZ.IAMEndpoint обязан быть выставлен (проверяется на стороне
-		// deploy/values).
+	} else {
+		// dev-стенд без kacho-iam — продолжаем без authz-interceptor'а.
 		logger.Warn("authz interceptor NOT enabled — authz.iam-endpoint not configured (dev mode)")
-	case err != nil:
-		return fmt.Errorf("build authz interceptor: %w", err)
 	}
 
 	// Per-listener opt-in mTLS server-creds. enable=false (default) → insecure (dev
@@ -437,6 +459,35 @@ func runServe(cfg config.Config) error {
 		"internal_mtls", mtlsCfg.InternalServerMTLS.Enable)
 	registerPublicServices(grpcSrv, svcs, opsRepo)
 	registerInternalServices(internalSrv, svcs)
+
+	// Dependency-aware readiness: /readyz отражает здоровье критичных зависимостей
+	// (database / register-drainer / lro-worker / iam-authz), /healthz — только
+	// живость процесса (защита от restart-storm). Результат зеркалится в
+	// dependency_up Prometheus-gauge.
+	healthAgg := health.New(
+		buildReadinessCheckers(pool, bootGate, authzConn),
+		health.WithResultObserver(metricsAdapter.SetDependencyUp),
+	)
+
+	// Diagnostic HTTP-listener (cluster-internal): /metrics + /healthz + /readyz.
+	// Пустой endpoint (metrics.enable=false) → не поднимается (back-compat).
+	diagTask, diagShutdown, err := startDiagnosticListener(cfg.MetricsEndpoint(), metricsAdapter, healthAgg, logger)
+	if err != nil {
+		return fmt.Errorf("start diagnostic listener: %w", err)
+	}
+
+	// Durable LRO recovery: доменный resolver + corelib-reconciler поверх schema
+	// kacho_vpc. RecoverAll прогоняется ДО приёма трафика; периодический Run —
+	// backstop до отмены ctx.
+	startLRORecovery(ctx, pool, kachopg.New(pool, slavePool), metricsAdapter, logger)
+
+	// Явно поднимаем package-level default-registry LRO-worker'а ДО приёма трафика:
+	// readiness lro-worker зелёный без единой мутации (нет boot-deadlock), а
+	// live-worker метрики (terminal-write retries/failures, inflight gauge) текут в
+	// тот же Prometheus-adapter — раньше эти серии были мертвы (NopRecorder).
+	if err := startLROWorker(metricsAdapter, logger); err != nil {
+		return fmt.Errorf("start LRO worker: %w", err)
+	}
 
 	publicAddr := cfg.APIServer.ListenAddress()
 	internalAddr := cfg.APIServer.InternalListenAddress()
@@ -477,6 +528,9 @@ func runServe(cfg config.Config) error {
 	var shutdownOnce sync.Once
 	triggerShutdown := func() {
 		shutdownOnce.Do(func() {
+			// Readiness флипает в shutting_down ДО GracefulStop — kubelet перестаёт
+			// слать трафик, пока in-flight RPC дренируются.
+			healthAgg.SetShuttingDown()
 			close(shutdownCh)
 			internalSrv.GracefulStop()
 			grpcSrv.GracefulStop()
@@ -518,8 +572,23 @@ func runServe(cfg config.Config) error {
 				logger.Warn("operations workers did not finish in time",
 					"err", err, "active", operations.Active())
 			}
+			// Diagnostic-listener гасится последним (после дренажа LRO worker'ов),
+			// чтобы probe-flip /readyz→503 успел отработать до закрытия порта.
+			diagShutdown(drainCtx)
 			return nil
 		},
+	}
+	// Diagnostic HTTP-listener — отдельная task (когда поднят). Краш одного
+	// сервера триггерит graceful-stop всех через triggerShutdown/shutdownCh.
+	if diagTask != nil {
+		tasks = append(tasks, func() error {
+			if derr := diagTask(); derr != nil {
+				logger.Error("diagnostic listener stopped", "err", derr)
+				triggerShutdown()
+				return fmt.Errorf("diagnostic listener: %w", derr)
+			}
+			return nil
+		})
 	}
 
 	// ExecAbstract(taskCount, maxConcurrency, fn): запускает все задачи

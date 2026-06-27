@@ -119,7 +119,7 @@ Malformed JSON → `400`. Неверный тип поля (`description`=чис
 Пустой body → `400`. Unknown поле в body — silent-ignore (200) ИЛИ `400` (документировать выбор).
 Тело ответа на JSON-transcoding-ошибку: контракт Kachō отдает plain-text, наш api-gateway — JSON
 `{code,message}` (поведение runtime-библиотеки grpc-gateway; известное расхождение,
-`07-known-divergences.md` §4) → кейсы `*-CR-VAL-DESC-INT-TYPE`/`-LABELS-STRING-TYPE`/`ADR-CR-VAL-BOTH-SPEC` defensive (`400` + непустое тело).
+`07-known-divergences.md`, раздел 4) → кейсы `*-CR-VAL-DESC-INT-TYPE`/`-LABELS-STRING-TYPE`/`ADR-CR-VAL-BOTH-SPEC` defensive (`400` + непустое тело).
 - Validated-by: `*-CR-VAL-MALFORMED-JSON`, `*-CR-VAL-DESC-INT-TYPE`, `*-CR-VAL-LABELS-STRING-TYPE`, `*-CR-VAL-NAME-NULL`, `*-CR-VAL-EMPTY-BODY`, `*-CR-VAL-EXTRA-FIELDS`, `ADR-CR-VAL-BOTH-SPEC`
 - Проверка: grpc-gateway transcoding (api-gateway) + handler-слой; protobuf JSON-unmarshal поведение.
 
@@ -553,7 +553,7 @@ sync-precheck `AddressesBySubnet` тоже покрывает обе семьи.
 Несуществующий op-id с правильным prefix → `NOT_FOUND "Operation <id> not found"`. Malformed / unknown-prefix id →
 `InvalidArgument "invalid operation id <X>"`; well-formed id с prefix без backend → `NOT_FOUND`.
 - Validated-by: `OP-GET-NEG-NF-VALID-PREFIX`, `OP-GET-NEG-NF-INVALID-PREFIX`
-- Проверка: `kacho-api-gateway/internal/opsproxy/proxy.go` (`resolveBackend`); см. `07-known-divergences.md` §2.
+- Проверка: `kacho-api-gateway/internal/opsproxy/proxy.go` (`resolveBackend`); см. `07-known-divergences.md`, раздел 2.
 - Divergence: исторически возвращалось `400 "unknown prefix"` для любого нероутируемого id — приведено к контракту Kachō.
 
 ### REQ-OPS-03 — ListOperations<Resource>: содержит create-op [P1]
@@ -725,7 +725,7 @@ change даже если service-слой не делал прямую UPDATE-о
 ### REQ-CONF-01 — канонические тексты ошибок [P1]
 Тексты в `google.rpc.Status.message` ДОЛЖНЫ дословно совпадать с каноническим контрактом Kachō: `"Project <X> not found"`,
 `"Network <X> not found"`, `"Subnet CIDRs can not overlap"`, `"Invalid subnet state"`, `"<field> is immutable after <Resource>.Create"`,
-`"<field> is required"`, `"page_size must be in [0..1000]"`, и т.д. (полный список — `docs/architecture/06-conventions.md` §3.1).
+`"<field> is required"`, `"page_size must be in [0..1000]"`, и т.д. (полный список — `docs/architecture/06-conventions.md`, раздел 3.1).
 - Validated-by: `*-CR-CONF-PROJECT-NF-TEXT`/`-NET-NF-TEXT`/`-SUB-NF-TEXT`, `*-GET-CONF-NF-TEXT`/`-FULLTEXT`, `*-UPD-CONF-NF-TEXT`, `*-DEL-CONF-NF-TEXT`, `*-MV-CONF-NF-TEXT`, `*-UPD-STATE-IMMUTABLE-*`
 - Проверка: строки в `internal/service/*.go`; сверка с контрактом; идеально — snapshot-differential suite (`REQUIREMENTS.md` REQ-008).
 
@@ -735,7 +735,7 @@ change даже если service-слой не делал прямую UPDATE-о
 - Проверка: `internal/protoconv/protoconv.go` — `ts(t)` хелпер во всех конвертерах; unit-тест `protoconv_test.go::TestCreatedAt_TruncatedToSeconds`.
 
 ### REQ-CONF-03 — status-code mapping [P0]
-Маппинг ошибок → gRPC-коды по таблице (`06-conventions.md` / `docs/architecture/06-conventions.md` §3.3):
+Маппинг ошибок → gRPC-коды по таблице (`06-conventions.md` / `docs/architecture/06-conventions.md`, раздел 3.3):
 NotFound→`NOT_FOUND`, AlreadyExists→`ALREADY_EXISTS`, CIDR overlap/FK/relocate-blocked/deletion_protection→`FAILED_PRECONDITION`,
 поля/mask/page_size→`INVALID_ARGUMENT`, project-check-unavailable→`UNAVAILABLE`, repo-error→`INTERNAL` (generic, без leak).
 - Validated-by: все `*-NEG-*`/`*-VAL-*` кейсы (ассертят grpc-код)
@@ -753,7 +753,7 @@ malformed / нераспознанный resource-id (нет известног�
 REST-пути (`google.api.http` в `kacho-proto`): kebab у custom-методов (`:add-cidr-blocks`,`:move`), snake у child-list
 (`security_groups`,`route_tables`), camel у top-level, `/operations/{id}` без `/vpc/v1/`. НЕ «причесывать» — это осознанный выбор контракта Kachō.
 - Validated-by: косвенно — все REST-кейсы используют эти пути; явный — `04-api-surface.md`
-- Проверка: `google.api.http`-аннотации в `kacho-proto/.../<res>_service.proto`; `07-known-divergences.md` §1.
+- Проверка: `google.api.http`-аннотации в `kacho-proto/.../<res>_service.proto`; `07-known-divergences.md`, раздел 1.
 - Divergence: видимая «неоднородность» — by-design (контракт Kachō).
 
 ---

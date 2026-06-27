@@ -6,7 +6,6 @@ package repo_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,17 +51,14 @@ func TestIntegration_IPAM_Cascade(t *testing.T) {
 
 	const zone = "zone-a"
 
-	now := time.Now().UTC()
 	mkPool := func(name, zoneID string, isDefault bool, cidr string) *domain.AddressPool {
 		p := &domain.AddressPool{
 			ID:           ids.NewID("apl"),
-			Name:         name,
+			Name:         domain.RcNameVPC(name),
 			V4CIDRBlocks: []string{cidr},
 			Kind:         domain.AddressPoolKindExternalPublic,
 			ZoneID:       zoneID,
 			IsDefault:    isDefault,
-			CreatedAt:    now,
-			ModifiedAt:   now,
 		}
 		require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 			_, e := w.AddressPools().Insert(ctx, p)

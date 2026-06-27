@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-deploy, ref: main, path: kacho-deploy }
       - uses: actions/checkout@v4
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/checkout@v4
@@ -362,6 +362,8 @@ jobs:
             kacho-iam/tests/newman/out/*.json
             kacho-iam/tests/newman/out/*.cli
             kacho-iam/tests/newman/out/summary.txt
+            kacho-vpc/tests/newman/out/*.cli
+            kacho-vpc/tests/newman/out/summary.txt
             kacho-workspace/tests/authz-fixtures/out/authz-fixtures.json
           if-no-files-found: ignore
 
@@ -373,3 +375,31 @@ jobs:
         # Shared gate — single source of truth for the known-RED whitelist
         # (kacho-iam/tests/newman/scripts/assert-suites-green.sh, on iam@main).
         run: bash scripts/assert-suites-green.sh
+
+      # Explicit VPC-suite gate: the repo under test must influence the job exit
+      # on its OWN merits, not only via the iam shared gate. run.sh already exits
+      # non-zero on any VPC failure (failing the run step), but this fail-closed
+      # assert reads the persisted VPC summary independently — if the VPC suite
+      # did not run, recorded a failed assertion, or a collection is missing, the
+      # job fails here regardless of how run.sh propagated its status.
+      - name: assert vpc newman suite green
+        if: always()
+        working-directory: kacho-vpc/tests/newman
+        run: |
+          set -euo pipefail
+          if [ ! -f out/summary.txt ]; then
+            echo "VPC newman summary.txt отсутствует — suite не прогнан → fail-closed"
+            exit 1
+          fi
+          echo "=== vpc newman summary ==="
+          cat out/summary.txt
+          # Колонки: COLLECTION ASSERT FAILED REQUESTS RC. Падаем, если у любой
+          # коллекции FAILED>0, RC!=0, либо строка MISSING (отсутствующая коллекция).
+          awk 'NR==1 { next }
+               { rows++ }
+               ($3 ~ /^[0-9]+$/ && $3+0 > 0) { bad=1; print "  FAILED>0  → " $0 }
+               ($5 != "0")                   { bad=1; print "  RC!=0/MISS → " $0 }
+               END {
+                 if (rows+0 == 0) { print "no vpc collections in summary → fail-closed"; exit 1 }
+                 exit (bad ? 1 : 0)
+               }' out/summary.txt

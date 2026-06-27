@@ -3,15 +3,21 @@
 
 package kacho
 
-import "github.com/PRO-Robotech/kacho-vpc/internal/domain"
+import (
+	"time"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+)
 
 // AddressPoolRecord — repo-entity для AddressPool; единый Record-pattern с
 // kacho.NetworkRecord / kacho.AddressRecord / kacho.SubnetRecord для всех
 // ресурсов VPC.
 //
-// CreatedAt/ModifiedAt физически живут в domain.AddressPool: Record embed'ит
-// domain, поля доступны через promoted-fields (`rec.CreatedAt`), и pg-impl
-// читает их по этому же пути.
+// CreatedAt/ModifiedAt — DB-managed timestamps; они живут в Record, а НЕ в
+// domain.AddressPool (паритет с SubnetRecord). Проставляются repo-слоем (pg
+// Insert/Update) и читаются обратно через RETURNING; source of truth — БД.
 type AddressPoolRecord struct {
 	domain.AddressPool
+	CreatedAt  time.Time
+	ModifiedAt time.Time
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +16,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // CreatePoolReq — параметры создания пула.
@@ -57,7 +57,7 @@ func NewCreateAddressPoolUseCase(r Repo, zoneReg ZoneRegistry) *CreateAddressPoo
 }
 
 // Execute создает AddressPool.
-func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolReq) (*domain.AddressPool, error) {
+func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolReq) (*kachorepo.AddressPoolRecord, error) {
 	if req.Kind == domain.AddressPoolKindUnspecified {
 		return nil, status.Error(codes.InvalidArgument, "kind must be specified")
 	}
@@ -89,21 +89,23 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 			return nil, serviceerr.MapRepoErr(err)
 		}
 	}
-	now := time.Now().UTC()
 	p := &domain.AddressPool{
 		ID:               ids.NewID(ids.PrefixAddressPool),
-		Name:             req.Name,
-		Description:      req.Description,
-		Labels:           req.Labels,
+		Name:             domain.RcNameVPC(req.Name),
+		Description:      domain.RcDescription(req.Description),
+		Labels:           domain.LabelsFromMap(req.Labels),
 		V4CIDRBlocks:     req.V4CIDRBlocks,
 		V6CIDRBlocks:     req.V6CIDRBlocks,
 		Kind:             req.Kind,
 		ZoneID:           req.ZoneID,
 		IsDefault:        req.IsDefault,
-		SelectorLabels:   req.SelectorLabels,
+		SelectorLabels:   domain.LabelsFromMap(req.SelectorLabels),
 		SelectorPriority: req.SelectorPriority,
-		CreatedAt:        now,
-		ModifiedAt:       now,
+	}
+	// Self-validating domain: name/description/labels/selector_* проверяются ДО
+	// Insert (DB CHECK — backstop). Невалидный пул отбивается здесь, до writer-TX.
+	if err := serviceerr.FromValidation(p.Validate()); err != nil {
+		return nil, err
 	}
 
 	w, err := u.repo.Writer(ctx)
@@ -142,6 +144,5 @@ func (u *CreateAddressPoolUseCase) Execute(ctx context.Context, req CreatePoolRe
 	if err := w.Commit(); err != nil {
 		return nil, err
 	}
-	out := created.AddressPool
-	return &out, nil
+	return created, nil
 }

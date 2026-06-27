@@ -233,9 +233,9 @@ Geography (Region/Zone) — **не VPC-ресурс**, а leaf-домен `kacho
 ## Что не VPC-ресурс, но рядом живет
 
 - `vpc_outbox` — таблица событий (resource_type/resource_id/op/payload).
-  Триггер `pg_notify('vpc_outbox', sequence_no)` для подписчиков.
-  Подписчик — `InternalWatchService.Watch`, дергается серверными
-  компонентами (UI пока не использует — оно по polling).
+  Триггер `pg_notify('vpc_outbox', sequence_no)` — in-cluster `LISTEN/NOTIFY`-канал
+  доменных мутаций. Публичного Watch RPC в Kachō нет: клиенты наблюдают изменения
+  через polling `List` / `OperationService.Get`.
 
 - `operations` — общая LRO-таблица из `kacho-corelib` (`make sync-migrations`).
   Не редактировать локально.

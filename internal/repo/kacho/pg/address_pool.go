@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -258,13 +259,16 @@ type addressPoolWriter struct {
 	addressPoolReader
 }
 
-// Insert — INSERT address_pools RETURNING.
+// Insert — INSERT address_pools RETURNING. created_at/modified_at — DB-managed
+// (UTC-now, проставляются здесь и читаются обратно через RETURNING в Record;
+// паритет с SubnetWriter.Insert). Нарушение CHECK (23514) / partial UNIQUE
+// (23505) маппится через helpers.WrapPgErr → ErrInvalidArg / ErrAlreadyExists.
 func (w *addressPoolWriter) Insert(ctx context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
-	labels, err := helpers.MarshalJSONB(p.Labels, "AddressPool.labels")
+	labels, err := helpers.MarshalJSONB(domain.LabelsToMap(p.Labels), "AddressPool.labels")
 	if err != nil {
 		return nil, err
 	}
-	selector, err := helpers.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	selector, err := helpers.MarshalJSONB(domain.LabelsToMap(p.SelectorLabels), "AddressPool.selector_labels")
 	if err != nil {
 		return nil, err
 	}
@@ -284,23 +288,30 @@ func (w *addressPoolWriter) Insert(ctx context.Context, p *domain.AddressPool) (
 	if v6 == nil {
 		v6 = []string{}
 	}
-	_, err = w.tx.Exec(ctx, `
+	now := time.Now().UTC()
+	q := fmt.Sprintf(`
 		INSERT INTO address_pools (id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks, kind, zone_id, is_default, selector_labels, selector_priority, created_at, modified_at)
 		VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)
-	`, p.ID, p.Name, p.Description, labels, v4, v6, int16(p.Kind), zoneArg, p.IsDefault, selector, p.SelectorPriority, p.CreatedAt, p.ModifiedAt)
+		RETURNING %s`, helpers.AddressPoolCols)
+	row := w.tx.QueryRow(ctx, q,
+		p.ID, string(p.Name), string(p.Description), labels, v4, v6, int16(p.Kind),
+		zoneArg, p.IsDefault, selector, p.SelectorPriority, now, now)
+	rec, err := helpers.ScanAddressPool(row)
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "AddressPool", p.ID)
 	}
-	return &kacho.AddressPoolRecord{AddressPool: *p}, nil
+	return rec, nil
 }
 
-// Update — UPDATE address_pools.
+// Update — UPDATE address_pools RETURNING. modified_at — DB-managed (UTC-now);
+// created_at не трогается (читается обратно из RETURNING). 0 строк (id нет) →
+// ErrNotFound; CHECK (23514) / partial UNIQUE (23505) → WrapPgErr.
 func (w *addressPoolWriter) Update(ctx context.Context, p *domain.AddressPool) (*kacho.AddressPoolRecord, error) {
-	labels, err := helpers.MarshalJSONB(p.Labels, "AddressPool.labels")
+	labels, err := helpers.MarshalJSONB(domain.LabelsToMap(p.Labels), "AddressPool.labels")
 	if err != nil {
 		return nil, err
 	}
-	selector, err := helpers.MarshalJSONB(p.SelectorLabels, "AddressPool.selector_labels")
+	selector, err := helpers.MarshalJSONB(domain.LabelsToMap(p.SelectorLabels), "AddressPool.selector_labels")
 	if err != nil {
 		return nil, err
 	}
@@ -312,20 +323,25 @@ func (w *addressPoolWriter) Update(ctx context.Context, p *domain.AddressPool) (
 	if v6 == nil {
 		v6 = []string{}
 	}
-	tag, err := w.tx.Exec(ctx, `
+	now := time.Now().UTC()
+	q := fmt.Sprintf(`
 		UPDATE address_pools
 		SET name=$2, description=$3, labels=$4::jsonb,
 		    v4_cidr_blocks=$5, v6_cidr_blocks=$6,
 		    is_default=$7, selector_labels=$8::jsonb, selector_priority=$9, modified_at=$10
 		WHERE id = $1
-	`, p.ID, p.Name, p.Description, labels, v4, v6, p.IsDefault, selector, p.SelectorPriority, p.ModifiedAt)
+		RETURNING %s`, helpers.AddressPoolCols)
+	row := w.tx.QueryRow(ctx, q,
+		p.ID, string(p.Name), string(p.Description), labels, v4, v6,
+		p.IsDefault, selector, p.SelectorPriority, now)
+	rec, err := helpers.ScanAddressPool(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: AddressPool %s", helpers.ErrNotFound, p.ID)
+	}
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "AddressPool", p.ID)
 	}
-	if tag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("%w: AddressPool %s", helpers.ErrNotFound, p.ID)
-	}
-	return &kacho.AddressPoolRecord{AddressPool: *p}, nil
+	return rec, nil
 }
 
 // Delete — DELETE address_pools WHERE id = $1. FK violation (есть Address с

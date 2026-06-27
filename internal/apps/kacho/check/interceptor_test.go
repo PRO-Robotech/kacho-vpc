@@ -176,13 +176,11 @@ func TestInterceptor_Unary_UnmappedRPC_Denied(t *testing.T) {
 }
 
 // TestInterceptor_Unary_InternalRPC_Bypass — methodIsInternal в имени + НЕ в
-// Map → пропуск. Покрывает IPAM-примитив InternalAddressService.* (service→service
-// IPAM-аллокация, авторизуется in-handler) — он остается exempt, даже когда
-// authzIntr навешен на internal listener :9091.
-//
-// В отличие от cluster-scoped internal RPC (InternalNetworkService.GetNetwork /
-// InternalAddressPoolService.*), которые В Map и проходят Check —
-// см. TestInterceptor_Unary_InternalMappedRPC_Checked.
+// Map → пропуск (fallback-эвристика для internal RPC, которые регистрируются
+// только на :9091 и не достижимы на public listener'е). Пример — синтетический
+// заведомо-unmapped internal-метод; IPAM InternalAddressService.* больше НЕ
+// exempt (он в Map и проходит Check — см.
+// TestInterceptor_Unary_InternalAddressService_Checked).
 func TestInterceptor_Unary_InternalRPC_Bypass(t *testing.T) {
 	intr, calls := newTestInterceptor(t, func(_ context.Context, _, _, _ string) (bool, error) {
 		t.Fatal("Check не должен вызываться для exempt Internal* RPC (не в Map)")
@@ -195,7 +193,7 @@ func TestInterceptor_Unary_InternalRPC_Bypass(t *testing.T) {
 		called = true
 		return "ok", nil
 	}
-	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIP"}
+	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.InternalSyntheticService/UnmappedMethod"}
 	ctx := principalCtx("user", "usr_alice")
 
 	resp, err := uIntr(ctx, struct{}{}, info, handler)
@@ -203,6 +201,37 @@ func TestInterceptor_Unary_InternalRPC_Bypass(t *testing.T) {
 	require.Equal(t, "ok", resp)
 	require.True(t, called)
 	require.Equal(t, 0, *calls, "Check не должен вызываться для exempt Internal* (не в Map)")
+}
+
+// TestInterceptor_Unary_InternalAddressService_Checked — IPAM RPC теперь в Map и
+// проходит FGA-Check на самом ресурсе Address (object-scoped v_update). DENY →
+// PermissionDenied, handler НЕ вызывается, Check вызван с (subject, v_update,
+// vpc_address:<address_id>). Доказывает закрытие прежнего methodIsInternal-bypass.
+func TestInterceptor_Unary_InternalAddressService_Checked(t *testing.T) {
+	intr, calls := newTestInterceptor(t, func(_ context.Context, subject, relation, object string) (bool, error) {
+		require.Equal(t, "service_account:sva_compute", subject)
+		require.Equal(t, "v_update", relation)
+		require.Equal(t, "vpc_address:adr_alpha", object)
+		return false, nil
+	})
+	uIntr := intr.Unary()
+
+	handlerCalled := false
+	handler := func(ctx context.Context, req any) (any, error) {
+		handlerCalled = true
+		return "should not be returned", nil
+	}
+	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIP"}
+	ctx := principalCtx("service_account", "sva_compute")
+	req := &vpcv1.AllocateInternalIPRequest{AddressId: "adr_alpha"}
+
+	_, err := uIntr(ctx, req, info, handler)
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.PermissionDenied, st.Code())
+	require.False(t, handlerCalled, "handler НЕ должен вызываться на DENY")
+	require.Equal(t, 1, *calls, "Check ДОЛЖЕН вызываться для mapped IPAM RPC")
 }
 
 // TestInterceptor_Unary_InternalMappedRPC_Checked — cluster-scoped internal RPC

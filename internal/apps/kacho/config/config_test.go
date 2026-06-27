@@ -21,6 +21,10 @@ func TestLoad_Defaults(t *testing.T) {
 
 	cfg, err := Load("")
 	require.NoError(t, err)
+	// Fail-closed prod-гардрейл (S1): production-по-дефолту требует явный
+	// authz.iam-endpoint (либо authn.mode=dev). Задаём endpoint, чтобы изолировать
+	// проверку дефолтов от guardrail-отказа.
+	cfg.AuthZ.IAMEndpoint = "kacho-iam.kacho.svc.cluster.local:9091"
 	require.NoError(t, cfg.Validate())
 
 	require.Equal(t, "INFO", cfg.Logger.Level)
@@ -60,6 +64,7 @@ func TestLoad_GeoEndpointDialHost(t *testing.T) {
 
 	cfg, err := Load("")
 	require.NoError(t, err)
+	cfg.AuthZ.IAMEndpoint = "kacho-iam.kacho.svc.cluster.local:9091" // S1 prod-гардрейл
 	require.NoError(t, cfg.Validate())
 
 	require.Equal(t, "kacho-geo.kacho.svc.cluster.local:9090", cfg.ExtAPI.Geo.Endpoint,
@@ -84,6 +89,8 @@ repository:
     ssl-mode: require
 authn:
   mode: production
+authz:
+  iam-endpoint: iam.test:9091
 network:
   default-sg-inline: false
   project-cache:
@@ -272,6 +279,8 @@ func TestValidate_ProductionStrict_Passes(t *testing.T) {
 	yaml := `
 authn:
   mode: production-strict
+authz:
+  iam-endpoint: kacho-iam.kacho.svc.cluster.local:9091
 repository:
   postgres:
     url: postgres://u:p@h:5432/db
@@ -286,6 +295,8 @@ extapi:
 `
 	cfg, err := Load(writeTempYAML(t, yaml))
 	require.NoError(t, err)
+	// S1: authz.iam-endpoint задан выше. server-mTLS (S2) проверяется отдельно
+	// через ValidateServerMTLS, поэтому Validate() здесь проходит.
 	require.NoError(t, cfg.Validate())
 	require.True(t, cfg.AuthN.Mode.IsProduction())
 }

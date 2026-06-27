@@ -6,12 +6,12 @@ package addresspool
 import (
 	"context"
 	"fmt"
-	"time"
 
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // updatablePoolFields — known-set мутабельных полей AddressPool.Update; единая
@@ -56,7 +56,7 @@ func NewUpdateAddressPoolUseCase(r Repo) *UpdateAddressPoolUseCase {
 }
 
 // Execute применяет частичное обновление.
-func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolReq) (*domain.AddressPool, error) {
+func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolReq) (*kachorepo.AddressPoolRecord, error) {
 	// FieldMask discipline: immutable в mask → InvalidArgument; unknown →
 	// InvalidArgument; пустой mask → full-PATCH мутабельных полей (применяются ниже).
 	for _, f := range req.UpdateMask {
@@ -91,20 +91,25 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 	for _, f := range updates {
 		switch f {
 		case "name":
-			cur.Name = req.Name
+			cur.Name = domain.RcNameVPC(req.Name)
 		case "description":
-			cur.Description = req.Description
+			cur.Description = domain.RcDescription(req.Description)
 		case "labels":
-			cur.Labels = req.Labels
+			cur.Labels = domain.LabelsFromMap(req.Labels)
 		case "is_default":
 			cur.IsDefault = req.IsDefault
 		case "selector_labels":
-			cur.SelectorLabels = req.SelectorLabels
+			cur.SelectorLabels = domain.LabelsFromMap(req.SelectorLabels)
 		case "selector_priority":
 			cur.SelectorPriority = req.SelectorPriority
 		}
 	}
-	cur.ModifiedAt = time.Now().UTC()
+	// Post-mutation self-validation: применённая запись обязана быть валидной ДО
+	// repo.Update. Невалидное значение (например bad name) → InvalidArgument,
+	// writer-TX откатывается (defer Abort), ничего не записано.
+	if err := serviceerr.FromValidation(cur.Validate()); err != nil {
+		return nil, err
+	}
 
 	updated, err := w.AddressPools().Update(ctx, &cur)
 	if err != nil {
@@ -117,6 +122,5 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 	if err := w.Commit(); err != nil {
 		return nil, err
 	}
-	out := updated.AddressPool
-	return &out, nil
+	return updated, nil
 }

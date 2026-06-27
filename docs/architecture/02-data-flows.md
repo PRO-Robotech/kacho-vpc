@@ -10,7 +10,7 @@ Sequence-диаграммы реальных VPC-сценариев (то что
 4. [Address allocate (internal IP в Subnet)](#4-address-allocate-internal-ip-в-subnet)
 5. [Cross-service: project existence check](#5-cross-service-project-existence-check)
 6. [Operations LRO worker](#6-operations-lro-worker)
-7. [InternalWatchService outbox stream](#7-internalwatchservice-outbox-stream)
+7. [Outbox-журнал доменных событий (polling-модель)](#7-outbox-журнал-доменных-событий-polling-модель)
 8. [NetworkInterface create](#8-networkinterface-create)
 9. [Dependency / delete-blocking chain (NIC → Address → Subnet → Network)](#9-dependency--delete-blocking-chain)
 
@@ -280,39 +280,39 @@ Worker — на той же поде, что сервис. Если pod краш
 
 ---
 
-## 7. InternalWatchService outbox stream
+## 7. Outbox-журнал доменных событий (polling-модель)
 
-Server-to-server. UI/TUI/CLI **не используют** (полят).
+Каждая мутация ресурса в той же транзакции пишет событие в `vpc_outbox`
+(`resource_kind/resource_id/event_type/payload`). Триггер `vpc_outbox_notify_trg`
+на INSERT шлет `pg_notify('vpc_outbox', sequence_no)` — это in-cluster
+`LISTEN/NOTIFY`-канал.
+
+**Публичного per-resource Watch RPC в Kachō нет.** Клиенты (UI/TUI/CLI и peer-сервисы)
+узнают о состоянии через polling:
 
 ```mermaid
 sequenceDiagram
-  participant Subscriber as gRPC Client (server)
-  participant W as InternalWatchService
-  participant Conn as dedicated pgx.Conn
+  participant Client as gRPC Client
+  participant VPC as kacho-vpc
   participant DB as pg-vpc
 
-  Subscriber->>W: Watch(from_sequence_no)
-  W->>Conn: pgx.Connect — dedicated conn вне pool (для LISTEN), под inner timeout
-  W->>Conn: LISTEN vpc_outbox
+  Note over Client,VPC: мутация → Operation (async)
+  Client->>VPC: Create/Update/Delete<Resource>
+  VPC->>DB: INSERT ресурс + INSERT vpc_outbox (одна TX)
+  VPC-->>Client: Operation{id, done=false}
 
-  Note over W,DB: Catch-up: события с прошлого from_seq
-  W->>DB: SELECT * FROM vpc_outbox WHERE seq > $from
-  loop catchup rows
-    W-->>Subscriber: Event{seq, type, id, op, payload}
+  loop polling до done=true
+    Client->>VPC: OperationService.Get(operation_id)
+    VPC-->>Client: Operation{done?, result}
   end
 
-  loop forever
-    W->>Conn: WaitForNotification(ctx)
-    Conn->>W: pg_notify('vpc_outbox', '<sequence_no>')
-    W->>DB: SELECT * FROM vpc_outbox WHERE seq = $1
-    W-->>Subscriber: Event
-  end
-
-  Note over W: defer UNLISTEN + conn.Close + release semaphore slot
+  Note over Client,VPC: периодический re-List для актуального состояния
+  Client->>VPC: List<Resource>
+  VPC-->>Client: текущие ресурсы
 ```
 
-Триггер `vpc_outbox_notify_trg` на INSERT шлет `pg_notify`. Без этого
-триггера watch будет догонять только при следующем catch-up.
+`vpc_outbox` — транзакционный журнал доменных событий; `pg_notify` доступен
+in-cluster-потребителям, но наружу как Watch RPC не публикуется.
 
 ---
 
@@ -389,4 +389,4 @@ flowchart TD
 | AllocateExternalIP / AllocateInternalIP / AllocateInternalIPv6 | `internal/apps/kacho/api/address/allocate.go` (аллокатор-константы — `create.go`; бенчмарки — `internal/repo/address_pool_freelist_bench_test.go`) |
 | ProjectClient.Exists → ProjectClient (IAM) | `internal/clients/iam_client.go` (+ `project_cache.go`) |
 | Operations worker | `kacho-corelib/operations/run.go` |
-| Outbox + LISTEN/NOTIFY | `internal/handler/internal_watch_handler.go` |
+| Outbox emit (в writer-TX) + LISTEN/NOTIFY trigger | `internal/repo/helpers/outbox.go`, `internal/repo/kacho/pg/*` (триггер `vpc_outbox_notify_trg` — `internal/migrations/0001_initial.sql`) |

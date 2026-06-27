@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
@@ -67,15 +67,14 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
           "$(go env GOPATH)/bin/govulncheck" ./...
-        continue-on-error: true   # informational, пока не fail-on-vuln
 
   integration:
     name: integration (testcontainers Postgres)
@@ -84,16 +83,18 @@ jobs:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
       - uses: actions/checkout@v6
-        with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
+        with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
-      # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
-      # (Docker есть на ubuntu-latest runner'ах). Без -cover (covdata-инструменты в
+      # internal/repo/* и internal/clients/* *integration_test.go поднимают postgres:16
+      # через testcontainers (Docker есть на ubuntu-latest runner'ах). clients-сторона
+      # покрывает lifecycle register-drainer / fail-closed boot-gate / outbox-backstop —
+      # их нельзя терять из обязательного gate. Без -cover (covdata-инструменты в
       # отдельных toolchain-сборках бывают неполны; coverage здесь не нужен).
-      - run: go test ./internal/repo/... -race -count=1 -timeout 300s
+      - run: go test ./internal/repo/... ./internal/clients/... -race -count=1 -timeout 600s
 
   authz-deny-suite:
     name: authz-deny suite — generate + validate
