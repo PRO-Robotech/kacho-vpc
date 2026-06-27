@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "9ce410e1-b384-4e41-af0f-dfadb57563fc",
+    "_postman_id": "6bac3f71-24e6-496c-b413-e48ed7391ce6",
     "name": "kacho-vpc / newman / authz-deny",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -18122,8 +18122,8 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-NOB — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as no-bind (addresspool-open-catalog)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-APL-CR-NOB — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as no-bind (addresspool-open-catalog)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "post",
@@ -18177,9 +18177,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-APL-CR-NOB] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-APL-CR-NOB] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-APL-CR-NOB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-APL-CR-NOB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-APL-CR-NOB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -18313,8 +18314,8 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-PA1 — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as proj-adm (addresspool-open-catalog)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-APL-CR-PA1 — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as proj-adm (addresspool-open-catalog)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "post",
@@ -18368,9 +18369,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-APL-CR-PA1] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-APL-CR-PA1] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-APL-CR-PA1] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-APL-CR-PA1] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-APL-CR-PA1] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -18504,8 +18506,8 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-AAA — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-a (addresspool-open-catalog)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-APL-CR-AAA — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-a (addresspool-open-catalog)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "post",
@@ -18559,9 +18561,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-APL-CR-AAA] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-APL-CR-AAA] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-APL-CR-AAA] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-APL-CR-AAA] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-APL-CR-AAA] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -18695,8 +18698,8 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-AAB — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-b (addresspool-open-catalog)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-APL-CR-AAB — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as acct-adm-b (addresspool-open-catalog)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "post",
@@ -18750,9 +18753,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-APL-CR-AAB] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-APL-CR-AAB] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-APL-CR-AAB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-APL-CR-AAB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-APL-CR-AAB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -18886,8 +18890,8 @@
       ]
     },
     {
-      "name": "AUTHZ-APL-CR-INV — [ALLOW] Create AddressPool (empty catalog — all authenticated ALLOW) as invitee (addresspool-open-catalog)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-APL-CR-INV — [DENY] Create AddressPool (empty catalog — all authenticated ALLOW) as invitee (addresspool-open-catalog)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "post",
@@ -18941,9 +18945,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-APL-CR-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-APL-CR-INV] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-APL-CR-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-APL-CR-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-APL-CR-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -19525,8 +19530,8 @@
       ]
     },
     {
-      "name": "AUTHZ-DATA-LEAK-APL-LS-NOB — [ALLOW] AddressPool.List на public listener (HIGH-2 data leak) as no-bind (data-leak-addresspool-list)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-DATA-LEAK-APL-LS-NOB — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as no-bind (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "get",
@@ -19571,9 +19576,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-NOB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -19582,8 +19588,8 @@
       ]
     },
     {
-      "name": "AUTHZ-DATA-LEAK-APL-LS-PA1 — [ALLOW] AddressPool.List на public listener (HIGH-2 data leak) as proj-adm (data-leak-addresspool-list)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-DATA-LEAK-APL-LS-PA1 — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as proj-adm (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "get",
@@ -19628,9 +19634,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-PA1] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -19639,8 +19646,8 @@
       ]
     },
     {
-      "name": "AUTHZ-DATA-LEAK-APL-LS-AAA — [ALLOW] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-a (data-leak-addresspool-list)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-DATA-LEAK-APL-LS-AAA — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-a (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "get",
@@ -19685,9 +19692,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAA] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -19696,8 +19704,8 @@
       ]
     },
     {
-      "name": "AUTHZ-DATA-LEAK-APL-LS-AAB — [ALLOW] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-b (data-leak-addresspool-list)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-DATA-LEAK-APL-LS-AAB — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as acct-adm-b (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "get",
@@ -19742,9 +19750,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-AAB] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }
@@ -19753,8 +19762,8 @@
       ]
     },
     {
-      "name": "AUTHZ-DATA-LEAK-APL-LS-INV — [ALLOW] AddressPool.List на public listener (HIGH-2 data leak) as invitee (data-leak-addresspool-list)",
-      "description": "class:AUTHZ | class:POS | priority:P1",
+      "name": "AUTHZ-DATA-LEAK-APL-LS-INV — [DENY] AddressPool.List на public listener (HIGH-2 data leak) as invitee (data-leak-addresspool-list)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
       "item": [
         {
           "name": "get",
@@ -19799,9 +19808,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));"
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
+                  "pm.test('[AUTHZ-DATA-LEAK-APL-LS-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
                 ]
               }
             }

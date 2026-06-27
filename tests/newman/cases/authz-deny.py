@@ -40,11 +40,13 @@ EXPECT = {
     # Garbage per-resource: non-existent ID has no FGA tuple → authz sees `no path`
     # → returns NOT_FOUND (404) for all authenticated users; ANON → 401.
     "garbage-perresource-vpc": {"ANON":"DENY","NOB":"NF","PA1":"NF","AAA":"NF","AAB":"NF","INV":"NF"},
-    # Пустое permission-поле в permission_catalog: любой аутентифицированный субъект
-    # допущен. AddressPool номинально admin-only, но при пустом каталоге доступ открыт.
-    "addresspool-open-catalog": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
-    # AddressPool.List при пустом каталоге так же открыт аутентифицированным субъектам.
-    "addresspool-list-open-catalog": {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"},
+    # AddressPool — admin-only infrastructure-ресурс: vpc гейтит его RPC на
+    # cluster `system_admin` (object cluster:cluster_kacho_root). Ни project-, ни
+    # account-admin, ни invitee не несут system_admin → DENY (403/code7). Только
+    # cluster-admin (jwtBootstrap) допущен; ANON → 401. (Прежнее ALLOW отражало
+    # dev-mode anonymous→full-access, до object-scoped authz.)
+    "addresspool-open-catalog": {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"},
+    "addresspool-list-open-catalog": {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"},
 }
 
 
@@ -218,8 +220,9 @@ for subj in SUBJECTS:
 # ---------------------------------------------------------------------------
 
 EXPECT["cross-domain-subnet-from-victim"] = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
-# AddressPool.List открыт аутентифицированным субъектам при пустом каталоге permission.
-EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"ALLOW","PA1":"ALLOW","AAA":"ALLOW","AAB":"ALLOW","INV":"ALLOW"}
+# AddressPool.List — admin-only (cluster system_admin): non-admin субъект НЕ может
+# перечислить инфраструктурные пулы (anti data-leak). Только cluster-admin допущен.
+EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
 
 # CD-1: AAA пытается создать Subnet в project-A1 ссылаясь на network-B1 (cross-account)
 # Должно DENY — peer-validation должна обнаружить что network принадлежит другому account.
