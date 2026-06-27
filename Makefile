@@ -8,7 +8,7 @@ MIGRATOR_BIN   := kacho-migrator
 MIGRATOR_CMD   := ./cmd/migrator
 IMAGE          := kacho-vpc:dev
 
-.PHONY: build build-migrator test test-short vet lint docker sync-migrations audit-list-filter proto-install-plugins proto-lint proto-gen
+.PHONY: build build-migrator test test-short vet lint docker sync-migrations audit-list-filter proto-install-plugins proto-vendor proto-lint proto-gen
 
 build:
 	CGO_ENABLED=0 go build -o bin/$(BINARY) $(CMD)
@@ -51,15 +51,38 @@ proto-install-plugins:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc
 	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway
 
-proto-lint:
+# proto-vendor — подтягивает корелибовскую инфра-proto в proto/ перед buf-резолвом.
+# Универсальная инфра (operation/validation/authz_options/cloud-api + google/*)
+# принадлежит kacho-corelib (единственный источник) и в git здесь НЕ хранится
+# (см. .gitignore). Файлы нужны только для buf-резолва импортов доменного proto;
+# их Go-stubs генерируются и живут в kacho-corelib / canonical genproto, поэтому
+# kacho-vpc их не дублирует и не генерирует (см. proto/buf.gen.yaml inputs.paths).
+CORELIB_PROTO  ?= ../kacho-corelib/proto
+VENDORED_PROTO := \
+	google/api/annotations.proto \
+	google/api/field_behavior.proto \
+	google/api/http.proto \
+	google/rpc/status.proto \
+	kacho/cloud/api/operation.proto \
+	kacho/cloud/operation/operation.proto \
+	kacho/cloud/validation.proto \
+	kacho/iam/authz/v1/authz_options.proto
+
+proto-vendor:
+	@for f in $(VENDORED_PROTO); do \
+		mkdir -p proto/$$(dirname $$f); \
+		cp $(CORELIB_PROTO)/$$f proto/$$f; \
+	done
+
+proto-lint: proto-vendor
 	cd proto && buf lint
 
 # proto-gen — регенерация Go-stubs доменного proto vpc (kacho/cloud/vpc/v1 +
-# kacho/cloud/reference) из proto/. Универсальная инфра (operation/validation/
-# authz_options/cloud-api/google) вендорится в proto/ только для buf-резолва
-# импортов и НЕ генерируется (Go-stubs живут в kacho-corelib / canonical
-# genproto) — см. proto/buf.gen.yaml inputs.paths.
-proto-gen:
+# kacho/cloud/reference) из proto/. Зависит от proto-vendor, который подтягивает
+# корелибовскую инфра-proto (operation/validation/authz_options/cloud-api/google)
+# для buf-резолва импортов; сама инфра НЕ генерируется (Go-stubs живут в
+# kacho-corelib / canonical genproto) — см. proto/buf.gen.yaml inputs.paths.
+proto-gen: proto-vendor
 	cd proto && buf generate
 
 .PHONY: migrate-up migrate-down migrate-status
