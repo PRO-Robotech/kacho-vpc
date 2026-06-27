@@ -54,6 +54,8 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/checkout@v4
+        with: { repository: PRO-Robotech/kacho-geo, ref: main, path: kacho-geo }
 
       - uses: benjlevesque/short-sha@v3.0
         id: short-sha

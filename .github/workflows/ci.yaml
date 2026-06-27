@@ -34,6 +34,8 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-geo, ref: main, path: kacho-geo }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
@@ -53,6 +55,8 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-geo, ref: main, path: kacho-geo }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - uses: golangci/golangci-lint-action@v9
@@ -70,6 +74,8 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-geo, ref: main, path: kacho-geo }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: |
@@ -86,6 +92,8 @@ jobs:
         with: { repository: PRO-Robotech/kacho-corelib, ref: vpc8-fixes, path: kacho-corelib }
       - uses: actions/checkout@v6
         with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
+      - uses: actions/checkout@v6
+        with: { repository: PRO-Robotech/kacho-geo, ref: main, path: kacho-geo }
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
