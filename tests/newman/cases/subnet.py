@@ -1351,7 +1351,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-CR-NEG-DUP-CIDR-EXACT",
-    title="Create Subnet с CIDR, совпадающим с existing Subnet → FailedPrecondition (EXCLUDE same-prefix)",
+    title="Create Subnet с CIDR, совпадающим с existing Subnet → sync FailedPrecondition (create-time overlap precheck)",
     classes=["NEG", "CONF"], priority="P0",
     steps=[
         *_make_net("dupCidr"),
@@ -1362,28 +1362,15 @@ CASES.append(Case(
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.subnetId", "subId1")]),
         poll_operation_until_done(),
+        # v4-overlap (exact dup within the same network) is rejected SYNCHRONOUSLY by
+        # the create-time overlap precheck (FailedPrecondition), before any Operation
+        # is created — not as an async op error. The DB EXCLUDE constraint is only the
+        # backstop; the sync precheck fires first.
         Step(name="sub2-same-cidr", method="POST", path="/vpc/v1/subnets",
              body={"projectId": "{{_suiteProjectId}}", "networkId": "{{netId}}",
                    "name": "sub-dup2-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.230.0.0/24"]},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
-        Step(name="poll-fail", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 "let _t = 0;",
-                 "const _s = () => pm.sendRequest({",
-                 "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
-                 "  method: 'GET',",
-                 "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
-                 "}, (err, res) => {",
-                 "  let j = null; try { j = res.json(); } catch (e) {}",
-                 "  if (j && j.done) {",
-                 "    pm.test('overlap rejected', () => pm.expect(!!j.error, JSON.stringify(j)).to.eql(true));",
-                 "    pm.test('FailedPrecondition (9)', () => pm.expect(j.error.code).to.eql(9));",
-                 "  } else if (++_t < 8) { setTimeout(_s, 500); }",
-                 "  else { pm.test('op resolved', () => pm.expect.fail('timeout')); }",
-                 "});",
-                 "_s();",
-             ]),
+             test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION")]),
         Step(name="cleanup-sub1", method="DELETE", path="/vpc/v1/subnets/{{subId1}}",
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         poll_operation_until_done(),
@@ -1555,46 +1542,29 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="SUB-CR-NEG-ROLLBACK-NO-RESOURCE-IN-GET",
-    title="Failed Subnet.Create (parent network NF) → ресурс НЕ visible через Get/List (rollback)",
+    title="Failed Subnet.Create (parent network NF) → sync NotFound, ресурс НЕ создан/visible",
     classes=["NEG", "STATE"], priority="P1",
     steps=[
-        # Create Subnet с garbage networkId → Operation Failed → ресурс не создается.
+        # Parent-network existence is a SYNC precheck: a well-formed but non-existent
+        # networkId is rejected synchronously with NotFound ("Network <id> not found"),
+        # before any Operation is created or any subnet row is inserted. There is thus
+        # no Operation to poll and nothing to roll back — the resource never comes into
+        # being. (`net00000000000000000` is a well-formed, never-allocated network id.)
         Step(name="create-fail", method="POST", path="/vpc/v1/subnets",
              body={"projectId": "{{_suiteProjectId}}",
-                   "networkId": "enpnonexistentrollback00",
+                   "networkId": "net00000000000000000",
                    "name": "sub-rollback-{{runId}}", "zoneId": "{{existingZoneId}}",
                    "v4CidrBlocks": ["10.234.0.0/24"]},
-             test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
-                          *save_from_response("j.metadata && j.metadata.subnetId", "subIdFail")]),
-        Step(name="poll-fail", method="GET", path="/operations/{{opId}}",
-             test_script=[
-                 "let _t = 0;",
-                 "const _s = () => pm.sendRequest({",
-                 "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
-                 "  method: 'GET',",
-                 "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
-                 "}, (err, res) => {",
-                 "  let j = null; try { j = res.json(); } catch (e) {}",
-                 "  if (j && j.done) {",
-                 "    pm.test('op failed', () => pm.expect(!!j.error, JSON.stringify(j)).to.eql(true));",
-                 "  } else if (++_t < 8) { setTimeout(_s, 500); }",
-                 "  else { pm.test('op resolved', () => pm.expect.fail('timeout')); }",
-                 "});",
-                 "_s();",
-             ]),
-        # subIdFail metadata был резервирован, но ресурс не INSERT'ился — Get 404.
-        Step(name="get-fail-404", method="GET", path="/vpc/v1/subnets/{{subIdFail}}",
-             test_script=[
-                 "pm.test('rollback: Subnet НЕ visible после failed Create', () => pm.expect(pm.response.code, JSON.stringify(pm.response.json())).to.eql(404));",
-             ]),
-        # List по project тоже не показывает.
+             test_script=[*assert_status(404), *assert_grpc_code(5, "NOT_FOUND")]),
+        # List by project must not contain a subnet with the (unique) attempted name —
+        # confirms no partial/leaked resource from the failed create.
         Step(name="list-not-include", method="GET",
-             path="/vpc/v1/subnets?projectId={{_suiteProjectId}}&pageSize=100",
+             path="/vpc/v1/subnets?projectId={{_suiteProjectId}}&pageSize=1000",
              test_script=[
                  *assert_status(200),
                  "const subs = pm.response.json().subnets || [];",
-                 "const failedId = pm.environment.get('subIdFail');",
-                 "pm.test('List не содержит failed Subnet id', () => pm.expect(subs.map(s => s.id), `subId=${failedId}`).to.not.include(failedId));",
+                 "const failedName = 'sub-rollback-' + pm.environment.get('runId');",
+                 "pm.test('List не содержит subnet с именем failed Create', () => pm.expect(subs.map(s => s.name), `name=${failedName}`).to.not.include(failedName));",
              ]),
     ],
 ))
