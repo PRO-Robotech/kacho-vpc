@@ -22,7 +22,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
@@ -30,6 +29,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
+	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // ExternalAddrSpec — спецификация внешнего адреса.

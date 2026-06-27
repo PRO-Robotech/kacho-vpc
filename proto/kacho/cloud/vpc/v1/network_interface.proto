@@ -1,0 +1,89 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kacho/cloud/reference/reference.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// A NetworkInterface (NIC) resource — first-class сетевой интерфейс по образцу
+// AWS ENI. Принадлежит подсети (и транзитивно — сети), несёт один primary
+// private IPv4 (выделяется из CIDR подсети), `security_group_ids`, и может быть
+// приаттачен к compute Instance (по `index`). Создаётся отдельным запросом
+// (`NetworkInterfaceService.Create`) либо inline при `Instance.Create`.
+//
+// Публичная (tenant-facing) проекция — этот message. На уровне proto
+// выставляется только она; никакой internal data-plane-проекции NIC нет.
+message NetworkInterface {
+  // ID интерфейса. Генерируется при создании.
+  string id = 1;
+
+  // ID фолдера, которому принадлежит интерфейс.
+  string project_id = 2;
+
+  // Имя интерфейса. Уникально в пределах фолдера.
+  // Value must match the regular expression ``\|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?``.
+  string name = 4;
+
+  // Описание интерфейса. 0-256 символов.
+  string description = 5;
+
+  // Метки `key:value`. Не более 64 на ресурс.
+  map<string, string> labels = 6;
+
+  // Время создания.
+  google.protobuf.Timestamp created_at = 3;
+
+  // ID подсети, из которой выделен primary-адрес интерфейса.
+  string subnet_id = 7;
+
+  // Адреса интерфейса — ССЫЛКИ на Address-ресурсы (internal_ipv4 / internal_ipv6
+  // в той же подсети, что и NIC). Единая ресурсная модель: каждый IP — это
+  // Address-ресурс (как Network ← Subnet ← Address); NIC «потребляет» их.
+  // Чтобы получить сам IP — следовать ссылке. У NIC может быть несколько v4 и v6.
+  repeated string v4_address_ids = 16;
+  repeated string v6_address_ids = 17;
+
+  reserved 8, 9, 11, 12, 14, 15; // ранее: network_id(8), primary_v4_address(9), instance_id(11), index(12), secondary_v4_addresses(14), v6_addresses(15) — network_id выводится из subnet; instance_id/index → used_by + compute-сторона; raw-IP → *_address_ids
+
+  // ID security-групп, привязанных к интерфейсу. Дефолт при создании —
+  // default_security_group_id сети (наследуется); можно переопределить.
+  repeated string security_group_ids = 10;
+
+  // Кто использует/приаттачил этот NIC (напр. {type: compute_instance, id: <instance_id>}).
+  // Output-only денорм: ставится AttachToInstance, снимается DetachFromInstance —
+  // по образцу Address.used_by. Сам index (device-index на инстансе) живёт на
+  // compute.v1.NetworkInterface.index, не здесь.
+  kacho.cloud.reference.Reference used_by = 18;
+
+  // MAC-адрес интерфейса. Output-only. Назначается при NetworkInterfaceService.Create
+  // и стабилен на протяжении жизни NIC (Attach/Detach его не меняют). Уникален в
+  // пределах всего облака (cloud-wide UNIQUE constraint в БД). По образцу AWS-ENI —
+  // клиент задать MAC не может.
+  //
+  // Формат — lowercase, colon-separated, всегда 6 октетов. Префикс `0e:`
+  // (locally-administered, unicast) зарезервирован под Kachō, остальные 5 байт
+  // — `crypto/rand` (40 бит ≈ 1T значений). Пример: `0e:1a:2b:3c:4d:5e`.
+  string mac_address = 19;
+
+  // Грубый статус интерфейса.
+  Status status = 13;
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Создаётся / программируется data-plane.
+    PROVISIONING = 1;
+    // Приаттачен и материализован на гипервизоре, трафик идёт.
+    ACTIVE = 2;
+    // Создан, но не приаттачен ни к одному инстансу.
+    AVAILABLE = 3;
+    // Программирование data-plane не удалось.
+    FAILED = 4;
+    // Удаляется (data-plane сносит wiring).
+    DELETING = 5;
+  }
+}

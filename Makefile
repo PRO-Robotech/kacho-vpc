@@ -8,7 +8,7 @@ MIGRATOR_BIN   := kacho-migrator
 MIGRATOR_CMD   := ./cmd/migrator
 IMAGE          := kacho-vpc:dev
 
-.PHONY: build build-migrator test test-short vet lint docker sync-migrations audit-list-filter
+.PHONY: build build-migrator test test-short vet lint docker sync-migrations audit-list-filter proto-install-plugins proto-lint proto-gen
 
 build:
 	CGO_ENABLED=0 go build -o bin/$(BINARY) $(CMD)
@@ -42,6 +42,25 @@ sync-migrations:
 
 docker:
 	cd .. && docker build -f kacho-vpc/Dockerfile -t $(IMAGE) .
+
+# proto-install-plugins — ставит protoc-плагины в $GOBIN (lookup через $PATH для buf).
+# Доменный proto vpc генерируется этими тремя плагинами; permission-catalog для vpc —
+# hand-written (internal/apps/kacho/check/permission_map.go), buf-catalog-плагин не нужен.
+proto-install-plugins:
+	go install google.golang.org/protobuf/cmd/protoc-gen-go
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc
+	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway
+
+proto-lint:
+	cd proto && buf lint
+
+# proto-gen — регенерация Go-stubs доменного proto vpc (kacho/cloud/vpc/v1 +
+# kacho/cloud/reference) из proto/. Универсальная инфра (operation/validation/
+# authz_options/cloud-api/google) вендорится в proto/ только для buf-резолва
+# импортов и НЕ генерируется (Go-stubs живут в kacho-corelib / canonical
+# genproto) — см. proto/buf.gen.yaml inputs.paths.
+proto-gen:
+	cd proto && buf generate
 
 .PHONY: migrate-up migrate-down migrate-status
 # migrate-* дергают отдельный binary `bin/kacho-migrator`.

@@ -1,0 +1,407 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "kacho/cloud/validation.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// AddressPool — именованная коллекция CIDR-блоков, из которых аллоцируются
+// external IPv4-адреса. **Internal-only resource** — публичный VPC API
+// (kacho.cloud.vpc.v1) этого ресурса не содержит, чтобы сохранить verbatim
+// parity с YC, у которого AddressPool как public resource нет.
+//
+// Управление пулами — через kacho-yc-shim CLI / admin-tooling, или через
+// прямые гRPC-вызовы из инфраструктурных скриптов.
+//
+// Биндинги (NetworkDefault / AddressOverride) хранятся в отдельных таблицах,
+// чтобы не загрязнять flat-schema networks/addresses computed-полями.
+message AddressPool {
+  reserved 2;
+  reserved "project_id";
+
+  // KAC-71: cidr_blocks (tag 7) разделён на v4_cidr_blocks (tag 13) +
+  // v6_cidr_blocks (tag 14). Tag 7 не переиспользовать.
+  reserved 7;
+  reserved "cidr_blocks";
+
+  string id = 1;
+  google.protobuf.Timestamp created_at = 3;
+  string name = 4;
+  string description = 5;
+  map<string, string> labels = 6;
+
+  // Тип пула (см. AddressPoolKind).
+  AddressPoolKind kind = 8;
+
+  // Region, в котором валиден пул. Пустое = глобальный (для dev-стендов).
+  string zone_id = 9;
+
+  // Если true — этот пул используется как fallback для zone, когда у
+  // Address нет override и у Network нет default-binding'а.
+  // В пределах (zone_id, kind) допускается не более одного is_default=true.
+  bool is_default = 10;
+
+  // selector_labels — whitelist labels Network'а, при котором этот pool
+  // участвует в label-cascade-step резолва. Match-семантика: network's
+  // pool_selector ⊆ selector_labels (network selector contained by pool's
+  // selector_labels). См. ResolvePoolForAddress в kacho-vpc service-слое.
+  // Empty selector = pool НЕ участвует в label-cascade (только через
+  // explicit binding или is_default=true).
+  map<string, string> selector_labels = 11;
+
+  // selector_priority — explicit tie-break при equal-specificity match.
+  // HIGHER побеждает. Если несколько pools имеют одинаковый
+  // (selector_labels, selector_priority) — resolve order undefined
+  // (admin's responsibility; см. Check для diagnostic).
+  int32 selector_priority = 12;
+
+  // IPv4 CIDR-блоки пула (host-bits=0). Пустой → pool не покрывает IPv4 family.
+  repeated string v4_cidr_blocks = 13;
+
+  // IPv6 CIDR-блоки пула. Пустой → pool не покрывает IPv6 family.
+  repeated string v6_cidr_blocks = 14;
+}
+
+enum AddressPoolKind {
+  ADDRESS_POOL_KIND_UNSPECIFIED = 0;
+  // Public-routable IPv4/IPv6 для production deployment.
+  EXTERNAL_PUBLIC = 1;
+  // KAC-70: EXTERNAL_TEST = 2 и RESERVED_INTERNAL = 100 удалены —
+  // не использовались ни backend'ом, ни UI. Зарезервированы чтобы
+  // не реюзить значения и имена.
+  reserved 2, 100;
+  reserved "EXTERNAL_TEST", "RESERVED_INTERNAL";
+}
+
+// InternalAddressPoolService — internal-only RPC для управления пулами +
+// биндинг пулов к Network/Address. Нет публичного аналога в YC, поэтому
+// эти операции не маппятся на api-gateway.
+service InternalAddressPoolService {
+  // -- Pool CRUD --
+
+  rpc Create(CreateAddressPoolRequest) returns (AddressPool) {
+    option (google.api.http) = { post: "/vpc/v1/addressPools" body: "*" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.create";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+  rpc Get(GetAddressPoolRequest) returns (AddressPool) {
+    option (google.api.http) = { get: "/vpc/v1/addressPools/{pool_id}" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.get";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+  rpc List(ListAddressPoolsRequest) returns (ListAddressPoolsResponse) {
+    option (google.api.http) = { get: "/vpc/v1/addressPools" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.list";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+  rpc Update(UpdateAddressPoolRequest) returns (AddressPool) {
+    option (google.api.http) = { patch: "/vpc/v1/addressPools/{pool_id}" body: "*" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.update";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+  rpc Delete(DeleteAddressPoolRequest) returns (DeleteAddressPoolResponse) {
+    option (google.api.http) = { delete: "/vpc/v1/addressPools/{pool_id}" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.delete";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // -- CIDR management --
+  //
+  // KAC-269: управление CIDR-блоками пула вынесено из Update в отдельные RPC
+  // (паритет с SubnetService.AddCidrBlocks/RemoveCidrBlocks). AddressPool —
+  // sync-ресурс (Create возвращает AddressPool, не Operation), поэтому эти
+  // методы тоже sync и возвращают обновлённый AddressPool.
+
+  // AddCidrBlocks — добавить CIDR-блоки в пул. Один запрос может нести и v4, и
+  // v6 блоки. Новые блоки должны быть disjoint с существующими (иначе
+  // FailedPrecondition).
+  rpc AddCidrBlocks(AddAddressPoolCidrBlocksRequest) returns (AddressPool) {
+    option (google.api.http) = {
+      post: "/vpc/v1/addressPools/{address_pool_id}:addCidrBlocks"
+      body: "*"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.add_cidr_blocks";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // RemoveCidrBlocks — удалить CIDR-блоки из пула. Один запрос может нести и v4,
+  // и v6 блоки. Удаляемые блоки должны быть disjoint с уже allocated IP в этом
+  // пуле (иначе FailedPrecondition).
+  rpc RemoveCidrBlocks(RemoveAddressPoolCidrBlocksRequest) returns (AddressPool) {
+    option (google.api.http) = {
+      post: "/vpc/v1/addressPools/{address_pool_id}:removeCidrBlocks"
+      body: "*"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.remove_cidr_blocks";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // -- Bindings --
+
+  // BindAsNetworkDefault — назначить пул как default для всех external Address,
+  // создаваемых в указанной Network. Один Network может иметь не более одного
+  // default-pool-binding'а. Идемпотентно: повторный bind того же pool — no-op.
+  rpc BindAsNetworkDefault(BindAsNetworkDefaultRequest) returns (BindResponse) {
+    option (google.api.http) = {
+      post: "/vpc/v1/networks/{network_id}/addressPoolBinding"
+      body: "*"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.bind";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // UnbindNetworkDefault — снять default-binding для Network. После этого
+  // новые Address будут аллоцировать из zone-default-pool.
+  rpc UnbindNetworkDefault(UnbindNetworkDefaultRequest) returns (BindResponse) {
+    option (google.api.http) = { delete: "/vpc/v1/networks/{network_id}/addressPoolBinding" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.unbind";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // -- Admin observability --
+
+  // ListAddresses — все Address (cross-folder), которые получили IP из этого
+  // pool. Admin-only (folder/cloud/org info берётся из Address.project_id).
+  rpc ListAddresses(ListAddressPoolAddressesRequest) returns (ListAddressPoolAddressesResponse) {
+    option (google.api.http) = { get: "/vpc/v1/addressPools/{pool_id}/addresses" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.list_addresses";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // GetUtilization — статистика использования pool'а.
+  // total_ips = sum(usable_per_cidr) для всех v4_cidr_blocks + v6_cidr_blocks pool'а.
+  // used_ips = count(Address with external_ipv4.address_pool_id=this).
+  rpc GetUtilization(GetAddressPoolUtilizationRequest) returns (AddressPoolUtilization) {
+    option (google.api.http) = { get: "/vpc/v1/addressPools/{pool_id}/utilization" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_pools.get_utilization";
+    option (kacho.iam.authz.v1.required_relation) = "system_admin";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "cluster"
+      from_request_field: "*"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+}
+
+message CreateAddressPoolRequest {
+  reserved 1;
+  reserved "project_id";
+
+  // KAC-71: cidr_blocks (tag 5) разделён на v4_cidr_blocks (tag 11) +
+  // v6_cidr_blocks (tag 12). Tag 5 не переиспользовать.
+  reserved 5;
+  reserved "cidr_blocks";
+
+  string name = 2;
+  string description = 3;
+  map<string, string> labels = 4;
+  AddressPoolKind kind = 6;
+  string zone_id = 7;
+  bool is_default = 8;
+  map<string, string> selector_labels = 9;
+  int32 selector_priority = 10;
+
+  // IPv4 CIDR-блоки пула (host-bits=0). Пустой → pool не покрывает IPv4 family.
+  repeated string v4_cidr_blocks = 11;
+
+  // IPv6 CIDR-блоки пула. Пустой → pool не покрывает IPv6 family.
+  repeated string v6_cidr_blocks = 12;
+}
+
+message GetAddressPoolRequest { string pool_id = 1; }
+
+message ListAddressPoolsRequest {
+  reserved 1;
+  reserved "project_id";
+
+  // Optional kind filter.
+  AddressPoolKind kind = 2;
+  string zone_id = 3;
+  int64 page_size = 4;
+  string page_token = 5;
+}
+
+message ListAddressPoolsResponse {
+  repeated AddressPool pools = 1;
+  string next_page_token = 2;
+}
+
+message UpdateAddressPoolRequest {
+  // KAC-71: cidr_blocks (tag 6) разделён на v4_cidr_blocks (tag 13) +
+  // v6_cidr_blocks (tag 14) + explicit replace-флаги (15, 16). Tag 6
+  // не переиспользовать.
+  reserved 6;
+  reserved "cidr_blocks";
+
+  // KAC-269: CIDR-блоки пула больше не меняются через Update — изменение CIDR
+  // идёт через AddCidrBlocks/RemoveCidrBlocks (паритет с Subnet). Удалены поля
+  // v4_cidr_blocks (13), v6_cidr_blocks (14), replace_v4_cidr_blocks (15),
+  // replace_v6_cidr_blocks (16). Tags 13-16 не переиспользовать.
+  reserved 13, 14, 15, 16;
+  reserved "v4_cidr_blocks", "v6_cidr_blocks", "replace_v4_cidr_blocks", "replace_v6_cidr_blocks";
+
+  string pool_id = 1;
+  // Если непустой — обновить name.
+  string name = 2;
+  // Если непустой — обновить description.
+  string description = 3;
+  // Если задан (даже пустой map) — заменить labels.
+  bool replace_labels = 4;
+  map<string, string> labels = 5;
+  // Если задан — обновить is_default.
+  bool update_is_default = 7;
+  bool is_default = 8;
+  // Если задан — заменить selector_labels (даже пустым).
+  bool replace_selector_labels = 9;
+  map<string, string> selector_labels = 10;
+  // Если задан — обновить selector_priority.
+  bool update_selector_priority = 11;
+  int32 selector_priority = 12;
+}
+
+message AddAddressPoolCidrBlocksRequest {
+  // ID пула, в который добавляются CIDR-блоки.
+  string address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // IPv4 CIDR-блоки для добавления (host-bits=0). Может быть пустым, если
+  // добавляются только v6-блоки.
+  repeated string v4_cidr_blocks = 2;
+
+  // IPv6 CIDR-блоки для добавления. Может быть пустым, если добавляются только
+  // v4-блоки.
+  repeated string v6_cidr_blocks = 3;
+}
+
+message RemoveAddressPoolCidrBlocksRequest {
+  // ID пула, из которого удаляются CIDR-блоки.
+  string address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // IPv4 CIDR-блоки для удаления. Может быть пустым, если удаляются только
+  // v6-блоки.
+  repeated string v4_cidr_blocks = 2;
+
+  // IPv6 CIDR-блоки для удаления. Может быть пустым, если удаляются только
+  // v4-блоки.
+  repeated string v6_cidr_blocks = 3;
+}
+
+message DeleteAddressPoolRequest { string pool_id = 1; }
+message DeleteAddressPoolResponse {}
+
+message BindAsNetworkDefaultRequest {
+  string network_id = 1;
+  string pool_id = 2;
+}
+
+message UnbindNetworkDefaultRequest {
+  string network_id = 1;
+}
+
+message BindResponse {}
+
+message ListAddressPoolAddressesRequest {
+  string pool_id = 1;
+  // Optional фильтр по project_id (для admin search "адреса этого клиента").
+  string project_id = 2;
+  int64  page_size = 3;
+  string page_token = 4;
+}
+
+// AddressPoolAddressEntry — flat-вьюшка Address с extra-полями для admin UI.
+message AddressPoolAddressEntry {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string ipv4 = 4;          // external_ipv4.address
+  string zone_id = 5;
+  bool   reserved = 6;
+  bool   used = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message ListAddressPoolAddressesResponse {
+  repeated AddressPoolAddressEntry addresses = 1;
+  string next_page_token = 2;
+}
+
+message GetAddressPoolUtilizationRequest { string pool_id = 1; }
+
+message CIDRUtilization {
+  string cidr = 1;
+  int64  total = 2;          // usable IPs (excluding network/broadcast for v4)
+  int64  used = 3;
+}
+
+message AddressPoolUtilization {
+  string pool_id = 1;
+  int64  total_ips = 2;       // sum of CIDR.total
+  int64  used_ips = 3;        // sum of CIDR.used
+  int64  free_ips = 4;        // total - used
+  // Process bar percent (0..100). Floor (used*100/total).
+  int32  used_percent = 5;
+  // Per-CIDR разбивка для UI.
+  repeated CIDRUtilization cidrs = 6;
+}

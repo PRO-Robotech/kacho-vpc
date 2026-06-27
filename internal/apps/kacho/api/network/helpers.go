@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/anypb"
 
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
 
 	// Blank-import регистрирует трансферы Network/time через init().
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
