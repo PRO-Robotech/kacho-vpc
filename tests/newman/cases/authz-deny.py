@@ -169,11 +169,11 @@ def define_resource_cases(resource_name, plural, create_body_extra=None, support
 define_resource_cases("network", "networks")
 # Subnet — body requires networkId + zoneId
 define_resource_cases("subnet", "subnets", create_body_extra={
-    "networkId": "{{seedNetworkA1Id}}", "zoneId": "zone-a", "v4CidrBlocks": ["10.99.0.0/16"]
+    "networkId": "{{seedNetworkA1Id}}", "zoneId": "{{zoneA}}", "v4CidrBlocks": ["10.99.0.0/16"]
 })
 # Address — project-level w/ external IPv4 spec
 define_resource_cases("address", "addresses", create_body_extra={
-    "externalIpv4AddressSpec": {"zoneId": "zone-a"}
+    "externalIpv4AddressSpec": {"zoneId": "{{zoneA}}"}
 })
 # RouteTable
 define_resource_cases("route-table", "routeTables", create_body_extra={
@@ -204,7 +204,7 @@ for subj in SUBJECTS:
          "POST", "/vpc/v1/addressPools",
          {"name": f"authz-apl-{subj[0].lower()}-{{{{runId}}}}",
           "kind": "EXTERNAL_PUBLIC",
-          "zoneId": "zone-a",
+          "zoneId": "{{zoneA}}",
           "v4CidrBlocks": ["198.51.100.0/24"]}, subj)
     # Garbage-id: no FGA tuple → 404 for authenticated users, 401 for ANON.
     emit("APL-UP", "Update AddressPool (garbage id — no FGA path)", "garbage-perresource-vpc",
@@ -227,7 +227,7 @@ for subj in SUBJECTS:
     emit("CD-SUBNET-XACCT", "Create Subnet ссылающийся на network из cross-account project",
          "cross-domain-subnet-from-victim", "POST", "/vpc/v1/subnets",
          {"projectId":"{{projectA1Id}}","name": f"cd-{subj[0].lower()}-{{{{runId}}}}",
-          "networkId":"{{seedNetworkB1Id}}","zoneId":"zone-a","v4CidrBlocks":["10.88.0.0/16"]}, subj)
+          "networkId":"{{seedNetworkB1Id}}","zoneId":"{{zoneA}}","v4CidrBlocks":["10.88.0.0/16"]}, subj)
 
 # AddressPool.List на public endpoint — все должны DENY (admin-only)
 for subj in SUBJECTS:

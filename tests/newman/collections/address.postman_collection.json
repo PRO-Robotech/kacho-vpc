@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "4af5272d-5f80-4492-a0d2-5eceb54f4e2f",
+    "_postman_id": "d322433d-e8d6-483e-b985-51c0b8161696",
     "name": "kacho-vpc / newman / address",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -54,6 +54,54 @@
     }
   ],
   "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
     {
       "name": "ADR-CR-CRUD-INT — Create internal Address → IP в subnet",
       "description": "class:CRUD | priority:P1",
@@ -9598,7 +9646,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"adr-crv6-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:cafe::/64\"], \"isDefault\": true}",
+              "raw": "{\"name\": \"adr-crv6-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:cafe::/64\"], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9646,7 +9694,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-crv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-crv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9918,7 +9966,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-nv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-b\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-nv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneB}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10063,7 +10111,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"adr-rru-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:bee::/64\"], \"isDefault\": true}",
+              "raw": "{\"name\": \"adr-rru-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:bee::/64\"], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10111,7 +10159,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-rru1-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-rru1-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10344,7 +10392,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-rru2-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-rru2-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10614,7 +10662,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-fal-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-a\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-fal-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneA}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10759,7 +10807,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"adr-falv4-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:b0b::/64\"], \"isDefault\": true}",
+              "raw": "{\"name\": \"adr-falv4-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:b0b::/64\"], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10807,7 +10855,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-falv4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-falv4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -10987,7 +11035,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"adr-falv6-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}",
+              "raw": "{\"name\": \"adr-falv6-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -11035,7 +11083,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-falv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"adr-falv6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"

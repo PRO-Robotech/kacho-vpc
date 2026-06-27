@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "787d27ae-5149-4584-9273-f493cb4a81e1",
+    "_postman_id": "bac0d804-ab9f-4cb7-8cf0-65cb3df4c824",
     "name": "kacho-vpc / newman / observability",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -54,6 +54,54 @@
     }
   ],
   "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
     {
       "name": "OBS-REQID-HEADER-ECHO — X-Request-Id header propagation: client sends → response echoes same id (observability trace)",
       "description": "class:OBS | priority:P2",

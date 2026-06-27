@@ -7,7 +7,7 @@
 mux на /vpc/v1/addressPools/... . Эти RPC возвращают ресурсы ПРЯМО (не Operation).
 AddressPool — глобальный infrastructure-ресурс (как Region/Zone), не привязан к
 project. Тесты создают только runId-суффиксованные throwaway-пулы/сети/адреса и
-убирают за собой; seeded `default-zone-a` pool / `zone` region /
+убирают за собой; seeded `default-{{zoneA}}` pool / `zone` region /
 `zone-{a,b,c,d}` zones НЕ трогаются.
 
 REST gateway body — camelCase JSON.
@@ -30,7 +30,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path=POOLS,
              body={"name": "ipl-crud-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200),
                           "const j = pm.response.json();",
@@ -66,7 +66,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path=POOLS,
              body={"name": "ipl-upd-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "iplId")]),
         # Partial-update через google.protobuf.FieldMask update_mask (parity со
@@ -97,7 +97,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path=POOLS,
              body={"name": "ipl-immut-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "iplImmutId")]),
         # update_mask с immutable zone_id → InvalidArgument (immutable-в-mask
@@ -118,7 +118,7 @@ CASES.append(Case(
         Step(name="list", method="GET", path=POOLS,
              test_script=[*assert_status(200),
                           "pm.test('pools array', () => pm.expect(pm.response.json().pools || []).to.be.an('array'));"]),
-        Step(name="list-by-zone", method="GET", path=POOLS + "?zoneId=zone-a",
+        Step(name="list-by-zone", method="GET", path=POOLS + "?zoneId={{zoneA}}",
              test_script=[*assert_status(200),
                           "pm.test('pools array (zone filter)', () => pm.expect(pm.response.json().pools || []).to.be.an('array'));"]),
         Step(name="list-by-kind", method="GET", path=POOLS + "?kind=EXTERNAL_PUBLIC",
@@ -137,13 +137,13 @@ CASES.append(Case(
     title="Create второй isDefault=true для того же (zoneId, kind) что у seeded default → AlreadyExists",
     classes=["NEG", "CONF"], priority="P0",
     steps=[
-        # seeded default-zone-a (EXTERNAL_PUBLIC, isDefault) уже занимает
-        # партишн (zone_id='zone-a', kind=EXTERNAL_PUBLIC). DB partial UNIQUE
+        # seeded default-{{zoneA}} (EXTERNAL_PUBLIC, isDefault) уже занимает
+        # партишн (zone_id='{{zoneA}}', kind=EXTERNAL_PUBLIC). DB partial UNIQUE
         # WHERE is_default → 23505 → ErrAlreadyExists. Create не успевает создать
         # row → нечего чистить.
         Step(name="cr-dup-default", method="POST", path=POOLS,
              body={"name": "ipl-dupdef-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-a",
+                   "zoneId": "{{zoneA}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": [],
                    "isDefault": True},
              test_script=[*assert_status(409), *assert_grpc_code(6, "ALREADY_EXISTS")]),
@@ -172,7 +172,7 @@ CASES.append(Case(
     classes=["VAL"], priority="P0",
     steps=[
         Step(name="cr-no-kind", method="POST", path=POOLS,
-             body={"name": "ipl-nokind-{{runId}}", "zoneId": "zone-c",
+             body={"name": "ipl-nokind-{{runId}}", "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
@@ -187,7 +187,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-both-empty", method="POST", path=POOLS,
              body={"name": "ipl-empty-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": []},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
                           "pm.test('message mentions both empty', () => pm.expect(String(pm.response.json().message || '')).to.match(/both empty|must not be both empty/i));"]),
@@ -202,7 +202,7 @@ CASES.append(Case(
         # Create НЕ требует name (kacho-admin RPC). Если поведение изменится на
         # 400 — этот кейс это поймает.
         Step(name="cr-no-name", method="POST", path=POOLS,
-             body={"kind": "EXTERNAL_PUBLIC", "zoneId": "zone-c",
+             body={"kind": "EXTERNAL_PUBLIC", "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[
                  "pm.test('accepted (200) or rejected (400)', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));",
@@ -221,7 +221,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-hostbits", method="POST", path=POOLS,
              body={"name": "ipl-hb-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.5/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT")]),
     ],
@@ -236,7 +236,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-v6", method="POST", path=POOLS,
              body={"name": "ipl-v6-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": ["2001:db8::/64"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "poolId")]),
         Step(name="cleanup", method="DELETE", path=POOLS + "/{{poolId}}",
@@ -276,7 +276,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-util-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "utilPoolId")]),
         Step(name="util", method="GET", path=POOLS + "/{{utilPoolId}}/utilization",
@@ -303,10 +303,10 @@ CASES.append(Case(
 
 CASES.append(Case(
     id="IPL-LISTADDR-CRUD-OK",
-    title="ListAddresses на seeded default-zone-a pool → 200 + addresses array",
+    title="ListAddresses на seeded default-{{zoneA}} pool → 200 + addresses array",
     classes=["CRUD"], priority="P1",
     steps=[
-        Step(name="seed-pool-id", method="GET", path=POOLS + "?zoneId=zone-a&kind=EXTERNAL_PUBLIC",
+        Step(name="seed-pool-id", method="GET", path=POOLS + "?zoneId={{zoneA}}&kind=EXTERNAL_PUBLIC",
              test_script=[*assert_status(200),
                           "const def = (pm.response.json().pools || []).find(p => p.isDefault);",
                           "pm.test('seeded default pool exists', () => pm.expect(def, JSON.stringify(pm.response.json())).to.be.an('object'));",
@@ -327,7 +327,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-la-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "laPoolId")]),
         Step(name="list-addr", method="GET", path=POOLS + "/{{laPoolId}}/addresses",
@@ -355,7 +355,7 @@ CASES.append(Case(
         poll_operation_until_done(),
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-nb-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "nbPoolId")]),
         Step(name="bind", method="POST", path="/vpc/v1/networks/{{nbNetId}}/addressPoolBinding",
@@ -419,7 +419,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-v6only", method="POST", path=POOLS,
              body={"name": "ipl-v6only-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": ["2001:db8::/64"]},
              test_script=[*assert_status(200),
                           "const j = pm.response.json();",
@@ -439,7 +439,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-ds", method="POST", path=POOLS,
              body={"name": "ipl-ds-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["198.51.100.0/24"],
                    "v6CidrBlocks": ["2001:db8:1::/64"]},
              test_script=[*assert_status(200),
@@ -460,14 +460,14 @@ CASES.append(Case(
         # IPv6 prefix в v4-слоте — sync InvalidArgument.
         Step(name="cr-v6-in-v4", method="POST", path=POOLS,
              body={"name": "ipl-cross-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["2001:db8::/64"], "v6CidrBlocks": []},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
                           "pm.test('error mentions v4_cidr_blocks slot', () => pm.expect(String(pm.response.json().message || '')).to.match(/v4_cidr_blocks|not an IPv4 prefix/i));"]),
         # Симметрично: IPv4 prefix в v6-слоте — 400.
         Step(name="cr-v4-in-v6", method="POST", path=POOLS,
              body={"name": "ipl-cross2-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": ["10.0.0.0/24"]},
              test_script=[*assert_status(400), *assert_grpc_code(3, "INVALID_ARGUMENT"),
                           "pm.test('error mentions v6_cidr_blocks slot', () => pm.expect(String(pm.response.json().message || '')).to.match(/v6_cidr_blocks|not an IPv6 prefix/i));"]),
@@ -487,7 +487,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-add-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["198.51.100.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "addPoolId")]),
         Step(name="add-v4", method="POST", path=POOLS + "/{{addPoolId}}:addCidrBlocks",
@@ -515,7 +515,7 @@ CASES.append(Case(
     steps=[
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-rm-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["198.51.100.0/24", "203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "rmPoolId")]),
         Step(name="remove-v4", method="POST", path=POOLS + "/{{rmPoolId}}:removeCidrBlocks",
@@ -546,13 +546,13 @@ CASES.append(Case(
         # попытка удалить CIDR с выделенным IP → FailedPrecondition.
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-rm-inuse-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-d",
+                   "zoneId": "{{zoneD}}",
                    "v4CidrBlocks": ["198.51.100.0/24", "203.0.113.0/24"],
                    "isDefault": True},
              test_script=[*assert_status(200), *save_from_response("j.id", "rmInUsePoolId")]),
         Step(name="cr-addr", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "ipl-rm-inuse-addr-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "rmInUseAddrId")]),
         poll_operation_until_done(),
@@ -593,20 +593,20 @@ CASES.append(Case(
         # Базовый пул {10.20.0.0/24} в throwaway-zone (не seeded).
         Step(name="cr-base", method="POST", path=POOLS,
              body={"name": "ipl-ovl-base-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["10.20.0.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "ovlBaseId")]),
         # Пересекающийся пул {10.20.0.128/25} ⊂ {10.20.0.0/24} → отклонен.
         Step(name="cr-overlap", method="POST", path=POOLS,
              body={"name": "ipl-ovl-conflict-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["10.20.0.128/25"], "v6CidrBlocks": []},
              test_script=[*assert_status(400), *assert_grpc_code(9, "FAILED_PRECONDITION"),
                           "pm.test('message mentions overlap', () => pm.expect(String(pm.response.json().message || '')).to.match(/can not overlap/i));"]),
         # Disjoint пул {10.21.0.0/24} — OK (sanity: только пересечение отклоняется).
         Step(name="cr-disjoint", method="POST", path=POOLS,
              body={"name": "ipl-ovl-disjoint-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["10.21.0.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "ovlDisjointId")]),
         Step(name="cleanup-base", method="DELETE", path=POOLS + "/{{ovlBaseId}}",
@@ -623,12 +623,12 @@ CASES.append(Case(
     steps=[
         Step(name="cr-a", method="POST", path=POOLS,
              body={"name": "ipl-ovl-a-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["10.30.0.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "ovlAId")]),
         Step(name="cr-b", method="POST", path=POOLS,
              body={"name": "ipl-ovl-b-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["10.31.0.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "ovlBId")]),
         # AddCidr B {10.30.0.0/25} ⊂ pool A {10.30.0.0/24} → отклонен.
@@ -654,7 +654,7 @@ CASES.append(Case(
     steps=[
         # Network bound к v6-only pool через BindAsNetworkDefault. Address.Create
         # external_ipv4 в этом network → cascade Step 2 находит binding, family-фильтр
-        # пропускает (v4_cidr_blocks пусто), fall-through. Нет v4 default в zone-b →
+        # пропускает (v4_cidr_blocks пусто), fall-through. Нет v4 default в {{zoneB}} →
         # Operation error code in {5, 9}.
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
              body={"projectId": "{{_suiteProjectId}}", "name": "ipl-netdef-{{runId}}"},
@@ -663,7 +663,7 @@ CASES.append(Case(
         poll_operation_until_done(),
         Step(name="cr-pool-v6only", method="POST", path=POOLS,
              body={"name": "ipl-netdef-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-b",
+                   "zoneId": "{{zoneB}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": ["2001:db8:cafe::/64"]},
              test_script=[*assert_status(200), *save_from_response("j.id", "netdefPoolId")]),
         Step(name="bind", method="POST",
@@ -672,7 +672,7 @@ CASES.append(Case(
              test_script=[*assert_status(200)]),
         Step(name="cr-addr-v4", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "ipl-netdef-addr-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-b"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneB}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "netdefAddrId")]),
         poll_operation_until_done(),
@@ -700,10 +700,10 @@ CASES.append(Case(
     steps=[
         # Single dual-stack pool в zone (как default) → Allocate v4 берет из v4-блока,
         # Allocate v6 — из v6-блока; обе аллокации успешны, IP попадают в правильные
-        # префиксы. Здесь zone используем `zone-d` (нет seeded default).
+        # префиксы. Здесь zone используем `{{zoneD}}` (нет seeded default).
         Step(name="cr-ds-pool", method="POST", path=POOLS,
              body={"name": "ipl-ds-resolve-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-d",
+                   "zoneId": "{{zoneD}}",
                    "v4CidrBlocks": ["198.51.100.0/24"],
                    "v6CidrBlocks": ["2001:db8:ff::/64"],
                    "isDefault": True},
@@ -711,7 +711,7 @@ CASES.append(Case(
         # Allocate v4.
         Step(name="cr-addr-v4", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "ipl-ds-v4-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "dsV4AddrId")]),
         poll_operation_until_done(),
@@ -721,7 +721,7 @@ CASES.append(Case(
         # Allocate v6.
         Step(name="cr-addr-v6", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "ipl-ds-v6-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "dsV6AddrId")]),
         poll_operation_until_done(),
@@ -755,7 +755,7 @@ CASES.append(Case(
         poll_operation_until_done(),
         Step(name="cr-pool-v4only", method="POST", path=POOLS,
              body={"name": "ipl-bnd-fa-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["203.0.113.0/24"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "bndFaPoolId")]),
         # Bind — family-agnostic, всегда 200 (нет family-validation на bind-этапе).
@@ -796,7 +796,7 @@ CASES.append(Case(
         # 2. Создать pool /30 — 4 addresses total, 2 usable (excl network+broadcast).
         Step(name="cr-pool", method="POST", path=POOLS,
              body={"name": "ipl-exh-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-c",
+                   "zoneId": "{{zoneC}}",
                    "v4CidrBlocks": ["198.51.100.252/30"], "v6CidrBlocks": []},
              test_script=[*assert_status(200), *save_from_response("j.id", "exhPoolId")]),
         # 3. Bind network → pool.
@@ -806,7 +806,7 @@ CASES.append(Case(
         # 4. Allocate #1 — external Address (резолв cascade Step 2 = network_default → наш pool).
         Step(name="alloc-1", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "exh-1-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-c"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneC}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrIdE1")]),
         poll_operation_until_done(),
@@ -822,7 +822,7 @@ CASES.append(Case(
         # 5. Allocate #2 — second usable IP.
         Step(name="alloc-2", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "exh-2-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-c"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneC}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrIdE2")]),
         poll_operation_until_done(),
@@ -838,7 +838,7 @@ CASES.append(Case(
         # 6. Allocate #3 — pool exhausted → FailedPrecondition.
         Step(name="alloc-3-fails", method="POST", path="/vpc/v1/addresses",
              body={"projectId": "{{_suiteProjectId}}", "name": "exh-3-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-c"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneC}}"}},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrIdE3")]),
         Step(name="verify-3-fails", method="GET", path="/operations/{{opId}}",

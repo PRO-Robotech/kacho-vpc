@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "3c6cee52-3874-4274-b6cf-3df282e329b2",
+    "_postman_id": "867f95ec-f545-4faf-80bb-0ae35ab7dfb3",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -55,6 +55,54 @@
   ],
   "item": [
     {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
+    {
       "name": "IPL-CR-CRUD-V4-OK — AddressPool Create v4-only → Get → List-includes → Delete → Get-404",
       "description": "class:CRUD | class:CONF | priority:P0",
       "item": [
@@ -81,7 +129,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-crud-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-crud-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -289,7 +337,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-upd-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-upd-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -463,7 +511,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-immut-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-immut-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -623,14 +671,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/addressPools?zoneId=zone-a",
+              "raw": "{{baseUrl}}/vpc/v1/addressPools?zoneId={{zoneA}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "addressPools?zoneId=zone-a"
+                "addressPools?zoneId={{zoneA}}"
               ]
             }
           },
@@ -711,7 +759,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-dupdef-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}",
+              "raw": "{\"name\": \"ipl-dupdef-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -817,7 +865,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-nokind-{{runId}}\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-nokind-{{runId}}\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -870,7 +918,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-empty-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-empty-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -924,7 +972,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1010,7 +1058,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-hb-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.5/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-hb-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.5/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1063,7 +1111,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-v6-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8::/64\"]}",
+              "raw": "{\"name\": \"ipl-v6-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1242,7 +1290,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-util-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-util-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1392,7 +1440,7 @@
       ]
     },
     {
-      "name": "IPL-LISTADDR-CRUD-OK — ListAddresses на seeded default-zone-a pool → 200 + addresses array",
+      "name": "IPL-LISTADDR-CRUD-OK — ListAddresses на seeded default-{{zoneA}} pool → 200 + addresses array",
       "description": "class:CRUD | priority:P1",
       "item": [
         {
@@ -1406,14 +1454,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/addressPools?zoneId=zone-a&kind=EXTERNAL_PUBLIC",
+              "raw": "{{baseUrl}}/vpc/v1/addressPools?zoneId={{zoneA}}&kind=EXTERNAL_PUBLIC",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "addressPools?zoneId=zone-a&kind=EXTERNAL_PUBLIC"
+                "addressPools?zoneId={{zoneA}}&kind=EXTERNAL_PUBLIC"
               ]
             }
           },
@@ -1535,7 +1583,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-la-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-la-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1764,7 +1812,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-nb-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-nb-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2201,7 +2249,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-v6only-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8::/64\"]}",
+              "raw": "{\"name\": \"ipl-v6only-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2294,7 +2342,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ds-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [\"2001:db8:1::/64\"]}",
+              "raw": "{\"name\": \"ipl-ds-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [\"2001:db8:1::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2386,7 +2434,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-cross-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"2001:db8::/64\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-cross-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"2001:db8::/64\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2434,7 +2482,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-cross2-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"10.0.0.0/24\"]}",
+              "raw": "{\"name\": \"ipl-cross2-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"10.0.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2488,7 +2536,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-add-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-add-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2704,7 +2752,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-rm-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"198.51.100.0/24\", \"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-rm-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\", \"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2924,7 +2972,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-rm-inuse-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"198.51.100.0/24\", \"203.0.113.0/24\"], \"isDefault\": true}",
+              "raw": "{\"name\": \"ipl-rm-inuse-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\", \"203.0.113.0/24\"], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2972,7 +3020,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-rm-inuse-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-rm-inuse-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3328,7 +3376,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ovl-base-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"10.20.0.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-ovl-base-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"10.20.0.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3376,7 +3424,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ovl-conflict-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"10.20.0.128/25\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-ovl-conflict-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"10.20.0.128/25\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3424,7 +3472,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ovl-disjoint-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"10.21.0.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-ovl-disjoint-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"10.21.0.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3548,7 +3596,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ovl-a-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"10.30.0.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-ovl-a-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"10.30.0.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3596,7 +3644,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ovl-b-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"10.31.0.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-ovl-b-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"10.31.0.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3908,7 +3956,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-netdef-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:cafe::/64\"]}",
+              "raw": "{\"name\": \"ipl-netdef-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [], \"v6CidrBlocks\": [\"2001:db8:cafe::/64\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4001,7 +4049,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-netdef-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-b\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-netdef-addr-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneB}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4306,7 +4354,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-ds-resolve-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [\"2001:db8:ff::/64\"], \"isDefault\": true}",
+              "raw": "{\"name\": \"ipl-ds-resolve-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [\"2001:db8:ff::/64\"], \"isDefault\": true}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4354,7 +4402,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-ds-v4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-ds-v4-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4493,7 +4541,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-ds-v6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"zone-d\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"ipl-ds-v6-{{runId}}\", \"externalIpv6AddressSpec\": {\"zoneId\": \"{{zoneD}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4954,7 +5002,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-bnd-fa-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-bnd-fa-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"203.0.113.0/24\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5317,7 +5365,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"ipl-exh-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"zone-c\", \"v4CidrBlocks\": [\"198.51.100.252/30\"], \"v6CidrBlocks\": []}",
+              "raw": "{\"name\": \"ipl-exh-pool-{{runId}}\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneC}}\", \"v4CidrBlocks\": [\"198.51.100.252/30\"], \"v6CidrBlocks\": []}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5410,7 +5458,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-1-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-c\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-1-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneC}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5551,7 +5599,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-2-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-c\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-2-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneC}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5692,7 +5740,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-3-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"zone-c\"}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"name\": \"exh-3-{{runId}}\", \"externalIpv4AddressSpec\": {\"zoneId\": \"{{zoneC}}\"}}",
               "options": {
                 "raw": {
                   "language": "json"

@@ -1246,9 +1246,9 @@ def pairwise_subnet_pack():
     # Используем только существующие zone id (zone-{a,b,d}); на несуществующей
     # зоне Subnet.Create отвергается с "Illegal argument zone_id".
     combos = [
-        ("zone-a", "/24", True),  ("zone-a", "/28", False), ("zone-a", "/16", True),
-        ("zone-b", "/24", False), ("zone-b", "/28", True),  ("zone-b", "/16", False),
-        ("zone-d", "/24", True),  ("zone-d", "/28", False), ("zone-d", "/16", True),
+        ("{{zoneA}}", "/24", True),  ("{{zoneA}}", "/28", False), ("{{zoneA}}", "/16", True),
+        ("{{zoneB}}", "/24", False), ("{{zoneB}}", "/28", True),  ("{{zoneB}}", "/16", False),
+        ("{{zoneD}}", "/24", True),  ("{{zoneD}}", "/28", False), ("{{zoneD}}", "/16", True),
     ]
     cases = []
     for i, (zone, prefix, with_dhcp) in enumerate(combos):
@@ -1517,6 +1517,51 @@ def case_to_postman(case: Case) -> Dict:
     }
 
 
+# Zone ids are environment-specific: geo seeds Region/Zone with ids that differ
+# per deploy and are NOT the legacy literals zone-a..d. Resolve them ONCE,
+# synchronously, as the FIRST item of every collection (a real request, so newman
+# blocks on its response before running any case) and publish zoneA..zoneD +
+# existingZoneId/existingZoneAltId. Best-effort: no failing assertion — if geo is
+# unreachable (standalone vpc), the committed env defaults stay in effect.
+_ZONE_SETUP_TEST = [
+    "const code = (pm.response && pm.response.code) || 0;",
+    "let zs = [];",
+    "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+    "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+    "const pick = up.length ? up : zs;",
+    "if (pick.length) {",
+    "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+    "  pm.environment.set('zoneA', at(0));",
+    "  pm.environment.set('zoneB', at(1));",
+    "  pm.environment.set('zoneC', at(2));",
+    "  pm.environment.set('zoneD', at(3));",
+    "  pm.environment.set('existingZoneId', at(0));",
+    "  pm.environment.set('existingZoneAltId', at(1));",
+    "  pm.environment.set('_zoneResolved', '1');",
+    "}",
+]
+
+
+def _zone_setup_item() -> Dict:
+    """Blocking first item: resolve live geo zone ids into zoneA..D env vars."""
+    return {
+        "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+        "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": _ZONE_SETUP_TEST},
+        }],
+        "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{jwtBootstrap}}"}],
+            "url": {
+                "raw": "{{baseUrl}}/geo/v1/zones",
+                "host": ["{{baseUrl}}"],
+                "path": ["geo", "v1", "zones"],
+            },
+        },
+    }
+
+
 def build_collection(service: str, cases: List[Case]) -> Dict:
     return {
         "info": {
@@ -1530,7 +1575,7 @@ def build_collection(service: str, cases: List[Case]) -> Dict:
                 "script": {"type": "text/javascript", "exec": PRE_GLOBAL},
             },
         ],
-        "item": [case_to_postman(c) for c in cases],
+        "item": [_zone_setup_item()] + [case_to_postman(c) for c in cases],
         "variable": [],
     }
 

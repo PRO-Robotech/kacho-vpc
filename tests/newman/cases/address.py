@@ -582,7 +582,7 @@ POOLS = "/vpc/v1/addressPools"
 ADDRS = "/vpc/v1/addresses"
 
 
-def _make_v6_pool(suffix="v6", zone="zone-d", cidr="2001:db8:cafe::/64",
+def _make_v6_pool(suffix="v6", zone="{{zoneD}}", cidr="2001:db8:cafe::/64",
                   is_default=True):
     """Создать v6-pool для конкретного case + забрать id в poolId.
 
@@ -615,10 +615,10 @@ CASES.append(Case(
     title="Create external_ipv6 Address → IP из default v6 pool",
     classes=["CRUD"], priority="P1",
     steps=[
-        *_make_v6_pool("crv6", zone="zone-d", cidr="2001:db8:cafe::/64"),
+        *_make_v6_pool("crv6", zone="{{zoneD}}", cidr="2001:db8:cafe::/64"),
         Step(name="create", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-crv6-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -648,7 +648,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-nv6-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-b"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneB}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -674,11 +674,11 @@ CASES.append(Case(
     title="Delete v6 Address → offset возвращается в released, Reuse выдает тот же IP",
     classes=["STATE", "CONF"], priority="P1",
     steps=[
-        *_make_v6_pool("rru", zone="zone-d", cidr="2001:db8:bee::/64"),
+        *_make_v6_pool("rru", zone="{{zoneD}}", cidr="2001:db8:bee::/64"),
         # 1) Create + remember the IP.
         Step(name="cr-1", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-rru1-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addr1Id")]),
@@ -693,7 +693,7 @@ CASES.append(Case(
         # 3) Allocate again — should pick up the released offset → same IP.
         Step(name="cr-2", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-rru2-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addr2Id")]),
@@ -712,7 +712,7 @@ CASES.append(Case(
 
 CASES.append(Case(
     # Глобальный v4 default pool (seeded в кластере) НЕ "крадет" v6 запрос:
-    # cascade step 4 (zone_default) в zone-a для v6 пуст → step 5 global_default
+    # cascade step 4 (zone_default) в {{zoneA}} для v6 пуст → step 5 global_default
     # находит v4 pool, family-фильтр его отвергает (нет v6 cidr) → cascade
     # проваливается с FailedPrecondition (resolve address pool: pool not resolved).
     # Если family-filter сломан — попадаем в Internal "pool has no IPv6 cidr_blocks".
@@ -722,7 +722,7 @@ CASES.append(Case(
     steps=[
         Step(name="create", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-fal-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-a"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneA}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "addrId")]),
@@ -750,18 +750,18 @@ CASES.append(Case(
     title="Create v4 Address в zone с v6-only default pool → cascade family-skip → FailedPrecondition (REQ-RESOLVE-02)",
     classes=["CONF", "NEG"], priority="P0",
     steps=[
-        # Setup v6-only default pool в throwaway zone-d.
+        # Setup v6-only default pool в throwaway {{zoneD}}.
         Step(name="cr-v6-default", method="POST", path=POOLS,
              body={"name": "adr-falv4-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-d",
+                   "zoneId": "{{zoneD}}",
                    "v4CidrBlocks": [], "v6CidrBlocks": ["2001:db8:b0b::/64"],
                    "isDefault": True},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "falV4PoolId")]),
-        # Allocate v4 → cascade falls through (нет v4 default в zone-d).
+        # Allocate v4 → cascade falls through (нет v4 default в {{zoneD}}).
         Step(name="create", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-falv4-{{runId}}",
-                   "externalIpv4AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv4AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "falV4AddrId")]),
@@ -788,14 +788,14 @@ CASES.append(Case(
     steps=[
         Step(name="cr-v4-default", method="POST", path=POOLS,
              body={"name": "adr-falv6-pool-{{runId}}", "kind": "EXTERNAL_PUBLIC",
-                   "zoneId": "zone-d",
+                   "zoneId": "{{zoneD}}",
                    "v4CidrBlocks": ["198.51.100.0/24"], "v6CidrBlocks": [],
                    "isDefault": True},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "falV6PoolId")]),
         Step(name="create", method="POST", path=ADDRS,
              body={"projectId": "{{_suiteProjectId}}", "name": "adr-falv6-{{runId}}",
-                   "externalIpv6AddressSpec": {"zoneId": "zone-d"}},
+                   "externalIpv6AddressSpec": {"zoneId": "{{zoneD}}"}},
              test_script=[*assert_status(200),
                           *save_from_response("j.id", "opId"),
                           *save_from_response("j.metadata && j.metadata.addressId", "falV6AddrId")]),

@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "a3b0368a-9540-4d0e-8740-9589e3fe30a7",
+    "_postman_id": "e0d1e13e-c604-4578-b388-afbe5c989da6",
     "name": "kacho-vpc / newman / subnet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -54,6 +54,54 @@
     }
   ],
   "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
     {
       "name": "SUB-CR-CRUD-OK — Create subnet → Operation → Subnet visible in GET",
       "description": "class:CRUD | priority:P1",
@@ -27354,7 +27402,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-00 — Pairwise [0]: zone=zone-a prefix=/24 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-00 — Pairwise [0]: zone={{zoneA}} prefix=/24 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -27483,7 +27531,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-0-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.170.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-0-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.170.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -27646,7 +27694,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-01 — Pairwise [1]: zone=zone-a prefix=/28 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-01 — Pairwise [1]: zone={{zoneA}} prefix=/28 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -27775,7 +27823,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-1-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.171.0.0/28\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-1-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.171.0.0/28\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -27938,7 +27986,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-02 — Pairwise [2]: zone=zone-a prefix=/16 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-02 — Pairwise [2]: zone={{zoneA}} prefix=/16 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28067,7 +28115,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-2-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.172.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-2-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.172.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28230,7 +28278,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-03 — Pairwise [3]: zone=zone-b prefix=/24 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-03 — Pairwise [3]: zone={{zoneB}} prefix=/24 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28359,7 +28407,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-3-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.173.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-3-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.173.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28522,7 +28570,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-04 — Pairwise [4]: zone=zone-b prefix=/28 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-04 — Pairwise [4]: zone={{zoneB}} prefix=/28 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28651,7 +28699,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-4-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.174.0.0/28\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-4-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.174.0.0/28\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28814,7 +28862,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-05 — Pairwise [5]: zone=zone-b prefix=/16 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-05 — Pairwise [5]: zone={{zoneB}} prefix=/16 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28943,7 +28991,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-5-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.175.0.0/16\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-5-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.175.0.0/16\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29106,7 +29154,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone=zone-d prefix=/24 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone={{zoneD}} prefix=/24 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29235,7 +29283,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29398,7 +29446,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone=zone-d prefix=/28 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone={{zoneD}} prefix=/28 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29527,7 +29575,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29690,7 +29738,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone=zone-d prefix=/16 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone={{zoneD}} prefix=/16 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29819,7 +29867,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"

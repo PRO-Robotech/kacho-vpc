@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "96b544f7-8f01-468d-b7eb-3c696ba683f2",
+    "_postman_id": "ff204612-9b77-4202-a7ae-ea94d8c77655",
     "name": "kacho-vpc / newman / list-filter-d",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -54,6 +54,54 @@
     }
   ],
   "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
     {
       "name": "SUBNET-LF-D-VISIBLE — per-object List: subject sees the subnet it was granted (D-40/D-41/D-43)",
       "description": "class:AUTHZ | class:CONF | priority:P0",
