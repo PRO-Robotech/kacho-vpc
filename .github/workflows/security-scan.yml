@@ -29,11 +29,12 @@ jobs:
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod }
       - run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          "$(go env GOPATH)/bin/gosec" -fmt sarif -out gosec.sarif ./... || true
-          # gosec emits duplicate entries in rule properties.tags, which the
-          # codeql SARIF validator rejects ("contains duplicate item"). Dedupe
-          # every rule's tags, or substitute an empty schema-valid document.
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
+          # Сгенерированные proto-stubs (proto/gen) исключаем — G101-false-positive на
+          # FullMethodName-константах; hand-written код сканируется полностью.
+          "$(go env GOPATH)/bin/gosec" -exclude-dir=proto/gen -fmt sarif -out gosec.sarif ./... || true
+          # gosec дублирует записи в properties.tags, что отвергает codeql-валидатор
+          # SARIF. Дедупим теги каждого правила либо подставляем пустой схема-валидный документ.
           if jq -e . gosec.sarif >/dev/null 2>&1; then
             jq '(.runs[].tool.driver.rules[]?.properties.tags) |= (if . then unique else . end)' \
               gosec.sarif > gosec.sanitized.sarif && mv gosec.sanitized.sarif gosec.sarif
@@ -43,6 +44,13 @@ jobs:
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with: { sarif_file: kacho-vpc/gosec.sarif, category: gosec }
+      - name: gate — fail on HIGH-severity gosec findings
+        run: |
+          # gosec мапит severity HIGH → SARIF level "error"; блокируем job при любой
+          # HIGH-находке (MEDIUM/LOW остаются информативными в code-scanning).
+          n=$(jq '[.runs[].results[]? | select(.level=="error")] | length' kacho-vpc/gosec.sarif)
+          echo "gosec HIGH (error-level) findings: $n"
+          test "$n" -eq 0
 
   trivy:
     name: trivy
@@ -73,8 +81,12 @@ jobs:
       - uses: actions/setup-go@v6
         with: { go-version-file: kacho-vpc/go.mod }
       - run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+          # SARIF для code-scanning; генерацию не валим (upload должен пройти).
           "$(go env GOPATH)/bin/govulncheck" -mode=source -format=sarif ./... > govulncheck.sarif || true
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with: { sarif_file: kacho-vpc/govulncheck.sarif, category: govulncheck }
+      - name: gate — fail on known reachable vulnerabilities
+        # govulncheck возвращает non-zero при уязвимостях в reachable-коде — блокирующий gate.
+        run: "$(go env GOPATH)/bin/govulncheck -mode=source ./..."
