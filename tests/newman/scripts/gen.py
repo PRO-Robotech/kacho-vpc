@@ -1610,10 +1610,22 @@ def _pool_seed_item() -> Dict:
     }
 
 
+# InternalAddressPoolService RPCs are gated on cluster `system_admin` (the vpc
+# authz interceptor checks the relation directly), so the suite must call them as
+# cluster-admin, not as the default project admin. Force the admin JWT at the
+# collection level for the internal-pool suite (per-step auth= still overrides).
+_ADMIN_DEFAULT_SERVICES = {"internal-pool"}
+_ADMIN_DEFAULT_PRE = [
+    "const __adm = pm.environment.get('jwtBootstrap') || '';",
+    "if (__adm) { pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __adm}); }",
+]
+
+
 def build_collection(service: str, cases: List[Case]) -> Dict:
     setup_items = [_zone_setup_item()]
     if service in _POOL_SEED_SERVICES:
         setup_items.append(_pool_seed_item())
+    pre = PRE_GLOBAL + _ADMIN_DEFAULT_PRE if service in _ADMIN_DEFAULT_SERVICES else PRE_GLOBAL
     return {
         "info": {
             "_postman_id": str(uuid.uuid4()),
@@ -1623,7 +1635,7 @@ def build_collection(service: str, cases: List[Case]) -> Dict:
         "event": [
             {
                 "listen": "prerequest",
-                "script": {"type": "text/javascript", "exec": PRE_GLOBAL},
+                "script": {"type": "text/javascript", "exec": pre},
             },
         ],
         "item": setup_items + [case_to_postman(c) for c in cases],

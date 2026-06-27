@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "eb7aee00-b389-4b01-8148-f9e71d3bd96f",
+    "_postman_id": "cd543c29-926e-4b70-bfab-36006db531a1",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -48,7 +48,9 @@
           "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
           "if (__defaultJwt && !pm.request.headers.has('Authorization')) {",
           "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __defaultJwt});",
-          "}"
+          "}",
+          "const __adm = pm.environment.get('jwtBootstrap') || '';",
+          "if (__adm) { pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __adm}); }"
         ]
       }
     }
