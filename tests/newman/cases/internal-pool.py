@@ -813,7 +813,7 @@ CASES.append(Case(
         Step(name="verify-1", method="GET", path="/operations/{{opId}}",
              test_script=[
                  "let _t=0;",
-                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtBootstrap')}},(err,res)=>{",
                  "  let j=null;try{j=res.json();}catch(e){}",
                  "  if(j&&j.done){pm.test('alloc-1 success',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(false));}",
                  "  else if(++_t<8){setTimeout(_s,400);}",
@@ -829,7 +829,7 @@ CASES.append(Case(
         Step(name="verify-2", method="GET", path="/operations/{{opId}}",
              test_script=[
                  "let _t=0;",
-                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtBootstrap')}},(err,res)=>{",
                  "  let j=null;try{j=res.json();}catch(e){}",
                  "  if(j&&j.done){pm.test('alloc-2 success',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(false));}",
                  "  else if(++_t<8){setTimeout(_s,400);}",
@@ -844,7 +844,7 @@ CASES.append(Case(
         Step(name="verify-3-fails", method="GET", path="/operations/{{opId}}",
              test_script=[
                  "let _t=0;",
-                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtProjectAdminA1')}},(err,res)=>{",
+                 "const _s=()=>pm.sendRequest({url:pm.environment.get('baseUrl')+'/operations/'+pm.environment.get('opId'),method:'GET',header:{'Authorization':'Bearer '+pm.environment.get('jwtBootstrap')}},(err,res)=>{",
                  "  let j=null;try{j=res.json();}catch(e){}",
                  "  if(j&&j.done){",
                  "    pm.test('alloc-3 fails (pool exhausted)',()=>pm.expect(!!j.error,JSON.stringify(j)).to.eql(true));",
