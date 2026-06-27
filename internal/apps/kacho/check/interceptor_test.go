@@ -175,15 +175,14 @@ func TestInterceptor_Unary_UnmappedRPC_Denied(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, st.Code())
 }
 
-// TestInterceptor_Unary_InternalRPC_Bypass — methodIsInternal в имени + НЕ в
-// Map → пропуск (fallback-эвристика для internal RPC, которые регистрируются
-// только на :9091 и не достижимы на public listener'е). Пример — синтетический
-// заведомо-unmapped internal-метод; IPAM InternalAddressService.* больше НЕ
-// exempt (он в Map и проходит Check — см.
-// TestInterceptor_Unary_InternalAddressService_Checked).
-func TestInterceptor_Unary_InternalRPC_Bypass(t *testing.T) {
+// TestInterceptor_Unary_UnmappedInternalRPC_FailClosed — unmapped RPC с "Internal"
+// в имени БОЛЬШЕ НЕ байпасит authz по name-эвристике (это был fail-open вектор на
+// internal-периметре). Любой не-замапленный RPC fail-closed (PermissionDenied):
+// internal RPC, который должен быть exempt, обязан явно стоять в RPCMap
+// (Relation для Check либо Public=true). Handler НЕ вызывается, Check НЕ вызывается.
+func TestInterceptor_Unary_UnmappedInternalRPC_FailClosed(t *testing.T) {
 	intr, calls := newTestInterceptor(t, func(_ context.Context, _, _, _ string) (bool, error) {
-		t.Fatal("Check не должен вызываться для exempt Internal* RPC (не в Map)")
+		t.Fatal("Check не должен вызываться для unmapped RPC (fail-closed до Check)")
 		return false, nil
 	})
 	uIntr := intr.Unary()
@@ -196,11 +195,12 @@ func TestInterceptor_Unary_InternalRPC_Bypass(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.InternalSyntheticService/UnmappedMethod"}
 	ctx := principalCtx("user", "usr_alice")
 
-	resp, err := uIntr(ctx, struct{}{}, info, handler)
-	require.NoError(t, err)
-	require.Equal(t, "ok", resp)
-	require.True(t, called)
-	require.Equal(t, 0, *calls, "Check не должен вызываться для exempt Internal* (не в Map)")
+	_, err := uIntr(ctx, struct{}{}, info, handler)
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err),
+		"unmapped internal RPC → fail-closed PermissionDenied (нет name-based bypass)")
+	require.False(t, called, "handler НЕ вызывается для unmapped RPC")
+	require.Equal(t, 0, *calls, "Check НЕ вызывается для unmapped RPC (fail-closed до Check)")
 }
 
 // TestInterceptor_Unary_InternalAddressService_Checked — IPAM RPC теперь в Map и

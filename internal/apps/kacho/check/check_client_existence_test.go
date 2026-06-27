@@ -62,16 +62,18 @@ func TestIAMCheckClient_ExistenceHiding_AbsentObject_PassesThrough(t *testing.T)
 }
 
 // Decision 1 GWT-1.4: object-scoped deny на СУЩЕСТВУЮЩИЙ объект (cross-owner) →
-// existence-probe говорит "есть" → plain deny остается (PermissionDenied 403);
-// verb-RBAC сохранен, мутация-handler недостижим (no tamper).
-func TestIAMCheckClient_ExistenceHiding_PresentObject_KeepsDeny(t *testing.T) {
+// existence-probe говорит "есть" → ErrHideExistence (interceptor блокирует handler
+// и отдаёт NotFound 404, скрывая существование). «Есть-но-не-твой» неотличимо от
+// «нет такого»; handler недостижим → no tamper, no leak.
+func TestIAMCheckClient_ExistenceHiding_PresentObject_HidesExistence(t *testing.T) {
 	const object = "vpc_network:enppresent9999999999"
 	client, ctx := newProbeClientCtx(t, denyResp(object),
 		&fakeProbe{exists: map[string]bool{object: true}})
 
 	allowed, err := client.Check(ctx, "user:usr_b", "v_delete", object)
-	require.NoError(t, err)
-	assert.False(t, allowed, "present cross-owner object → plain deny, not passthrough")
+	require.ErrorIs(t, err, authz.ErrHideExistence,
+		"present cross-owner object → ErrHideExistence (deny→NotFound, no leak)")
+	assert.False(t, allowed)
 }
 
 // Decision 1 GWT-1.5: ошибка existence-probe (БД недоступна) → fail-closed: deny

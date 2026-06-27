@@ -117,9 +117,18 @@ func (c *IAMCheckClient) Check(ctx context.Context, subjectID, relation, object 
 		if objectType, objectID, ok := splitFGAObject(object); ok {
 			if _, isVPCObj := vpcObjectTypes[objectType]; isVPCObj {
 				exists, perr := c.probe.ObjectExists(ctx, objectType, objectID)
-				if perr == nil && !exists {
-					return false, authz.ErrNoPath
+				if perr == nil {
+					if !exists {
+						// Объекта нет → passthrough (ErrNoPath): handler сам отдаст
+						// verbatim NotFound из БД, скрывая отсутствие owner-tuple.
+						return false, authz.ErrNoPath
+					}
+					// Объект есть, но caller не вправе видеть → existence-hiding:
+					// interceptor блокирует handler и отдаёт NotFound (не 403),
+					// чтобы «есть-но-не-твой» было неотличимо от «нет такого».
+					return false, authz.ErrHideExistence
 				}
+				// Probe-ошибка → fail-closed (deny/403, без passthrough).
 			}
 		}
 	}

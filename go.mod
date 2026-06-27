@@ -4,7 +4,7 @@ go 1.25.11
 
 require (
 	github.com/H-BF/corlib v1.2.31-dev
-	github.com/PRO-Robotech/kacho-corelib v0.1.1-0.20260627132909-f6782af68bb7
+	github.com/PRO-Robotech/kacho-corelib v0.2.1-0.20260627211931-3475f55cbc54
 	github.com/PRO-Robotech/kacho-geo v0.0.0-20260627135501-91749bab7263
 	github.com/PRO-Robotech/kacho-iam v1.0.2-0.20260627095713-09310cc50004
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -97,11 +97,11 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260427160629-7cedc36a6bc4
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
