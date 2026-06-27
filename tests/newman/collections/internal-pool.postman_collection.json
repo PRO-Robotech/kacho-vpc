@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "f7165d2b-04d1-41e4-b510-95943e631db7",
+    "_postman_id": "34e6093a-5f16-4b39-940c-20b1eeb4752e",
     "name": "kacho-vpc / newman / internal-pool",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -133,7 +133,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\"name\": \"seed-default-external-zonea\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"198.51.100.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}"
+          "raw": "{\"name\": \"seed-default-external-zonea\", \"kind\": \"EXTERNAL_PUBLIC\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"100.64.0.0/24\"], \"v6CidrBlocks\": [], \"isDefault\": true}"
         },
         "url": {
           "raw": "{{baseUrl}}/vpc/v1/addressPools",

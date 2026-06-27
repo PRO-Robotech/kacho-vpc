@@ -1577,7 +1577,10 @@ _POOL_SEED_BODY = {
     "name": "seed-default-external-zonea",
     "kind": "EXTERNAL_PUBLIC",
     "zoneId": "{{zoneA}}",
-    "v4CidrBlocks": ["198.51.100.0/24"],
+    # 100.64.0.0/24: not used by any case pool (the EXCLUDE on address_pool_cidrs
+    # is per-kind cross-zone, so the persistent seed must not overlap throwaway
+    # pool CIDRs 203.0.113.0/24 / 198.51.100.0/24).
+    "v4CidrBlocks": ["100.64.0.0/24"],
     "v6CidrBlocks": [],
     "isDefault": True,
 }
