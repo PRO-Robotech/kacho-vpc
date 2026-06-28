@@ -10,8 +10,8 @@ github.com/H-BF/corlib v1.2.31-dev h1:8EjCkkiZ02Em77buzIQp1chKPWkWvi40jz0mpx/Lkj
 github.com/H-BF/corlib v1.2.31-dev/go.mod h1:YrRyr4LXSng+HzqIo4HfI3+833UrI9xW3qJcIoXwc04=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/PRO-Robotech/kacho-corelib v0.2.1-0.20260627211931-3475f55cbc54 h1:IZDKgdH/BZ8d/IemShoL9r6OuTRIAN1pOjXEJmM4lWk=
-github.com/PRO-Robotech/kacho-corelib v0.2.1-0.20260627211931-3475f55cbc54/go.mod h1:yFSL2fY/aIhKcd+NWl26tIMYdlt8qKAwwMYTTqOd/YI=
+github.com/PRO-Robotech/kacho-corelib v0.2.1 h1:VV7/izedo5B2464uJeIPM0el6SXP1CP+Pi2j0OSvuCI=
+github.com/PRO-Robotech/kacho-corelib v0.2.1/go.mod h1:yFSL2fY/aIhKcd+NWl26tIMYdlt8qKAwwMYTTqOd/YI=
 github.com/PRO-Robotech/kacho-geo v0.0.0-20260627135501-91749bab7263 h1:ffDNbacjaYhTVAy0t76O16kaj1WnmKAbXdiN1fyoHjo=
 github.com/PRO-Robotech/kacho-geo v0.0.0-20260627135501-91749bab7263/go.mod h1:0td1o1k+2T+AmTx0HwBuAAmVN+MdwqSycs+lxR8U0B4=
 github.com/PRO-Robotech/kacho-iam v1.0.2-0.20260627095713-09310cc50004 h1:PkBNPp76vzc/MoCE957l5oh5LT8npsDK4MJXG/b5PrY=
