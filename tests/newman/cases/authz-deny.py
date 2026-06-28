@@ -18,7 +18,9 @@ projects, users, bindings, seed networks) и патчит env-файл:
   - PA1 → editor   @ project:A1
   - AAA → admin    @ account:A   (каскад на project:A1)
   - AAB → admin    @ account:B   (каскад на project:B1)
-  - INV → admin    @ account:B   (каскад на project:B1; НЕ на project:A1)
+  - INV → admin    @ account:B (каскад на project:B1) + editor @ project:A1
+          (KAC-125 invite-flow: AAA приглашает INV в account-A editor'ом на
+          project-A1) → INV имеет доступ к ОБОИМ project-A1 и project-B1.
   - NOB → грантов нет
 
 Контракт ответов (api-gateway authz middleware, см. kacho-api-gateway):
@@ -52,8 +54,9 @@ SUBJECTS = [
 # scope-class → subject-code → expected ('ALLOW'/'DENY'). Отражает РЕАЛЬНЫЕ гранты
 # фикстуры (см. docstring), а не «кому хотелось бы».
 EXPECT = {
-    # project-A1: editor у PA1; account-A admin (AAA) каскадит на A1.
-    "project-A1":          {"ANON":"DENY","NOB":"DENY","PA1":"ALLOW","AAA":"ALLOW","AAB":"DENY", "INV":"DENY"},
+    # project-A1: editor у PA1; account-A admin (AAA) каскадит на A1; INV — editor
+    # @ project-A1 через KAC-125 invite-flow.
+    "project-A1":          {"ANON":"DENY","NOB":"DENY","PA1":"ALLOW","AAA":"ALLOW","AAB":"DENY", "INV":"ALLOW"},
     # project-B1: account-B admin (AAB, INV) каскадит на B1.
     "project-B1":          {"ANON":"DENY","NOB":"DENY","PA1":"DENY", "AAA":"DENY", "AAB":"ALLOW","INV":"ALLOW"},
     # AddressPool — admin-only (cluster system_admin): ни один из 6 субъектов его не

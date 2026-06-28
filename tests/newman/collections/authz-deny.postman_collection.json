@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "3b9c1d11-b6d2-475f-a918-abf6544faeea",
+    "_postman_id": "819e594f-252a-4194-a8fc-ec4c3f14ed97",
     "name": "kacho-vpc / newman / authz-deny",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -2215,8 +2215,8 @@
       ]
     },
     {
-      "name": "AUTHZ-NETWORK-CR-OWN-INV — [DENY] Create network в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-NETWORK-CR-OWN-INV — [ALLOW] Create network в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -2270,10 +2270,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-NETWORK-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-NETWORK-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-NETWORK-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-NETWORK-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -2347,7 +2345,7 @@
       ]
     },
     {
-      "name": "AUTHZ-NETWORK-LS-OWN-INV — [LIST-DENY] List networks в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-NETWORK-LS-OWN-INV — [LIST-ALLOW] List networks в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -2393,8 +2391,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['networks']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -4756,8 +4754,8 @@
       ]
     },
     {
-      "name": "AUTHZ-SUBNET-CR-OWN-INV — [DENY] Create subnet в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-SUBNET-CR-OWN-INV — [ALLOW] Create subnet в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -4811,10 +4809,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-SUBNET-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-SUBNET-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-SUBNET-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-SUBNET-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -4888,7 +4884,7 @@
       ]
     },
     {
-      "name": "AUTHZ-SUBNET-LS-OWN-INV — [LIST-DENY] List subnets в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-SUBNET-LS-OWN-INV — [LIST-ALLOW] List subnets в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -4934,8 +4930,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['subnets']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -7297,8 +7293,8 @@
       ]
     },
     {
-      "name": "AUTHZ-ADDRESS-CR-OWN-INV — [DENY] Create address в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-ADDRESS-CR-OWN-INV — [ALLOW] Create address в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -7352,10 +7348,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-ADDRESS-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-ADDRESS-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-ADDRESS-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-ADDRESS-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -7429,7 +7423,7 @@
       ]
     },
     {
-      "name": "AUTHZ-ADDRESS-LS-OWN-INV — [LIST-DENY] List addresses в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-ADDRESS-LS-OWN-INV — [LIST-ALLOW] List addresses в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -7475,8 +7469,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['addresses']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -9838,8 +9832,8 @@
       ]
     },
     {
-      "name": "AUTHZ-ROUTE-TABLE-CR-OWN-INV — [DENY] Create route-table в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-ROUTE-TABLE-CR-OWN-INV — [ALLOW] Create route-table в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -9893,10 +9887,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-ROUTE-TABLE-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -9970,7 +9962,7 @@
       ]
     },
     {
-      "name": "AUTHZ-ROUTE-TABLE-LS-OWN-INV — [LIST-DENY] List routeTables в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-ROUTE-TABLE-LS-OWN-INV — [LIST-ALLOW] List routeTables в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -10016,8 +10008,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['routeTables']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -12379,8 +12371,8 @@
       ]
     },
     {
-      "name": "AUTHZ-SECURITY-GROUP-CR-OWN-INV — [DENY] Create security-group в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-SECURITY-GROUP-CR-OWN-INV — [ALLOW] Create security-group в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -12434,10 +12426,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-SECURITY-GROUP-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -12511,7 +12501,7 @@
       ]
     },
     {
-      "name": "AUTHZ-SECURITY-GROUP-LS-OWN-INV — [LIST-DENY] List securityGroups в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-SECURITY-GROUP-LS-OWN-INV — [LIST-ALLOW] List securityGroups в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -12557,8 +12547,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['securityGroups']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -14920,8 +14910,8 @@
       ]
     },
     {
-      "name": "AUTHZ-GATEWAY-CR-OWN-INV — [DENY] Create gateway в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-GATEWAY-CR-OWN-INV — [ALLOW] Create gateway в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -14975,10 +14965,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-GATEWAY-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-GATEWAY-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-GATEWAY-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-GATEWAY-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -15052,7 +15040,7 @@
       ]
     },
     {
-      "name": "AUTHZ-GATEWAY-LS-OWN-INV — [LIST-DENY] List gateways в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-GATEWAY-LS-OWN-INV — [LIST-ALLOW] List gateways в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -15098,8 +15086,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['gateways']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -17461,8 +17449,8 @@
       ]
     },
     {
-      "name": "AUTHZ-NIC-CR-OWN-INV — [DENY] Create nic в project-A1 as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-NIC-CR-OWN-INV — [ALLOW] Create nic в project-A1 as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -17516,10 +17504,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-CR-OWN-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-NIC-CR-OWN-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-NIC-CR-OWN-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-NIC-CR-OWN-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-NIC-CR-OWN-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -17593,7 +17579,7 @@
       ]
     },
     {
-      "name": "AUTHZ-NIC-LS-OWN-INV — [LIST-DENY] List networkInterfaces в project-A1 as invitee (project-A1)",
+      "name": "AUTHZ-NIC-LS-OWN-INV — [LIST-ALLOW] List networkInterfaces в project-A1 as invitee (project-A1)",
       "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
@@ -17639,8 +17625,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST no-access: 403 OR 200+empty (no leak)', () => {\n  const code = pm.response.code;\n  if (code === 403) return;\n  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n  const arr = (j && j['networkInterfaces']) || [];\n  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n});"
+                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }
@@ -19703,8 +19689,8 @@
       ]
     },
     {
-      "name": "AUTHZ-CD-SUBNET-XACCT-INV — [DENY] Create Subnet ссылающийся на network из cross-account project as invitee (project-A1)",
-      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "name": "AUTHZ-CD-SUBNET-XACCT-INV — [ALLOW] Create Subnet ссылающийся на network из cross-account project as invitee (project-A1)",
+      "description": "class:AUTHZ | class:POS | priority:P1",
       "item": [
         {
           "name": "post",
@@ -19758,10 +19744,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
-                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
-                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: grpc code 7 (PERMISSION_DENIED)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(7));",
-                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] DENY: message contains permission denied', () => pm.expect((j && j.message || '').toLowerCase()).to.contain('permission denied'));"
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+                  "pm.test('[AUTHZ-CD-SUBNET-XACCT-INV] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
                 ]
               }
             }

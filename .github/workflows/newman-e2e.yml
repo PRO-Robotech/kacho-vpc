@@ -315,6 +315,36 @@ jobs:
           echo "=== authz-fixtures.json ==="
           cat tests/authz-fixtures/out/authz-fixtures.json
 
+          # --- wait for FGA pipeline to converge ----------------------------
+          # The async authz pipeline on a cold kind stack is multi-stage:
+          # bootstrap-admin reconciler → fga_outbox → drainer → OpenFGA (plus the
+          # rsab reconciler materialising per-object v_* tuples from AccessBindings).
+          # setup.sh's in-fixture cluster-admin readiness probe (180s) can expire
+          # before the drainer clears its backlog, so newman would run against a
+          # NON-converged FGA store → per-object authz flaps (List scope-filter
+          # leak / has-access denied). Gate newman on the cluster-admin grant being
+          # queryable (the drainer canary — the bootstrap grant is the last/slowest
+          # to land), then a short settle for the rsab materialisation, before
+          # running the suites. This makes the matrix deterministic instead of
+          # racing the drainer.
+          JWT_BOOT=$(python3 -c 'import json,sys; print(json.load(open("tests/authz-fixtures/out/jwts.json")).get("jwtBootstrap",""))' 2>/dev/null || true)
+          if [ -n "$JWT_BOOT" ]; then
+            echo "=== gate: waiting for FGA convergence (cluster-admin queryable) ==="
+            conv=""
+            for i in $(seq 1 144); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer ${JWT_BOOT}" \
+                "http://localhost:18080/iam/v1/accessBindings:listByResource?resourceType=cluster&resourceId=cluster_kacho_root" 2>/dev/null || echo 000)
+              if [ "$code" = "200" ]; then
+                conv=1; echo "FGA converged (cluster-admin queryable) after $((i*5))s — settling 30s for rsab materialisation"; sleep 30; break
+              fi
+              sleep 5
+            done
+            [ -n "$conv" ] || echo "WARN: FGA not converged after 720s — suites may flap (drainer backlog)"
+          else
+            echo "WARN: no jwtBootstrap in fixtures output — skipping FGA convergence gate"
+          fi
+
           # --- newman: kacho-iam --------------------------------------------
           cd "${GITHUB_WORKSPACE}/kacho-iam"
           python3 tests/newman/scripts/gen.py
