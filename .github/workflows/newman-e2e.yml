@@ -362,11 +362,7 @@ jobs:
             for i in $(seq 1 72); do
               n=$(curl -s -H "Authorization: Bearer ${JWT_NOB}" \
                 "http://localhost:18080/vpc/v1/networks?projectId=${A1}&pageSize=100" 2>/dev/null \
-                | python3 -c 'import json,sys
-try:
-    print(len(json.load(sys.stdin).get("networks", [])))
-except Exception:
-    print("err")' 2>/dev/null || echo err)
+                | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('networks', [])))" 2>/dev/null || echo err)
               if [ "$n" = "0" ]; then
                 vconv=1; echo "VPC scope-filter converged (no-bind empty) after $((i*5))s"; break
               fi
