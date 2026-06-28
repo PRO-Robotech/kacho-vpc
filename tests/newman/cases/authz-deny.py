@@ -4,20 +4,37 @@
 """Case-set authz-deny для kacho-vpc.
 
 Проверяет default-deny matrix для 6 классов субъектов на каждом публичном CRUD
-каждого VPC-ресурса.
+каждого VPC-ресурса — против ЖИВОГО object-scoped authz (api-gateway → FGA), не
+dev-mode anonymous→full-access.
 
-Pre-conditions: `tests/authz-fixtures/setup.sh` должен заранее создать фикстуры
-(accounts, projects, users, bindings, seed networks). Setup патчит env-файл, добавляя:
-  - jwt*               : 5 Bearer-токенов (no-bindings / proj-admin-a1 / account-admin-a/b / invitee)
+Pre-conditions: `tests/authz-fixtures/setup.sh` создаёт фикстуры (accounts,
+projects, users, bindings, seed networks) и патчит env-файл:
+  - jwt*               : Bearer-токены (no-bindings / proj-admin-a1 / account-admin-a/b / invitee)
   - accountAId / Bid
   - projectA1Id / A2Id / B1Id
   - seedNetworkA1Id / seedNetworkB1Id
 
-Decision per (resource, op, subject):
-  - DENY  → HTTP 403 + grpc-code 7 (PERMISSION_DENIED) + body содержит "permission denied"
-  - ALLOW → HTTP code != 403 (200/400/404 — приемлемо, важно лишь отсутствие 403)
+Реальные гранты фикстуры (источник истины — setup.sh):
+  - PA1 → editor   @ project:A1
+  - AAA → admin    @ account:A   (каскад на project:A1)
+  - AAB → admin    @ account:B   (каскад на project:B1)
+  - INV → admin    @ account:B   (каскад на project:B1; НЕ на project:A1)
+  - NOB → грантов нет
 
-Helpers Case/Step/assert_status инжектятся через gen.py namespace.
+Контракт ответов (api-gateway authz middleware, см. kacho-api-gateway):
+  - Анонимный запрос (нет токена) → 401 UNAUTHENTICATED (grpc 16) ВЕЗДЕ.
+  - Object-scoped READ (`/Get`) на запрещённый/несуществующий ресурс → существование
+    скрывается: 404 NOT_FOUND (grpc 5). `/Get`-deny одинаков для «нет такого» и
+    «есть-но-не-твой» (anti-enumeration).
+  - Object-scoped MUTATION (`/Update`, `/Delete`) на запрещённый/несуществующий
+    ресурс → 403 PERMISSION_DENIED (grpc 7). Existence не скрывается для мутаций
+    (deny одинаков для существующего и нет → утечки тоже нет).
+  - `/List` — scope-filtered: НЕ gated «всё или ничего», а сужается до видимого
+    subject'у набора. Нет доступа → 403 (gated List RPC) ЛИБО 200 + ПУСТОЙ список
+    (scope-filtered List RPC). 200 + чужие ресурсы = LEAK (валит тест).
+  - Create-child / админ-only RPC без нужного гранта → 403.
+
+Helpers Case/Step инжектятся через gen.py namespace.
 """
 
 CASES = []
@@ -32,25 +49,21 @@ SUBJECTS = [
     ("INV",  "invitee",    "jwtInvitee"),
 ]
 
-# scope-class → subject-code → expected ('DENY'/'ALLOW').
+# scope-class → subject-code → expected ('ALLOW'/'DENY'). Отражает РЕАЛЬНЫЕ гранты
+# фикстуры (см. docstring), а не «кому хотелось бы».
 EXPECT = {
-    "project-A1":          {"ANON":"DENY","NOB":"DENY","PA1":"ALLOW","AAA":"ALLOW","AAB":"DENY", "INV":"ALLOW"},
+    # project-A1: editor у PA1; account-A admin (AAA) каскадит на A1.
+    "project-A1":          {"ANON":"DENY","NOB":"DENY","PA1":"ALLOW","AAA":"ALLOW","AAB":"DENY", "INV":"DENY"},
+    # project-B1: account-B admin (AAB, INV) каскадит на B1.
     "project-B1":          {"ANON":"DENY","NOB":"DENY","PA1":"DENY", "AAA":"DENY", "AAB":"ALLOW","INV":"ALLOW"},
-    "addresspool-mutate":  {"ANON":"DENY","NOB":"DENY","PA1":"DENY", "AAA":"DENY", "AAB":"DENY", "INV":"DENY"},
-    # Garbage per-resource: non-existent ID has no FGA tuple → authz sees `no path`
-    # → returns NOT_FOUND (404) for all authenticated users; ANON → 401.
-    "garbage-perresource-vpc": {"ANON":"DENY","NOB":"NF","PA1":"NF","AAA":"NF","AAB":"NF","INV":"NF"},
-    # AddressPool — admin-only infrastructure-ресурс: vpc гейтит его RPC на
-    # cluster `system_admin` (object cluster:cluster_kacho_root). Ни project-, ни
-    # account-admin, ни invitee не несут system_admin → DENY (403/code7). Только
-    # cluster-admin (jwtBootstrap) допущен; ANON → 401. (Прежнее ALLOW отражало
-    # dev-mode anonymous→full-access, до object-scoped authz.)
-    "addresspool-open-catalog": {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"},
-    "addresspool-list-open-catalog": {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"},
+    # AddressPool — admin-only (cluster system_admin): ни один из 6 субъектов его не
+    # несёт → DENY у всех аутентифицированных; ANON → 401.
+    "addresspool-admin-only": {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"},
 }
 
 
 def deny_asserts(case_id):
+    """Аутентифицированный субъект без доступа → 403 PERMISSION_DENIED (grpc 7)."""
     return [
         f"pm.test('[{case_id}] DENY: status 403', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(403));",
         "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
@@ -60,7 +73,7 @@ def deny_asserts(case_id):
 
 
 def unauth_asserts(case_id):
-    """Anonymous (no token) → 401 Unauthenticated (grpc code 16)."""
+    """Anonymous (нет токена) → 401 UNAUTHENTICATED (grpc 16)."""
     return [
         f"pm.test('[{case_id}] UNAUTH: status 401', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(401));",
         "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
@@ -69,41 +82,85 @@ def unauth_asserts(case_id):
 
 
 def notfound_asserts(case_id):
-    """Non-existent resource: FGA has no tuple → `no path` → 404 NOT_FOUND for all authenticated users.
-    Security note: this is intentional — we don't distinguish 'missing' from 'denied' for garbage IDs."""
+    """Object-scoped `/Get`-deny → existence-hiding: 404 NOT_FOUND (grpc 5).
+    Одинаков для «нет такого» и «есть-но-не-твой» (anti-enumeration)."""
     return [
-        f"pm.test('[{case_id}] NF: status 404 (garbage id, no FGA path)', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(404));",
+        f"pm.test('[{case_id}] NF: status 404 (read-deny existence-hiding)', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.equal(404));",
         "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
         f"pm.test('[{case_id}] NF: grpc code 5 (NOT_FOUND)', () => pm.expect(j && j.code, JSON.stringify(j)).to.equal(5));",
     ]
 
 
 def allow_asserts(case_id):
+    """ALLOW — авторизованный субъект НЕ получает 403/401 (200/400/404/409 — на
+    усмотрение downstream-валидации; важно лишь отсутствие authz-отказа)."""
     return [
         f"pm.test('[{case_id}] ALLOW: not 403 PermissionDenied', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-        # дополнительно — не должно быть Unauthenticated (16). Если так — стенд не настроен (нет user) → fail с понятным сообщением.
-        "let _j; try { _j = pm.response.json(); } catch(e) { _j = null; }",
-        f"pm.test('[{case_id}] ALLOW: not Unauthenticated (16)', () => pm.expect(_j && _j.code, JSON.stringify(_j)).to.not.equal(16));",
+        f"pm.test('[{case_id}] ALLOW: not 401 Unauthenticated', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));",
     ]
 
 
-def emit(case_id_prefix, title, scope, method, path, body, subject):
+def list_allow_asserts(case_id):
+    """List с доступом → scope-filtered 200 (не 403, не 401). Тело может быть непустым."""
+    return [
+        f"pm.test('[{case_id}] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
+        f"pm.test('[{case_id}] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));",
+    ]
+
+
+def list_deny_asserts(case_id, list_key):
+    """List без доступа → 403 (gated List RPC) ИЛИ 200 + ПУСТОЙ список (scope-filtered).
+    200 + непустой список чужого project'а = LEAK (валит тест)."""
+    return [
+        "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+        (
+            f"pm.test('[{case_id}] LIST no-access: 403 OR 200+empty (no leak)', () => {{\n"
+            "  const code = pm.response.code;\n"
+            "  if (code === 403) return;\n"
+            "  pm.expect(code, 'expected 403 or 200, body: ' + pm.response.text()).to.equal(200);\n"
+            f"  const arr = (j && j['{list_key}']) || [];\n"
+            "  pm.expect(arr.length, 'no-access List must be scope-filtered to EMPTY (LEAK!): ' + pm.response.text()).to.equal(0);\n"
+            "});"
+        ),
+    ]
+
+
+def emit(case_id_prefix, title, scope, method, path, body, subject, mode="gate", list_key=None):
+    """mode:
+        gate — стандартный ALLOW/DENY по EXPECT[scope][code] (Create / admin-only).
+        list — scope-filtered List: ANON→401; иначе has-access→200, no-access→403|200+empty.
+        nf   — object-scoped `/Get` на garbage id → 404 (existence-hiding); ANON→401.
+        deny — object-scoped `/Update|/Delete` на garbage id → 403; ANON→401.
+    """
     code, label, auth = subject
-    decision = EXPECT[scope][code]
-    case_id = f"AUTHZ-{case_id_prefix}-{code}"
-    if decision == "DENY":
-        # ANON (no token) → Unauthenticated 401/code-16; authenticated user denied → 403/code-7.
-        asserts = unauth_asserts(case_id) if code == "ANON" else deny_asserts(case_id)
-    elif decision == "NF":
-        # Garbage-id on resource with no FGA tuple → 404 NOT_FOUND (security: no distinction between missing/denied).
-        # ANON still gets 401 (unauthenticated check happens before FGA lookup).
-        asserts = unauth_asserts(case_id) if code == "ANON" else notfound_asserts(case_id)
-    else:
-        asserts = allow_asserts(case_id)
+    cid = f"AUTHZ-{case_id_prefix}-{code}"
+    if mode == "list":
+        if code == "ANON":
+            decision, asserts = "UNAUTH", unauth_asserts(cid)
+        else:
+            access = EXPECT[scope][code]
+            if access == "ALLOW":
+                decision, asserts = "LIST-ALLOW", list_allow_asserts(cid)
+            else:
+                decision, asserts = "LIST-DENY", list_deny_asserts(cid, list_key)
+    elif mode == "nf":
+        decision = "UNAUTH" if code == "ANON" else "NF"
+        asserts = unauth_asserts(cid) if code == "ANON" else notfound_asserts(cid)
+    elif mode == "deny":
+        decision = "UNAUTH" if code == "ANON" else "DENY"
+        asserts = unauth_asserts(cid) if code == "ANON" else deny_asserts(cid)
+    else:  # gate
+        decision = EXPECT[scope][code]
+        if decision == "DENY":
+            asserts = unauth_asserts(cid) if code == "ANON" else deny_asserts(cid)
+        else:
+            asserts = allow_asserts(cid)
+
+    is_pos = decision in ("ALLOW", "LIST-ALLOW", "NF", "LIST-DENY")
     CASES.append(Case(
-        id=case_id,
+        id=cid,
         title=f"[{decision}] {title} as {label} ({scope})",
-        classes=["AUTHZ", "NEG" if decision == "DENY" else "POS"],
+        classes=["AUTHZ", "POS" if is_pos else "NEG"],
         priority="P1",
         steps=[Step(name=method.lower(), method=method, path=path, body=body, auth=auth, test_script=asserts)],
     ))
@@ -113,58 +170,50 @@ def emit(case_id_prefix, title, scope, method, path, body, subject):
 # RESOURCES — определение CRUD-эндпоинтов VPC
 # ---------------------------------------------------------------------------
 
-# Per-resource: ((prefix, "name", scope-own, scope-cross, seedOwn, seedCross), create_body_extra)
-# Формат паттернов CRUD — для VPC project-scoped ресурсов:
-#   Create (POST /vpc/v1/<resource>, body has projectId)
-#   List   (GET  /vpc/v1/<resource>?projectId=<X>)
-#   Get    (GET  /vpc/v1/<resource>/<id>)
-#   Update (PATCH /vpc/v1/<resource>/<id>)
-#   Delete (DELETE /vpc/v1/<resource>/<id>)
-# Для Get/Update/Delete — используем `garbageVpcId` как id (existence не нужно
-# проверять; DENY возвращает 403 ДО repo, ALLOW возвращает NotFound (404) что нас устраивает).
-
+# Для Get/Update/Delete используем well-formed-но-несуществующий id: prefix `enp`
+# распознаётся как валидный (api-gateway не отдаёт 400 InvalidArgument), длина 20 →
+# id проходит формат-валидацию gateway'я и доходит до FGA Check → deny.
+#   `/Get`            → existence-hiding 404 (NF).
+#   `/Update|/Delete` → 403 (мутация-deny, existence НЕ скрывается).
 GARBAGE_ID = "enpnonexistent000001"
 
-# (resource, create_path, create_body_template, list_path_template, get_update_delete_path_template, name_field)
-# create_body_template: f-string с {{projectId}} placeholder для project; "{{name}}-{{runId}}" suffix.
+
 def define_resource_cases(resource_name, plural, create_body_extra=None, supports_update=True):
-    """Генерирует CRUD-проверки для одного project-scoped VPC ресурса."""
+    """Генерирует authz-проверки для одного project-scoped VPC ресурса."""
     create_body_extra = create_body_extra or {}
     plural_path = f"/vpc/v1/{plural}"
 
     for subj in SUBJECTS:
-        # === Create в own project A1 ===
+        # === Create в own project A1 (editor-scope) ===
         body_own = {"projectId": "{{projectA1Id}}", "name": f"authz-{resource_name}-{subj[0].lower()}-own-{{{{runId}}}}", **create_body_extra}
         emit(f"{resource_name.upper()}-CR-OWN", f"Create {resource_name} в project-A1", "project-A1",
-             "POST", plural_path, body_own, subj)
+             "POST", plural_path, body_own, subj, mode="gate")
 
         # === Create в cross-account project B1 ===
         body_cross = {"projectId": "{{projectB1Id}}", "name": f"authz-{resource_name}-{subj[0].lower()}-cross-{{{{runId}}}}", **create_body_extra}
         emit(f"{resource_name.upper()}-CR-CROSS", f"Create {resource_name} в project-B1 (cross-account)", "project-B1",
-             "POST", plural_path, body_cross, subj)
+             "POST", plural_path, body_cross, subj, mode="gate")
 
-        # === List в own project ===
+        # === List в own project (scope-filtered) ===
         emit(f"{resource_name.upper()}-LS-OWN", f"List {plural} в project-A1", "project-A1",
-             "GET", f"{plural_path}?projectId={{{{projectA1Id}}}}", None, subj)
+             "GET", f"{plural_path}?projectId={{{{projectA1Id}}}}", None, subj, mode="list", list_key=plural)
 
-        # === List в cross-account project ===
+        # === List в cross-account project (scope-filtered) ===
         emit(f"{resource_name.upper()}-LS-CROSS", f"List {plural} в project-B1 (cross-account)", "project-B1",
-             "GET", f"{plural_path}?projectId={{{{projectB1Id}}}}", None, subj)
+             "GET", f"{plural_path}?projectId={{{{projectB1Id}}}}", None, subj, mode="list", list_key=plural)
 
-        # === Get garbage-id ===
-        # Non-existent resource has no FGA tuple → `no path` → 404 for authenticated users,
-        # 401 for ANON. Scope "garbage-perresource-vpc" encodes this expected outcome.
-        emit(f"{resource_name.upper()}-GT-OWN", f"Get {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
-             "GET", f"{plural_path}/{GARBAGE_ID}", None, subj)
+        # === Get garbage-id → existence-hiding 404 ===
+        emit(f"{resource_name.upper()}-GT-OWN", f"Get {resource_name} (well-formed nonexistent id)", "project-A1",
+             "GET", f"{plural_path}/{GARBAGE_ID}", None, subj, mode="nf")
 
         if supports_update:
-            # === Update garbage-id ===
-            emit(f"{resource_name.upper()}-UP-OWN", f"Update {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
-                 "PATCH", f"{plural_path}/{GARBAGE_ID}", {"name": "x"}, subj)
+            # === Update garbage-id → mutation-deny 403 ===
+            emit(f"{resource_name.upper()}-UP-OWN", f"Update {resource_name} (well-formed nonexistent id)", "project-A1",
+                 "PATCH", f"{plural_path}/{GARBAGE_ID}", {"name": "x"}, subj, mode="deny")
 
-        # === Delete garbage-id ===
-        emit(f"{resource_name.upper()}-DL-OWN", f"Delete {resource_name} (garbage id — no FGA path)", "garbage-perresource-vpc",
-             "DELETE", f"{plural_path}/{GARBAGE_ID}", None, subj)
+        # === Delete garbage-id → mutation-deny 403 ===
+        emit(f"{resource_name.upper()}-DL-OWN", f"Delete {resource_name} (well-formed nonexistent id)", "project-A1",
+             "DELETE", f"{plural_path}/{GARBAGE_ID}", None, subj, mode="deny")
 
 
 # Network
@@ -196,43 +245,43 @@ define_resource_cases("nic", "networkInterfaces", create_body_extra={
 
 
 # ---------------------------------------------------------------------------
-# AddressPool — admin/internal, все 6 субъектов DENY на mutate
+# AddressPool — admin-only (cluster system_admin); все 6 субъектов DENY
 # ---------------------------------------------------------------------------
 
+APL_GARBAGE_ID = "aplnonexistent000001"
+
 for subj in SUBJECTS:
-    # Пустой permission-каталог → любой аутентифицированный субъект может создать
-    # AddressPool; ANON по-прежнему получает 401.
-    emit("APL-CR", "Create AddressPool (empty catalog — all authenticated ALLOW)", "addresspool-open-catalog",
+    # Create AddressPool — admin-only: каждый аутентифицированный без system_admin → 403.
+    emit("APL-CR", "Create AddressPool (admin-only)", "addresspool-admin-only",
          "POST", "/vpc/v1/addressPools",
          {"name": f"authz-apl-{subj[0].lower()}-{{{{runId}}}}",
           "kind": "EXTERNAL_PUBLIC",
           "zoneId": "{{zoneA}}",
-          "v4CidrBlocks": ["198.51.100.0/24"]}, subj)
-    # Garbage-id: no FGA tuple → 404 for authenticated users, 401 for ANON.
-    emit("APL-UP", "Update AddressPool (garbage id — no FGA path)", "garbage-perresource-vpc",
-         "PATCH", "/vpc/v1/addressPools/aplnonexistent00000", {"name": "x"}, subj)
-    emit("APL-DL", "Delete AddressPool (garbage id — no FGA path)", "garbage-perresource-vpc",
-         "DELETE", "/vpc/v1/addressPools/aplnonexistent00000", None, subj)
+          "v4CidrBlocks": ["198.51.100.0/24"]}, subj, mode="gate")
+    # Update/Delete nonexistent AddressPool — admin-only мутация: non-admin → 403.
+    emit("APL-UP", "Update AddressPool (admin-only, nonexistent id)", "addresspool-admin-only",
+         "PATCH", f"/vpc/v1/addressPools/{APL_GARBAGE_ID}", {"name": "x"}, subj, mode="gate")
+    emit("APL-DL", "Delete AddressPool (admin-only, nonexistent id)", "addresspool-admin-only",
+         "DELETE", f"/vpc/v1/addressPools/{APL_GARBAGE_ID}", None, subj, mode="gate")
 
 
 # ---------------------------------------------------------------------------
-# Cross-domain validation cases (CD-*)
+# Cross-domain / data-leak cases
 # ---------------------------------------------------------------------------
 
-EXPECT["cross-domain-subnet-from-victim"] = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
-# AddressPool.List — admin-only (cluster system_admin): non-admin субъект НЕ может
-# перечислить инфраструктурные пулы (anti data-leak). Только cluster-admin допущен.
-EXPECT["data-leak-addresspool-list"]      = {"ANON":"DENY","NOB":"DENY","PA1":"DENY","AAA":"DENY","AAB":"DENY","INV":"DENY"}
+# AddressPool.List на public endpoint — admin-only (cluster system_admin): non-admin
+# субъект НЕ может перечислить инфраструктурные пулы (anti data-leak). 403 у всех.
+for subj in SUBJECTS:
+    emit("DATA-LEAK-APL-LS", "AddressPool.List на public listener (infra data-leak guard)",
+         "addresspool-admin-only", "GET", "/vpc/v1/addressPools", None, subj, mode="gate")
 
-# CD-1: AAA пытается создать Subnet в project-A1 ссылаясь на network-B1 (cross-account)
-# Должно DENY — peer-validation должна обнаружить что network принадлежит другому account.
+# Create Subnet в project-A1 со ссылкой на network из cross-account project-B1.
+# Authz-граница здесь — право создавать subnet в project-A1 (editor-scope): субъекты
+# без A1-доступа → 403; с доступом → authz пропускает (cross-account network-ref
+# отбивается peer-validation downstream, не в этой суите). Проверяем именно
+# authz-границу project-A1 editor-scope.
 for subj in SUBJECTS:
     emit("CD-SUBNET-XACCT", "Create Subnet ссылающийся на network из cross-account project",
-         "cross-domain-subnet-from-victim", "POST", "/vpc/v1/subnets",
+         "project-A1", "POST", "/vpc/v1/subnets",
          {"projectId":"{{projectA1Id}}","name": f"cd-{subj[0].lower()}-{{{{runId}}}}",
-          "networkId":"{{seedNetworkB1Id}}","zoneId":"{{zoneA}}","v4CidrBlocks":["10.88.0.0/16"]}, subj)
-
-# AddressPool.List на public endpoint — все должны DENY (admin-only)
-for subj in SUBJECTS:
-    emit("DATA-LEAK-APL-LS", "AddressPool.List на public listener (HIGH-2 data leak)",
-         "data-leak-addresspool-list", "GET", "/vpc/v1/addressPools", None, subj)
+          "networkId":"{{seedNetworkB1Id}}","zoneId":"{{zoneA}}","v4CidrBlocks":["10.88.0.0/16"]}, subj, mode="gate")
