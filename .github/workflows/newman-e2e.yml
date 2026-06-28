@@ -345,6 +345,36 @@ jobs:
             echo "WARN: no jwtBootstrap in fixtures output — skipping FGA convergence gate"
           fi
 
+          # --- gate: VPC scope-filter convergence (negative canary) ----------
+          # The cluster-admin canary above proves the IAM bootstrap-grant landed,
+          # but VPC resource owner-tuples drain through a SEPARATE pipeline
+          # (vpc fga_register_outbox → vpc drainer → iam RegisterResource → FGA).
+          # Until those land, a no-bind subject's ListObjects(vpc_network, v_list)
+          # can transiently flap non-empty → the LS-*-NOB suites would see a leak.
+          # Poll the EXACT leak-condition the suites assert: a no-bind subject must
+          # see an EMPTY VPC network list in project-A1. Deterministic; if it never
+          # converges the WARN surfaces a real over-grant (not timing).
+          JWT_NOB=$(python3 -c 'import json; print(json.load(open("tests/authz-fixtures/out/jwts.json")).get("jwtNoBindings",""))' 2>/dev/null || true)
+          A1=$(python3 -c 'import json; print(json.load(open("tests/authz-fixtures/out/authz-fixtures.json")).get("projectA1Id",""))' 2>/dev/null || true)
+          if [ -n "$JWT_NOB" ] && [ -n "$A1" ]; then
+            echo "=== gate: waiting for VPC scope-filter convergence (no-bind sees empty) ==="
+            vconv=""
+            for i in $(seq 1 72); do
+              n=$(curl -s -H "Authorization: Bearer ${JWT_NOB}" \
+                "http://localhost:18080/vpc/v1/networks?projectId=${A1}&pageSize=100" 2>/dev/null \
+                | python3 -c 'import json,sys
+try:
+    print(len(json.load(sys.stdin).get("networks", [])))
+except Exception:
+    print("err")' 2>/dev/null || echo err)
+              if [ "$n" = "0" ]; then
+                vconv=1; echo "VPC scope-filter converged (no-bind empty) after $((i*5))s"; break
+              fi
+              sleep 5
+            done
+            [ -n "$vconv" ] || echo "WARN: no-bind STILL sees networks after 360s — possible real over-grant (not just timing)"
+          fi
+
           # --- newman: kacho-iam --------------------------------------------
           cd "${GITHUB_WORKSPACE}/kacho-iam"
           python3 tests/newman/scripts/gen.py
