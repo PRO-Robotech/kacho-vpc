@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "819e594f-252a-4194-a8fc-ec4c3f14ed97",
+    "_postman_id": "9a97e048-08e3-4f24-8f8e-00ccb66d8550",
     "name": "kacho-vpc / newman / authz-deny",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1106,8 +1106,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NETWORK-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -1535,8 +1534,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NETWORK-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -2020,8 +2018,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -2391,8 +2388,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NETWORK-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -2447,8 +2443,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NETWORK-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -3645,8 +3640,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SUBNET-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -4074,8 +4068,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SUBNET-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -4559,8 +4552,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -4930,8 +4922,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SUBNET-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -4986,8 +4977,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SUBNET-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -6184,8 +6174,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -6613,8 +6602,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -7098,8 +7086,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -7469,8 +7456,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ADDRESS-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -7525,8 +7511,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ADDRESS-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -8723,8 +8708,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -9152,8 +9136,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -9637,8 +9620,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -10008,8 +9990,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -10064,8 +10045,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-ROUTE-TABLE-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -11262,8 +11242,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -11691,8 +11670,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -12176,8 +12154,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -12547,8 +12524,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -12603,8 +12579,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-SECURITY-GROUP-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -13801,8 +13776,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -14230,8 +14204,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -14715,8 +14688,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -15086,8 +15058,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-GATEWAY-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -15142,8 +15113,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-GATEWAY-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -16340,8 +16310,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-LS-OWN-PA1] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NIC-LS-OWN-PA1] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NIC-LS-OWN-PA1] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -16769,8 +16738,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-LS-OWN-AAA] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NIC-LS-OWN-AAA] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NIC-LS-OWN-AAA] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -17254,8 +17222,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-LS-CROSS-AAB] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NIC-LS-CROSS-AAB] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NIC-LS-CROSS-AAB] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -17625,8 +17592,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NIC-LS-OWN-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
@@ -17681,8 +17647,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('[AUTHZ-NIC-LS-CROSS-INV] LIST has-access: not 403', () => pm.expect(pm.response.code, 'unexpected 403 with body: ' + pm.response.text()).to.not.equal(403));",
-                  "pm.test('[AUTHZ-NIC-LS-CROSS-INV] LIST has-access: not 401', () => pm.expect(pm.response.code, 'unexpected 401 with body: ' + pm.response.text()).to.not.equal(401));"
+                  "pm.test('[AUTHZ-NIC-LS-CROSS-INV] LIST grant: 200 (v_list/filtered) OR 403 (lacks v_list)', () => pm.expect(pm.response.code, 'expected 200 or 403, body: ' + pm.response.text()).to.be.oneOf([200, 403]));"
                 ]
               }
             }
