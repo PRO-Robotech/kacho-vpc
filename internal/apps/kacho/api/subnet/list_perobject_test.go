@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -182,17 +183,17 @@ func TestSubnetListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // empty subject (system principal) → unfiltered passthrough (без вызова FGA).
-func TestSubnetListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestSubnetListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedSubnetsLabeled(t, kr, "prj_1", "enp_net1", "e9b_a", "e9b_b")
 
 	filter := &fakeListFilter{allowed: []string{"e9b_a"}}
 	uc := makeSubnetPerObjectUC(kr, filter)
 
-	subs, _, err := uc.Execute(context.Background(), "", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
+	subs, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, SubnetFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, subs, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // no-leak Get: subject без гранта на существующую подсеть → NotFound (НЕ
@@ -271,4 +272,19 @@ func TestSubnetListPerObject_ProjectIDRequired(t *testing.T) {
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestSubnetListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedSubnetsLabeled(t, kr, "prj_1", "enp_net1", "e9b_a", "e9b_b")
+
+	filter := &fakeListFilter{allowed: []string{"subs_unused"}}
+	uc := makeSubnetPerObjectUC(kr, filter)
+
+	subs, _, err := uc.Execute(context.Background(), "", SubnetFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, subs, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }

@@ -46,7 +46,11 @@ func (u *ListSecurityGroupsUseCase) Execute(ctx context.Context, subjectID strin
 	}
 	defer func() { _ = rd.Close() }()
 
-	if u.filter == nil || subjectID == "" {
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon) при включённом фильтре → fail-closed (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
 		return rd.SecurityGroups().List(ctx, f, p)
 	}
 	allowedIDs, bypass, ferr := u.filter.ListAllowedIDs(ctx, subjectID,

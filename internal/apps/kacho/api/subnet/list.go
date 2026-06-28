@@ -50,8 +50,12 @@ func (u *ListSubnetsUseCase) Execute(ctx context.Context, subjectID string, f Su
 	}
 	defer func() { _ = r.Close() }()
 
-	if u.filter == nil || subjectID == "" {
-		// list-filter disabled (dev) или system principal → unfiltered passthrough.
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon) при включённом фильтре → fail-closed (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
+		// list-filter disabled (dev) либо доверенный system-вызов → unfiltered passthrough.
 		return r.Subnets().List(ctx, f, p)
 	}
 

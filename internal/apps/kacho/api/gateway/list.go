@@ -44,7 +44,11 @@ func (u *ListGatewaysUseCase) Execute(ctx context.Context, subjectID string, f G
 	}
 	defer func() { _ = rd.Close() }()
 
-	if u.filter == nil || subjectID == "" {
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon) при включённом фильтре → fail-closed (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
 		gws, nextToken, lerr := rd.Gateways().List(ctx, f, p)
 		if lerr != nil {
 			return nil, "", serviceerr.MapRepoErr(lerr)

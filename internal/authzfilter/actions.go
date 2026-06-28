@@ -3,6 +3,15 @@
 
 package authzfilter
 
+// SystemSubject — явный sentinel доверенного system-вызова (internal, без
+// user-identity), для которого List-фильтр пропускается (unfiltered passthrough).
+// Намеренно НЕ валидный FGA-subject (символ `@` вне FGA-формата `type:id`), чтобы
+// его нельзя было спутать с реальным subject'ом. List-use-case отличает его от
+// ПУСТОГО subject: пустой = «identity не извлечён» → fail-closed (пустой список),
+// SystemSubject = «доверенный system» → passthrough. Источник — pbconv по
+// Principal.Type=="system".
+const SystemSubject = "@system"
+
 // FGA object types VPC-домена (передаются в AuthorizeService.ListObjects как
 // resource_type). Должны совпадать с closed-table objectTypes в kacho-iam
 // (например "vpc.subnet" → "vpc_subnet").

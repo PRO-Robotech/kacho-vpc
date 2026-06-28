@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -176,17 +177,17 @@ func TestRouteTableListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // пустой subject (system principal) → нефильтрованный passthrough (без вызова FGA).
-func TestRouteTableListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestRouteTableListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedRouteTablesLabeled(t, kr, "prj_1", "enp_net1", "rtb_a", "rtb_b")
 
 	filter := &fakeListFilter{allowed: []string{"rtb_a"}}
 	uc := NewListRouteTablesUseCase(kr, filter)
 
-	rts, _, err := uc.Execute(context.Background(), "", RouteTableFilter{ProjectID: "prj_1"}, Pagination{})
+	rts, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, RouteTableFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, rts, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // project_id по-прежнему обязателен (контракт не меняется).
@@ -265,4 +266,19 @@ func TestRouteTableGetPerObject_NilFilterPassthrough(t *testing.T) {
 	got, err := uc.Execute(context.Background(), "user:usr_alice", "rtb_y")
 	require.NoError(t, err)
 	assert.Equal(t, "rtb_y", got.ID)
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestRouteTableListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedRouteTablesLabeled(t, kr, "prj_1", "enp_net1", "rtb_a", "rtb_b")
+
+	filter := &fakeListFilter{allowed: []string{"rts_unused"}}
+	uc := NewListRouteTablesUseCase(kr, filter)
+
+	rts, _, err := uc.Execute(context.Background(), "", RouteTableFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, rts, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }

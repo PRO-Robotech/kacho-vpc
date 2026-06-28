@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -176,17 +177,17 @@ func TestAddressListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // empty subject (system principal) → unfiltered passthrough (без FGA-вызова).
-func TestAddressListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestAddressListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedAddressesLabeled(t, kr, "prj_1", "adr_a", "adr_b")
 
 	filter := &fakeListFilter{allowed: []string{"adr_a"}}
 	uc := NewListAddressesUseCase(kr, filter)
 
-	addrs, _, err := uc.Execute(context.Background(), "", AddressFilter{ProjectID: "prj_1"}, Pagination{})
+	addrs, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, AddressFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, addrs, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // project_id остается обязательным.
@@ -265,4 +266,19 @@ func TestAddressGetPerObject_NilFilterPassthrough(t *testing.T) {
 	got, err := uc.Execute(context.Background(), "user:usr_alice", "adr_y")
 	require.NoError(t, err)
 	assert.Equal(t, "adr_y", got.ID)
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestAddressListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedAddressesLabeled(t, kr, "prj_1", "adr_a", "adr_b")
+
+	filter := &fakeListFilter{allowed: []string{"addrs_unused"}}
+	uc := NewListAddressesUseCase(kr, filter)
+
+	addrs, _, err := uc.Execute(context.Background(), "", AddressFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, addrs, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }

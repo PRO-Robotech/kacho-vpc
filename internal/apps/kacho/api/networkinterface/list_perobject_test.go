@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -177,17 +178,17 @@ func TestNetworkInterfaceListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // пустой subject (system principal) → нефильтрованный passthrough, без FGA-вызова.
-func TestNetworkInterfaceListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestNetworkInterfaceListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedNICsLabeled(t, kr, "prj_1", "sub_net1", "nic_a", "nic_b")
 
 	filter := &fakeListFilter{allowed: []string{"nic_a"}}
 	uc := NewListNetworkInterfacesUseCase(kr, filter)
 
-	nics, _, err := uc.Execute(context.Background(), "", NetworkInterfaceFilter{ProjectID: "prj_1"}, Pagination{})
+	nics, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, NetworkInterfaceFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, nics, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // project_id по-прежнему обязателен (контракт не меняется).
@@ -266,4 +267,19 @@ func TestNetworkInterfaceGetPerObject_NilFilterPassthrough(t *testing.T) {
 	got, err := uc.Execute(context.Background(), "user:usr_alice", "nic_y")
 	require.NoError(t, err)
 	assert.Equal(t, "nic_y", got.ID)
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestNetworkInterfaceListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedNICsLabeled(t, kr, "prj_1", "sub_net1", "nic_a", "nic_b")
+
+	filter := &fakeListFilter{allowed: []string{"nics_unused"}}
+	uc := NewListNetworkInterfacesUseCase(kr, filter)
+
+	nics, _, err := uc.Execute(context.Background(), "", NetworkInterfaceFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, nics, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }

@@ -43,7 +43,11 @@ func (u *ListNetworkInterfacesUseCase) Execute(ctx context.Context, subjectID st
 	}
 	defer func() { _ = rd.Close() }()
 
-	if u.filter == nil || subjectID == "" {
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon) при включённом фильтре → fail-closed (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
 		out, next, lerr := rd.NetworkInterfaces().List(ctx, f, p)
 		if lerr != nil {
 			return nil, "", serviceerr.MapRepoErr(lerr)

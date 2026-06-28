@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -90,6 +91,22 @@ func TestNetworkListPerObject_WildcardBypassReturnsAll(t *testing.T) {
 	assert.Len(t, nets, 2)
 }
 
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре НЕ должен давать
+// unfiltered passthrough (leak всех networks проекта). Пустой subject — это
+// «не знаю, кто ты» → fail-closed (пустой список), НЕ «доверенный system-вызов».
+func TestNetworkListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedNetworksLabeled(t, kr, "prj_1", "net_secret1", "net_secret2")
+
+	filter := &fakeNetListFilter{allowed: []string{"net_secret1"}}
+	uc := NewListNetworksUseCase(kr, filter)
+
+	nets, _, err := uc.Execute(context.Background(), "", NetworkFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, nets, "empty subject + filter enabled → fail-closed empty, NOT unfiltered passthrough (leak)")
+}
+
 // No-leak: пустой grant → пустой список.
 func TestNetworkListPerObject_EmptyGrantEmpty(t *testing.T) {
 	kr := kachomock.NewRepository()
@@ -114,13 +131,16 @@ func TestNetworkListPerObject_FailClosed(t *testing.T) {
 }
 
 // Пустой subject → passthrough, без вызова FGA.
-func TestNetworkListPerObject_EmptySubjectPassthrough(t *testing.T) {
+// Явный доверенный system-вызов (authzfilter.SystemSubject) → unfiltered
+// passthrough (полный список, фильтр не зовётся). Отличается от пустого subject
+// (anon, fail-closed): system несёт явный sentinel.
+func TestNetworkListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedNetworksLabeled(t, kr, "prj_1", "net_a", "net_b")
 
 	filter := &fakeNetListFilter{allowed: []string{"net_a"}}
 	uc := NewListNetworksUseCase(kr, filter)
-	nets, _, err := uc.Execute(context.Background(), "", NetworkFilter{ProjectID: "prj_1"}, Pagination{})
+	nets, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, NetworkFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, nets, 2)
 	assert.Equal(t, 0, filter.calls)

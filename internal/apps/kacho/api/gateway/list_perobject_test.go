@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -177,17 +178,17 @@ func TestGatewayListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // empty subject (system principal) → нефильтрованный passthrough (без FGA-вызова).
-func TestGatewayListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestGatewayListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedGatewaysLabeled(t, kr, "prj_1", "gtw_a", "gtw_b")
 
 	filter := &fakeListFilter{allowed: []string{"gtw_a"}}
 	uc := NewListGatewaysUseCase(kr, filter)
 
-	gws, _, err := uc.Execute(context.Background(), "", GatewayFilter{ProjectID: "prj_1"}, Pagination{})
+	gws, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, GatewayFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, gws, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // project_id по-прежнему обязателен (контракт неизменен).
@@ -266,4 +267,19 @@ func TestGatewayGetPerObject_NilFilterPassthrough(t *testing.T) {
 	got, err := uc.Execute(context.Background(), "user:usr_alice", "gtw_y")
 	require.NoError(t, err)
 	assert.Equal(t, "gtw_y", got.ID)
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestGatewayListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedGatewaysLabeled(t, kr, "prj_1", "gtw_a", "gtw_b")
+
+	filter := &fakeListFilter{allowed: []string{"gws_unused"}}
+	uc := NewListGatewaysUseCase(kr, filter)
+
+	gws, _, err := uc.Execute(context.Background(), "", GatewayFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, gws, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }
