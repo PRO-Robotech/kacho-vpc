@@ -63,8 +63,6 @@ jobs:
       - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-corelib, ref: main, path: kacho-corelib }
       - uses: actions/checkout@v4
-        with: { repository: PRO-Robotech/kacho-proto, ref: main, path: kacho-proto }
-      - uses: actions/checkout@v4
         with: { repository: PRO-Robotech/kacho-iam, ref: main, path: kacho-iam }
       # kacho-geo leaf-service (Geography Region/Zone):
       # helm dep (vendored sub-chart) + Dockerfile build context for kacho-geo:dev.
@@ -126,15 +124,28 @@ jobs:
       # workspace root). Режим определяем по самому Dockerfile, чтобы петля была
       # устойчива к независимой миграции каждого репо. umbrella chart включает
       # kacho-nlb sub-chart.
+      #
+      # Сервисы, чей multi-sibling Dockerfile всё ещё `COPY kacho-proto`, собрать
+      # из исходников больше нельзя — kacho-proto выведен из эксплуатации (proto
+      # вынесен per-service / в kacho-corelib). До миграции их Dockerfile'ов на
+      # single-repo тянем опубликованный main-образ (как для kacho-geo).
       - name: build service images
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
+          declare -A PUBLISHED=(
+            [iam]="docker.io/prorobotech/kacho-iam:main-b4c1b7e1"
+            [nlb]="docker.io/prorobotech/kacho-nlb:main-6b9cc941"
+          )
           for svc in vpc iam compute api-gateway nlb; do
             df="kacho-$svc/Dockerfile"
             if grep -qE '^[[:space:]]*COPY[[:space:]]+\.[[:space:]]+\.' "$df"; then
               echo "=== build kacho-$svc:dev (single-repo, context=kacho-$svc) ==="
               docker build -f "$df" -t "kacho-$svc:dev" "kacho-$svc"
+            elif grep -qE 'COPY[[:space:]]+\.?\.?/?kacho-proto' "$df"; then
+              echo "=== pull kacho-$svc:dev from ${PUBLISHED[$svc]} (multi-sibling Dockerfile needs retired kacho-proto) ==="
+              docker pull "${PUBLISHED[$svc]}"
+              docker tag "${PUBLISHED[$svc]}" "kacho-$svc:dev"
             else
               echo "=== build kacho-$svc:dev (multi-sibling, context=workspace root) ==="
               docker build -f "$df" -t "kacho-$svc:dev" .
@@ -303,6 +314,62 @@ jobs:
           bash tests/authz-fixtures/setup.sh
           echo "=== authz-fixtures.json ==="
           cat tests/authz-fixtures/out/authz-fixtures.json
+
+          # --- wait for FGA pipeline to converge ----------------------------
+          # The async authz pipeline on a cold kind stack is multi-stage:
+          # bootstrap-admin reconciler → fga_outbox → drainer → OpenFGA (plus the
+          # rsab reconciler materialising per-object v_* tuples from AccessBindings).
+          # setup.sh's in-fixture cluster-admin readiness probe (180s) can expire
+          # before the drainer clears its backlog, so newman would run against a
+          # NON-converged FGA store → per-object authz flaps (List scope-filter
+          # leak / has-access denied). Gate newman on the cluster-admin grant being
+          # queryable (the drainer canary — the bootstrap grant is the last/slowest
+          # to land), then a short settle for the rsab materialisation, before
+          # running the suites. This makes the matrix deterministic instead of
+          # racing the drainer.
+          JWT_BOOT=$(python3 -c 'import json,sys; print(json.load(open("tests/authz-fixtures/out/jwts.json")).get("jwtBootstrap",""))' 2>/dev/null || true)
+          if [ -n "$JWT_BOOT" ]; then
+            echo "=== gate: waiting for FGA convergence (cluster-admin queryable) ==="
+            conv=""
+            for i in $(seq 1 144); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer ${JWT_BOOT}" \
+                "http://localhost:18080/iam/v1/accessBindings:listByResource?resourceType=cluster&resourceId=cluster_kacho_root" 2>/dev/null || echo 000)
+              if [ "$code" = "200" ]; then
+                conv=1; echo "FGA converged (cluster-admin queryable) after $((i*5))s — settling 30s for rsab materialisation"; sleep 30; break
+              fi
+              sleep 5
+            done
+            [ -n "$conv" ] || echo "WARN: FGA not converged after 720s — suites may flap (drainer backlog)"
+          else
+            echo "WARN: no jwtBootstrap in fixtures output — skipping FGA convergence gate"
+          fi
+
+          # --- gate: VPC scope-filter convergence (negative canary) ----------
+          # The cluster-admin canary above proves the IAM bootstrap-grant landed,
+          # but VPC resource owner-tuples drain through a SEPARATE pipeline
+          # (vpc fga_register_outbox → vpc drainer → iam RegisterResource → FGA).
+          # Until those land, a no-bind subject's ListObjects(vpc_network, v_list)
+          # can transiently flap non-empty → the LS-*-NOB suites would see a leak.
+          # Poll the EXACT leak-condition the suites assert: a no-bind subject must
+          # see an EMPTY VPC network list in project-A1. Deterministic; if it never
+          # converges the WARN surfaces a real over-grant (not timing).
+          JWT_NOB=$(python3 -c 'import json; print(json.load(open("tests/authz-fixtures/out/jwts.json")).get("jwtNoBindings",""))' 2>/dev/null || true)
+          A1=$(python3 -c 'import json; print(json.load(open("tests/authz-fixtures/out/authz-fixtures.json")).get("projectA1Id",""))' 2>/dev/null || true)
+          if [ -n "$JWT_NOB" ] && [ -n "$A1" ]; then
+            echo "=== gate: waiting for VPC scope-filter convergence (no-bind sees empty) ==="
+            vconv=""
+            for i in $(seq 1 72); do
+              n=$(curl -s -H "Authorization: Bearer ${JWT_NOB}" \
+                "http://localhost:18080/vpc/v1/networks?projectId=${A1}&pageSize=100" 2>/dev/null \
+                | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('networks', [])))" 2>/dev/null || echo err)
+              if [ "$n" = "0" ]; then
+                vconv=1; echo "VPC scope-filter converged (no-bind empty) after $((i*5))s"; break
+              fi
+              sleep 5
+            done
+            [ -n "$vconv" ] || echo "WARN: no-bind STILL sees networks after 360s — possible real over-grant (not just timing)"
+          fi
 
           # --- newman: kacho-iam --------------------------------------------
           cd "${GITHUB_WORKSPACE}/kacho-iam"

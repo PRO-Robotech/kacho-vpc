@@ -41,6 +41,11 @@ type Options struct {
 	// AllowSystemPrincipal — system-principal (bootstrap) пропускается без
 	// Check (default false). Включать для миграций / фоновых job'ов.
 	AllowSystemPrincipal bool
+
+	// Probe — existence-probe для existence-hiding (Decision 1): object-scoped
+	// deny на отсутствующий vpc-ресурс → ErrNoPath (passthrough → handler 404).
+	// nil → прежнее поведение (только reason-substring "no path" → passthrough).
+	Probe ResourceExistenceProbe
 }
 
 // ErrIAMConnNotConfigured — IAM-conn = nil И break-glass=false. Caller'у
@@ -82,7 +87,7 @@ func NewInterceptor(opts Options) (*authz.Interceptor, error) {
 		return nil, ErrIAMConnNotConfigured
 	}
 
-	client := NewIAMCheckClient(opts.IAMConn)
+	client := NewIAMCheckClientWithProbe(opts.IAMConn, opts.Probe)
 	return authz.NewInterceptor(authz.InterceptorOptions{
 		ServiceName:          opts.ServiceName,
 		Map:                  PermissionMap(),

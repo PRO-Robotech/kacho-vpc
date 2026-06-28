@@ -175,15 +175,14 @@ func TestInterceptor_Unary_UnmappedRPC_Denied(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, st.Code())
 }
 
-// TestInterceptor_Unary_UnmappedInternalRPC_FailClosed — RPC с "Internal" в
-// имени, но НЕ в PermissionMap, тоже fail-closed: name-based эвристики нет,
-// любой незамапленный метод (включая синтетический InternalSyntheticService)
-// даёт PermissionDenied, handler НЕ вызывается, Check НЕ вызывается. Реальные
-// Internal*-RPC замаплены и проходят Check (см.
-// TestInterceptor_Unary_InternalAddressService_Checked).
+// TestInterceptor_Unary_UnmappedInternalRPC_FailClosed — unmapped RPC с "Internal"
+// в имени БОЛЬШЕ НЕ байпасит authz по name-эвристике (это был fail-open вектор на
+// internal-периметре). Любой не-замапленный RPC fail-closed (PermissionDenied):
+// internal RPC, который должен быть exempt, обязан явно стоять в RPCMap
+// (Relation для Check либо Public=true). Handler НЕ вызывается, Check НЕ вызывается.
 func TestInterceptor_Unary_UnmappedInternalRPC_FailClosed(t *testing.T) {
 	intr, calls := newTestInterceptor(t, func(_ context.Context, _, _, _ string) (bool, error) {
-		t.Fatal("Check не должен вызываться для unmapped RPC")
+		t.Fatal("Check не должен вызываться для unmapped RPC (fail-closed до Check)")
 		return false, nil
 	})
 	uIntr := intr.Unary()
@@ -198,11 +197,10 @@ func TestInterceptor_Unary_UnmappedInternalRPC_FailClosed(t *testing.T) {
 
 	_, err := uIntr(ctx, struct{}{}, info, handler)
 	require.Error(t, err)
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.PermissionDenied, st.Code())
-	require.False(t, called, "handler НЕ должен вызываться для unmapped Internal* RPC")
-	require.Equal(t, 0, *calls, "Check НЕ должен вызываться для unmapped RPC")
+	require.Equal(t, codes.PermissionDenied, status.Code(err),
+		"unmapped internal RPC → fail-closed PermissionDenied (нет name-based bypass)")
+	require.False(t, called, "handler НЕ вызывается для unmapped RPC")
+	require.Equal(t, 0, *calls, "Check НЕ вызывается для unmapped RPC (fail-closed до Check)")
 }
 
 // TestInterceptor_Unary_InternalAddressService_Checked — IPAM RPC теперь в Map и

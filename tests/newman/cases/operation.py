@@ -115,13 +115,15 @@ CASES.append(Case(
     title="Failed Operation: error.code/message заполнены, response пуст (REQ-OPS-01)",
     classes=["STATE", "CONF"], priority="P1",
     steps=[
-        # Trigger guaranteed-fail: Subnet.Create в несуществующую сеть.
-        Step(name="trigger-fail", method="POST", path="/vpc/v1/subnets",
+        # Trigger guaranteed async failure: NetworkInterface.Create references a
+        # well-formed but non-existent subnet. NIC.Create performs ALL ref-validation
+        # in its async worker (unlike Subnet.Create, which prechecks its parent network
+        # synchronously and would reject with a sync NotFound), so the parent-subnet
+        # NotFound surfaces as a FAILED Operation — exactly the shape this case asserts.
+        Step(name="trigger-fail", method="POST", path="/vpc/v1/networkInterfaces",
              body={"projectId": "{{_suiteProjectId}}",
-                   "networkId": "enpopfailtest00000000",
-                   "name": "op-fail-shape-{{runId}}",
-                   "zoneId": "{{existingZoneId}}",
-                   "v4CidrBlocks": ["10.236.0.0/24"]},
+                   "subnetId": "sub00000000000000000",
+                   "name": "op-fail-shape-{{runId}}"},
              test_script=[*assert_status(200), *save_from_response("j.id", "opId")]),
         Step(name="poll-and-verify-shape", method="GET", path="/operations/{{opId}}",
              test_script=[

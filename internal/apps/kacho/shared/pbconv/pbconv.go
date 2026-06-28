@@ -10,6 +10,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	operationpb "github.com/PRO-Robotech/kacho-corelib/proto/gen/go/kacho/cloud/operation"
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -39,10 +40,28 @@ func OperationToProto(op *operations.Operation) *operationpb.Operation {
 }
 
 // SubjectFromContext — извлекает FGA-subject ("user:usr_x"/"service_account:sva_x")
-// из Principal запроса; для system-principal возвращает "" (no-auth dev mode).
+// из Principal запроса. Различает ТРИ случая (раньше все три коллапсировали в "",
+// из-за чего List-фильтр трактовал «identity не извлечён» как «доверенный system»
+// и отдавал нефильтрованный список — leak):
+//   - реальный user/service_account → "<type>:<id>" (идёт в ListObjects-фильтр);
+//   - доверенный system-principal → authzfilter.SystemSubject (явный passthrough);
+//   - identity не извлечён (anon / gateway не проставил principal) → "" — это
+//     «не знаю, кто ты», List-use-case обязан fail-closed (пустой список), НЕ passthrough.
 func SubjectFromContext(ctx context.Context) string {
-	p := operations.PrincipalFromContext(ctx)
-	if p.Type == "" || p.ID == "" || p.Type == "system" {
+	// PrincipalFromContextOK различает АНОНИМНЫЙ ctx (principal не устанавливался —
+	// ok=false) от ЯВНО установленного principal. Без этого различения anonymous и
+	// system-principal оба коллапсировали в SystemPrincipal → List-фильтр трактовал
+	// anon как доверенный system и отдавал нефильтрованный список (leak).
+	p, ok := operations.PrincipalFromContextOK(ctx)
+	if !ok {
+		// principal не извлечён (anon / gateway не проставил identity) → fail-closed.
+		return ""
+	}
+	if p.Type == "system" {
+		// явный доверенный system-вызов → passthrough-sentinel.
+		return authzfilter.SystemSubject
+	}
+	if p.Type == "" || p.ID == "" {
 		return ""
 	}
 	return p.Type + ":" + p.ID

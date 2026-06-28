@@ -69,8 +69,33 @@ PRE_GLOBAL = [
     "  const r = Math.floor(Math.random() * 1e9).toString(36);",
     "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
     "}",
-    "pm.environment.set('_suiteProjectId', pm.environment.get('existingProjectId'));",
-    "pm.environment.set('_suiteProjectCrossId', pm.environment.get('existingProjectCrossId'));",
+    "// Suite project scope: prefer the shared authz-fixture project (projectA1Id —",
+    "// the default JWT holds vpc-editor there) over the standalone-dev existingProjectId.",
+    "// Without this the suite would target an ungranted/dead project → every",
+    "// project-scoped mutation is authz-denied (403).",
+    "pm.environment.set('_suiteProjectId', pm.environment.get('projectA1Id') || pm.environment.get('existingProjectId'));",
+    "pm.environment.set('_suiteProjectCrossId', pm.environment.get('projectA2Id') || pm.environment.get('existingProjectCrossId'));",
+    "// Zone is environment-specific (geo seeds Region/Zone; ids differ per deploy).",
+    "// Resolve a live zone id once from the geo catalog; fall back to the committed",
+    "// existingZoneId when geo is unreachable (standalone vpc without geo).",
+    "if (!pm.environment.get('_zoneResolved')) {",
+    "  const __zjwt = pm.environment.get('jwtBootstrap') || pm.environment.get('jwtProjectAdminA1') || '';",
+    "  pm.sendRequest({",
+    "    url: pm.environment.get('baseUrl') + '/geo/v1/zones',",
+    "    method: 'GET',",
+    "    header: { 'Authorization': 'Bearer ' + __zjwt },",
+    "  }, (err, res) => {",
+    "    if (err || !res || res.code !== 200) return;",
+    "    let zs = []; try { zs = (res.json().zones) || []; } catch (e) {}",
+    "    const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+    "    const pick = up.length ? up : zs;",
+    "    if (pick.length) {",
+    "      pm.environment.set('existingZoneId', pick[0].id);",
+    "      pm.environment.set('existingZoneAltId', (pick[1] || pick[0]).id);",
+    "      pm.environment.set('_zoneResolved', '1');",
+    "    }",
+    "  });",
+    "}",
     "// Default auth: projectAdmin on project A1 — sufficient for most happy-path steps.",
     "// Per-step auth= overrides this via item-level pre-request script (_auth_pre_script).",
     "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
@@ -1221,9 +1246,9 @@ def pairwise_subnet_pack():
     # Используем только существующие zone id (zone-{a,b,d}); на несуществующей
     # зоне Subnet.Create отвергается с "Illegal argument zone_id".
     combos = [
-        ("zone-a", "/24", True),  ("zone-a", "/28", False), ("zone-a", "/16", True),
-        ("zone-b", "/24", False), ("zone-b", "/28", True),  ("zone-b", "/16", False),
-        ("zone-d", "/24", True),  ("zone-d", "/28", False), ("zone-d", "/16", True),
+        ("{{zoneA}}", "/24", True),  ("{{zoneA}}", "/28", False), ("{{zoneA}}", "/16", True),
+        ("{{zoneB}}", "/24", False), ("{{zoneB}}", "/28", True),  ("{{zoneB}}", "/16", False),
+        ("{{zoneD}}", "/24", True),  ("{{zoneD}}", "/28", False), ("{{zoneD}}", "/16", True),
     ]
     cases = []
     for i, (zone, prefix, with_dhcp) in enumerate(combos):
@@ -1492,7 +1517,118 @@ def case_to_postman(case: Case) -> Dict:
     }
 
 
+# Zone ids are environment-specific: geo seeds Region/Zone with ids that differ
+# per deploy and are NOT the legacy literals zone-a..d. Resolve them ONCE,
+# synchronously, as the FIRST item of every collection (a real request, so newman
+# blocks on its response before running any case) and publish zoneA..zoneD +
+# existingZoneId/existingZoneAltId. Best-effort: no failing assertion — if geo is
+# unreachable (standalone vpc), the committed env defaults stay in effect.
+_ZONE_SETUP_TEST = [
+    "const code = (pm.response && pm.response.code) || 0;",
+    "let zs = [];",
+    "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+    "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+    "const pick = up.length ? up : zs;",
+    "if (pick.length) {",
+    "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+    "  pm.environment.set('zoneA', at(0));",
+    "  pm.environment.set('zoneB', at(1));",
+    "  pm.environment.set('zoneC', at(2));",
+    "  pm.environment.set('zoneD', at(3));",
+    "  pm.environment.set('existingZoneId', at(0));",
+    "  pm.environment.set('existingZoneAltId', at(1));",
+    "  pm.environment.set('_zoneResolved', '1');",
+    "}",
+]
+
+
+def _zone_setup_item() -> Dict:
+    """Blocking first item: resolve live geo zone ids into zoneA..D env vars."""
+    return {
+        "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+        "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": _ZONE_SETUP_TEST},
+        }],
+        "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{jwtBootstrap}}"}],
+            "url": {
+                "raw": "{{baseUrl}}/geo/v1/zones",
+                "host": ["{{baseUrl}}"],
+                "path": ["geo", "v1", "zones"],
+            },
+        },
+    }
+
+
+# Suites that exercise external-pool IPAM (internal-pool admin CRUD + address
+# external allocation) assume a pre-seeded default EXTERNAL_PUBLIC AddressPool for
+# the primary zone. The dev stand's seed-ipam is a NOOP, so seed it here, once,
+# as cluster-admin (idempotent: 200 first time, 409 thereafter). Soft (no failing
+# assertion) — if seeding cannot run, the dependent cases surface it themselves.
+_POOL_SEED_TEST = [
+    "if (pm.response && pm.response.code === 200) {",
+    "  try { pm.environment.set('_seededDefaultPoolId', pm.response.json().id); } catch (e) {}",
+    "}",
+]
+
+_POOL_SEED_BODY = {
+    "name": "seed-default-external-zonea",
+    "kind": "EXTERNAL_PUBLIC",
+    "zoneId": "{{zoneA}}",
+    # 100.64.0.0/24: not used by any case pool (the EXCLUDE on address_pool_cidrs
+    # is per-kind cross-zone, so the persistent seed must not overlap throwaway
+    # pool CIDRs 203.0.113.0/24 / 198.51.100.0/24).
+    "v4CidrBlocks": ["100.64.0.0/24"],
+    "v6CidrBlocks": [],
+    "isDefault": True,
+}
+
+# Collections that depend on a seeded default external pool.
+_POOL_SEED_SERVICES = {"internal-pool", "address"}
+
+
+def _pool_seed_item() -> Dict:
+    """Idempotent setup item: ensure a default EXTERNAL_PUBLIC pool exists at zoneA."""
+    return {
+        "name": "_SETUP-POOL — ensure default EXTERNAL_PUBLIC pool at zoneA",
+        "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": _POOL_SEED_TEST},
+        }],
+        "request": {
+            "method": "POST",
+            "header": [
+                {"key": "Authorization", "value": "Bearer {{jwtBootstrap}}"},
+                {"key": "Content-Type", "value": "application/json"},
+            ],
+            "body": {"mode": "raw", "raw": json.dumps(_POOL_SEED_BODY)},
+            "url": {
+                "raw": "{{baseUrl}}/vpc/v1/addressPools",
+                "host": ["{{baseUrl}}"],
+                "path": ["vpc", "v1", "addressPools"],
+            },
+        },
+    }
+
+
+# InternalAddressPoolService RPCs are gated on cluster `system_admin` (the vpc
+# authz interceptor checks the relation directly), so the suite must call them as
+# cluster-admin, not as the default project admin. Force the admin JWT at the
+# collection level for the internal-pool suite (per-step auth= still overrides).
+_ADMIN_DEFAULT_SERVICES = {"internal-pool"}
+_ADMIN_DEFAULT_PRE = [
+    "const __adm = pm.environment.get('jwtBootstrap') || '';",
+    "if (__adm) { pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __adm}); }",
+]
+
+
 def build_collection(service: str, cases: List[Case]) -> Dict:
+    setup_items = [_zone_setup_item()]
+    if service in _POOL_SEED_SERVICES:
+        setup_items.append(_pool_seed_item())
+    pre = PRE_GLOBAL + _ADMIN_DEFAULT_PRE if service in _ADMIN_DEFAULT_SERVICES else PRE_GLOBAL
     return {
         "info": {
             "_postman_id": str(uuid.uuid4()),
@@ -1502,10 +1638,10 @@ def build_collection(service: str, cases: List[Case]) -> Dict:
         "event": [
             {
                 "listen": "prerequest",
-                "script": {"type": "text/javascript", "exec": PRE_GLOBAL},
+                "script": {"type": "text/javascript", "exec": pre},
             },
         ],
-        "item": [case_to_postman(c) for c in cases],
+        "item": setup_items + [case_to_postman(c) for c in cases],
         "variable": [],
     }
 

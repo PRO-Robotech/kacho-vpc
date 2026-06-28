@@ -14,6 +14,7 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/grpcsrv"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/pbconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
@@ -57,10 +58,13 @@ func TestSubjectFromCtx_ServiceAccountPrincipal(t *testing.T) {
 	assert.Equal(t, "service_account:sva_bot", got)
 }
 
-func TestSubjectFromCtx_SystemPrincipalReturnsEmpty(t *testing.T) {
+// Явно установленный system-principal → SystemSubject-sentinel (доверенный
+// passthrough), НЕ обычный FGA-subject и НЕ пустой. Отличается от анонимного ctx
+// (principal не устанавливался) → "" → fail-closed.
+func TestSubjectFromCtx_SystemPrincipalReturnsSentinel(t *testing.T) {
 	ctx := operations.WithPrincipal(context.Background(), operations.SystemPrincipal())
 	got := pbconv.SubjectFromContext(ctx)
-	assert.Empty(t, got, "system principal should not produce FGA subject")
+	assert.Equal(t, authzfilter.SystemSubject, got, "explicit system principal → SystemSubject sentinel")
 }
 
 func TestSubjectFromCtx_NoPrincipalReturnsEmpty(t *testing.T) {

@@ -51,7 +51,13 @@ func (u *ListNetworksUseCase) Execute(ctx context.Context, subjectID string, f N
 	}
 	defer func() { _ = r.Close() }()
 
-	if u.filter == nil || subjectID == "" {
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon / gateway не проставил principal) при
+		// включённом фильтре → fail-closed (пустой список), НЕ unfiltered
+		// passthrough: «не знаю, кто ты» ≠ «доверенный system-вызов» (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
 		return r.Networks().List(ctx, f, p)
 	}
 

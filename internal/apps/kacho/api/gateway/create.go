@@ -34,11 +34,20 @@ type CreateGatewayUseCase struct {
 	repo          Repo
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+	registrar     fgaregister.Registrar
 }
 
 // NewCreateGatewayUseCase создает CreateGatewayUseCase.
 func NewCreateGatewayUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *CreateGatewayUseCase {
 	return &CreateGatewayUseCase{repo: r, projectClient: projectClient, opsRepo: opsRepo}
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit Gateway owner-tuple синхронно регистрируется в kacho-iam. Nil →
+// sync-путь пропускается (только async drainer).
+func (u *CreateGatewayUseCase) WithRegistrar(r fgaregister.Registrar) *CreateGatewayUseCase {
+	u.registrar = r
+	return u
 }
 
 // Execute — sync-валидация + create Operation + запуск worker'а. Возвращает
@@ -132,14 +141,21 @@ func (u *CreateGatewayUseCase) doCreate(ctx context.Context, gwID string, g doma
 	// а не голый tuple — иначе resource_mirror в kacho-iam остается без labels и
 	// ARM_LABELS-селектор не матчит даже свежесозданный Gateway. Симметрично
 	// network/subnet/securitygroup create.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+	items := []fgaregister.Item{
 		fgaregister.ProjectHierarchyItem(string(g.ProjectID), "vpc_gateway", created.ID,
 			domain.LabelsToMap(created.Labels)),
-	)); err != nil {
+	}
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Sync-primary owner-tuple registration (после durable commit); fail-closed.
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return marshalGatewayRecord(created)
 }

@@ -36,6 +36,15 @@ type CreateSubnetUseCase struct {
 	projectClient ProjectClient
 	zoneReg       ZoneRegistry
 	opsRepo       operations.Repo
+	registrar     fgaregister.Registrar
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit Subnet тот же owner-tuple синхронно регистрируется в kacho-iam (грант
+// доступен сразу). Nil → sync-путь пропускается, остаётся только async drainer.
+func (u *CreateSubnetUseCase) WithRegistrar(r fgaregister.Registrar) *CreateSubnetUseCase {
+	u.registrar = r
+	return u
 }
 
 // NewCreateSubnetUseCase создает CreateSubnetUseCase.
@@ -194,14 +203,22 @@ func (u *CreateSubnetUseCase) doCreate(ctx context.Context, subID string, s doma
 	// (один commit, без dual-write). register-drainer применяет его через
 	// kacho-iam. Intent несет subnet labels + parent_project_id, чтобы kacho-iam
 	// материализовал resource_mirror для label-селектора.
-	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+	items := []fgaregister.Item{
 		fgaregister.ProjectHierarchyItem(string(s.ProjectID), "vpc_subnet", created.ID,
 			domain.LabelsToMap(created.Labels)),
-	)); err != nil {
+	}
+	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Sync-primary owner-tuple registration (после durable commit). Грант доступен
+	// сразу; fail-closed — сбой → Operation error (intent durable, backstop дорегистрирует).
+	if u.registrar != nil {
+		if err := u.registrar.Register(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 	return marshalSubnetRecord(created)
 }

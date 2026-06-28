@@ -69,6 +69,15 @@ type CreateNetworkInterfaceUseCase struct {
 	addressRepo   AddressRepo
 	projectClient ProjectClient
 	opsRepo       operations.Repo
+	registrar     fgaregister.Registrar
+}
+
+// WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
+// commit NIC owner-tuple синхронно регистрируется в kacho-iam. Nil → sync-путь
+// пропускается (только async drainer).
+func (u *CreateNetworkInterfaceUseCase) WithRegistrar(r fgaregister.Registrar) *CreateNetworkInterfaceUseCase {
+	u.registrar = r
+	return u
 }
 
 // NewCreateNetworkInterfaceUseCase создает CreateNetworkInterfaceUseCase.
@@ -219,10 +228,11 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		// а не голый tuple — иначе resource_mirror в kacho-iam остается без labels и
 		// ARM_LABELS-селектор не матчит даже свежесозданный NIC. Симметрично
 		// network/subnet/securitygroup create.
-		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(
+		items := []fgaregister.Item{
 			fgaregister.ProjectHierarchyItem(string(n.ProjectID), "vpc_network_interface", created.ID,
 				domain.LabelsToMap(created.Labels)),
-		)); rerr != nil {
+		}
+		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); rerr != nil {
 			w.Abort()
 			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, rerr))
@@ -230,6 +240,15 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		if cerr := w.Commit(); cerr != nil {
 			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(cerr)
+		}
+		// Sync-primary owner-tuple registration (после durable commit). NIC уже
+		// закоммичен и валиден — на ошибке регистрации НЕ detach'им адреса (это
+		// испортило бы валидный NIC); возвращаем error → Operation fail-closed,
+		// backstop drainer дорегистрирует tuple при восстановлении iam.
+		if u.registrar != nil {
+			if rerr := u.registrar.Register(ctx, items); rerr != nil {
+				return nil, rerr
+			}
 		}
 		return marshalNetworkInterfaceRecord(created)
 	}

@@ -55,7 +55,11 @@ func (u *ListAddressesUseCase) Execute(ctx context.Context, subjectID string, f 
 
 // listFiltered применяет per-object фильтр и делает соответствующий repo-вызов.
 func (u *ListAddressesUseCase) listFiltered(ctx context.Context, r Reader, subjectID string, f AddressFilter, p Pagination) ([]*kachorepo.AddressRecord, string, error) {
-	if u.filter == nil || subjectID == "" {
+	if subjectID == "" && u.filter != nil {
+		// identity не извлечён (anon) при включённом фильтре → fail-closed (no-leak).
+		return nil, "", nil
+	}
+	if u.filter == nil || subjectID == authzfilter.SystemSubject {
 		addrs, next, lerr := r.Addresses().List(ctx, f, p)
 		return addrs, next, serviceerr.MapRepoErr(lerr)
 	}

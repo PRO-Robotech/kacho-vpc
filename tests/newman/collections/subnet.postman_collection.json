@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "62cad579-83d8-45f9-8f01-bbc2471905f5",
+    "_postman_id": "709357a1-1a25-4fdc-8b2e-cef1a55e9b79",
     "name": "kacho-vpc / newman / subnet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -16,8 +16,33 @@
           "  const r = Math.floor(Math.random() * 1e9).toString(36);",
           "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
           "}",
-          "pm.environment.set('_suiteProjectId', pm.environment.get('existingProjectId'));",
-          "pm.environment.set('_suiteProjectCrossId', pm.environment.get('existingProjectCrossId'));",
+          "// Suite project scope: prefer the shared authz-fixture project (projectA1Id —",
+          "// the default JWT holds vpc-editor there) over the standalone-dev existingProjectId.",
+          "// Without this the suite would target an ungranted/dead project → every",
+          "// project-scoped mutation is authz-denied (403).",
+          "pm.environment.set('_suiteProjectId', pm.environment.get('projectA1Id') || pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteProjectCrossId', pm.environment.get('projectA2Id') || pm.environment.get('existingProjectCrossId'));",
+          "// Zone is environment-specific (geo seeds Region/Zone; ids differ per deploy).",
+          "// Resolve a live zone id once from the geo catalog; fall back to the committed",
+          "// existingZoneId when geo is unreachable (standalone vpc without geo).",
+          "if (!pm.environment.get('_zoneResolved')) {",
+          "  const __zjwt = pm.environment.get('jwtBootstrap') || pm.environment.get('jwtProjectAdminA1') || '';",
+          "  pm.sendRequest({",
+          "    url: pm.environment.get('baseUrl') + '/geo/v1/zones',",
+          "    method: 'GET',",
+          "    header: { 'Authorization': 'Bearer ' + __zjwt },",
+          "  }, (err, res) => {",
+          "    if (err || !res || res.code !== 200) return;",
+          "    let zs = []; try { zs = (res.json().zones) || []; } catch (e) {}",
+          "    const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+          "    const pick = up.length ? up : zs;",
+          "    if (pick.length) {",
+          "      pm.environment.set('existingZoneId', pick[0].id);",
+          "      pm.environment.set('existingZoneAltId', (pick[1] || pick[0]).id);",
+          "      pm.environment.set('_zoneResolved', '1');",
+          "    }",
+          "  });",
+          "}",
           "// Default auth: projectAdmin on project A1 — sufficient for most happy-path steps.",
           "// Per-step auth= overrides this via item-level pre-request script (_auth_pre_script).",
           "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
@@ -29,6 +54,54 @@
     }
   ],
   "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
     {
       "name": "SUB-CR-CRUD-OK — Create subnet → Operation → Subnet visible in GET",
       "description": "class:CRUD | priority:P1",
@@ -27329,7 +27402,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-00 — Pairwise [0]: zone=zone-a prefix=/24 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-00 — Pairwise [0]: zone={{zoneA}} prefix=/24 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -27458,7 +27531,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-0-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.170.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-0-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.170.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -27621,7 +27694,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-01 — Pairwise [1]: zone=zone-a prefix=/28 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-01 — Pairwise [1]: zone={{zoneA}} prefix=/28 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -27750,7 +27823,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-1-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.171.0.0/28\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-1-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.171.0.0/28\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -27913,7 +27986,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-02 — Pairwise [2]: zone=zone-a prefix=/16 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-02 — Pairwise [2]: zone={{zoneA}} prefix=/16 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28042,7 +28115,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-2-{{runId}}\", \"zoneId\": \"zone-a\", \"v4CidrBlocks\": [\"10.172.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-2-{{runId}}\", \"zoneId\": \"{{zoneA}}\", \"v4CidrBlocks\": [\"10.172.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28205,7 +28278,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-03 — Pairwise [3]: zone=zone-b prefix=/24 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-03 — Pairwise [3]: zone={{zoneB}} prefix=/24 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28334,7 +28407,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-3-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.173.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-3-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.173.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28497,7 +28570,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-04 — Pairwise [4]: zone=zone-b prefix=/28 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-04 — Pairwise [4]: zone={{zoneB}} prefix=/28 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28626,7 +28699,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-4-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.174.0.0/28\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-4-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.174.0.0/28\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -28789,7 +28862,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-05 — Pairwise [5]: zone=zone-b prefix=/16 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-05 — Pairwise [5]: zone={{zoneB}} prefix=/16 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -28918,7 +28991,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-5-{{runId}}\", \"zoneId\": \"zone-b\", \"v4CidrBlocks\": [\"10.175.0.0/16\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-5-{{runId}}\", \"zoneId\": \"{{zoneB}}\", \"v4CidrBlocks\": [\"10.175.0.0/16\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29081,7 +29154,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone=zone-d prefix=/24 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-06 — Pairwise [6]: zone={{zoneD}} prefix=/24 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29210,7 +29283,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-6-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.176.0.0/24\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29373,7 +29446,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone=zone-d prefix=/28 dhcp=False",
+      "name": "SUB-CR-PAIRWISE-07 — Pairwise [7]: zone={{zoneD}} prefix=/28 dhcp=False",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29502,7 +29575,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-7-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.177.0.0/28\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -29665,7 +29738,7 @@
       ]
     },
     {
-      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone=zone-d prefix=/16 dhcp=True",
+      "name": "SUB-CR-PAIRWISE-08 — Pairwise [8]: zone={{zoneD}} prefix=/16 dhcp=True",
       "description": "class:VAL | class:CRUD | priority:P2",
       "item": [
         {
@@ -29794,7 +29867,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"zone-d\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"{{netId}}\", \"name\": \"sub-pw-8-{{runId}}\", \"zoneId\": \"{{zoneD}}\", \"v4CidrBlocks\": [\"10.178.0.0/16\"], \"dhcpOptions\": {\"domainName\": \"test.local\", \"domainNameServers\": [\"8.8.8.8\"]}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -32885,7 +32958,7 @@
       ]
     },
     {
-      "name": "SUB-CR-NEG-DUP-CIDR-EXACT — Create Subnet с CIDR, совпадающим с existing Subnet → FailedPrecondition (EXCLUDE same-prefix)",
+      "name": "SUB-CR-NEG-DUP-CIDR-EXACT — Create Subnet с CIDR, совпадающим с existing Subnet → sync FailedPrecondition (create-time overlap precheck)",
       "description": "class:NEG | class:CONF | priority:P0",
       "item": [
         {
@@ -33131,58 +33204,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 400', () => pm.expect(pm.response.code).to.eql(400));",
+                  "pm.test('grpc code 9 (FAILED_PRECONDITION)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-fail",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let _t = 0;",
-                  "const _s = () => pm.sendRequest({",
-                  "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
-                  "  method: 'GET',",
-                  "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
-                  "}, (err, res) => {",
-                  "  let j = null; try { j = res.json(); } catch (e) {}",
-                  "  if (j && j.done) {",
-                  "    pm.test('overlap rejected', () => pm.expect(!!j.error, JSON.stringify(j)).to.eql(true));",
-                  "    pm.test('FailedPrecondition (9)', () => pm.expect(j.error.code).to.eql(9));",
-                  "  } else if (++_t < 8) { setTimeout(_s, 500); }",
-                  "  else { pm.test('op resolved', () => pm.expect.fail('timeout')); }",
-                  "});",
-                  "_s();"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(9);",
+                  "});"
                 ]
               }
             }
@@ -36297,7 +36323,7 @@
       ]
     },
     {
-      "name": "SUB-CR-NEG-ROLLBACK-NO-RESOURCE-IN-GET — Failed Subnet.Create (parent network NF) → ресурс НЕ visible через Get/List (rollback)",
+      "name": "SUB-CR-NEG-ROLLBACK-NO-RESOURCE-IN-GET — Failed Subnet.Create (parent network NF) → sync NotFound, ресурс НЕ создан/visible",
       "description": "class:NEG | class:STATE | priority:P1",
       "item": [
         {
@@ -36323,7 +36349,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"enpnonexistentrollback00\", \"name\": \"sub-rollback-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.234.0.0/24\"]}",
+              "raw": "{\"projectId\": \"{{_suiteProjectId}}\", \"networkId\": \"net00000000000000000\", \"name\": \"sub-rollback-{{runId}}\", \"zoneId\": \"{{existingZoneId}}\", \"v4CidrBlocks\": [\"10.234.0.0/24\"]}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -36337,97 +36363,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
-                  "try {",
+                  "pm.test('status 404', () => pm.expect(pm.response.code).to.eql(404));",
+                  "pm.test('grpc code 5 (NOT_FOUND)', () => {",
                   "  const j = pm.response.json();",
-                  "  const v = (j.id);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('opId', String(v));",
-                  "} catch (e) {}",
-                  "try {",
-                  "  const j = pm.response.json();",
-                  "  const v = (j.metadata && j.metadata.subnetId);",
-                  "  if (v !== undefined && v !== null) pm.environment.set('subIdFail', String(v));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "poll-fail",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/operations/{{opId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "{{opId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let _t = 0;",
-                  "const _s = () => pm.sendRequest({",
-                  "  url: pm.environment.get('baseUrl') + '/operations/' + pm.environment.get('opId'),",
-                  "  method: 'GET',",
-                  "  header: { 'Authorization': 'Bearer ' + pm.environment.get('jwtProjectAdminA1') },",
-                  "}, (err, res) => {",
-                  "  let j = null; try { j = res.json(); } catch (e) {}",
-                  "  if (j && j.done) {",
-                  "    pm.test('op failed', () => pm.expect(!!j.error, JSON.stringify(j)).to.eql(true));",
-                  "  } else if (++_t < 8) { setTimeout(_s, 500); }",
-                  "  else { pm.test('op resolved', () => pm.expect.fail('timeout')); }",
-                  "});",
-                  "_s();"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "get-fail-404",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subIdFail}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "vpc",
-                "v1",
-                "subnets",
-                "{{subIdFail}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('rollback: Subnet НЕ visible после failed Create', () => pm.expect(pm.response.code, JSON.stringify(pm.response.json())).to.eql(404));"
+                  "  pm.expect(j.code, JSON.stringify(j)).to.eql(5);",
+                  "});"
                 ]
               }
             }
@@ -36444,14 +36384,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/vpc/v1/subnets?projectId={{_suiteProjectId}}&pageSize=100",
+              "raw": "{{baseUrl}}/vpc/v1/subnets?projectId={{_suiteProjectId}}&pageSize=1000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "vpc",
                 "v1",
-                "subnets?projectId={{_suiteProjectId}}&pageSize=100"
+                "subnets?projectId={{_suiteProjectId}}&pageSize=1000"
               ]
             }
           },
@@ -36463,8 +36403,8 @@
                 "exec": [
                   "pm.test('status 200', () => pm.expect(pm.response.code).to.eql(200));",
                   "const subs = pm.response.json().subnets || [];",
-                  "const failedId = pm.environment.get('subIdFail');",
-                  "pm.test('List не содержит failed Subnet id', () => pm.expect(subs.map(s => s.id), `subId=${failedId}`).to.not.include(failedId));"
+                  "const failedName = 'sub-rollback-' + pm.environment.get('runId');",
+                  "pm.test('List не содержит subnet с именем failed Create', () => pm.expect(subs.map(s => s.name), `name=${failedName}`).to.not.include(failedName));"
                 ]
               }
             }

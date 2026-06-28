@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 )
@@ -177,17 +178,17 @@ func TestSecurityGroupListPerObject_NilFilterPassthrough(t *testing.T) {
 }
 
 // empty subject (system principal) → unfiltered passthrough (без FGA-вызова).
-func TestSecurityGroupListPerObject_EmptySubjectPassthrough(t *testing.T) {
+func TestSecurityGroupListPerObject_SystemSubjectPassthrough(t *testing.T) {
 	kr := kachomock.NewRepository()
 	seedSecurityGroupsLabeled(t, kr, "prj_1", "enp_net1", "sgr_a", "sgr_b")
 
 	filter := &fakeListFilter{allowed: []string{"sgr_a"}}
 	uc := NewListSecurityGroupsUseCase(kr, filter)
 
-	sgs, _, err := uc.Execute(context.Background(), "", SecurityGroupFilter{ProjectID: "prj_1"}, Pagination{})
+	sgs, _, err := uc.Execute(context.Background(), authzfilter.SystemSubject, SecurityGroupFilter{ProjectID: "prj_1"}, Pagination{})
 	require.NoError(t, err)
 	assert.Len(t, sgs, 2)
-	assert.Equal(t, 0, filter.calls, "system principal must not trigger an FGA ListObjects call")
+	assert.Equal(t, 0, filter.calls, "explicit system principal → passthrough, no FGA ListObjects call")
 }
 
 // project_id по-прежнему обязателен (контракт не меняется).
@@ -266,4 +267,19 @@ func TestSecurityGroupGetPerObject_NilFilterPassthrough(t *testing.T) {
 	got, err := uc.Execute(context.Background(), "user:usr_alice", "sgr_y")
 	require.NoError(t, err)
 	assert.Equal(t, "sgr_y", got.ID)
+}
+
+// No-leak (defense-in-depth): пустой subject (principal не извлечён — anon /
+// gateway не проставил identity) при ВКЛЮЧЁННОМ фильтре → fail-closed (пустой
+// список), НЕ unfiltered passthrough. «Не знаю, кто ты» != «доверенный system».
+func TestSecurityGroupListPerObject_EmptySubjectFailsClosed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	seedSecurityGroupsLabeled(t, kr, "prj_1", "enp_net1", "sgr_a", "sgr_b")
+
+	filter := &fakeListFilter{allowed: []string{"sgs_unused"}}
+	uc := NewListSecurityGroupsUseCase(kr, filter)
+
+	sgs, _, err := uc.Execute(context.Background(), "", SecurityGroupFilter{ProjectID: "prj_1"}, Pagination{})
+	require.NoError(t, err)
+	assert.Empty(t, sgs, "empty subject + filter enabled -> fail-closed empty, NOT leak")
 }

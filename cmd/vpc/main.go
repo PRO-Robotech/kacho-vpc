@@ -46,6 +46,7 @@ import (
 	subnetapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/subnet"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/config"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
@@ -302,7 +303,22 @@ func runServe(cfg config.Config) error {
 	}
 	listFilter := buildListFilter(cfg, authorizeConn, logger)
 
-	svcs := buildServices(pool, slavePool, projectClient, geoClient, authzfilter.AsPort(listFilter), opsRepo, cfg, logger)
+	// Sync-primary owner-tuple registrar (Decision 2): create-flow синхронно
+	// регистрирует owner-tuple в kacho-iam после commit — грант доступен сразу, без
+	// гонки с async register-drainer'ом. Тот же iam-internal endpoint :9091 +
+	// register-creds, что и у drainer'а. Пустой endpoint / drainer disabled → nil
+	// (dev/no-iam: остаётся только async-путь).
+	var syncRegistrar fgaregister.Registrar
+	if registerDrainerEnabled() && cfg.AuthZ.IAMEndpoint != "" {
+		reg, closeReg, rerr := buildSyncRegistrar(cfg.AuthZ.IAMEndpoint, mtlsCfg)
+		if rerr != nil {
+			return fmt.Errorf("build sync owner-tuple registrar: %w", rerr)
+		}
+		defer closeReg()
+		syncRegistrar = reg
+	}
+
+	svcs := buildServices(pool, slavePool, projectClient, geoClient, authzfilter.AsPort(listFilter), opsRepo, syncRegistrar, cfg, logger)
 
 	// Fail-closed boot-gate: при KACHO_VPC_REQUIRE_IAM мутирующий Create отвергается,
 	// а readiness = NotReady, пока register-drainer не подключен к IAM. Стартует
@@ -406,6 +422,10 @@ func runServe(cfg config.Config) error {
 		CheckTimeout:        cfg.AuthZ.CheckTimeout,
 		DenyRateLimitPerSec: cfg.AuthZ.DenyRateLimitPerSec,
 		CacheTTL:            cfg.AuthZ.CacheTTL,
+		// Existence-hiding (Decision 1): object-scoped deny на отсутствующий
+		// vpc-ресурс → passthrough → handler verbatim NotFound 404. Probe читает
+		// master-pool (авторитетно, без replica-lag false-absent).
+		Probe: kachopg.NewExistenceProbe(pool),
 	})
 	// Fail-fast (S3): в production отсутствие authz-interceptor'а — фатально (не
 	// продолжаем как раньше с Warn). Защита от регрессии, обходящей S1-гард: без
@@ -695,6 +715,21 @@ func registerDrainerEnabled() bool {
 // poison). Run-loop drainer'а владеет claim-CAS для exactly-once между репликами.
 // Возвращает closer, закрывающий dial-conn.
 //
+// buildSyncRegistrar дилит iam-internal :9091 (RegisterResource) тем же
+// register-creds, что и register-drainer, и собирает синхронный owner-tuple
+// registrar (Decision 2). Отдельный dial-conn (idle-keepalive); возвращает closer.
+func buildSyncRegistrar(iamAddr string, mtlsCfg config.MTLSConfig) (*clients.SyncRegistrar, func(), error) {
+	creds, err := mtlsCfg.IAMRegisterClientCreds()
+	if err != nil {
+		return nil, nil, fmt.Errorf("vpc→iam register mTLS creds: %w", err)
+	}
+	conn, err := grpc.NewClient(iamAddr, creds, grpcclient.KeepaliveDialOption(true))
+	if err != nil {
+		return nil, nil, fmt.Errorf("dial kacho-iam (sync registrar): %w", err)
+	}
+	return clients.NewSyncRegistrar(iamv1.NewInternalIAMServiceClient(conn)), func() { _ = conn.Close() }, nil
+}
+
 // iamAddr — listener iam-internal :9091; RegisterResource Internal-only (ban #6).
 func startRegisterDrainer(ctx context.Context, iamAddr string, mtlsCfg config.MTLSConfig, pool *pgxpool.Pool, rec metrics.Recorder, logger *slog.Logger) (func(), error) {
 	creds, err := mtlsCfg.IAMRegisterClientCreds()
@@ -745,7 +780,7 @@ func startRegisterDrainer(ctx context.Context, iamAddr string, mtlsCfg config.MT
 //
 // slavePool — опц. read-replica pool; nil → kachopg.New делает fallback и Reader-TX
 // идут на master.
-func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClient, geoClient repo.ZoneRegistry, listFilter authzfilter.UseCasePort, opsRepo operations.Repo, cfg config.Config, logger *slog.Logger) *services {
+func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClient, geoClient repo.ZoneRegistry, listFilter authzfilter.UseCasePort, opsRepo operations.Repo, registrar fgaregister.Registrar, cfg config.Config, logger *slog.Logger) *services {
 	if !cfg.Network.DefaultSGInline {
 		logger.Warn("network.default-sg-inline=false — Network.Create НЕ создает default SG")
 	}
@@ -804,7 +839,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// defaultSGInline=true (default) — при Network.Create в одной writer-TX создается
 	// inline default SG и Network.default_security_group_id заполняется атомарно.
 	netCreateUC := networkapp.NewCreateNetworkUseCase(kachoRepo, projectClient, opsRepo, cfg.Network.DefaultSGInline).
-		WithLogger(logger)
+		WithLogger(logger).WithRegistrar(registrar)
 	netUpdateUC := networkapp.NewUpdateNetworkUseCase(kachoRepo, opsRepo)
 	netDeleteUC := networkapp.NewDeleteNetworkUseCase(kachoRepo, subnetAdapter, routeTableAdapter, sgAdapter, opsRepo)
 	// Per-object FGA-фильтр (listFilter) питает И no-leak Get, И фильтрованный List.
@@ -823,7 +858,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Gateway use-case'ы работают через CQRS-Repository (kachoRepo) — конструктор
 	// принимает Repository, каждый use-case открывает Reader/Writer внутри.
 	gwHandler := gatewayapp.NewHandler(
-		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo),
+		gatewayapp.NewCreateGatewayUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar),
 		gatewayapp.NewUpdateGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewDeleteGatewayUseCase(kachoRepo, opsRepo),
 		gatewayapp.NewGetGatewayUseCase(kachoRepo, listFilter),
@@ -834,7 +869,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// RouteTable use-case'ы работают через CQRS-Repository. routeTableAdapter
 	// передается Network.Delete для child-check.
 	rtHandler := routetableapp.NewHandler(
-		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo),
+		routetableapp.NewCreateRouteTableUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar),
 		routetableapp.NewUpdateRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewDeleteRouteTableUseCase(kachoRepo, opsRepo),
 		routetableapp.NewGetRouteTableUseCase(kachoRepo, listFilter),
@@ -845,7 +880,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Subnet use-case'ы работают через CQRS-Repository (kachoRepo). niAdapter
 	// передается в Delete для precondition-check «нет привязанных NIC».
 	subnetHandler := subnetapp.NewHandler(
-		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo),
+		subnetapp.NewCreateSubnetUseCase(kachoRepo, projectClient, geoClient, opsRepo).WithRegistrar(registrar),
 		subnetapp.NewUpdateSubnetUseCase(kachoRepo, opsRepo),
 		subnetapp.NewDeleteSubnetUseCase(kachoRepo, niAdapter, opsRepo),
 		subnetapp.NewGetSubnetUseCase(kachoRepo, listFilter),
@@ -865,7 +900,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter — peer-port
 	// для SubnetReader (Get + AddressesBySubnet), удовлетворяется тем же kachoRepo
 	// через cqrsadapter.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver).WithRegistrar(registrar)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo, listFilter)
@@ -889,7 +924,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Network writer'а).
 	sgHandler := sgapp.NewHandler(
 		sgapp.NewCreateSecurityGroupUseCase(kachoRepo, networkAdapter, projectClient, opsRepo).
-			WithSGReader(sgAdapter),
+			WithSGReader(sgAdapter).WithRegistrar(registrar),
 		sgapp.NewUpdateSecurityGroupUseCase(kachoRepo, opsRepo).WithSGReader(sgAdapter),
 		// sgAdapter (SecurityGroupReader) — same-network-валидация SG-target-правил
 		// на UpdateRules/UpdateRule.
@@ -906,7 +941,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// addressAdapter передается в Create/Update/Delete UC — он удовлетворяет
 	// `networkinterface.AddressRepo` port (Get + SetReference + ClearReference).
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo).WithRegistrar(registrar),
 		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo, listFilter),
