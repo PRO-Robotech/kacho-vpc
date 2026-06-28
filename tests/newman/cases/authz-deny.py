@@ -21,7 +21,11 @@ projects, users, bindings, seed networks) и патчит env-файл:
   - INV → admin    @ account:B (каскад на project:B1) + editor @ project:A1
           (KAC-125 invite-flow: AAA приглашает INV в account-A editor'ом на
           project-A1) → INV имеет доступ к ОБОИМ project-A1 и project-B1.
-  - NOB → грантов нет
+  - NOB → грантов нет (НО см. kacho-iam#276: iam-suite IAM-ACB-CR-CRUD-OK грантит
+    userNOB глобальную *.* view-роль на account-A/-B — cross-suite fixture collision.
+    Поэтому AUTHZ-*-LS-{OWN,CROSS}-NOB сейчас known-RED, issue-backed, до owner-decided
+    semantics/test-hygiene фикса. NOB фактически authorized; кейсы остаются красными
+    честно (ban#13), но whitelisted в assert-suites-green.sh. verifies kacho-iam#276)
 
 Контракт ответов (api-gateway authz middleware, см. kacho-api-gateway):
   - Анонимный запрос (нет токена) → 401 UNAUTHENTICATED (grpc 16) ВЕЗДЕ.
