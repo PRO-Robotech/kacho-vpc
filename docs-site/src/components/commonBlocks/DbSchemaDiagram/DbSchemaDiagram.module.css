@@ -1,0 +1,1506 @@
+/* ==========================================================================
+   DbSchemaDiagram — palette & shared tokens
+   ========================================================================== */
+
+.wrapper {
+  --db-bg: var(--ifm-background-color);
+  --db-grid: color-mix(in srgb, var(--ifm-color-primary) 22%, transparent);
+  --db-surface: var(--ifm-background-surface-color);
+  --db-surface-soft: var(--ifm-color-emphasis-100);
+  --db-surface-muted: var(--ifm-color-emphasis-200);
+  --db-border: var(--ifm-toc-border-color);
+  --db-border-strong: var(--ifm-color-emphasis-300);
+  --db-text: var(--ifm-font-color-base);
+  --db-text-soft: var(--ifm-color-emphasis-700);
+  --db-text-muted: var(--ifm-color-emphasis-600);
+  --db-accent: var(--ifm-color-primary);
+  --db-accent-soft: color-mix(in srgb, var(--ifm-color-primary) 16%, transparent);
+  --db-accent-strong: var(--ifm-color-primary-dark);
+  --db-edge: color-mix(in srgb, var(--ifm-font-color-base) 38%, transparent);
+  --db-edge-strong: color-mix(in srgb, var(--ifm-font-color-base) 58%, transparent);
+  --db-edge-active: var(--ifm-color-primary);
+  --db-edge-active-glow: color-mix(in srgb, var(--ifm-color-primary) 48%, transparent);
+  --db-edge-flow: var(--ifm-background-surface-color);
+  --db-tone-resource: linear-gradient(135deg, var(--ifm-color-primary-dark), var(--ifm-color-primary));
+  --db-tone-binding: linear-gradient(135deg, var(--ifm-color-info-dark), var(--ifm-color-info));
+  --db-tone-rule: linear-gradient(135deg, var(--ifm-color-warning-dark), var(--ifm-color-warning));
+  --db-tone-system: linear-gradient(135deg, var(--ifm-color-emphasis-700), var(--ifm-color-emphasis-600));
+  --db-tone-enum: linear-gradient(135deg, var(--ifm-color-emphasis-800), var(--ifm-color-emphasis-700));
+  --db-shadow-card: var(--ifm-global-shadow-lw);
+  --db-shadow-soft: var(--ifm-global-shadow-lw);
+  --db-radius: 14px;
+  --db-radius-card: 12px;
+  --db-radius-pill: 999px;
+
+  margin: 1.5rem 0 2rem;
+}
+
+/* ==========================================================================
+   Preview block (in MDX)
+   ========================================================================== */
+
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius);
+  background:
+    radial-gradient(circle at 1px 1px, var(--db-grid) 1px, transparent 0) 0 0 / 18px 18px,
+    linear-gradient(135deg, var(--db-accent-soft), transparent);
+  color: var(--db-text);
+}
+
+.previewContent {
+  min-width: 0;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.description {
+  margin: 0.4rem 0 0;
+  color: var(--db-text-soft);
+  max-width: 62rem;
+}
+
+.previewStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.previewStats span {
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  padding: 0.22rem 0.6rem;
+  background: var(--db-surface);
+  color: var(--db-text-soft);
+  font-size: 0.78rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  margin-top: 0.85rem;
+  font-size: 0.85rem;
+  color: var(--db-text-soft);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legendSwatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: var(--db-radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
+.controlButton,
+.openButton,
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--db-border-strong);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  color: var(--db-text);
+  padding: 0.46rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.controlButton:hover,
+.openButton:hover,
+.iconButton:hover {
+  border-color: var(--db-accent);
+  color: var(--db-accent);
+  background: var(--db-accent-soft);
+}
+
+.controlButton:focus-visible,
+.openButton:focus-visible,
+.iconButton:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+.controlButton:disabled,
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controlButtonPrimary {
+  background: var(--db-accent);
+  color: var(--ifm-color-primary-contrast-foreground);
+  border-color: var(--db-accent);
+}
+
+.controlButtonPrimary:hover {
+  background: var(--db-accent-strong);
+  border-color: var(--db-accent-strong);
+  color: var(--ifm-color-primary-contrast-foreground);
+}
+
+.iconButton {
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.zoomValueButton {
+  min-width: 3.75rem;
+  height: 2.1rem;
+  border: 1px solid var(--db-border-strong);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  color: var(--db-text);
+  padding: 0 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.zoomValueButton:hover {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft);
+  color: var(--db-accent);
+}
+
+.zoomValueButton:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+.openButton {
+  flex: 0 0 auto;
+  padding: 0.7rem 1.1rem;
+}
+
+.zoomGroup {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--db-border-strong);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  overflow: hidden;
+}
+
+.zoomGroup .iconButton {
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.zoomGroup .iconButton:hover {
+  background: var(--db-accent-soft);
+}
+
+.zoomValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  padding: 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--db-text-soft);
+  border-left: 1px solid var(--db-border);
+  border-right: 1px solid var(--db-border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Workspace (modal-like overlay)
+   ========================================================================== */
+
+.workspace {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.85rem;
+  color: var(--db-text);
+  background: var(--db-bg);
+}
+
+.workspaceHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius);
+  background: var(--db-surface);
+  box-shadow: var(--db-shadow-soft);
+}
+
+.workspaceHeaderInfo {
+  min-width: 0;
+}
+
+.workspaceTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.workspaceSubtitle {
+  margin-top: 0.18rem;
+  color: var(--db-text-muted);
+  font-size: 0.84rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.workspaceCrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.12rem 0.5rem;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface-soft);
+  color: var(--db-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.workspaceCrumb code {
+  font-size: 0.78rem;
+}
+
+.workspaceCrumbReset {
+  border: none;
+  background: transparent;
+  color: var(--db-text-muted);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.workspaceCrumbReset:hover {
+  color: var(--db-accent);
+}
+
+.workspaceLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--db-text-soft);
+}
+
+.workspaceLegend .legendSwatch {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+.workspaceActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.selectInput {
+  min-width: 16rem;
+  border: 1px solid var(--db-border-strong);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  color: var(--db-text);
+  padding: 0.5rem 2rem 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 55%,
+    calc(100% - 11px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color-scheme: light;
+}
+
+:global([data-theme='dark']) .selectInput {
+  color-scheme: dark;
+}
+
+.selectInput:focus {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 0;
+  border-color: var(--db-accent);
+}
+
+.workspaceBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+/* ==========================================================================
+   Graph board / canvas
+   ========================================================================== */
+
+.graphBoard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius);
+  background-color: var(--db-surface);
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--db-grid) 1px, transparent 0),
+    linear-gradient(180deg, var(--db-surface) 0%, var(--db-surface-soft) 100%);
+  background-size: 18px 18px, auto;
+  background-repeat: repeat, no-repeat;
+  cursor: grab;
+  overscroll-behavior: contain;
+  user-select: none;
+  touch-action: none;
+}
+
+.graphBoard:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: -2px;
+}
+
+.graphBoardPanning,
+.graphBoardPanning .graphNode {
+  cursor: grabbing;
+}
+
+.graphCanvasPan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: left, top;
+}
+
+.graphCanvas {
+  position: relative;
+  transform-origin: 0 0;
+  will-change: zoom;
+}
+
+.graphZoomBar {
+  position: absolute;
+  right: 0.85rem;
+  bottom: 0.85rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  border: 1px solid var(--db-border);
+  box-shadow: var(--db-shadow-soft);
+}
+
+.graphHints {
+  position: absolute;
+  left: 0.85rem;
+  bottom: 0.85rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  border: 1px solid var(--db-border);
+  box-shadow: var(--db-shadow-soft);
+  color: var(--db-text-soft);
+  font-size: 0.74rem;
+}
+
+.graphHints kbd {
+  display: inline-block;
+  min-width: 1.2rem;
+  padding: 0 0.32rem;
+  border: 1px solid var(--db-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--db-surface-soft);
+  color: var(--db-text);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.graphEmpty {
+  margin: 4rem auto;
+  max-width: 32rem;
+  border: 1px dashed var(--db-border-strong);
+  border-radius: var(--db-radius);
+  padding: 2rem;
+  color: var(--db-text-soft);
+  text-align: center;
+  background: var(--db-surface);
+}
+
+/* ==========================================================================
+   SVG edges
+   ========================================================================== */
+
+.graphEdges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.graphEdges marker path {
+  fill: var(--db-edge);
+  stroke: none;
+}
+
+.graphEdges marker.markerActive path,
+.graphEdgePathActive ~ marker path {
+  fill: var(--db-edge-active);
+}
+
+.graphEdgeLayer {
+  pointer-events: none;
+}
+
+.graphEdgeGroup {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.graphEdgeHitPath {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+.graphEdgePath {
+  fill: none;
+  stroke: var(--db-edge);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transition: stroke 140ms ease, stroke-width 140ms ease;
+}
+
+.graphEdgeGroup:hover .graphEdgePath,
+.graphEdgePathHovered {
+  stroke: var(--db-edge-strong);
+  stroke-width: 2.2;
+}
+
+.graphEdgePathDimmed {
+  stroke: var(--db-edge);
+  opacity: 0.18;
+}
+
+.graphEdgePathActive {
+  stroke: var(--db-edge-active);
+  stroke-width: 2.4;
+  filter:
+    drop-shadow(0 0 4px var(--db-edge-active-glow))
+    drop-shadow(0 0 10px var(--db-edge-active-glow));
+}
+
+.graphEdgeGlowPath {
+  fill: none;
+  stroke: var(--db-edge-active);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.38;
+  pointer-events: none;
+  filter: blur(1px);
+}
+
+.graphEdgeAnimatedPath {
+  fill: none;
+  stroke: var(--db-edge-flow);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 6 9;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px var(--db-edge-active-glow));
+  animation: graphEdgeFlow 800ms linear infinite;
+}
+
+.graphEdgeEndpoint {
+  fill: var(--db-edge-flow);
+  stroke: var(--db-edge-active);
+  stroke-width: 2;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px var(--db-edge-active-glow));
+}
+
+@keyframes graphEdgeFlow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -30; }
+}
+
+/* ==========================================================================
+   Nodes (tables) on graph
+   ========================================================================== */
+
+.graphNode {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: 268px;
+  border-radius: var(--db-radius-card);
+  border: 1px solid var(--db-border-strong);
+  background: var(--db-surface);
+  box-shadow: var(--db-shadow-card);
+  cursor: grab;
+  overflow: hidden;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease,
+    opacity 140ms ease,
+    filter 140ms ease;
+}
+
+.graphNode:hover,
+.graphNode:focus-visible {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 55%, transparent);
+  outline: none;
+  z-index: 3;
+}
+
+.graphNodeFocused {
+  border-color: var(--db-accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--ifm-color-primary) 22%, transparent),
+    var(--db-shadow-card);
+  z-index: 4;
+}
+
+.graphNodeRelated {
+  z-index: 3;
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 42%, transparent);
+}
+
+.graphNodeDimmed {
+  opacity: 0.32;
+  filter: saturate(0.6);
+}
+
+.graphNodeCompact {
+  width: 200px;
+}
+
+.graphNodeCompact .tableHeader {
+  height: 32px;
+  padding: 0 0.55rem;
+  font-size: 0.78rem;
+}
+
+.graphNodeCompact .tableRelationCount {
+  min-width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.62rem;
+}
+
+.graphNodeCompact .tableMetaBar {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 0.5rem;
+  gap: 0.22rem;
+}
+
+.graphNodeCompact .tableMetaBar span {
+  padding: 0 0.3rem;
+  font-size: 0.6rem;
+}
+
+.graphNodeCompact .fieldList {
+  padding: 3px 0;
+}
+
+.graphNodeCompact .fieldRow {
+  height: 20px;
+  min-height: 20px;
+  padding: 0 0.5rem;
+  font-size: 0.7rem;
+  gap: 0.3rem;
+}
+
+.graphNodeCompact .fieldType {
+  max-width: 46%;
+  font-size: 0.64rem;
+}
+
+.graphNodeCompact .fieldKey {
+  min-width: 1.1rem;
+  padding: 0 0.18rem;
+  font-size: 0.55rem;
+}
+
+.graphNodeCompact .fieldInfo {
+  width: 0.78rem;
+  height: 0.78rem;
+  font-size: 0.54rem;
+}
+
+/* ==========================================================================
+   Table card (header + meta + fields)
+   ========================================================================== */
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  height: 44px;
+  padding: 0 0.78rem;
+  font-weight: 700;
+  color: var(--ifm-color-primary-contrast-foreground);
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+.tableHeader code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.92rem;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.tableRelationCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: var(--db-radius-pill);
+  background: color-mix(in srgb, var(--ifm-color-emphasis-900) 22%, transparent);
+  color: var(--ifm-color-primary-contrast-foreground);
+  font-size: 0.7rem;
+  font-family: var(--ifm-font-family-monospace);
+}
+
+.tableMetaBar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.32rem;
+  align-items: center;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 0.7rem;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-surface-soft);
+  overflow: hidden;
+}
+
+.tableMetaBar span {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  color: var(--db-text-soft);
+  padding: 0.04rem 0.42rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.tableMetaBar .metaAccent {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 32%, transparent);
+  background: var(--db-accent-soft);
+  color: var(--db-accent-strong);
+}
+
+.tableNote {
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, var(--ifm-color-warning) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ifm-color-warning) 32%, transparent);
+  color: var(--db-text-soft);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+:global([data-theme='dark']) .tableNote {
+  background: color-mix(in srgb, var(--ifm-color-warning) 8%, transparent);
+}
+
+.fieldList {
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldRow,
+.detailFieldRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 0.7rem;
+  border-top: 1px solid var(--db-border);
+  font-size: 0.83rem;
+  transition: background 120ms ease;
+}
+
+.fieldRow:first-child,
+.detailFieldRow:first-child {
+  border-top: none;
+}
+
+.fieldRow:hover,
+.detailFieldRow:hover {
+  background: var(--db-accent-soft);
+  z-index: 12;
+}
+
+.fieldRowHighlightedSource {
+  background: color-mix(in srgb, var(--ifm-color-primary) 18%, transparent);
+}
+
+.fieldRowHighlightedTarget {
+  background: color-mix(in srgb, var(--ifm-color-info) 18%, transparent);
+}
+
+.fieldRowHighlightedSource:hover {
+  background: color-mix(in srgb, var(--ifm-color-primary) 26%, transparent);
+}
+
+.fieldRowHighlightedTarget:hover {
+  background: color-mix(in srgb, var(--ifm-color-info) 26%, transparent);
+}
+
+.fieldRowDimmed {
+  opacity: 0.45;
+}
+
+.fieldName {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.fieldName code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--db-text);
+}
+
+.fieldKey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--db-radius-pill);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.fieldKeyPk {
+  background: color-mix(in srgb, var(--ifm-color-warning) 18%, transparent);
+  color: var(--ifm-color-warning-darkest);
+  border: 1px solid color-mix(in srgb, var(--ifm-color-warning) 42%, transparent);
+}
+
+.fieldKeyFk {
+  background: color-mix(in srgb, var(--ifm-color-primary) 14%, transparent);
+  color: var(--db-accent-strong);
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 38%, transparent);
+}
+
+.fieldKeyUk {
+  background: color-mix(in srgb, var(--ifm-color-info) 14%, transparent);
+  color: var(--ifm-color-info-darkest);
+  border: 1px solid color-mix(in srgb, var(--ifm-color-info) 38%, transparent);
+}
+
+.fieldType {
+  flex: 0 1 auto;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--db-text-muted);
+  font-size: 0.76rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.fieldInfo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 4px;
+  color: var(--db-text-muted);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  background: var(--db-surface-soft);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.fieldRow:hover .fieldInfo,
+.detailFieldRow:hover .fieldInfo {
+  opacity: 1;
+}
+
+.fieldTooltip {
+  display: grid;
+  gap: 0.34rem;
+  z-index: 9999;
+  min-width: 260px;
+  max-width: 340px;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 8px;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  padding: 0.58rem 0.68rem;
+  box-shadow: var(--ifm-global-shadow-lw);
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  pointer-events: none;
+  white-space: normal;
+}
+
+.fieldTooltipFloating {
+  position: fixed;
+}
+
+/* Floating tooltips are anchored at a single point — translate to position
+   them relative to the trigger from the chosen side. */
+.fieldTooltipRight {
+  transform: translateY(-50%);
+}
+
+.fieldTooltipLeft {
+  transform: translate(-100%, -50%);
+}
+
+.fieldTooltipBottom {
+  transform: translateX(-50%);
+}
+
+.fieldTooltipTop {
+  transform: translate(-50%, -100%);
+}
+
+.fieldTooltipTitle,
+.fieldTooltipLine,
+.fieldTooltipEnumLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.fieldTooltipTitle {
+  padding-bottom: 0.36rem;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+  font-weight: 700;
+}
+
+.fieldTooltipTitle code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--ifm-font-color-base);
+  font-size: 0.76rem;
+}
+
+.fieldTooltipTitle code:last-child {
+  color: var(--ifm-color-primary);
+  text-align: right;
+}
+
+.fieldTooltipLine b,
+.fieldTooltipEnumLine b {
+  flex: 0 0 auto;
+  color: var(--ifm-color-primary);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+}
+
+.fieldTooltipLine span {
+  min-width: 0;
+  color: var(--ifm-font-color-base);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.fieldTooltipEnumLine {
+  align-items: flex-start;
+}
+
+.fieldTooltipEnumLine span {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.22rem;
+  color: var(--ifm-font-color-base);
+  text-align: right;
+}
+
+.fieldTooltipEnumLine code {
+  width: 100%;
+  margin-bottom: 0.05rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--ifm-color-primary);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.fieldTooltipEnumLine em {
+  border-radius: 4px;
+  background: var(--ifm-color-emphasis-200);
+  color: var(--ifm-color-emphasis-800);
+  padding: 0.02rem 0.28rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.64rem;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   Tone classes (header gradients)
+   ========================================================================== */
+
+.tableResource .tableHeader,
+.legendSwatch.tableResource {
+  background: var(--db-tone-resource);
+}
+
+.tableBinding .tableHeader,
+.legendSwatch.tableBinding {
+  background: var(--db-tone-binding);
+}
+
+.tableRule .tableHeader,
+.legendSwatch.tableRule {
+  background: var(--db-tone-rule);
+}
+
+.tableSystem .tableHeader,
+.legendSwatch.tableSystem {
+  background: var(--db-tone-system);
+}
+
+.enumNode .tableHeader,
+.legendSwatch.enumNode {
+  background: var(--db-tone-enum);
+}
+
+/* ==========================================================================
+   Inspector (right side panel)
+   ========================================================================== */
+
+.inspector {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius);
+  background: var(--db-surface);
+  box-shadow: var(--db-shadow-soft);
+}
+
+.inspectorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.inspectorTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--db-text);
+}
+
+.inspectorTitle .toneDot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: var(--db-radius-pill);
+  flex: 0 0 auto;
+}
+
+.inspectorTitle code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.inspectorMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.5rem;
+}
+
+.inspectorMeta span {
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface-soft);
+  color: var(--db-text-soft);
+  padding: 0.08rem 0.5rem;
+  font-size: 0.7rem;
+}
+
+.inspectorNote {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-warning) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ifm-color-warning) 12%, transparent);
+  color: var(--ifm-color-warning-darkest);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+:global([data-theme='dark']) .inspectorNote {
+  color: var(--ifm-color-warning-light);
+  background: color-mix(in srgb, var(--ifm-color-warning) 10%, transparent);
+}
+
+.inspectorDescription {
+  margin: 0;
+  color: var(--db-text-soft);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.inspectorSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.inspectorSectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--db-text-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inspectorSectionCount {
+  color: var(--db-text-muted);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.74rem;
+}
+
+.detailFieldList {
+  overflow: hidden;
+  border: 1px solid var(--db-border);
+  border-radius: 10px;
+}
+
+.detailFieldRow {
+  background: var(--db-surface);
+}
+
+.detailFieldRow:hover {
+  background: var(--db-surface-soft);
+}
+
+.detailFieldMain {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.settingBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.settingBadge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface-soft);
+  color: var(--db-text-soft);
+  padding: 0.05rem 0.42rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.65rem;
+  line-height: 1.35;
+}
+
+.detailFieldRowExpanded {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  height: auto;
+  min-height: 28px;
+  padding: 0.4rem 0.7rem;
+  gap: 0.35rem;
+}
+
+.detailFieldRowExpanded .detailFieldMain {
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.18rem;
+}
+
+.detailFieldRowExpanded .fieldType {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.indexList,
+.enumList {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.indexItem,
+.enumItem {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid var(--db-border);
+  border-radius: 10px;
+  background: var(--db-surface);
+  padding: 0.55rem 0.65rem;
+}
+
+.indexItem code,
+.enumItem code {
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--db-text);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+}
+
+.enumValues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.enumValues span {
+  border: 1px solid var(--db-border);
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface-soft);
+  color: var(--db-text-soft);
+  padding: 0.06rem 0.45rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.7rem;
+}
+
+.relationList {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.relationItem {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid var(--db-border);
+  border-radius: 10px;
+  background: var(--db-surface-soft);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.relationItem:hover,
+.relationItemActive {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 45%, transparent);
+  background: var(--db-accent-soft);
+}
+
+.relationMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: var(--db-text-soft);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.relationMeta b {
+  color: var(--db-text-soft);
+  font-weight: 700;
+}
+
+.relationDirection {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.04rem 0.42rem;
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  border: 1px solid var(--db-border);
+  font-size: 0.66rem;
+}
+
+.relationDirectionInbound {
+  color: var(--ifm-color-success-dark);
+  border-color: color-mix(in srgb, var(--ifm-color-success) 40%, transparent);
+  background: color-mix(in srgb, var(--ifm-color-success) 8%, transparent);
+}
+
+.relationDirectionOutbound {
+  color: var(--ifm-color-primary-dark);
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--ifm-color-primary) 8%, transparent);
+}
+
+:global([data-theme='dark']) .relationDirectionInbound {
+  color: var(--ifm-color-success-light);
+}
+
+:global([data-theme='dark']) .relationDirectionOutbound {
+  color: var(--ifm-color-primary-light);
+}
+
+.relationPath {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.relationEndpoint,
+.relationEndpointButton {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+  align-content: start;
+  border: 1px solid var(--db-border);
+  border-radius: 9px;
+  background: var(--db-surface);
+  padding: 0.5rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.relationEndpointButton {
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.relationEndpointButton:hover {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 55%, transparent);
+  background: var(--db-accent-soft);
+}
+
+.relationEndpoint span,
+.relationEndpointButton span {
+  color: var(--db-text-muted);
+  font-size: 0.7rem;
+}
+
+.relationEndpoint code,
+.relationEndpointButton code {
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--db-text);
+}
+
+.cardinalityBadge {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  padding: 0.04rem 0.42rem;
+  border-radius: var(--db-radius-pill);
+  background: var(--db-accent-soft);
+  color: var(--db-accent-strong);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: var(--ifm-font-family-monospace);
+}
+
+.relationArrow {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--db-radius-pill);
+  background: var(--db-surface);
+  border: 1px solid var(--db-border);
+  color: var(--db-accent);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.relationEmpty {
+  margin: 0;
+  padding: 0.6rem;
+  border: 1px dashed var(--db-border-strong);
+  border-radius: 10px;
+  color: var(--db-text-muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 1180px) {
+  .workspaceBody {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .inspector {
+    max-height: 320px;
+  }
+
+  .selectInput {
+    min-width: 0;
+    flex: 1 1 12rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace {
+    padding: 0.5rem;
+  }
+
+  .preview {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .openButton {
+    width: 100%;
+  }
+
+  .workspaceHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .workspaceActions {
+    justify-content: flex-start;
+  }
+
+  .relationPath {
+    grid-template-columns: 1fr;
+  }
+
+  .relationArrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+
+  .graphHints {
+    display: none;
+  }
+}

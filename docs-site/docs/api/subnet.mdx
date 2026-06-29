@@ -1,0 +1,548 @@
+---
+id: subnet
+sidebar_position: 3
+title: Subnet
+---
+
+import { DICTIONARY } from '@site/src/constants/dictionary'
+import { TYPES } from '@site/src/constants/types'
+import { RESTRICTIONS } from '@site/src/constants/restrictions'
+import { Restrictions } from '@site/src/components/commonBlocks/Restrictions'
+import { Codes } from '@site/src/components/commonBlocks/Codes'
+import { ApiOperation } from '@site/src/components/commonBlocks/ApiOperation'
+import CodeBlock from '@theme/CodeBlock'
+import dedent from 'ts-dedent'
+
+# Subnet
+
+**Subnet** — это диапазон адресов внутри сети, привязанный к конкретной зоне. Подсеть
+отвечает на практический вопрос «откуда брать внутренние IP-адреса для ресурсов в этой
+зоне»: вы задаете один или несколько CIDR-блоков (IPv4 и/или IPv6), и из них автоматически
+выделяются внутренние адреса (`Address`) и сетевые интерфейсы (`NetworkInterface`). Так вы
+сами планируете адресацию приложения — разбиваете сеть на сегменты под разные зоны, ярусы
+или команды.
+
+Подсеть всегда живет в одной зоне (`zoneId`) и принадлежит одной виртуальной сети
+(`networkId`). Платформа гарантирует, что **CIDR-блоки подсетей одной сети не
+пересекаются** (контроль на уровне БД, EXCLUDE-constraint) — это исключает «двойную
+адресацию» и связанные с ней инциденты еще до того, как адрес будет кому-то выдан. Подсеть
+может быть привязана к таблице маршрутизации (`routeTableId`); если ее не указать —
+выполняется авто-ассоциация с самой ранней `RouteTable` сети.
+
+`networkId` и `zoneId` — **immutable** после создания (сегмент нельзя «переехать» в другую
+сеть или зону). Набор CIDR-блоков меняется **не** через `Update` (там эти поля
+soft-immutable, no-op), а через специальные действия `:add-cidr-blocks` /
+`:remove-cidr-blocks` — отдельные операции, чтобы расширение/сжатие адресного пространства
+было явным и проходило проверку на пересечения.
+
+:::info Идентификатор и зона
+ID подсети — префикс `sub` + 17 символов crockford-base32 (например,
+`sub-7k2m9p4q1r8s3t6vw`). Зона (`zoneId`) — ресурс отдельного домена `kacho-geo`; ее
+существование проверяется при `Create` синхронным вызовом `kacho-geo` (несуществующая зона
+→ `InvalidArgument`, недоступность домена → `Unavailable`).
+:::
+
+## Поля ресурса
+
+<table>
+  <thead><tr><th>Поле</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.id.short}</td></tr>
+    <tr><td><code>projectId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>networkId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.networkId.short} (immutable)</td></tr>
+    <tr><td><code>zoneId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short} (immutable)</td></tr>
+    <tr><td><code>name</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
+    <tr><td><code>v4CidrBlocks</code></td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v4CidrBlocks.short} (soft-immutable в Update; меняется через :add-cidr-blocks/:remove-cidr-blocks)</td></tr>
+    <tr><td><code>v6CidrBlocks</code></td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v6CidrBlocks.short} (soft-immutable в Update)</td></tr>
+    <tr><td><code>routeTableId</code></td><td><code>{TYPES.string}</code></td><td>id привязанной RouteTable (если не задан — авто-ассоциация с самой ранней RT сети)</td></tr>
+    <tr><td><code>dhcpOptions</code></td><td><code>DhcpOptions</code></td><td>DHCP-параметры подсети: <code>domainName</code>, <code>domainNameServers[]</code>, <code>ntpServers[]</code></td></tr>
+    <tr><td><code>createdAt</code></td><td><code>{TYPES.timestamp}</code></td><td>{DICTIONARY.createdAt.short}</td></tr>
+  </tbody>
+</table>
+
+:::note CIDR-блоки и immutability
+В теле `Update` поля `v4_cidr_blocks` / `v6_cidr_blocks` принимаются в `update_mask`, но
+их применение — **no-op** (запрос завершается успешно, реального изменения набора CIDR
+нет). Чтобы изменить набор CIDR — используйте `:add-cidr-blocks` / `:remove-cidr-blocks`.
+Поля `network_id` и `zone_id` — hard-immutable: явно в `update_mask` → `InvalidArgument`.
+:::
+
+---
+
+## Get
+
+<ApiOperation method="GET" endpoint="/vpc/v1/subnets/{subnetId}">
+
+Возвращает подсеть по идентификатору.
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl http://localhost:18080/vpc/v1/subnets/{subnetId} \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{subnetId}",
+      "projectId": "{projectId}",
+      "networkId": "{networkId}",
+      "zoneId": "zone-a",
+      "name": "prod-subnet-a",
+      "description": "Подсеть прод-зоны A",
+      "labels": { "env": "prod" },
+      "v4CidrBlocks": ["10.0.0.0/24"],
+      "v6CidrBlocks": [],
+      "routeTableId": "{routeTableId}",
+      "createdAt": "2026-06-06T14:27:00Z"
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'resourceId', rules: RESTRICTIONS.resourceId }]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## List
+
+<ApiOperation method="GET" endpoint="/vpc/v1/subnets">
+
+Список подсетей проекта с фильтром и cursor-пагинацией.
+
+#### Параметры запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>filter</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.filter.short}</td></tr>
+    <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
+    <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl 'http://localhost:18080/vpc/v1/subnets?projectId={projectId}&filter=name%3D%22prod-subnet-a%22' \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "subnets": [
+        {
+          "id": "{subnetId}",
+          "projectId": "{projectId}",
+          "networkId": "{networkId}",
+          "zoneId": "zone-a",
+          "name": "prod-subnet-a",
+          "v4CidrBlocks": ["10.0.0.0/24"],
+          "createdAt": "2026-06-06T14:27:00Z"
+        }
+      ],
+      "nextPageToken": ""
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'pagination', rules: RESTRICTIONS.pagination }]} />
+<Codes codes={['invalidArgument', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Create
+
+<ApiOperation method="POST" endpoint="/vpc/v1/subnets" async>
+
+Создает подсеть в указанной сети и зоне. Возвращает `Operation` (async). Несуществующая
+сеть, дубль имени и пересечение CIDR отклоняются **синхронно** (`NOT_FOUND "Network %s not found"` /
+`ALREADY_EXISTS` / `FAILED_PRECONDITION "Subnet CIDRs can not overlap"`). В worker'е:
+проверка существования проекта → вставка Subnet (FK + EXCLUDE — атомарный backstop) →
+запись событий в outbox.
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>networkId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.networkId.short}</td></tr>
+    <tr><td><code>zoneId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short}</td></tr>
+    <tr><td><code>name</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td>нет</td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
+    <tr><td><code>v4CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v4CidrBlocks.short} (опционально; CIDR можно добавить позже через :add-cidr-blocks)</td></tr>
+    <tr><td><code>v6CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v6CidrBlocks.short}</td></tr>
+    <tr><td><code>routeTableId</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>id привязываемой RouteTable</td></tr>
+    <tr><td><code>dhcpOptions</code></td><td>нет</td><td><code>DhcpOptions</code></td><td>DHCP-параметры (<code>domainName</code> по RFC 1123, IP в <code>domainNameServers[]</code> / <code>ntpServers[]</code>)</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X POST http://localhost:18080/vpc/v1/subnets \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "projectId": "{projectId}",
+        "networkId": "{networkId}",
+        "zoneId": "zone-a",
+        "name": "prod-subnet-a",
+        "v4CidrBlocks": ["10.0.0.0/24"],
+        "labels": { "env": "prod" }
+      }'
+  `}
+</CodeBlock>
+
+#### Пример ответа (Operation)
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{operationId}",
+      "description": "Create subnet prod-subnet-a",
+      "createdAt": "2026-06-06T14:27:00Z",
+      "done": false,
+      "metadata": {
+        "@type": "type.googleapis.com/kacho.cloud.vpc.v1.CreateSubnetMetadata",
+        "subnetId": "{subnetId}"
+      }
+    }
+  `}
+</CodeBlock>
+
+:::tip Опрос результата
+Поллите <code>GET /operations/&#123;operationId&#125;</code> до <code>done: true</code>; затем <code>response</code>
+содержит созданный <code>Subnet</code>, либо <code>error</code> — <code>google.rpc.Status</code>.
+См. [Операции](/architecture/operations).
+:::
+
+<Restrictions items={[
+  { label: 'projectId', rules: RESTRICTIONS.projectId },
+  { label: 'zoneId', rules: RESTRICTIONS.zoneId },
+  { label: 'name', rules: RESTRICTIONS.name },
+  { label: 'cidr', rules: RESTRICTIONS.cidr },
+  { label: 'labels', rules: RESTRICTIONS.labels },
+]} />
+<Codes codes={['invalidArgument', 'alreadyExists', 'notFound', 'failedPrecondition', 'unavailable', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Update
+
+<ApiOperation method="PATCH" endpoint="/vpc/v1/subnets/{subnetId}" async>
+
+Изменяет mutable-поля подсети (`name`, `description`, `labels`, `route_table_id`,
+`dhcp_options`). Поля `network_id` / `zone_id` — hard-immutable (явно в `update_mask` →
+`InvalidArgument "<field> is immutable after Subnet.Create"`). Поля
+`v4_cidr_blocks` / `v6_cidr_blocks` — soft-immutable (принимаются, но no-op).
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>updateMask</code></td><td>нет</td><td><code>{TYPES.fieldMask}</code></td><td>{DICTIONARY.updateMask.short}</td></tr>
+    <tr><td><code>name</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td>нет</td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
+    <tr><td><code>routeTableId</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>id привязываемой RouteTable</td></tr>
+    <tr><td><code>dhcpOptions</code></td><td>нет</td><td><code>DhcpOptions</code></td><td>DHCP-параметры подсети</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X PATCH http://localhost:18080/vpc/v1/subnets/{subnetId} \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "updateMask": "description",
+        "description": "Подсеть прод-зоны A (обновлено)"
+      }'
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'updateMask', rules: RESTRICTIONS.updateMask }]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Delete
+
+<ApiOperation method="DELETE" endpoint="/vpc/v1/subnets/{subnetId}" async>
+
+Удаляет подсеть (hard-delete). Подсеть с внутренними `Address` или `NetworkInterface`
+заблокирована FK (`ON DELETE RESTRICT`) → `FAILED_PRECONDITION`. Порядок удаления —
+снизу вверх: `NetworkInterface → Address → Subnet → Network`.
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X DELETE http://localhost:18080/vpc/v1/subnets/{subnetId} \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа (Operation, response = Empty)
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{operationId}",
+      "description": "Delete subnet {subnetId}",
+      "done": false,
+      "metadata": {
+        "@type": "type.googleapis.com/kacho.cloud.vpc.v1.DeleteSubnetMetadata",
+        "subnetId": "{subnetId}"
+      }
+    }
+  `}
+</CodeBlock>
+
+<Codes codes={['invalidArgument', 'notFound', 'failedPrecondition', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## AddCidrBlocks
+
+<ApiOperation method="POST" endpoint="/vpc/v1/subnets/{subnetId}:add-cidr-blocks" async>
+
+Добавляет CIDR-блоки к подсети. Это **штатный** способ расширить адресное пространство
+(в отличие от soft-immutable `v4_cidr_blocks` в `Update`). CIDR'ы внутри запроса не должны
+пересекаться между собой (sync-проверка), а также с соседними подсетями той же сети
+(EXCLUDE-constraint → `FailedPrecondition "Subnet CIDRs can not overlap"`).
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>v4CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>Добавляемые IPv4 CIDR-блоки; host-биты = 0</td></tr>
+    <tr><td><code>v6CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>Добавляемые IPv6 CIDR-блоки</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X POST http://localhost:18080/vpc/v1/subnets/{subnetId}:add-cidr-blocks \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "v4CidrBlocks": ["10.0.1.0/24"]
+      }'
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'cidr', rules: RESTRICTIONS.cidr }]} />
+<Codes codes={['invalidArgument', 'notFound', 'failedPrecondition', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## RemoveCidrBlocks
+
+<ApiOperation method="POST" endpoint="/vpc/v1/subnets/{subnetId}:remove-cidr-blocks" async>
+
+Удаляет CIDR-блоки из подсети. Возвращает `Operation` (async).
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>v4CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>Удаляемые IPv4 CIDR-блоки</td></tr>
+    <tr><td><code>v6CidrBlocks</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>Удаляемые IPv6 CIDR-блоки</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X POST http://localhost:18080/vpc/v1/subnets/{subnetId}:remove-cidr-blocks \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "v4CidrBlocks": ["10.0.1.0/24"]
+      }'
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'resourceId', rules: RESTRICTIONS.resourceId }]} />
+<Codes codes={['invalidArgument', 'notFound', 'failedPrecondition', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## ListUsedAddresses
+
+<ApiOperation method="GET" endpoint="/vpc/v1/subnets/{subnetId}/addresses">
+
+Возвращает занятые адреса в указанной подсети с указанием ссылающихся ресурсов
+(`references`). Sync-чтение с пагинацией.
+
+#### Параметры запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>subnetId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.subnetId.short}</td></tr>
+    <tr><td><code>filter</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.filter.short}</td></tr>
+    <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
+    <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl http://localhost:18080/vpc/v1/subnets/{subnetId}/addresses \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "addresses": [
+        {
+          "address": "10.0.0.5",
+          "ipVersion": "IPV4",
+          "references": [
+            { "type": "network_interface", "id": "{networkInterfaceId}" }
+          ]
+        }
+      ],
+      "nextPageToken": ""
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'pagination', rules: RESTRICTIONS.pagination }]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## ListOperations
+
+<ApiOperation method="GET" endpoint="/vpc/v1/subnets/{subnetId}/operations">
+
+Список операций (LRO) над указанной подсетью с cursor-пагинацией.
+
+#### Параметры запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>subnetId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.subnetId.short}</td></tr>
+    <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
+    <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl http://localhost:18080/vpc/v1/subnets/{subnetId}/operations \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'pagination', rules: RESTRICTIONS.pagination }]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Сценарии использования
+
+- **Планирование адресации по зонам.** Разбейте сеть на подсети — по одной на зону — с
+  непересекающимися диапазонами (`10.0.0.0/24`, `10.0.1.0/24`, …). Из них платформа сама
+  раздает внутренние адреса интерфейсам ресурсов.
+- **Расширение без простоя.** Когда диапазона перестает хватать, добавьте новый CIDR-блок
+  через `:add-cidr-blocks` — это штатный путь увеличить адресное пространство подсети, не
+  пересоздавая ее и не трогая уже выданные адреса.
+- **Dual-stack (IPv4 + IPv6).** Задайте и `v4CidrBlocks`, и `v6CidrBlocks` — интерфейсы
+  смогут получать адреса обоих семейств (≤ 1 v4 и ≤ 1 v6 на интерфейс).
+- **Аудит занятости.** `ListUsedAddresses` показывает, какие адреса заняты и какие ресурсы
+  на них ссылаются (`references`) — удобно перед сжатием диапазона или удалением подсети.
+- **DHCP-параметры.** Через `dhcpOptions` (`domainName`, `domainNameServers[]`,
+  `ntpServers[]`) задаются сетевые настройки, раздаваемые ресурсам подсети.
+
+## Подводные камни
+
+:::caution Пересечение CIDR
+CIDR-блоки подсетей одной сети не должны пересекаться. Конфликт ловится на уровне БД
+(EXCLUDE-constraint) и при `Create` / `:add-cidr-blocks` возвращается синхронно как
+`FAILED_PRECONDITION "Subnet CIDRs can not overlap"`. Блоки внутри одного запроса тоже не
+должны перекрывать друг друга.
+:::
+
+:::caution Удаление непустой подсети
+Подсеть нельзя удалить, пока в ней есть внутренние `Address` или `NetworkInterface` — FK
+`ON DELETE RESTRICT` отдает `FAILED_PRECONDITION`. Сначала освободите ресурсы в порядке
+`NetworkInterface → Address`, затем удаляйте подсеть.
+:::
+
+:::caution host-биты CIDR обязаны быть нулевыми
+Адрес сети должен быть выровнен по маске: `10.0.0.0/24` — корректно, `10.0.0.5/24` →
+`InvalidArgument`. Это относится и к `Create`, и к `:add-cidr-blocks`.
+:::
+
+:::note CIDR не меняются через Update
+В `Update` поля `v4CidrBlocks` / `v6CidrBlocks` принимаются в `updateMask`, но их
+применение — **no-op** (запрос успешен, набор CIDR не меняется). Единственный способ
+изменить диапазоны — `:add-cidr-blocks` / `:remove-cidr-blocks`. Поля `networkId` /
+`zoneId` — hard-immutable: явное указание в `updateMask` → `InvalidArgument`.
+:::
+
+## Рекомендации
+
+- **Закладывайте запас, но не дробите чрезмерно.** Выбирайте размер блока с учетом роста
+  числа интерфейсов в зоне; расширяться позже можно через `:add-cidr-blocks`.
+- **Непересекающаяся раскладка заранее.** Спланируйте диапазоны подсетей одной сети так,
+  чтобы они гарантированно не накладывались — это избавит от `FAILED_PRECONDITION` при
+  массовом создании.
+- **Освобождайте перед сжатием.** Перед `:remove-cidr-blocks` убедитесь через
+  `ListUsedAddresses`, что в удаляемом диапазоне нет занятых адресов.

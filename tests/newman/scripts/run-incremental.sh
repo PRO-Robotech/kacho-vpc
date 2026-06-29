@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+# run-incremental.sh — обертка над run-incremental.js: прогон newman-сьюты ПО ОДНОМУ
+# кейсу за раз с зачисткой ресурсов (quota-safe). См. шапку run-incremental.js.
+#
+#   ./scripts/run-incremental.sh                  # все ~731 кейс, с нуля
+#   ./scripts/run-incremental.sh --resume         # продолжить прерванный прогон
+#   ./scripts/run-incremental.sh --service subnet # один сервис
+#   ./scripts/run-incremental.sh --cleanup-only   # только зачистить тест-папки
+#   CLEANUP_EVERY=10 DELAY_REQUEST=20 ./scripts/run-incremental.sh   # тюнинг
+#
+# Требует: api-gateway доступен по baseUrl из env-файла (локально — port-forward на 18080);
+#          newman установлен (`npm install -g newman`); node >= 18.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# newman/newman-lib — из глобального npm-префикса
+NODE_PATH_GLOBAL="$(npm root -g 2>/dev/null || true)"
+if [[ -n "${NODE_PATH:-}" ]]; then export NODE_PATH="${NODE_PATH}:${NODE_PATH_GLOBAL}"; else export NODE_PATH="${NODE_PATH_GLOBAL}"; fi
+
+exec node "${SCRIPT_DIR}/run-incremental.js" "$@"

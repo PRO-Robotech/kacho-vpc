@@ -1,0 +1,25 @@
+time="2026-05-13T22:52:37Z" level=warning msg="Insufficient VUs, reached 16000 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=allocate
+
+   ✗ address_alloc_latency..........: min=113ms    avg=2.37s    med=2.02s   p(90)=4.17s   p(95)=4.53s    p(99)=5.02s    max=6.59s   
+   ✗ address_alloc_ok...............: 98.96%  549913 out of 555646
+     addresses_allocated............: 549913  2947.75443/s
+     cleanup_ok.....................: 40.79%  224337 out of 549913
+     data_received..................: 499 MB  2.7 MB/s
+     data_sent......................: 343 MB  1.8 MB/s
+     dropped_iterations.............: 1244355 6670.242317/s
+     http_req_blocked...............: min=1.13µs   avg=804.76µs med=5.15µs  p(90)=8.64µs  p(95)=19µs     p(99)=493.73µs max=1.09s   
+     http_req_connecting............: min=0s       avg=299.11µs med=0s      p(90)=0s      p(95)=0s       p(99)=247.17µs max=265.2ms 
+     http_req_duration..............: min=51.9ms   avg=2.53s    med=2.04s   p(90)=4.37s   p(95)=5.23s    p(99)=8.8s     max=12.6s   
+       { expected_response:true }...: min=64.77ms  avg=2.97s    med=2.37s   p(90)=4.68s   p(95)=7.54s    p(99)=9.01s    max=12.6s   
+   ✗ http_req_failed................: 29.96%  331309 out of 1105559
+     http_req_receiving.............: min=14.9µs   avg=87.39µs  med=45.11µs p(90)=92.77µs p(95)=158.15µs p(99)=570.69µs max=177.73ms
+     http_req_sending...............: min=6.24µs   avg=178.77µs med=17.62µs p(90)=89.47µs p(95)=172.55µs p(99)=951.62µs max=499.95ms
+     http_req_tls_handshaking.......: min=0s       avg=0s       med=0s      p(90)=0s      p(95)=0s       p(99)=0s       max=0s      
+     http_req_waiting...............: min=47.61ms  avg=2.53s    med=2.04s   p(90)=4.37s   p(95)=5.23s    p(99)=8.8s     max=12.6s   
+     http_reqs......................: 1105559 5926.240041/s
+     iteration_duration.............: min=231.01ms avg=5.06s    med=4.5s    p(90)=7.71s   p(95)=12.16s   p(99)=13.63s   max=16.88s  
+     iterations.....................: 555646  2978.485611/s
+     vus............................: 10      min=10                max=16000
+     vus_max........................: 16000   min=4000              max=16000
+
+time="2026-05-13T22:55:28Z" level=error msg="thresholds on metrics 'address_alloc_latency, address_alloc_ok, http_req_failed' have been crossed"

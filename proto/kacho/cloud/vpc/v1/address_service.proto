@@ -1,0 +1,453 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "kacho/cloud/api/operation.proto";
+import "kacho/cloud/operation/operation.proto";
+import "kacho/cloud/validation.proto";
+import "kacho/cloud/vpc/v1/address.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// A set of methods for managing Address resources.
+service AddressService {
+  // Returns the specified Address resource.
+  //
+  // To get the list of all available Address resources, make a [List] request.
+  rpc Get(GetAddressRequest) returns (Address) {
+    option (google.api.http) = {get: "/vpc/v1/addresses/{address_id}"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresses.get";
+    option (kacho.iam.authz.v1.required_relation) = "v_get";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_address"
+      from_request_field: "address_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Returns the specified Address resource by a given value.
+  //
+  // To get the list of all available Address resources, make a [List] request.
+  rpc GetByValue(GetAddressByValueRequest) returns (Address) {
+    option (google.api.http) = {get: "/vpc/v1/addresses:byValue"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_by_values.getByValue";
+    option (kacho.iam.authz.v1.required_relation) = "v_get";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Retrieves the list of Address resources in the specified folder.
+  rpc List(ListAddressesRequest) returns (ListAddressesResponse) {
+    option (google.api.http) = {get: "/vpc/v1/addresses"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresseses.list";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Retrieves the list of Address resources in the specified subnet.
+  rpc ListBySubnet(ListAddressesBySubnetRequest) returns (ListAddressesBySubnetResponse) {
+    option (google.api.http) = {get: "/vpc/v1/addresses:bySubnet"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresses_by_subnets.listBySubnet";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Creates an address in the specified folder and network.
+  rpc Create(CreateAddressRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/addresses"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "CreateAddressMetadata"
+      response: "Address"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresses.create";
+    option (kacho.iam.authz.v1.required_relation) = "editor";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Updates the specified address.
+  rpc Update(UpdateAddressRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      patch: "/vpc/v1/addresses/{address_id}"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateAddressMetadata"
+      response: "Address"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresses.update";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_address"
+      from_request_field: "address_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Deletes the specified address.
+  rpc Delete(DeleteAddressRequest) returns (operation.Operation) {
+    option (google.api.http) = {delete: "/vpc/v1/addresses/{address_id}"};
+    option (kacho.cloud.api.operation) = {
+      metadata: "DeleteAddressMetadata"
+      response: "google.protobuf.Empty"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.addresses.delete";
+    option (kacho.iam.authz.v1.required_relation) = "v_delete";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_address"
+      from_request_field: "address_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // List operations for the specified address.
+  rpc ListOperations(ListAddressOperationsRequest) returns (ListAddressOperationsResponse) {
+    option (google.api.http) = {get: "/vpc/v1/addresses/{address_id}/operations"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.address_operationses.listOperations";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_address"
+      from_request_field: "address_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+}
+
+message GetAddressRequest {
+  // ID of the Address resource to return.
+  //
+  // To get Address resource ID make a [AddressService.List] request.
+  string address_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message GetAddressByValueRequest {
+  reserved 3 to 4;
+
+  oneof address {    
+    // External ipv4 address specification.
+    string external_ipv4_address = 1;
+    // Internal ipv4 address specification.
+    string internal_ipv4_address = 2;
+  }
+
+  oneof scope {
+    // subnet where address was allocated
+    string subnet_id = 5 [(length) = "<=50"];
+  }
+}
+
+message ListAddressesRequest {
+  // ID of the project to list addresses in.
+  //
+  // To get the project ID use a [kacho.cloud.iam.v1.ProjectService.List] request.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than `page_size`, the service returns a [ListAddressesResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  // Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set `page_token` to the
+  // [ListAddressesResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+
+  // A filter expression that filters Address listed in the response.
+  //
+  // The expression must specify:
+  // 1. The field name. Currently you can use filtering only on [Address.name] field.
+  // 2. An `=` operator.
+  // 3. The value in double quotes (`"`). Must be 3-63 characters long and match the regular expression `[a-z][-a-z0-9]{1,61}[a-z0-9]`.
+  // Example of a filter: `name=my-address`.
+  string filter = 4;
+
+  // Optional: list only addresses allocated from this subnet (internal_ipv4 /
+  // internal_ipv6 with this subnet_id). Used by the UI ref-picker for a NIC's
+  // addresses in a given subnet.
+  string subnet_id = 5 [(length) = "<=50"];
+}
+
+message ListAddressesResponse {
+  // List of addresses.
+  repeated Address addresses = 1;
+
+  // Token for getting the next page of the list. If the number of results is greater than
+  // the specified [ListAddressesRequest.page_size], use `next_page_token` as the value
+  // for the [ListAddressesRequest.page_token] parameter in the next list request.
+  //
+  // Each subsequent page will have its own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message ListAddressesBySubnetRequest {
+  // ID of the subnet to list addresses in.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than `page_size`, the service returns a [ListAddressesBySubnetResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  // Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set `page_token` to the
+  // [ListAddressesBySubnetResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListAddressesBySubnetResponse {
+  // List of addresses.
+  repeated Address addresses = 1;
+
+  // Token for getting the next page of the list. If the number of results is greater than
+  // the specified [ListAddressesBySubnetRequest.page_size], use `next_page_token` as the value
+  // for the [ListAddressesBySubnetRequest.page_token] parameter in the next list request.
+  //
+  // Each subsequent page will have its own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message CreateAddressRequest {
+  reserved 7 to 9;
+  // ID of the project to create a address in.
+  //
+  // To get a project ID make a [kacho.cloud.iam.v1.ProjectService.List] request.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Name of the address.
+  // The name must be unique within the folder.
+  string name = 2 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // Description of the address.
+  string description = 3 [(length) = "<=256"];
+
+  // Address labels as `key:value` pairs.
+  map<string, string> labels = 4 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+
+  
+  oneof address_spec {
+    // External ipv4 address specification.
+    ExternalIpv4AddressSpec external_ipv4_address_spec = 5;
+    // Internal ipv4 address specification.
+    InternalIpv4AddressSpec internal_ipv4_address_spec = 6;
+    // Internal ipv6 address specification (IPv6 vertical).
+    InternalIpv6AddressSpec internal_ipv6_address_spec = 12;
+    // External ipv6 address specification.
+    ExternalIpv6AddressSpec external_ipv6_address_spec = 13;
+  }
+  // Specifies if address protected from deletion.
+  bool deletion_protection = 10;
+
+  // Optional DNS record specifications
+  repeated DnsRecordSpec dns_record_specs = 11;
+}
+
+message ExternalIpv4AddressSpec {
+  // Value of address.
+  string address = 1; // if unspecified, one will be automatically allocated from other params
+
+  // Availability zone from which the address will be allocated.
+  string zone_id = 2; // only if address unspecified
+
+  // Parameters of the allocated address, for example DDoS Protection.
+  AddressRequirements requirements = 3;
+}
+
+message InternalIpv4AddressSpec {
+  // Value of address.
+  string address = 1 [(length) = "<=16"]; // if unspecified, one will be automatically allocated from the subnet
+
+  oneof scope {
+    option (exactly_one) = true;
+
+    // Subnet from which the address will be allocated.
+    string subnet_id = 2 [(length) = "<=50"];
+  }
+}
+
+message InternalIpv6AddressSpec {
+  // Value of address.
+  string address = 1 [(length) = "<=16"]; // if unspecified, one will be automatically allocated from the subnet
+
+  oneof scope {
+    option (exactly_one) = true;
+
+    // Subnet from which the address will be allocated.
+    string subnet_id = 2 [(length) = "<=50"];
+  }
+}
+
+// External IPv6 address spec. Mirrors
+// ExternalIpv4AddressSpec; allocator: sparse counter-based on top of an
+// EXTERNAL_PUBLIC AddressPool with v6 CIDR.
+message ExternalIpv6AddressSpec {
+  // Value of address. If unspecified, one will be automatically allocated.
+  // Length cap is generous since v6 textual form can reach 39 chars.
+  string address = 1 [(length) = "<=45"];
+
+  // Availability zone from which the address will be allocated.
+  string zone_id = 2 [(length) = "<=50"]; // only if address unspecified
+
+  // Parameters of the allocated address. Same shape as v4 even if some
+  // attributes (e.g. SMTP capability) may not apply for v6 — kept symmetric
+  // for client-side ergonomics.
+  AddressRequirements requirements = 3;
+}
+
+message DnsRecordSpec {
+  // Required. DNS record name (absolute or relative to the DNS zone in use).
+  string fqdn = 1 [(required) = true];
+
+  // Required. ID of the public DNS zone. The maximum string length in characters is 20.
+  string dns_zone_id = 2 [
+    (required) = true,
+    (length) = "20"
+  ];
+
+  // TTL of record. Acceptable values are 0 to 86400, inclusive.
+  int64 ttl = 3 [(value) = "0-86400"];
+
+  // Optional. If the PTR record is required, this parameter must be set to "true".
+  bool ptr = 4;
+}
+
+message CreateAddressMetadata {
+  // ID of the address that is being created.
+  string address_id = 1;
+}
+
+message UpdateAddressRequest {
+  // ID of the address to update.
+  //
+  // To get the address ID make a [AddressService.List] request.
+  string address_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Field mask that specifies which attributes of the Address should be updated.
+  google.protobuf.FieldMask update_mask = 2;
+
+  // New name for the address.
+  // The name must be unique within the folder.
+  string name = 3 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // New description of the address.
+  string description = 4 [(length) = "<=256"];
+
+  // Address labels as `key:value` pairs.
+  //
+  // Existing set of labels is completely replaced by the provided set, so if you just want
+  // to add or remove a label:
+  // 1. Get the current set of labels with a [AddressService.Get] request.
+  // 2. Add or remove a label in this set.
+  // 3. Send the new set in this field.
+  map<string, string> labels = 5 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+
+  // Specifies if address is reserved or not.
+  bool reserved = 6;
+
+  // Specifies if address protected from deletion.
+  bool deletion_protection = 7;
+
+  // Optional DNS record specifications
+  repeated DnsRecordSpec dns_record_specs = 8;
+}
+
+message UpdateAddressMetadata {
+  // ID of the Address that is being updated.
+  string address_id = 1;
+}
+
+message DeleteAddressRequest {
+  // ID of the address to delete.
+  //
+  // To get a address ID make a [AddressService.List] request.
+  string address_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message DeleteAddressMetadata {
+  // ID of the address that is being deleted.
+  string address_id = 1;
+}
+
+message ListAddressOperationsRequest {
+  // ID of the address to list operations for.
+  //
+  // To get a address ID make a [AddressService.List] request.
+  string address_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [ListAddressOperationsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  // Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [ListAddressOperationsResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListAddressOperationsResponse {
+  // List of operations for the specified address.
+  repeated operation.Operation operations = 1;
+
+  // Token for getting the next page of the list. If the number of results is greater than
+  // the specified [ListAddressOperationsRequest.page_size], use `next_page_token` as the value
+  // for the [ListAddressOperationsRequest.page_token] parameter in the next list request.
+  //
+  // Each subsequent page will have its own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}

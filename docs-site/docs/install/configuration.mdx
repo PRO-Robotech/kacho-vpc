@@ -1,0 +1,154 @@
+---
+id: configuration
+sidebar_position: 2
+title: Конфигурация
+---
+
+import CodeBlock from '@theme/CodeBlock'
+import dedent from 'ts-dedent'
+
+# Конфигурация
+
+Конфигурация kacho-vpc задается через **viper**: единый YAML-файл с переопределением
+через переменные окружения. Все default-значения собраны в одном месте кода
+(`config.RegisterDefaults`), а не размазаны по struct-тегам — это дает один источник
+истины для «что будет, если ключ не задан». Невалидная конфигурация отбивается на старте
+(`Config.Validate()` возвращает сразу **все** найденные проблемы), поэтому сервис либо
+поднимается с корректным конфигом, либо падает с понятной ошибкой, а не «наполовину».
+
+:::info Secure-by-default
+Сервис стартует в **production-режиме** (anonymous → fail-closed) по умолчанию. Режим
+`dev` (анонимный доступ как admin) включается **явно** и предназначен только для
+локального стенда и тестов. Любой развернутый стенд — `production` или `production-strict`.
+:::
+
+## Структура (YAML)
+
+<CodeBlock language="yaml">
+  {dedent`
+    logger:
+      level: INFO                          # FATAL|ERROR|WARN|INFO|DEBUG
+
+    api-server:
+      endpoint: tcp://0.0.0.0:9090           # публичный gRPC + REST (tenant-facing)
+      internal-endpoint: tcp://0.0.0.0:9091  # cluster-internal (Internal* сервисы)
+      graceful-shutdown: 10s
+
+    metrics:
+      enable: true
+    healthcheck:
+      enable: true
+
+    repository:
+      type: POSTGRES
+      postgres:
+        url: postgres://vpc@kacho-umbrella-pg-vpc:5432/kacho_vpc
+        max-conns: 200                       # размер pgxpool (0 → pgx default)
+        ssl-mode: disable                    # disable|require|verify-ca|verify-full
+        password-from-env: KACHO_VPC_DB_PASSWORD   # имя ENV с паролем БД
+
+    authn:
+      mode: production                       # production (default) | production-strict | dev
+
+    authz:                                   # per-RPC authz-gate (kacho-iam) + read-side List-filter
+      iam-endpoint: kacho-iam-internal.kacho.svc.cluster.local:9091
+      breakglass: false                      # true → пропустить все Check (dev/emergency)
+      check-timeout: 2s
+      cache-ttl: 5s
+      list-filter:
+        enabled: true                        # List<Resource> возвращает только доступные объекты
+        model-id: ""                         # pinned FGA model id (Secret из bootstrap)
+        fail-open: false                     # fail-closed по умолчанию
+      tuple-write:                           # legacy-блок прямого write-side OpenFGA — НЕ активен:
+        enabled: true                        #   owner-tuple теперь ставит register-drainer
+        openfga-endpoint: kacho-umbrella-openfga:8080  #   (intent → fga_register_outbox → kacho-iam.RegisterResource)
+        store-id: ""
+        model-id: ""
+
+    extapi:                                  # peer-сервисы (gRPC service→service)
+      def-dial-duration: 10s
+      iam:
+        endpoint: kacho-iam.kacho.svc.cluster.local:9090   # ProjectService.Get
+      geo:
+        endpoint: kacho-geo.kacho.svc.cluster.local:9090   # ZoneService.Get (валидация zone_id)
+
+    network:
+      default-sg-inline: true                # создавать default-SG при Network.Create
+      project-cache:
+        positive-ttl: 30s
+        negative-ttl: 5s
+        max-size: 10000
+  `}
+</CodeBlock>
+
+## Переменные окружения
+
+viper биндит ENV с префиксом **`KACHO_VPC_`** и разделителем секций `__` (двойное
+подчеркивание), а дефис в имени ключа заменяется на `_`. То есть любой YAML-ключ
+переопределяется ENV-переменной вида `KACHO_VPC_<SECTION>__<KEY>`:
+
+<table>
+  <thead><tr><th>ENV</th><th>viper-путь</th></tr></thead>
+  <tbody>
+    <tr><td><code>KACHO\_VPC\_REPOSITORY\_\_POSTGRES\_\_URL</code></td><td><code>repository.postgres.url</code></td></tr>
+    <tr><td><code>KACHO\_VPC\_REPOSITORY\_\_POSTGRES\_\_MAX\_CONNS</code></td><td><code>repository.postgres.max-conns</code></td></tr>
+    <tr><td><code>KACHO\_VPC\_AUTH\_MODE</code></td><td><code>authn.mode</code> (<code>production|production-strict|dev</code>)</td></tr>
+    <tr><td><code>KACHO\_VPC\_DEFAULT\_SG\_INLINE</code></td><td><code>network.default-sg-inline</code></td></tr>
+    <tr><td><code>KACHO\_VPC\_AUTHZ\_\_TUPLE\_WRITE\_\_STORE\_ID</code></td><td><code>authz.tuple-write.store-id</code></td></tr>
+    <tr><td><code>KACHO\_VPC\_AUTHZ\_\_TUPLE\_WRITE\_\_MODEL\_ID</code></td><td><code>authz.tuple-write.model-id</code></td></tr>
+    <tr><td><code>KACHO\_VPC\_DB\_PASSWORD</code></td><td>пароль БД — подставляется в DSN (см. ниже)</td></tr>
+  </tbody>
+</table>
+
+:::note Legacy split-ENV
+Для совместимости с уже задеплоенным Helm-чартом поддерживаются «склеиваемые»
+ENV-переменные подключения к БД: `KACHO_VPC_DB_HOST` / `KACHO_VPC_DB_PORT` /
+`KACHO_VPC_DB_USER` / `KACHO_VPC_DB_NAME` собираются в `repository.postgres.url`,
+если задан хотя бы один из них. Прямой `KACHO_VPC_REPOSITORY__POSTGRES__URL` имеет
+приоритет.
+:::
+
+## Пароль БД — только через ENV
+
+Пароль PostgreSQL **никогда** не кладется в YAML/ConfigMap (он коммитится в git). Вместо
+этого `repository.postgres.password-from-env` указывает **имя** ENV-переменной (по
+умолчанию `KACHO_VPC_DB_PASSWORD`), из которой пароль читается на старте и подставляется
+в DSN — и в master-URL, и в slave-URL (read-replica), если он настроен. В Helm-деплое
+эта переменная приходит из Kubernetes Secret.
+
+## Ключевые параметры
+
+<table>
+  <thead><tr><th>Параметр</th><th>Назначение</th></tr></thead>
+  <tbody>
+    <tr><td><code>api-server.endpoint</code></td><td>Публичный listener (<code>:9090</code>) — tenant-facing gRPC/REST. Формат <code>tcp://host:port</code> (поддерживается и голый порт)</td></tr>
+    <tr><td><code>api-server.internal-endpoint</code></td><td>Cluster-internal listener (<code>:9091</code>) — <code>Internal\*</code> сервисы (IPAM, AddressPool, internal-проекция Network). Не публикуется на external endpoint</td></tr>
+    <tr><td><code>repository.postgres.url</code></td><td>DSN master-БД. Пул использует <code>cfg.DSN()</code> (с <code>pool\_max\_conns</code>), мигратор — <code>cfg.MigrateDSN()</code> (без pool-параметров; иначе <code>database/sql</code> шлет серверу неизвестный параметр и падает)</td></tr>
+    <tr><td><code>repository.postgres.slave-url</code></td><td>DSN read-replica (опционально). Пусто / совпадает с <code>url</code> → Reader-TX идут на master; задан → разгружает master от read-нагрузки</td></tr>
+    <tr><td><code>repository.postgres.max-conns</code></td><td>Размер pgxpool (master и slave-pool). <code>0</code> → pgx default; в деплое поднят до <code>200</code> под высокий поток <code>Address.Create</code></td></tr>
+    <tr><td><code>authn.mode</code></td><td><code>production</code> (default, fail-closed) / <code>production-strict</code> (дополнительно требует <code>extapi.iam.tls.enable</code> и защищенный <code>ssl-mode</code>) / <code>dev</code> (anonymous → admin, только локально)</td></tr>
+    <tr><td><code>authz.iam-endpoint</code></td><td>Адрес <code>InternalIAMService</code> kacho-iam (per-RPC authz-gate <code>Check</code>). Пусто + <code>breakglass=false</code> → authz-интерсептор не навешивается (graceful dev-старт без kacho-iam)</td></tr>
+    <tr><td><code>authz.list-filter.\*</code></td><td>FGA-фильтрация результатов <code>List&lt;Resource&gt;</code>: каждый список возвращает только доступные вызывающему объекты (read==enforce, no-leak)</td></tr>
+    <tr><td><code>authz.tuple-write.\*</code></td><td><strong>Legacy / неактивен.</strong> Прежний прямой write-side OpenFGA. В текущей версии owner-hierarchy-tuple ставит <strong>register-drainer</strong>: worker на <code>Create</code> пишет intent в <code>fga\_register\_outbox</code> в той же TX, что и ресурс, а drainer применяет его через <code>kacho-iam.InternalIAMService.RegisterResource</code> (idempotent, at-least-once). См. <a href="/architecture/authz">Авторизация</a></td></tr>
+    <tr><td><code>extapi.iam.endpoint</code></td><td>kacho-iam (<code>ProjectService.Get</code>) — existence-проверка <code>project\_id</code> на request-path</td></tr>
+    <tr><td><code>extapi.geo.endpoint</code></td><td>kacho-geo (<code>ZoneService.Get</code>) — валидация <code>zone\_id</code> Subnet/AddressPool. Geography — отдельный leaf-домен <strong>kacho-geo</strong></td></tr>
+    <tr><td><code>network.default-sg-inline</code></td><td><code>true</code> (default): при <code>Network.Create</code> inline создается default-SG. <code>false</code>: сеть без default-SG (используется в load-тестах)</td></tr>
+  </tbody>
+</table>
+
+:::info Schema search_path
+Все соединения устанавливают `search_path TO kacho_vpc, public` через libpq-параметр
+`options=-c search_path=kacho_vpc,public`, который `composeDSN()` добавляет автоматически
+к `DSN()` / `MigrateDSN()` / `SlaveDSN()`. Все таблицы VPC живут в схеме `kacho_vpc`,
+не в `public`; `public` нужен лишь для extension `btree_gist`.
+:::
+
+:::note Mode — это ENUM, а не bool
+Режим работы — `Mode { dev, production, production-strict }`, а не `bool productionMode`.
+`dev` — anonymous-доступ разрешен (только локальные фикстуры); `production` — anonymous
+fail-closed; `production-strict` — дополнительно валидирует TLS peer-вызовов и
+`repository.postgres.ssl-mode` (`require|verify-ca|verify-full`). В `dev` сервис лишь
+**логирует** небезопасные defaults (TLS off, sslmode=disable), но не блокирует старт.
+:::
+
+Подробнее о деплое (init-container migrate, Helm, kind) — [Развертывание](/install/deploy).

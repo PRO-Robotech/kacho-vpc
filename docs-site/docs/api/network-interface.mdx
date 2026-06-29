@@ -1,0 +1,474 @@
+---
+id: network-interface
+sidebar_position: 9
+title: NetworkInterface
+---
+
+import { DICTIONARY } from '@site/src/constants/dictionary'
+import { TYPES } from '@site/src/constants/types'
+import { RESTRICTIONS } from '@site/src/constants/restrictions'
+import { Restrictions } from '@site/src/components/commonBlocks/Restrictions'
+import { Codes } from '@site/src/components/commonBlocks/Codes'
+import { ApiOperation } from '@site/src/components/commonBlocks/ApiOperation'
+import CodeBlock from '@theme/CodeBlock'
+import dedent from 'ts-dedent'
+
+# NetworkInterface
+
+**NetworkInterface** (NIC) — это самостоятельный сетевой интерфейс с собственным
+жизненным циклом, который Kachō вводит как полноценный ресурс, **отвязанный от какой-либо
+рабочей нагрузки**. Вы создаете NIC, конфигурируете его адресацию и набор
+security-групп один раз — и дальше управляете «сетевой личностью» (стабильный MAC,
+закрепленные IP, политики доступа) независимо от того, что эту личность потребляет. Это
+закрывает типичную боль: сетевая идентичность не должна пересоздаваться каждый раз, когда
+меняется потребитель.
+
+Поскольку NIC живет отдельно, его адреса и MAC **стабильны**: интерфейс можно создать
+заранее, сконфигурировать предсказуемые IP и security-группы, а его MAC аллоцируется
+control-plane при создании и не меняется на протяжении всей жизни ресурса. Так вы
+получаете воспроизводимую, заранее описанную сетевую конфигурацию вместо набора
+эфемерных, привязанных к нагрузке настроек.
+
+NIC принадлежит подсети (`subnetId`; FK `ON DELETE RESTRICT` — пока существует NIC, его
+подсеть и транзитивно сеть удалить нельзя). Он несет ссылки на `Address`-ресурсы
+(`v4AddressIds` / `v6AddressIds`) и набор security-групп (`securityGroupIds`).
+
+Единая ресурсная модель адресации: **каждый IP — это `Address`-ресурс** (как `Network ←
+Subnet ← Address`); NIC лишь «потребляет» их по id. Чтобы выделить новый IP — сначала
+создайте internal `Address` (`AddressService.Create` с `internalIpv4AddressSpec.subnetId`)
+и передайте его id в `v4AddressIds` / `v6AddressIds`.
+
+:::info Кардинальность адресов
+На одной NIC — **максимум один IPv4 и максимум один IPv6** (всего ≤ 2 адреса). Несколько
+IP на нагрузку реализуется через **несколько NIC**, а не secondary-адреса в одном
+интерфейсе. Ограничение enforced и sync-валидацией, и DB-level
+`CHECK (jsonb_array_length(...) <= 1)`.
+:::
+
+## Поля ресурса
+
+<table>
+  <thead><tr><th>Поле</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.id.short} (префикс <code>nic</code>)</td></tr>
+    <tr><td><code>projectId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>name</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
+    <tr><td><code>createdAt</code></td><td><code>{TYPES.timestamp}</code></td><td>{DICTIONARY.createdAt.short}</td></tr>
+    <tr><td><code>subnetId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.subnetId.short}, из CIDR которой выделены адреса интерфейса (immutable)</td></tr>
+    <tr><td><code>v4AddressIds</code></td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v4AddressIds.short}</td></tr>
+    <tr><td><code>v6AddressIds</code></td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v6AddressIds.short}</td></tr>
+    <tr><td><code>securityGroupIds</code></td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.securityGroupIds.short} (при создании наследуется default-SG сети)</td></tr>
+    <tr><td><code>macAddress</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.macAddress.short} (префикс <code>0e:</code>, стабилен на жизни NIC, immutable)</td></tr>
+    <tr><td><code>status</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.status.short}</td></tr>
+  </tbody>
+</table>
+
+:::note Чисто control-plane-проекция
+У `NetworkInterface` нет инфра-полей — `kacho-vpc` их не хранит. Публичный
+`NetworkInterface` показывает только tenant-facing «намерение + результат»; никакие
+инфра-чувствительные данные (placement, физическая привязка) на публичной поверхности не
+раскрываются (см. [Авторизация и приватность](/architecture/authz)).
+:::
+
+---
+
+## Get
+
+<ApiOperation method="GET" endpoint="/vpc/v1/networkInterfaces/{networkInterfaceId}">
+
+Возвращает сетевой интерфейс по идентификатору (sync). Malformed id → `InvalidArgument`
+первым стейтментом; well-formed, но отсутствующий → `NotFound`.
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl http://localhost:18080/vpc/v1/networkInterfaces/{networkInterfaceId} \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{networkInterfaceId}",
+      "projectId": "{projectId}",
+      "name": "web-nic-0",
+      "labels": { "role": "frontend" },
+      "createdAt": "2026-06-06T14:27:00Z",
+      "subnetId": "{subnetId}",
+      "v4AddressIds": ["{addressId}"],
+      "v6AddressIds": [],
+      "securityGroupIds": ["{securityGroupId}"],
+      "macAddress": "0e:1a:2b:3c:4d:5e",
+      "status": "AVAILABLE"
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[{ label: 'networkInterfaceId', rules: RESTRICTIONS.resourceId }]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## List
+
+<ApiOperation method="GET" endpoint="/vpc/v1/networkInterfaces">
+
+Список интерфейсов проекта (sync) с cursor-пагинацией. Дополнительно фильтруется по
+подсети или сети. Результат отфильтрован по правам вызывающего.
+
+#### Параметры запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>subnetId</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>Только интерфейсы в этой подсети</td></tr>
+    <tr><td><code>networkId</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>Только интерфейсы в этой сети</td></tr>
+    <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
+    <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl 'http://localhost:18080/vpc/v1/networkInterfaces?projectId={projectId}&subnetId={subnetId}' \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "networkInterfaces": [
+        {
+          "id": "{networkInterfaceId}",
+          "projectId": "{projectId}",
+          "name": "web-nic-0",
+          "subnetId": "{subnetId}",
+          "macAddress": "0e:1a:2b:3c:4d:5e",
+          "status": "AVAILABLE",
+          "createdAt": "2026-06-06T14:27:00Z"
+        }
+      ],
+      "nextPageToken": ""
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[
+  { label: 'projectId', rules: RESTRICTIONS.projectId },
+  { label: 'pagination', rules: RESTRICTIONS.pagination },
+]} />
+<Codes codes={['invalidArgument', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Create
+
+<ApiOperation method="POST" endpoint="/vpc/v1/networkInterfaces" async>
+
+Создает сетевой интерфейс в подсети. Возвращает `Operation` (async). `macAddress`
+назначается сервером (output-only) и далее неизменен. Если `securityGroupIds` пуст —
+наследуется default-SG сети. Адреса (`v4AddressIds` / `v6AddressIds`) должны быть
+свободными `Address`-ресурсами в той же подсети.
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
+    <tr><td><code>subnetId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.subnetId.short}; адреса NIC должны принадлежать ее CIDR</td></tr>
+    <tr><td><code>name</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td>нет</td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
+    <tr><td><code>v4AddressIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v4AddressIds.short}</td></tr>
+    <tr><td><code>v6AddressIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v6AddressIds.short}</td></tr>
+    <tr><td><code>securityGroupIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.securityGroupIds.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X POST http://localhost:18080/vpc/v1/networkInterfaces \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "projectId": "{projectId}",
+        "subnetId": "{subnetId}",
+        "name": "web-nic-0",
+        "v4AddressIds": ["{addressId}"],
+        "labels": { "role": "frontend" }
+      }'
+  `}
+</CodeBlock>
+
+#### Пример ответа (Operation)
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{operationId}",
+      "description": "Create network interface web-nic-0",
+      "createdAt": "2026-06-06T14:27:00Z",
+      "done": false,
+      "metadata": {
+        "@type": "type.googleapis.com/kacho.cloud.vpc.v1.CreateNetworkInterfaceMetadata",
+        "networkInterfaceId": "{networkInterfaceId}"
+      }
+    }
+  `}
+</CodeBlock>
+
+:::tip Опрос результата
+Поллите <code>GET /operations/&#123;operationId&#125;</code> до <code>done: true</code>; затем <code>response</code>
+содержит созданный <code>NetworkInterface</code>, либо <code>error</code> — <code>google.rpc.Status</code>.
+См. [Операции](/architecture/operations).
+:::
+
+:::caution Подготовьте адреса заранее
+Передаваемые в `v4AddressIds` / `v6AddressIds` адреса должны существовать как `Address`,
+принадлежать **той же** подсети (`subnetId`) и не быть заняты другим интерфейсом. Иначе
+создание завершится `FailedPrecondition` / `InvalidArgument`. Чтобы получить новый IP —
+сначала создайте internal `Address` в нужной подсети.
+:::
+
+<Restrictions items={[
+  { label: 'projectId', rules: RESTRICTIONS.projectId },
+  { label: 'name', rules: RESTRICTIONS.name },
+  { label: 'labels', rules: RESTRICTIONS.labels },
+  { label: 'nicCardinality', rules: RESTRICTIONS.nicCardinality },
+]} />
+<Codes codes={['invalidArgument', 'alreadyExists', 'notFound', 'failedPrecondition', 'unavailable', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Update
+
+<ApiOperation method="PATCH" endpoint="/vpc/v1/networkInterfaces/{networkInterfaceId}" async>
+
+Изменяет mutable-поля интерфейса: `name`, `description`, `labels`, `securityGroupIds`,
+`v4AddressIds`, `v6AddressIds`. Поля `projectId` / `subnetId` / `macAddress` — immutable.
+Возвращает `Operation` (async). Дисциплина `updateMask` — как у прочих ресурсов
+(см. правила ниже).
+
+#### Тело запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>updateMask</code></td><td>нет</td><td><code>{TYPES.fieldMask}</code></td><td>{DICTIONARY.updateMask.short}</td></tr>
+    <tr><td><code>name</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
+    <tr><td><code>description</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
+    <tr><td><code>labels</code></td><td>нет</td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short} (полная замена набора)</td></tr>
+    <tr><td><code>securityGroupIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.securityGroupIds.short}</td></tr>
+    <tr><td><code>v4AddressIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v4AddressIds.short}</td></tr>
+    <tr><td><code>v6AddressIds</code></td><td>нет</td><td><code>{TYPES.stringArray}</code></td><td>{DICTIONARY.v6AddressIds.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X PATCH http://localhost:18080/vpc/v1/networkInterfaces/{networkInterfaceId} \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "updateMask": "securityGroupIds",
+        "securityGroupIds": ["{securityGroupId}", "{securityGroupId2}"]
+      }'
+  `}
+</CodeBlock>
+
+#### Пример ответа (Operation)
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{operationId}",
+      "description": "Update network interface {networkInterfaceId}",
+      "done": false,
+      "metadata": {
+        "@type": "type.googleapis.com/kacho.cloud.vpc.v1.UpdateNetworkInterfaceMetadata",
+        "networkInterfaceId": "{networkInterfaceId}"
+      }
+    }
+  `}
+</CodeBlock>
+
+:::note Смена адреса = смена ссылки
+`v4AddressIds` / `v6AddressIds` — это ссылки на `Address`-ресурсы. Меняя их через
+`Update`, вы переключаете интерфейс на другой адрес (с теми же правилами: ≤1 v4, ≤1 v6,
+адрес свободен и в той же подсети). `macAddress` при этом остается прежним.
+:::
+
+<Restrictions items={[
+  { label: 'updateMask', rules: RESTRICTIONS.updateMask },
+  { label: 'nicCardinality', rules: RESTRICTIONS.nicCardinality },
+]} />
+<Codes codes={['invalidArgument', 'notFound', 'failedPrecondition', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Delete
+
+<ApiOperation method="DELETE" endpoint="/vpc/v1/networkInterfaces/{networkInterfaceId}" async>
+
+Удаляет интерфейс (hard-delete). Возвращает `Operation`, чей `response` —
+`google.protobuf.Empty`. Адреса интерфейса при удалении освобождаются обратно в IPAM
+подсети и снова становятся доступны для аллокации.
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X DELETE http://localhost:18080/vpc/v1/networkInterfaces/{networkInterfaceId} \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа (Operation, response = Empty)
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "id": "{operationId}",
+      "description": "Delete network interface {networkInterfaceId}",
+      "done": false,
+      "metadata": {
+        "@type": "type.googleapis.com/kacho.cloud.vpc.v1.DeleteNetworkInterfaceMetadata",
+        "networkInterfaceId": "{networkInterfaceId}"
+      }
+    }
+  `}
+</CodeBlock>
+
+:::caution Освобождение адресов
+Удаление NIC освобождает связанные с ним адреса. Если адрес нужно сохранить за собой —
+это отдельный `Address`-ресурс, и его жизненный цикл не обязан совпадать с NIC: создайте
+его заранее и переиспользуйте.
+:::
+
+<Restrictions items={[{ label: 'networkInterfaceId', rules: RESTRICTIONS.resourceId }]} />
+<Codes codes={['invalidArgument', 'notFound', 'failedPrecondition', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## ListOperations
+
+<ApiOperation method="GET" endpoint="/vpc/v1/networkInterfaces/{networkInterfaceId}/operations">
+
+Список операций (`Create` / `Update` / `Delete`) для указанного интерфейса (sync) с
+cursor-пагинацией — история изменений конкретного NIC для аудита и диагностики.
+
+#### Параметры запроса
+
+<table>
+  <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>networkInterfaceId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>Идентификатор интерфейса (path-параметр)</td></tr>
+    <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
+    <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
+  </tbody>
+</table>
+
+#### Пример запроса
+
+<CodeBlock language="bash">
+  {dedent`
+    curl 'http://localhost:18080/vpc/v1/networkInterfaces/{networkInterfaceId}/operations?pageSize=20' \\
+      -H 'Authorization: Bearer <JWT>'
+  `}
+</CodeBlock>
+
+#### Пример ответа
+
+<CodeBlock language="json">
+  {dedent`
+    {
+      "operations": [
+        {
+          "id": "{operationId}",
+          "description": "Create network interface web-nic-0",
+          "createdAt": "2026-06-06T14:27:00Z",
+          "done": true
+        }
+      ],
+      "nextPageToken": ""
+    }
+  `}
+</CodeBlock>
+
+<Restrictions items={[
+  { label: 'networkInterfaceId', rules: RESTRICTIONS.resourceId },
+  { label: 'pagination', rules: RESTRICTIONS.pagination },
+]} />
+<Codes codes={['invalidArgument', 'notFound', 'permissionDenied', 'internal']} />
+
+</ApiOperation>
+
+---
+
+## Типичные сценарии
+
+- **Предсказуемая сетевая идентичность.** Заранее создаете NIC с закрепленным `Address` и
+  набором security-групп — стабильный MAC и IP позволяют завязать на них правила доступа
+  и мониторинг, не пересоздавая интерфейс при смене потребителя.
+- **Несколько IP — несколько NIC.** Нужна нагрузка с несколькими адресами? Создаете по
+  интерфейсу на адрес (на одном NIC — ≤1 v4 и ≤1 v6) и инвентаризуете их через `List`
+  с фильтром `subnetId` / `networkId`.
+- **Централизованная политика доступа.** Меняете `securityGroupIds` интерфейса через
+  `Update` — политика применяется к NIC, его адресам и MAC без переадресации IP.
+- **Аудит.** `ListOperations` дает хронологию изменений конкретного интерфейса.
+
+## Подводные камни и рекомендации
+
+:::caution Что важно знать
+- **Адреса — отдельные ресурсы.** NIC хранит **ссылки** (`v4AddressIds` /
+  `v6AddressIds`), а не сами IP. Перед созданием/обновлением убедитесь, что `Address`
+  существует, свободен и принадлежит той же подсети (`subnetId`), что и NIC.
+- **Кардинальность жесткая.** ≤1 IPv4 и ≤1 IPv6 на интерфейс — enforced и
+  sync-валидацией, и DB-level `CHECK`. Попытка добавить второй адрес того же семейства
+  будет отклонена.
+- **MAC неизменен.** `macAddress` аллоцируется при `Create`, уникален в пределах облака и
+  стабилен всю жизнь NIC — клиент задать или сменить его не может.
+- **`subnetId` immutable.** Перенести интерфейс в другую подсеть нельзя — создайте новый
+  NIC в нужной подсети.
+- **NIC держит подсеть.** FK `ON DELETE RESTRICT`: пока интерфейс существует, его подсеть
+  (и сеть) удалить не получится. Порядок удаления снизу вверх: NIC → Address → Subnet →
+  Network.
+- **Удаление освобождает адреса.** При `Delete` адреса возвращаются в IPAM. Если адрес
+  должен пережить интерфейс — управляйте им как самостоятельным `Address`.
+:::
+
+:::tip Best practices
+- Описывайте NIC, его `Address` и security-группы как единый, заранее подготовленный блок
+  инфраструктуры — это дает воспроизводимую и неэфемерную сетевую конфигурацию.
+- Все мутации асинхронные: дожидайтесь `done: true` в `Operation`, прежде чем считать
+  интерфейс готовым.
+- Для инвентаризации используйте `List` с `subnetId` / `networkId` и осмысленные
+  `labels` (`role`, `team`) — это основной способ навигации по интерфейсам проекта.
+:::

@@ -1,0 +1,79 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// InternalResourceLifecycleService — cluster-internal RPC (port 9091,
+// Internal-only поверхность).
+//
+// Специализированный RPC для kacho-iam'овского
+// `resource_lifecycle_subscriber` worker'а, который синхронизирует FGA-tuples
+// (parent-tuples ресурсов) с реальным состоянием kacho-vpc.
+//
+// Это узкий lifecycle-channel под FGA-sync; общего Watch/event-stream RPC в
+// модели Kachō нет (consumer'ы поллят List/Operation.Get).
+//
+// DB-per-service не нарушается: kacho-iam НЕ читает peer
+// Postgres напрямую; вся коммуникация через gRPC. Cursor (`last_event_id`)
+// хранится у consumer'а (kacho-iam) в `kacho_iam.watch_cursors`.
+service InternalResourceLifecycleService {
+  // Subscribe — long-lived server-stream lifecycle событий по resource'ам vpc.
+  // На каждое Create/Delete/Move ресурса peer пушит ResourceLifecycleEvent.
+  // Consumer (kacho-iam) присылает `resume_from_event_id` для resume после
+  // disconnect / restart; peer drain'ит свой outbox начиная с этой точки.
+  rpc Subscribe (SubscribeRequest) returns (stream ResourceLifecycleEvent) {
+    option (kacho.iam.authz.v1.permission) = "<exempt>";
+  }
+}
+
+// SubscribeRequest — параметры подписки.
+message SubscribeRequest {
+  // Список ресурсных kind'ов, на которые подписываемся (empty = все).
+  // Допустимые: "network" | "subnet" | "security_group" | "address" |
+  //              "route_table" | "gateway" | "network_interface".
+  repeated string kinds = 1;
+
+  // Resume-cursor: peer drain'ит outbox-row'ы с `event_id > resume_from_event_id`.
+  // empty / "" = начать с current end (только новые события).
+  string resume_from_event_id = 2;
+}
+
+// ResourceLifecycleEvent — одно событие изменения ресурса (Create/Delete/Move).
+message ResourceLifecycleEvent {
+  // Монотонно возрастающий идентификатор события (использует peer-outbox
+  // BIGSERIAL). Consumer хранит как `last_event_id` и присылает в
+  // `resume_from_event_id` на reconnect.
+  string event_id = 1;
+
+  // Тип ресурса: "network" | "subnet" | "security_group" | "address" | ...
+  string kind = 2;
+
+  // ID ресурса (`enp_...`, `e9b_...`, ...).
+  string resource_id = 3;
+
+  // Операция: "Create" | "Delete" | "Move".
+  string op = 4;
+
+  // Project, в котором ресурс. Обязательно для resource'ов с
+  // `parent = project:<id>` (network, address). Для resource'ов с
+  // `parent = vpc_network:<id>` — заполняется опционально (kacho-iam
+  // воспользуется `parent_resource_id`).
+  string project_id = 5;
+
+  // ID parent-ресурса (например network_id для subnet/sg/route_table).
+  // Empty если parent = project (используется `project_id`).
+  string parent_resource_id = 6;
+
+  // Для op="Move": старый project (если project_id изменился).
+  string old_project_id = 7;
+
+  // Timestamp события (peer commit time).
+  google.protobuf.Timestamp created_at = 8;
+}

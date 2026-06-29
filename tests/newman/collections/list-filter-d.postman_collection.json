@@ -1,0 +1,395 @@
+{
+  "info": {
+    "_postman_id": "a864194b-6973-40f9-a2a9-2c179712ac3e",
+    "name": "kacho-vpc / newman / list-filter-d",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('runId') || pm.environment.get('runId') === '') {",
+          "  // runId формат: только [a-z0-9], без точки — чтобы проходить name regex.",
+          "  const t = Date.now().toString(36);",
+          "  const r = Math.floor(Math.random() * 1e9).toString(36);",
+          "  pm.environment.set('runId', (t + r).replace(/[^a-z0-9]/g, '').slice(-10));",
+          "}",
+          "// Suite project scope: prefer the shared authz-fixture project (projectA1Id —",
+          "// the default JWT holds vpc-editor there) over the standalone-dev existingProjectId.",
+          "// Without this the suite would target an ungranted/dead project → every",
+          "// project-scoped mutation is authz-denied (403).",
+          "pm.environment.set('_suiteProjectId', pm.environment.get('projectA1Id') || pm.environment.get('existingProjectId'));",
+          "pm.environment.set('_suiteProjectCrossId', pm.environment.get('projectA2Id') || pm.environment.get('existingProjectCrossId'));",
+          "// Zone is environment-specific (geo seeds Region/Zone; ids differ per deploy).",
+          "// Resolve a live zone id once from the geo catalog; fall back to the committed",
+          "// existingZoneId when geo is unreachable (standalone vpc without geo).",
+          "if (!pm.environment.get('_zoneResolved')) {",
+          "  const __zjwt = pm.environment.get('jwtBootstrap') || pm.environment.get('jwtProjectAdminA1') || '';",
+          "  pm.sendRequest({",
+          "    url: pm.environment.get('baseUrl') + '/geo/v1/zones',",
+          "    method: 'GET',",
+          "    header: { 'Authorization': 'Bearer ' + __zjwt },",
+          "  }, (err, res) => {",
+          "    if (err || !res || res.code !== 200) return;",
+          "    let zs = []; try { zs = (res.json().zones) || []; } catch (e) {}",
+          "    const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+          "    const pick = up.length ? up : zs;",
+          "    if (pick.length) {",
+          "      pm.environment.set('existingZoneId', pick[0].id);",
+          "      pm.environment.set('existingZoneAltId', (pick[1] || pick[0]).id);",
+          "      pm.environment.set('_zoneResolved', '1');",
+          "    }",
+          "  });",
+          "}",
+          "// Default auth: projectAdmin on project A1 — sufficient for most happy-path steps.",
+          "// Per-step auth= overrides this via item-level pre-request script (_auth_pre_script).",
+          "const __defaultJwt = pm.environment.get('jwtProjectAdminA1') || pm.variables.get('jwtProjectAdminA1') || '';",
+          "if (__defaultJwt && !pm.request.headers.has('Authorization')) {",
+          "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __defaultJwt});",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "_SETUP-ZONES — resolve live geo zone ids (zoneA..D)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = (pm.response && pm.response.code) || 0;",
+              "let zs = [];",
+              "if (code === 200) { try { zs = (pm.response.json().zones) || []; } catch (e) {} }",
+              "const up = zs.filter(z => !z.status || String(z.status).indexOf('UP') !== -1);",
+              "const pick = up.length ? up : zs;",
+              "if (pick.length) {",
+              "  const at = (i) => (pick[i] || pick[pick.length - 1]).id;",
+              "  pm.environment.set('zoneA', at(0));",
+              "  pm.environment.set('zoneB', at(1));",
+              "  pm.environment.set('zoneC', at(2));",
+              "  pm.environment.set('zoneD', at(3));",
+              "  pm.environment.set('existingZoneId', at(0));",
+              "  pm.environment.set('existingZoneAltId', at(1));",
+              "  pm.environment.set('_zoneResolved', '1');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwtBootstrap}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/geo/v1/zones",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "geo",
+            "v1",
+            "zones"
+          ]
+        }
+      }
+    },
+    {
+      "name": "SUBNET-LF-D-VISIBLE — per-object List: subject sees the subnet it was granted (D-40/D-41/D-43)",
+      "description": "class:AUTHZ | class:CONF | priority:P0",
+      "item": [
+        {
+          "name": "List subnets as subset-viewer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets?projectId={{listFilterProjectId}}&pageSize=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets?projectId={{listFilterProjectId}}&pageSize=1000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// authz-deny: bearer from env 'jwtSubnetSubsetViewer'",
+                  "const __t = pm.environment.get('jwtSubnetSubsetViewer') || pm.variables.get('jwtSubnetSubsetViewer') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[SUBNET-LF-D-VISIBLE] status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const ids = (j.subnets || []).map(s => s.id);",
+                  "pm.test('[SUBNET-LF-D-VISIBLE] granted subnet present', () => pm.expect(ids, JSON.stringify(ids)).to.include(pm.environment.get('subnetVisibleId')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SUBNET-LF-D-NOLEAK — per-object List no-leak: non-granted subnet absent from List (D-44/LST-5)",
+      "description": "class:AUTHZ | class:NEG | priority:P0",
+      "item": [
+        {
+          "name": "List subnets as subset-viewer (hidden absent)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets?projectId={{listFilterProjectId}}&pageSize=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets?projectId={{listFilterProjectId}}&pageSize=1000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// authz-deny: bearer from env 'jwtSubnetSubsetViewer'",
+                  "const __t = pm.environment.get('jwtSubnetSubsetViewer') || pm.variables.get('jwtSubnetSubsetViewer') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[SUBNET-LF-D-NOLEAK] status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const ids = (j.subnets || []).map(s => s.id);",
+                  "pm.test('[SUBNET-LF-D-NOLEAK] hidden subnet absent', () => pm.expect(ids, JSON.stringify(ids)).to.not.include(pm.environment.get('subnetHiddenId')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SUBNET-LF-D-GET-404 — per-object no-leak: Get(hidden) → 404 NotFound, not 403 (D-44/LST-5)",
+      "description": "class:AUTHZ | class:NEG | priority:P0",
+      "item": [
+        {
+          "name": "Get hidden subnet as subset-viewer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subnetHiddenId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets",
+                "{{subnetHiddenId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// authz-deny: bearer from env 'jwtSubnetSubsetViewer'",
+                  "const __t = pm.environment.get('jwtSubnetSubsetViewer') || pm.variables.get('jwtSubnetSubsetViewer') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[SUBNET-LF-D-GET-404] status 404 (no-leak, not 403)', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.eql(404));",
+                  "let j; try { j = pm.response.json(); } catch(e) { j = null; }",
+                  "pm.test('[SUBNET-LF-D-GET-404] grpc code 5 (NOT_FOUND)', () => pm.expect(j && j.code, JSON.stringify(j)).to.eql(5));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SUBNET-LF-D-GET-OK — read==enforce: Get(visible) → 200 (parity with List visibility, D-45)",
+      "description": "class:AUTHZ | class:CONF | priority:P1",
+      "item": [
+        {
+          "name": "Get visible subnet as subset-viewer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets/{{subnetVisibleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets",
+                "{{subnetVisibleId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// authz-deny: bearer from env 'jwtSubnetSubsetViewer'",
+                  "const __t = pm.environment.get('jwtSubnetSubsetViewer') || pm.variables.get('jwtSubnetSubsetViewer') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[SUBNET-LF-D-GET-OK] status 200', () => pm.expect(pm.response.code, JSON.stringify(pm.response.text())).to.eql(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SUBNET-LF-D-NONE — per-object List: no grant → empty list, not whole project (D-44)",
+      "description": "class:AUTHZ | class:NEG | priority:P1",
+      "item": [
+        {
+          "name": "List subnets as no-grant subject",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vpc/v1/subnets?projectId={{listFilterProjectId}}&pageSize=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vpc",
+                "v1",
+                "subnets?projectId={{listFilterProjectId}}&pageSize=1000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// authz-deny: bearer from env 'jwtNoSubnetGrant'",
+                  "const __t = pm.environment.get('jwtNoSubnetGrant') || pm.variables.get('jwtNoSubnetGrant') || '';",
+                  "if (__t) {",
+                  "  pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + __t});",
+                  "} else {",
+                  "  pm.request.headers.remove('Authorization');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[SUBNET-LF-D-NONE] status 200', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const j = pm.response.json();",
+                  "const ids = (j.subnets || []).map(s => s.id);",
+                  "pm.test('[SUBNET-LF-D-NONE] empty (no grant → no rows)', () => pm.expect(ids.length, JSON.stringify(ids)).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": []
+}

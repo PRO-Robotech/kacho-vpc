@@ -1,0 +1,421 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "kacho/cloud/api/operation.proto";
+import "kacho/cloud/operation/operation.proto";
+import "kacho/cloud/reference/reference.proto";
+import "kacho/cloud/validation.proto";
+import "kacho/cloud/vpc/v1/subnet.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// A set of methods for managing Subnet resources.
+service SubnetService {
+  // Returns the specified Subnet resource.
+  //
+  // To get the list of available Subnet resources, make a [List] request.
+  rpc Get(GetSubnetRequest) returns (Subnet) {
+    option (google.api.http) = {get: "/vpc/v1/subnets/{subnet_id}"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnets.get";
+    option (kacho.iam.authz.v1.required_relation) = "v_get";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Retrieves the list of Subnet resources in the specified folder.
+  rpc List(ListSubnetsRequest) returns (ListSubnetsResponse) {
+    option (google.api.http) = {get: "/vpc/v1/subnets"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnetses.list";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Creates a subnet in the specified folder and network.
+  // Method starts an asynchronous operation that can be cancelled while it is in progress.
+  rpc Create(CreateSubnetRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/subnets"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "CreateSubnetMetadata"
+      response: "Subnet"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnets.create";
+    option (kacho.iam.authz.v1.required_relation) = "editor";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Updates the specified subnet.
+  // Method starts an asynchronous operation that can be cancelled while it is in progress.
+  rpc Update(UpdateSubnetRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      patch: "/vpc/v1/subnets/{subnet_id}"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateSubnetMetadata"
+      response: "Subnet"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnets.update";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Adds CIDR blocks to the specified subnet.
+  // Method starts an asynchronous operation that can be cancelled while it is in progress.
+  rpc AddCidrBlocks(AddSubnetCidrBlocksRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/subnets/{subnet_id}:add-cidr-blocks"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateSubnetMetadata"
+      response: "Subnet"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnet_cidr_blockses.addCidrBlocks";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Removes CIDR blocks from the specified subnet.
+  // Method starts an asynchronous operation that can be cancelled while it is in progress.
+  rpc RemoveCidrBlocks(RemoveSubnetCidrBlocksRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/subnets/{subnet_id}:remove-cidr-blocks"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateSubnetMetadata"
+      response: "Subnet"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnet_cidr_blockses.removeCidrBlocks";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Deletes the specified subnet.
+  rpc Delete(DeleteSubnetRequest) returns (operation.Operation) {
+    option (google.api.http) = {delete: "/vpc/v1/subnets/{subnet_id}"};
+    option (kacho.cloud.api.operation) = {
+      metadata: "DeleteSubnetMetadata"
+      response: "google.protobuf.Empty"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnets.delete";
+    option (kacho.iam.authz.v1.required_relation) = "v_delete";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // List operations for the specified subnet.
+  rpc ListOperations(ListSubnetOperationsRequest) returns (ListSubnetOperationsResponse) {
+    option (google.api.http) = {get: "/vpc/v1/subnets/{subnet_id}/operations"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.subnet_operationses.listOperations";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // List used addresses in specified subnet.
+  rpc ListUsedAddresses(ListUsedAddressesRequest) returns (ListUsedAddressesResponse) {
+    option (google.api.http) = {get: "/vpc/v1/subnets/{subnet_id}/addresses"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.used_addresseses.listUsedAddresses";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_subnet"
+      from_request_field: "subnet_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+}
+
+message GetSubnetRequest {
+  // ID of the Subnet resource to return.
+  // To get the subnet ID use a [SubnetService.List] request.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message ListSubnetsRequest {
+  // ID of the project to list subnets in.
+  // To get the project ID use a [kacho.cloud.iam.v1.ProjectService.List] request.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size],
+  // the service returns a [ListSubnetsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [ListSubnetsResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+
+  // A filter expression that filters resources listed in the response.
+  // The expression must specify:
+  // 1. The field name. Currently you can use filtering only on [Subnet.name] field.
+  // 2. An `=` operator.
+  // 3. The value in double quotes (`"`). Must be 3-63 characters long and match the regular expression `[a-z][-a-z0-9]{1,61}[a-z0-9]`.
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListSubnetsResponse {
+  // List of Subnet resources.
+  repeated Subnet subnets = 1;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [ListSubnetsRequest.page_size], use
+  // the [next_page_token] as the value
+  // for the [ListSubnetsRequest.page_token] query parameter
+  // in the next list request. Subsequent list requests will have their own
+  // [next_page_token] to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message CreateSubnetRequest {
+  reserved 8;
+  // ID of the project to create a subnet in.
+  // To get project ID use a [kacho.cloud.iam.v1.ProjectService.List] request.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Name of the subnet.
+  // The name must be unique within the folder.
+  string name = 2 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // Description of the subnet.
+  string description = 3 [(length) = "<=256"];
+
+  // Resource labels, `` key:value `` pairs.
+  map<string, string> labels = 4 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+
+  // ID of the network to create subnet in.
+  string network_id = 5 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // ID of the availability zone where the subnet resides.
+  // To get a list of available zones, use the [kacho.cloud.geo.v1.ZoneService.List] request.
+  string zone_id = 6 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // CIDR block.
+  // The range of internal addresses that are defined for this subnet.
+  // For example, 10.0.0.0/22 or 192.168.0.0/24.
+  // Minimum subnet size is /28, maximum subnet size is /16.
+  // Optional: a subnet may be created without an IPv4 CIDR and have one added
+  // later via AddCidrBlocks.
+  repeated string v4_cidr_blocks = 7;
+
+  // IPv6 CIDR block(s). (IPv6 vertical.)
+  repeated string v6_cidr_blocks = 11;
+
+  // ID of route table the subnet is linked to.
+  string route_table_id = 9 [(length) = "<=50"];
+
+  DhcpOptions dhcp_options = 10;
+}
+
+message CreateSubnetMetadata {
+  // ID of the subnet that is being created.
+  string subnet_id = 1;
+}
+
+message UpdateSubnetRequest {
+  // ID of the Subnet resource to update.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Field mask that specifies which fields of the Subnet resource are going to be updated.
+  google.protobuf.FieldMask update_mask = 2;
+
+  // Name of the subnet.
+  // The name must be unique within the folder.
+  string name = 3 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // Description of the subnet.
+  string description = 4 [(length) = "<=256"];
+
+  // Resource labels as `` key:value `` pairs.
+  map<string, string> labels = 5 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+
+  // ID of route table the subnet is linked to.
+  string route_table_id = 6 [(length) = "<=50"];
+
+  DhcpOptions dhcp_options = 7;
+
+  // New CIDR blocks which will overwrite the existing ones.
+  repeated string v4_cidr_blocks = 8;
+
+  // New IPv6 CIDR blocks which will overwrite the existing ones. (IPv6 vertical;
+  // soft-immutable — accepted in the mask but the actual CIDR change is a no-op,
+  // mirroring v4_cidr_blocks here. Real changes go through AddCidrBlocks/RemoveCidrBlocks.)
+  repeated string v6_cidr_blocks = 9;
+}
+
+message UpdateSubnetMetadata {
+  // ID of the Subnet resource that is being updated.
+  string subnet_id = 1;
+}
+
+message AddSubnetCidrBlocksRequest {
+  // ID of the Subnet resource that is being updated.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // CIDR block.
+  // The range of internal addresses that should be added to this subnet.
+  // For example, 10.0.0.0/22 or 192.168.0.0/24.
+  // Minimum subnet size is /28, maximum subnet size is /16.
+  repeated string v4_cidr_blocks = 2;
+
+  // IPv6 CIDR block(s) to add to this subnet (e.g. fd00:1234::/64). (IPv6 vertical.)
+  repeated string v6_cidr_blocks = 3;
+}
+
+message AddSubnetCidrBlocksMetadata {
+  // ID of the Subnet resource that is being updated.
+  string subnet_id = 1;
+}
+
+message RemoveSubnetCidrBlocksRequest {
+  // ID of the Subnet resource that is being updated.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // CIDR block.
+  // The range of internal addresses that are removed from this subnet.
+  repeated string v4_cidr_blocks = 2;
+
+  // IPv6 CIDR block(s) to remove from this subnet. (IPv6 vertical.)
+  repeated string v6_cidr_blocks = 3;
+}
+
+message RemoveSubnetCidrBlocksMetadata {
+  // ID of the Subnet resource that is being updated.
+  string subnet_id = 1;
+}
+
+message DeleteSubnetRequest {
+  // ID of the subnet to delete.
+  // To get the subnet ID use a [SubnetService.List] request.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message DeleteSubnetMetadata {
+  // ID of the Subnet resource that is being deleted.
+  string subnet_id = 1;
+}
+
+message ListSubnetOperationsRequest {
+  // ID of the Subnet resource to list operations for.
+  string subnet_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than [page_size], the service returns a [ListSubnetOperationsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [ListSubnetOperationsResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListSubnetOperationsResponse {
+  // List of operations for the specified Subnet resource.
+  repeated operation.Operation operations = 1;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [ListSubnetOperationsRequest.page_size], use the [next_page_token] as the value
+  // for the [ListSubnetOperationsRequest.page_token] query parameter in the next list request.
+  // Each subsequent list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message ListUsedAddressesRequest {
+  string subnet_id = 1 [(required) = true];
+  int64 page_size = 2;
+  string page_token = 3;
+  string filter = 4;
+}
+
+message ListUsedAddressesResponse {
+  repeated UsedAddress addresses = 1;
+  string next_page_token = 2;
+}
+
+message UsedAddress {
+  string address = 1;
+  IpVersion ip_version = 2;
+  repeated reference.Reference references = 3;
+}

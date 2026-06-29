@@ -1,0 +1,220 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "kacho/cloud/api/operation.proto";
+import "kacho/cloud/operation/operation.proto";
+import "kacho/cloud/vpc/v1/network_interface.proto";
+import "kacho/cloud/validation.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// A set of methods for managing NetworkInterface (NIC) resources.
+//
+// REST: /vpc/v1/networkInterfaces (public mux). Поведение:
+// NIC принадлежит подсети, несет один primary private IPv4, security-группы,
+// аттачится к Instance по index. Detach/reattach между инстансами на лету и
+// secondary IPs — возможные расширения модели.
+service NetworkInterfaceService {
+  // Returns the specified NetworkInterface resource.
+  rpc Get(GetNetworkInterfaceRequest) returns (NetworkInterface) {
+    option (google.api.http) = { get: "/vpc/v1/networkInterfaces/{network_interface_id}" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interfaces.get";
+    option (kacho.iam.authz.v1.required_relation) = "v_get";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_network_interface"
+      from_request_field: "network_interface_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Retrieves the list of NetworkInterface resources in the specified folder,
+  // optionally filtered by instance / subnet / network.
+  rpc List(ListNetworkInterfacesRequest) returns (ListNetworkInterfacesResponse) {
+    option (google.api.http) = { get: "/vpc/v1/networkInterfaces" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interfaceses.list";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Creates a network interface in the specified folder.
+  rpc Create(CreateNetworkInterfaceRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/vpc/v1/networkInterfaces" body: "*" };
+    option (kacho.cloud.api.operation) = {
+      metadata: "CreateNetworkInterfaceMetadata"
+      response: "NetworkInterface"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interfaces.create";
+    option (kacho.iam.authz.v1.required_relation) = "editor";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Updates the specified network interface (name/description/labels/security_group_ids).
+  rpc Update(UpdateNetworkInterfaceRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/vpc/v1/networkInterfaces/{network_interface_id}" body: "*" };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateNetworkInterfaceMetadata"
+      response: "NetworkInterface"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interfaces.update";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_network_interface"
+      from_request_field: "network_interface_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Deletes the specified network interface. The primary private IPv4 address is
+  // released back to the subnet IPAM. Fails if the interface is still attached
+  // to an instance.
+  rpc Delete(DeleteNetworkInterfaceRequest) returns (operation.Operation) {
+    option (google.api.http) = { delete: "/vpc/v1/networkInterfaces/{network_interface_id}" };
+    option (kacho.cloud.api.operation) = {
+      metadata: "DeleteNetworkInterfaceMetadata"
+      response: "google.protobuf.Empty"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interfaces.delete";
+    option (kacho.iam.authz.v1.required_relation) = "v_delete";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_network_interface"
+      from_request_field: "network_interface_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Lists operations for the specified network interface.
+  rpc ListOperations(ListNetworkInterfaceOperationsRequest) returns (ListNetworkInterfaceOperationsResponse) {
+    option (google.api.http) = { get: "/vpc/v1/networkInterfaces/{network_interface_id}/operations" };
+    option (kacho.iam.authz.v1.permission)        = "vpc.network_interface_operationses.listOperations";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_network_interface"
+      from_request_field: "network_interface_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+}
+
+message GetNetworkInterfaceRequest {
+  string network_interface_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ListNetworkInterfacesRequest {
+  // ID of the folder to list network interfaces in.
+  string project_id = 1 [(required) = true, (length) = "<=50"];
+
+  // The maximum number of results per page. Default 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token from a previous ListNetworkInterfacesResponse.next_page_token.
+  string page_token = 3 [(length) = "<=100"];
+
+  // Optional: list only interfaces attached to this instance.
+  string instance_id = 4 [(length) = "<=50"];
+
+  // Optional: list only interfaces in this subnet.
+  string subnet_id = 5 [(length) = "<=50"];
+
+  // Optional: list only interfaces in this network.
+  string network_id = 6 [(length) = "<=50"];
+}
+
+message ListNetworkInterfacesResponse {
+  repeated NetworkInterface network_interfaces = 1;
+  string next_page_token = 2;
+}
+
+message CreateNetworkInterfaceRequest {
+  // ID of the folder to create the interface in.
+  string project_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Name. Must be unique within the folder.
+  string name = 2 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // Description. 0-256 characters.
+  string description = 3 [(length) = "<=256"];
+
+  // Resource labels as `` key:value `` pairs.
+  map<string, string> labels = 4 [(kacho.cloud.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  // ID of the subnet the interface belongs to. The interface's Address resources
+  // must belong to this subnet's CIDR.
+  string subnet_id = 5 [(required) = true, (length) = "<=50"];
+
+  // IDs of security groups to attach. If empty, the network's
+  // default_security_group_id is inherited.
+  repeated string security_group_ids = 7;
+
+  // Optional: immediately attach to this instance after creation.
+  string instance_id = 8 [(length) = "<=50"];
+
+  // Index on the instance to attach at (used only if instance_id is set).
+  string index = 9;
+
+  // References to Address resources (internal_ipv4 / internal_ipv6, in the same
+  // subnet) to attach to the interface. To allocate a fresh IP, first create an
+  // internal Address (AddressService.Create with internal_ipv4_address_spec.subnet_id)
+  // and pass its id here.
+  repeated string v4_address_ids = 12;
+  repeated string v6_address_ids = 13;
+
+  reserved 6, 10, 11; // ранее: primary_v4_address_spec, secondary_v4_addresses, v6_addresses (raw-IP) — заменены на *_address_ids
+}
+
+message CreateNetworkInterfaceMetadata {
+  string network_interface_id = 1;
+}
+
+message UpdateNetworkInterfaceRequest {
+  string network_interface_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Field mask of the fields to update (name, description, labels, security_group_ids,
+  // v4_address_ids, v6_address_ids).
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(kacho.cloud.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+  repeated string security_group_ids = 6;
+  repeated string v4_address_ids = 9;
+  repeated string v6_address_ids = 10;
+  reserved 7, 8; // ранее: secondary_v4_addresses, v6_addresses (raw-IP)
+}
+
+message UpdateNetworkInterfaceMetadata {
+  string network_interface_id = 1;
+}
+
+message DeleteNetworkInterfaceRequest {
+  string network_interface_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteNetworkInterfaceMetadata {
+  string network_interface_id = 1;
+}
+
+message ListNetworkInterfaceOperationsRequest {
+  string network_interface_id = 1 [(required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(value) = "<=1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListNetworkInterfaceOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

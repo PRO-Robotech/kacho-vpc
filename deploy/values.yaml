@@ -1,0 +1,208 @@
+# Copyright (c) PRO-Robotech
+# SPDX-License-Identifier: BUSL-1.1
+
+name: vpc
+replicas: 1
+image: kacho-vpc:dev
+imagePullPolicy: IfNotPresent
+ports:
+  grpc: 9090
+  internalGrpc: 9091
+db:
+  host: kacho-umbrella-pg-vpc
+  port: "5432"
+  user: vpc
+  name: kacho_vpc
+  passwordSecretName: kacho-umbrella-pg-vpc
+  passwordSecretKey: password
+iamAddr: "kacho-iam.kacho.svc.cluster.local:9090"
+
+# ─── Config sections (viper YAML config) ──────────────────────────────
+# Все ключи ниже рендерятся в /etc/kacho-vpc/config.yaml через
+# deploy/templates/configmap.yaml. Любой ключ можно override через
+# ENV KACHO_VPC_<SECTION>__<KEY>=... (см. internal/apps/kacho/config).
+logger:
+  level: INFO
+apiServer:
+  gracefulShutdown: 10s
+metrics:
+  enable: true
+healthcheck:
+  enable: true
+repository:
+  postgres:
+    # ⚠️ Tuned for high-throughput Address.Create: pgxpool default of 4 caps
+    # write throughput. 200 conns/pod уже unlock'aет 10k RPS.
+    maxConns: 200
+    sslMode: disable
+authn:
+  mode: dev
+# per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
+# project-level list-filter тоже идет через InternalIAMService.Check на
+#   INTERNAL :9091 (iamEndpoint) — НЕ на public :9090. listFilter.authorizeEndpoint
+#   и пр. — наследие старого ListObjects-подхода, код их больше не читает.
+authz:
+  iamEndpoint: ""           # default cluster-internal kacho-iam-internal:9091
+  breakglass: false          # dev override — пропустить все Check
+  checkTimeout: 2s
+  cacheTtl: 5s
+  denyRateLimitPerSec: 100
+  # FGA-filtered List handlers. Production: enabled=true и authorizeEndpoint
+  # указан явно. Dev: enabled=false → use-case'ы возвращают unfiltered list.
+  listFilter:
+    enabled: false           # Toggle list-filter (production: true). Использует authz.iamEndpoint (:9091).
+    authorizeEndpoint: ""    # наследие старого ListObjects: код больше не читает; list-filter идет через iamEndpoint :9091.
+    authorizeTls:
+      enable: false
+    timeoutMs: 500           # Per-call FGA timeout
+    cacheTtl: 5s             # LRU TTL
+    maxEntries: 10000        # Cache hard cap (LRU eviction)
+    maxResults: 10000        # FGA ListObjects result cap
+    modelId: ""              # Pinned authorization_model_id
+    failOpen: false          # Default fail-closed
+  # write-side FGA: each resource Create publishes
+  # `vpc_<resource>:<id>#project@project:<project_id>` so per-resource Checks
+  # resolve. Production: enabled=true with the shared OpenFGA store id.
+  tupleWrite:
+    enabled: false           # Toggle write-side FGA (production: true)
+    openfgaEndpoint: ""      # OpenFGA HTTP API host:port (shared cluster store)
+    storeId: ""              # OpenFGA store id (shared with kacho-iam)
+    modelId: ""              # Pinned authorization_model_id (empty → store default)
+    timeoutMs: 2000          # Per-call write timeout
+extapi:
+  # peer kacho-iam.ProjectService.Get.
+  iam:
+    tls:
+      enable: false
+    dnsLb: false
+  # zone_id валидируется через kacho-geo (leaf-домен Geography).
+  geo:
+    # Dial-host = geo k8s Service `kacho-geo` on its public :9090 listener
+    # (ZoneService.Get/List); matches geo server-cert SAN (kacho-geo.*).
+    endpoint: "kacho-geo.kacho.svc.cluster.local:9090"
+    tls:
+      enable: false
+network:
+  # ⚠️ default-sg-inline=true (product default): Network.Create синхронно
+  # создает default SG. Отключение дает прирост throughput, но ломает default
+  # SG в UI-flow. Если нужен load-test override — `--set network.defaultSgInline=false`.
+  defaultSgInline: true
+  projectCache:
+    positiveTtl: 30s
+    negativeTtl: 5s
+    maxSize: 10000
+
+# ─── ENV-block ─────────────────────────────────────────────────────────
+# `env:` уважается deployment.yaml — сюда можно складывать overrides и
+# debug-флаги (например, `KACHO_VPC_AUTH_MODE=production`) без правки configmap.
+env: {}
+
+# ─── mTLS — per-edge opt-in (cert-manager internal-CA certs) ───────────
+# enable=false (default) → НИ один cert-secret НЕ монтируется и НИ одна
+# KACHO_VPC_*_MTLS_* env НЕ выставляется → insecure-поведение dev. umbrella
+# прокидывает .mtls.enable + per-edge флаги через global.kacho.mtls.
+#
+# При enable=true:
+#   - монтируются secret'ы cert-manager: server (kacho-vpc-server-tls) +
+#     client (kacho-vpc-client-tls) — оба в раздельных volume'ах;
+#   - выставляются env по corelib LoadPrefixed (config/mtls.go):
+#       server  (оба listener'а): KACHO_VPC_PUBLIC_SERVER_MTLS_* /
+#                                 KACHO_VPC_INTERNAL_SERVER_MTLS_*
+#       vpc→iam (register-drainer): KACHO_VPC_IAM_REGISTER_MTLS_*  (:9091)
+#       vpc→iam (ProjectService.Get): KACHO_VPC_IAM_PROJECT_MTLS_*  (:9090)
+#       vpc→iam (Check+list-filter):  KACHO_VPC_IAM_AUTHZ_MTLS_*    (:9091)
+#       vpc→geo (zone_id):          KACHO_VPC_GEO_MTLS_*
+#   - serverName на dial-стороне = фактический dial-host (SAN из cert-manager
+#     server-cert): iam-register/iam-authz=kacho-iam-internal (:9091),
+#     iam-project=kacho-iam (:9090), geo=kacho-geo (:9090).
+mtls:
+  enable: false
+  # ─── internal-CA leaf-cert issuance (этот чарт владеет своим Certificate) ─
+  # Rendered by templates/certificate.yaml when enable=true; signed by the umbrella
+  # `kacho-internal-ca` ClusterIssuer.
+  issuer:
+    name: kacho-internal-ca
+    kind: ClusterIssuer   # ClusterIssuer (cluster-scoped), NOT namespaced Issuer
+  serverHosts: ["vpc"]              # server-cert DNS-SAN dial-host (Service = vpc)
+  spiffe:
+    trustDomain: kacho.cloud
+    namespace: kacho
+    saName: kacho-vpc              # client-cert URI-SAN identity (= pod SA)
+  leafDuration: 2160h
+  leafRenewBefore: 720h
+  # cert-manager secret-имена (ключ серта = kacho-vpc).
+  serverSecretName: kacho-vpc-server-tls
+  clientSecretName: kacho-vpc-client-tls
+  mountPath: /etc/kacho-vpc/tls   # <mountPath>/server/{tls.crt,tls.key,ca.crt}
+                                  # <mountPath>/client/{tls.crt,tls.key,ca.crt}
+  # per-edge включение клиентских ребер (server-listener идет вместе с enable).
+  edges:
+    iamRegister: false   # vpc→iam InternalIAMService.Register (drainer, :9091)
+    iamProject: false    # vpc→iam ProjectService.Get (existence/leaf-owner, :9090)
+    iamAuthz: false      # vpc→iam InternalIAMService.Check (per-RPC gate + list-filter, :9091)
+    geo: false           # vpc→geo geo.v1.ZoneService.Get (zone_id validation)
+  # serverName на dial-стороне = реальный dial-host (∈ server-SAN пира).
+  # iam server-cert SAN покрывает оба host'а: kacho-iam (:9090) + kacho-iam-internal (:9091).
+  serverName:
+    iamRegister: kacho-iam-internal.kacho.svc.cluster.local
+    iamProject: kacho-iam.kacho.svc.cluster.local           # :9090 public dial-host
+    iamAuthz: kacho-iam-internal.kacho.svc.cluster.local    # :9091 internal dial-host
+    geo: kacho-geo.kacho.svc.cluster.local                  # vpc→geo dial-host (= Service kacho-geo + cert SAN)
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+
+# Default replicas=1; HPA autoscales up to 10 on CPU 70%.
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# ─── OPA Sidecar ───────────────────────────────────────────────────────
+# OPA sidecar для guardrails. Bundle pulled from kacho-iam Internal :9091
+# с signed JWS verification.
+#
+# Decision-logs → stdout (collected by cluster log aggregator).
+# Resource limits 256MB / 100m matching kacho-iam baseline.
+opa:
+  enabled: false                       # production: true
+  image: "openpolicyagent/opa:0.62.0"
+  imagePullPolicy: IfNotPresent
+  port: 8181
+  logLevel: info
+  bundleSource:
+    # kacho-iam Internal :9091 — OpaBundleService.
+    url: "http://kacho-iam-internal.kacho.svc.cluster.local:9091"
+    headers: {}                        # e.g. {Authorization: "Bearer <sa-token>"}
+  bundlePolling:
+    minDelaySeconds: 60
+    maxDelaySeconds: 120
+  bundleSigning:
+    keyID: "kacho-iam-bundle-key-v1"
+    algorithm: "RS256"
+    # publicKey — PEM-encoded RSA public key (provided by kacho-iam admin).
+    # В production загружается из Secret + mounted; placeholder здесь —
+    # values-prod.yaml override обязателен.
+    publicKey: |
+      -----BEGIN PUBLIC KEY-----
+      MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA<replace-with-real-key>
+      -----END PUBLIC KEY-----
+    excludeFiles:
+      - ".manifest"
+  decisionLogs:
+    console: true                      # → stdout, scraped by cluster log agg
+  statusLogs:
+    console: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
