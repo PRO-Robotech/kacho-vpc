@@ -25,9 +25,9 @@ import (
 //   - Get subnet (FOR UPDATE) → если не найден → NotFound.
 //   - Validate каждого CIDR (host-bits=0).
 //   - Проверка overlap внутри новой объединенной коллекции (v4 + v6).
-//   - SetCidrBlocks (DB UPDATE) — внутри него child-таблица subnet_cidr_blocks
+//   - SetCidrBlocks (DB UPDATE) — внутри него child-таблица network_cidr_claims
 //     пересобирается и ее EXCLUDE gist ловит пересечение ЛЮБОГО блока (primary и
-//     вторичного) с блоками других подсетей той же сети.
+//     вторичного) с claim'ами других подсетей (и anycast-пулов) той же сети.
 //
 // Cross-subnet non-overlap гарантируется только на DB-уровне (network-scoped
 // EXCLUDE): GetForUpdate сериализует лишь операции над ОДНОЙ подсетью, поэтому

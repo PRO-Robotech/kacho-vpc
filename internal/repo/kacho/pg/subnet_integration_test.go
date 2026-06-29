@@ -154,12 +154,12 @@ func TestCQRS_Subnet_CIDROverlap_ExclusionViolation(t *testing.T) {
 	require.NoError(t, w1.Commit())
 
 	// Insert второй подсети с пересекающимся 10.0.0.0/25 → EXCLUDE constraint
-	// ловит → ErrFailedPrecondition "Subnet CIDRs can not overlap".
+	// ловит → ErrFailedPrecondition "network CIDR claims can not overlap".
 	w2, err := r.Writer(ctx)
 	require.NoError(t, err)
 	defer w2.Abort()
 	s2 := newSubnet("project-overlap", "sub-2", net.ID, "zone-a", []string{"10.0.0.0/25"})
 	_, err = w2.Subnets().Insert(ctx, s2)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Subnet CIDRs can not overlap")
+	assert.Contains(t, err.Error(), "network CIDR claims can not overlap")
 }

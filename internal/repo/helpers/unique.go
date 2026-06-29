@@ -62,9 +62,9 @@ func IsFKViolation(err error) bool {
 }
 
 // IsExclusionViolation — PG SQLSTATE 23P01 (exclusion_violation), возникает
-// при нарушении EXCLUDE constraint (например `subnets_no_overlap_v4` —
-// пересекающиеся v4 CIDR в одной VPC). Маппится на gRPC FailedPrecondition
-// ("Subnet CIDRs can not overlap").
+// при нарушении EXCLUDE constraint (например `network_cidr_claims_no_overlap` —
+// пересекающиеся CIDR-претензии в одной сети). Маппится на gRPC FailedPrecondition
+// ("network CIDR claims can not overlap").
 func IsExclusionViolation(err error) bool {
 	if err == nil {
 		return false

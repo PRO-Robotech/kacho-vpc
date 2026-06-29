@@ -19,7 +19,7 @@ import (
 )
 
 // DB-level non-overlap для ВСЕХ CIDR-блоков подсетей в пределах одной Network
-// (нормализованная child-таблица subnet_cidr_blocks + EXCLUDE gist). Baseline
+// (унифицированная child-таблица network_cidr_claims + EXCLUDE gist). Baseline
 // EXCLUDE subnets_no_overlap_v4/v6 покрывает лишь primary-блок (массив[1]);
 // вторичные блоки (добавляемые SetCidrBlocks через AddCidrBlocks) под него не
 // попадают. Эти тесты доказывают, что вторичные блоки тоже под DB-инвариантом.
@@ -99,7 +99,7 @@ func TestIntegration_SecondaryCidrOverlap_CrossSubnet_PrimaryHit(t *testing.T) {
 	err = addSecondaryCidr(t, ctx, r, sub1, []string{"10.0.9.128/25"}, nil)
 	require.Error(t, err, "secondary-vs-primary overlap must be rejected on DB-level")
 	assert.True(t, errors.Is(err, repo.ErrFailedPrecondition), "want ErrFailedPrecondition, got %v", err)
-	assert.Contains(t, err.Error(), "Subnet CIDRs can not overlap")
+	assert.Contains(t, err.Error(), "network CIDR claims can not overlap")
 
 	// sub-1 не изменен — secondary не добавлен.
 	rd, err := r.Reader(ctx)
@@ -138,7 +138,7 @@ func TestIntegration_SecondaryCidrOverlap_CrossSubnet_SecondaryHit(t *testing.T)
 	err = addSecondaryCidr(t, ctx, r, sub1, []string{"10.0.20.0/24"}, nil)
 	require.Error(t, err, "secondary-vs-secondary overlap must be rejected")
 	assert.True(t, errors.Is(err, repo.ErrFailedPrecondition), "want ErrFailedPrecondition, got %v", err)
-	assert.Contains(t, err.Error(), "Subnet CIDRs can not overlap")
+	assert.Contains(t, err.Error(), "network CIDR claims can not overlap")
 }
 
 // TestIntegration_SecondaryCidrOverlap_Disjoint_OK — непересекающийся вторичный
@@ -204,7 +204,7 @@ func TestIntegration_SecondaryCidrOverlap_V6_Rejected(t *testing.T) {
 	err = addSecondaryCidr(t, ctx, r, created6b.ID, nil, []string{"2001:db8:1:abcd::/64"})
 	require.Error(t, err, "secondary v6 overlap must be rejected")
 	assert.True(t, errors.Is(err, repo.ErrFailedPrecondition), "want ErrFailedPrecondition, got %v", err)
-	assert.Contains(t, err.Error(), "Subnet CIDRs can not overlap")
+	assert.Contains(t, err.Error(), "network CIDR claims can not overlap")
 }
 
 // TestIntegration_SecondaryCidrOverlap_CrossNetwork_OK — идентичный блок в РАЗНОЙ
@@ -272,14 +272,14 @@ func TestIntegration_SecondaryCidrOverlap_ConcurrentTwoSubnets_OneWins(t *testin
 			continue
 		}
 		assert.True(t, errors.Is(e, repo.ErrFailedPrecondition), "loser must get ErrFailedPrecondition, got %v", e)
-		assert.Contains(t, e.Error(), "Subnet CIDRs can not overlap")
+		assert.Contains(t, e.Error(), "network CIDR claims can not overlap")
 	}
 	assert.Equal(t, 1, okCount, "exactly one concurrent overlapping secondary add must win")
 
 	// Блок 10.50.0.0/24 присутствует ровно у одной подсети сети.
 	var cnt int
 	require.NoError(t, pool.QueryRow(ctx,
-		"SELECT count(*) FROM subnet_cidr_blocks WHERE network_id = $1 AND block = '10.50.0.0/24'::cidr", netID,
+		"SELECT count(*) FROM network_cidr_claims WHERE network_id = $1 AND kind = 'subnet' AND cidr_range = '10.50.0.0/24'::cidr", netID,
 	).Scan(&cnt))
 	assert.Equal(t, 1, cnt, "range belongs to exactly one subnet of the network")
 }
@@ -343,8 +343,8 @@ func TestIntegration_SecondaryCidrOverlap_DeleteFreesRange(t *testing.T) {
 	// child-строки sub-8 сняты каскадом.
 	var cnt int
 	require.NoError(t, pool.QueryRow(ctx,
-		"SELECT count(*) FROM subnet_cidr_blocks WHERE network_id = $1", netID).Scan(&cnt))
-	assert.Equal(t, 0, cnt, "delete cascades subnet_cidr_blocks rows")
+		"SELECT count(*) FROM network_cidr_claims WHERE network_id = $1 AND kind = 'subnet'", netID).Scan(&cnt))
+	assert.Equal(t, 0, cnt, "delete cascades network_cidr_claims subnet rows")
 
 	// Новая подсеть берет оба освобожденных диапазона.
 	_, sub9 := seedNetworkSubnetInExisting(t, ctx, r, "proj-sec-16", netID, "sub-9", []string{"10.0.0.0/24"})
