@@ -372,20 +372,24 @@ jobs:
           fi
 
           # --- newman: kacho-iam --------------------------------------------
+          # run.sh exits non-zero on ANY failed assertion (honest per-collection
+          # exit); we DON'T gate on it here — the authoritative gate is the
+          # assert-suites-green.sh step below, which applies the known-RED
+          # whitelist (kacho-iam#276 VPC LS-NOB cross-suite collision, etc). The
+          # run.sh exit only generates the per-collection reports it reads.
           cd "${GITHUB_WORKSPACE}/kacho-iam"
           python3 tests/newman/scripts/gen.py
-          tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080
+          tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080 || true
 
           # --- newman: kacho-vpc --------------------------------------------
           # Same stack already has VPC deployment + pg-vpc + api-gateway up;
           # authz-fixtures patched kacho-vpc/tests/newman/environments/local
-          # with fresh JWTs. Generate VPC collections and run them too.
-          # gen.py invocation gates Python syntax of cases/*.py (validates the
-          # whole catalog); run.sh exits non-zero on any FAILED assertion (see
-          # `awk '... $3+0>0' out/summary.txt` pattern in ci.yaml).
+          # with fresh JWTs. Generate VPC collections and run them too. run.sh
+          # exit is NOT gating (|| true) — assert-suites-green.sh is the real gate
+          # (applies known-RED, so the VPC LS-NOB whitelist takes effect here too).
           cd "${GITHUB_WORKSPACE}/kacho-vpc"
           python3 tests/newman/scripts/gen.py
-          tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080
+          tests/newman/scripts/run.sh --env-var baseUrl=http://localhost:18080 || true
 
       - name: dump stack logs
         # `always()` (not `failure()`): newman exits 0 even with failed
@@ -450,3 +454,13 @@ jobs:
         # Shared gate — single source of truth for the known-RED whitelist
         # (kacho-iam/tests/newman/scripts/assert-suites-green.sh, on iam@main).
         run: bash scripts/assert-suites-green.sh
+
+      - name: assert all VPC newman suites green
+        if: always()
+        working-directory: kacho-vpc/tests/newman
+        # Same shared gate, applied to the VPC collections+reports (the VPC run.sh
+        # above is `|| true`, non-gating). assert-suites-green.sh globs pwd-relative
+        # collections/ + out/, so it applies the SAME known-RED whitelist here —
+        # the VPC LS-NOB cross-suite collision (kacho-iam#276) is whitelisted, while
+        # any real VPC suite failure still fails the job honestly.
+        run: bash "${GITHUB_WORKSPACE}/kacho-iam/tests/newman/scripts/assert-suites-green.sh"
