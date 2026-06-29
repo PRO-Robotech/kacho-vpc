@@ -1,0 +1,317 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "kacho/cloud/api/operation.proto";
+import "kacho/cloud/operation/operation.proto";
+import "kacho/cloud/validation.proto";
+import "kacho/cloud/vpc/v1/address.proto";
+import "kacho/cloud/vpc/v1/anycast_address_pool.proto";
+import "kacho/iam/authz/v1/authz_options.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// A set of methods for managing AnycastAddressPool resources.
+service AnycastAddressPoolService {
+  // Returns the specified AnycastAddressPool resource.
+  //
+  // To get the list of all available AnycastAddressPool resources, make a [List] request.
+  rpc Get(GetAnycastAddressPoolRequest) returns (AnycastAddressPool) {
+    option (google.api.http) = {get: "/vpc/v1/anycastAddressPools/{anycast_address_pool_id}"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.get";
+    option (kacho.iam.authz.v1.required_relation) = "v_get";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_anycast_address_pool"
+      from_request_field: "anycast_address_pool_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Retrieves the list of AnycastAddressPool resources in the specified project.
+  rpc List(ListAnycastAddressPoolsRequest) returns (ListAnycastAddressPoolsResponse) {
+    option (google.api.http) = {get: "/vpc/v1/anycastAddressPools"};
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_poolses.list";
+    option (kacho.iam.authz.v1.required_relation) = "v_list";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Creates an anycast address pool in the specified project.
+  rpc Create(CreateAnycastAddressPoolRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/anycastAddressPools"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "CreateAnycastAddressPoolMetadata"
+      response: "AnycastAddressPool"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.create";
+    option (kacho.iam.authz.v1.required_relation) = "editor";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "project"
+      from_request_field: "project_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Updates the specified anycast address pool (mutable: name/description/labels).
+  rpc Update(UpdateAnycastAddressPoolRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      patch: "/vpc/v1/anycastAddressPools/{anycast_address_pool_id}"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "UpdateAnycastAddressPoolMetadata"
+      response: "AnycastAddressPool"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.update";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_anycast_address_pool"
+      from_request_field: "anycast_address_pool_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Deletes the specified anycast address pool. The pool must be empty
+  // (no network attachments / live allocations).
+  rpc Delete(DeleteAnycastAddressPoolRequest) returns (operation.Operation) {
+    option (google.api.http) = {delete: "/vpc/v1/anycastAddressPools/{anycast_address_pool_id}"};
+    option (kacho.cloud.api.operation) = {
+      metadata: "DeleteAnycastAddressPoolMetadata"
+      response: "google.protobuf.Empty"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.delete";
+    option (kacho.iam.authz.v1.required_relation) = "v_delete";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_anycast_address_pool"
+      from_request_field: "anycast_address_pool_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Attaches a network to the pool (registers a network_cidr_claims row in the
+  // same writer-TX). Idempotent: re-attach is a no-op.
+  rpc AttachNetwork(AttachNetworkRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/anycastAddressPools/{anycast_address_pool_id}:attachNetwork"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "AttachNetworkMetadata"
+      response: "AnycastAddressPool"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.attachNetwork";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_anycast_address_pool"
+      from_request_field: "anycast_address_pool_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+
+  // Detaches a network from the pool (removes the network_cidr_claims row).
+  // Rejected if the network has live anycast allocations from the pool.
+  rpc DetachNetwork(DetachNetworkRequest) returns (operation.Operation) {
+    option (google.api.http) = {
+      post: "/vpc/v1/anycastAddressPools/{anycast_address_pool_id}:detachNetwork"
+      body: "*"
+    };
+    option (kacho.cloud.api.operation) = {
+      metadata: "DetachNetworkMetadata"
+      response: "AnycastAddressPool"
+    };
+    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_pools.detachNetwork";
+    option (kacho.iam.authz.v1.required_relation) = "v_update";
+    option (kacho.iam.authz.v1.scope_extractor)   = {
+      object_type:        "vpc_anycast_address_pool"
+      from_request_field: "anycast_address_pool_id"
+    };
+    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+  }
+}
+
+message GetAnycastAddressPoolRequest {
+  // ID of the AnycastAddressPool resource to return.
+  string anycast_address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message ListAnycastAddressPoolsRequest {
+  // ID of the project to list anycast address pools in.
+  //
+  // To get the project ID use a [kacho.cloud.iam.v1.ProjectService.List] request.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than `page_size`, the service returns a
+  // [ListAnycastAddressPoolsResponse.next_page_token] that can be used to get the
+  // next page of results in subsequent list requests. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. To get the next page of results, set `page_token` to the
+  // [ListAnycastAddressPoolsResponse.next_page_token] returned by a previous list request.
+  string page_token = 3 [(length) = "<=100"];
+
+  // A filter expression that filters resources listed in the response.
+  // Currently you can filter only on the [AnycastAddressPool.name] field.
+  string filter = 4;
+
+  // Optional: list only pools attached to this network.
+  string network_id = 5 [(length) = "<=50"];
+}
+
+message ListAnycastAddressPoolsResponse {
+  // List of AnycastAddressPool resources.
+  repeated AnycastAddressPool anycast_address_pools = 1;
+
+  // Token for getting the next page of the list. If the number of results is greater
+  // than the specified [ListAnycastAddressPoolsRequest.page_size], use `next_page_token`
+  // as the value for the [ListAnycastAddressPoolsRequest.page_token] parameter in the
+  // next list request.
+  string next_page_token = 2;
+}
+
+message CreateAnycastAddressPoolRequest {
+  // ID of the project to create the anycast address pool in.
+  string project_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Name of the pool. Unique within the project.
+  string name = 2 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // Description of the pool.
+  string description = 3 [(length) = "<=256"];
+
+  // Pool labels as `key:value` pairs.
+  map<string, string> labels = 4 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+
+  // Reachability scope. Phase 1 supports only INTERNAL.
+  AnycastAddressPool.AnycastScope scope = 5;
+
+  // IP version of the pool (IPV4 / IPV6).
+  Address.IpVersion ip_version = 6;
+
+  // CIDR range. Empty → platform-assigned from the reserved slice. If set, must
+  // be within the reserved range and match `ip_version` (BYO-from-reserved).
+  string cidr = 7 [(length) = "<=49"];
+}
+
+message CreateAnycastAddressPoolMetadata {
+  // ID of the anycast address pool that is being created.
+  string anycast_address_pool_id = 1;
+}
+
+message UpdateAnycastAddressPoolRequest {
+  // ID of the anycast address pool to update.
+  string anycast_address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // Field mask that specifies which attributes of the pool should be updated.
+  // Only name/description/labels are mutable; cidr/scope/ip_version/is_default
+  // are immutable after Create.
+  google.protobuf.FieldMask update_mask = 2;
+
+  // New name for the pool. Unique within the project.
+  string name = 3 [(pattern) = "|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?"];
+
+  // New description of the pool.
+  string description = 4 [(length) = "<=256"];
+
+  // Pool labels as `key:value` pairs. The existing set is completely replaced
+  // by the provided set.
+  map<string, string> labels = 5 [
+    (kacho.cloud.size) = "<=64",
+    (length) = "<=63",
+    (pattern) = "[-_0-9a-z]*",
+    (map_key).length = "1-63",
+    (map_key).pattern = "[a-z][-_0-9a-z]*"
+  ];
+}
+
+message UpdateAnycastAddressPoolMetadata {
+  // ID of the anycast address pool that is being updated.
+  string anycast_address_pool_id = 1;
+}
+
+message DeleteAnycastAddressPoolRequest {
+  // ID of the anycast address pool to delete.
+  string anycast_address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message DeleteAnycastAddressPoolMetadata {
+  // ID of the anycast address pool that is being deleted.
+  string anycast_address_pool_id = 1;
+}
+
+message AttachNetworkRequest {
+  // ID of the anycast address pool to attach the network to.
+  string anycast_address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // ID of the network to attach. The network and the pool must belong to the
+  // same project.
+  string network_id = 2 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message AttachNetworkMetadata {
+  // ID of the anycast address pool being attached.
+  string anycast_address_pool_id = 1;
+
+  // ID of the network being attached.
+  string network_id = 2;
+}
+
+message DetachNetworkRequest {
+  // ID of the anycast address pool to detach the network from.
+  string anycast_address_pool_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // ID of the network to detach.
+  string network_id = 2 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+}
+
+message DetachNetworkMetadata {
+  // ID of the anycast address pool being detached.
+  string anycast_address_pool_id = 1;
+
+  // ID of the network being detached.
+  string network_id = 2;
+}

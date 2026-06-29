@@ -274,6 +274,9 @@ message CreateAddressRequest {
     InternalIpv6AddressSpec internal_ipv6_address_spec = 12;
     // External ipv6 address specification.
     ExternalIpv6AddressSpec external_ipv6_address_spec = 13;
+    // Anycast address specification — network-scoped globally-unique /32 (v4) /
+    // /128 (v6) allocated from an attached AnycastAddressPool.
+    AnycastAddressSpec anycast_address_spec = 14;
   }
   // Specifies if address protected from deletion.
   bool deletion_protection = 10;
@@ -332,6 +335,24 @@ message ExternalIpv6AddressSpec {
   // attributes (e.g. SMTP capability) may not apply for v6 — kept symmetric
   // for client-side ergonomics.
   AddressRequirements requirements = 3;
+}
+
+// AnycastAddressSpec — request side of an anycast Address allocation. The
+// service allocates a network-scoped, globally-unique host address (/32 for
+// IPV4, /128 for IPV6) from an AnycastAddressPool attached to the network.
+message AnycastAddressSpec {
+  // ID of the network the anycast address is scoped to.
+  string network_id = 1 [
+    (required) = true,
+    (length) = "<=50"
+  ];
+
+  // IP version of the address to allocate (IPV4 / IPV6).
+  Address.IpVersion ip_version = 2;
+
+  // Optional ID of the AnycastAddressPool to allocate from. Empty → allocate
+  // from the platform `is_default` pool available to the network.
+  string anycast_pool_id = 3 [(length) = "<=50"];
 }
 
 message DnsRecordSpec {

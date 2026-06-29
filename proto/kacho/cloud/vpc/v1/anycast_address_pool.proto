@@ -1,0 +1,82 @@
+// Copyright (c) PRO-Robotech
+// SPDX-License-Identifier: BUSL-1.1
+
+syntax = "proto3";
+
+package kacho.cloud.vpc.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kacho/cloud/vpc/v1/address.proto";
+
+option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
+
+// AnycastAddressPool — tenant-facing flat-ресурс vpc: project-scoped пул
+// anycast-адресов, из которого выдаются network-scoped глобально-уникальные
+// /32 (v4) / /128 (v6) для active-active single-VIP. Фаза 1 — только INTERNAL
+// (из reserved-среза 100.64.0.0/10 для IPv4, provider-ULA /48 для IPv6).
+//
+// Пул M:N приаттачен к Network'ам (pivot anycast_pool_network_attachments);
+// каждая привязка регистрирует CIDR-претензию в network_cidr_claims (EXCLUDE
+// gist на пересечение внутри сети). Платформенный is_default-пул — admin-owned,
+// авто-доступен каждой сети без явного attach и не tenant-enumerable.
+message AnycastAddressPool {
+  // Сфера достижимости пула. Фаза 1 поддерживает только INTERNAL.
+  enum AnycastScope {
+    ANYCAST_SCOPE_UNSPECIFIED = 0;
+
+    // VPC-internal anycast: адреса достижимы только внутри VPC владельца.
+    INTERNAL = 1;
+  }
+
+  // Стадия жизненного цикла пула.
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+
+    // Пул создаётся (claim регистрируется, ресурс ещё не готов к аллокации).
+    CREATING = 1;
+
+    // Пул активен и доступен для attach/allocate.
+    ACTIVE = 2;
+
+    // Пул удаляется (claim снимается).
+    DELETING = 3;
+  }
+
+  // ID пула. Генерируется при создании (prefix `aap`).
+  string id = 1;
+
+  // ID проекта, которому принадлежит пул (cross-service ref на iam).
+  string project_id = 2;
+
+  // Время создания в формате [RFC3339](https://www.ietf.org/rfc/rfc3339.txt).
+  google.protobuf.Timestamp created_at = 3;
+
+  // Имя пула. Уникально в пределах проекта.
+  // Значение должно соответствовать ``\|[a-zA-Z]([-_a-zA-Z0-9]{0,61}[a-zA-Z0-9])?``.
+  string name = 4;
+
+  // Описание пула. 0-256 символов.
+  string description = 5;
+
+  // Метки пула в формате `key:value`. Не более 64 на ресурс.
+  map<string, string> labels = 6;
+
+  // Сфера достижимости (immutable после Create). Фаза 1 — только INTERNAL.
+  AnycastScope scope = 7;
+
+  // Версия IP-адресов пула (immutable после Create).
+  // Переиспользуется enum Address.IpVersion (IPV4 / IPV6).
+  Address.IpVersion ip_version = 8;
+
+  // CIDR-диапазон пула (immutable после Create). Для IPV4 — внутри reserved
+  // 100.64.0.0/10; для IPV6 — внутри provider-ULA /48. Может быть
+  // platform-assigned либо BYO-из-reserved.
+  string cidr = 9;
+
+  // Платформенный пул по умолчанию: admin-owned, авто-доступен каждой сети без
+  // явного attach. Output-only для тенанта (не tenant-editable).
+  bool is_default = 10;
+
+  // Текущая стадия жизненного цикла пула.
+  Status status = 11;
+}
