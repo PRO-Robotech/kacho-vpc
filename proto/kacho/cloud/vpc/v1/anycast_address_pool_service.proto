@@ -214,9 +214,10 @@ message CreateAnycastAddressPoolRequest {
   // IP version of the pool (IPV4 / IPV6).
   Address.IpVersion ip_version = 6;
 
-  // CIDR range. Empty → platform-assigned from the reserved slice. If set, must
-  // be within the reserved range and match `ip_version` (BYO-from-reserved).
-  string cidr = 7 [(length) = "<=49"];
+  // CIDR blocks. Empty → platform-assigned from the reserved slice. If set, each
+  // block must be within the reserved range and match `ip_version`
+  // (BYO-from-reserved); within-pool blocks must not overlap.
+  repeated string cidr_blocks = 7 [(length) = "<=49"];
 }
 
 message CreateAnycastAddressPoolMetadata {
@@ -232,7 +233,7 @@ message UpdateAnycastAddressPoolRequest {
   ];
 
   // Field mask that specifies which attributes of the pool should be updated.
-  // Only name/description/labels are mutable; cidr/scope/ip_version/is_default
+  // Only name/description/labels are mutable; cidr_blocks/scope/ip_version/is_default
   // are immutable after Create.
   google.protobuf.FieldMask update_mask = 2;
 

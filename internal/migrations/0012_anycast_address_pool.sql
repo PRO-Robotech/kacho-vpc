@@ -9,9 +9,12 @@
 -- инвариант непересечения CIDR-претензий сети (network_cidr_claims + EXCLUDE).
 -- =============================================================================
 -- Состав:
---   1. anycast_address_pools — flat-ресурс (scope/ip_version/cidr immutable),
---      CHECK на форму + reserved-диапазон + family-match; partial UNIQUE
---      «один is_default на (scope, ip_version)».
+--   1. anycast_address_pools — flat-ресурс (scope/ip_version/cidr_blocks immutable),
+--      CHECK на форму scope/ip_version/status; partial UNIQUE «один is_default на
+--      (scope, ip_version)»; cidr_blocks text[] — денормализованный вид для reads.
+--   1b. anycast_address_pool_cidrs — нормализованная child-таблица блоков пула
+--      (block cidr): CHECK reserved-диапазона по family + EXCLUDE gist на
+--      непересечение блоков ВНУТРИ пула (pool_id WITH =, block WITH &&).
 --   2. anycast_pool_network_attachments — M:N pivot пул↔сеть (same-DB FK,
 --      ON DELETE CASCADE c обеих сторон).
 --   3. УНИФИКАЦИЯ subnet_cidr_blocks → network_cidr_claims: одна child-таблица
@@ -27,12 +30,13 @@ SET search_path TO kacho_vpc, public;
 -- -----------------------------------------------------------------------------
 -- 1. anycast_address_pools
 -- -----------------------------------------------------------------------------
--- scope/ip_version/cidr — immutable после Create (новый пул вместо изменения
+-- scope/ip_version/cidr_blocks — immutable после Create (новый пул вместо изменения
 -- адресного пространства); name/description/labels — mutable через update_mask.
--- reserved-диапазон: IPv4 — срез из 100.64.0.0/10 (RFC 6598 Shared Address Space,
--- provider-purpose); IPv6 — выделенный provider-ULA /48 fd00:ca00::/48 (внутри
--- fd00::/8, фиксированный global ID). family-match гарантирует, что family(cidr)
--- согласован с ip_version (нельзя IPV6-пул с v4-cidr).
+-- cidr_blocks — денормализованный text[]-вид адресных блоков пула для быстрых reads;
+-- источник истины и DB-инвариант непересечения блоков ВНУТРИ пула — нормализованная
+-- child-таблица anycast_address_pool_cidrs (см. 1b). reserved-диапазон и family
+-- блоков энфорсятся на child-таблице, на самой пуловой строке остаются только
+-- инварианты формы scope/ip_version/status.
 CREATE TABLE IF NOT EXISTS kacho_vpc.anycast_address_pools (
     id          text         PRIMARY KEY,
     project_id  text         NOT NULL,                 -- cross-service ref на iam, без FK
@@ -42,7 +46,7 @@ CREATE TABLE IF NOT EXISTS kacho_vpc.anycast_address_pools (
     labels      jsonb        NOT NULL DEFAULT '{}'::jsonb,
     scope       text         NOT NULL,                 -- enum AnycastScope; фаза 1 — только INTERNAL
     ip_version  text         NOT NULL,                 -- IpVersion: IPV4 | IPV6
-    cidr        cidr         NOT NULL,                 -- platform-assigned/BYO из reserved
+    cidr_blocks text[]       NOT NULL DEFAULT '{}',    -- денорм-вид блоков (истина — child anycast_address_pool_cidrs)
     is_default  boolean      NOT NULL DEFAULT false,   -- платформенный admin-owned пул
     status      text         NOT NULL,                 -- CREATING | ACTIVE | DELETING
 
@@ -57,17 +61,7 @@ CREATE TABLE IF NOT EXISTS kacho_vpc.anycast_address_pools (
     CONSTRAINT anycast_address_pools_ip_version_chk
         CHECK (ip_version IN ('IPV4', 'IPV6')),
     CONSTRAINT anycast_address_pools_status_chk
-        CHECK (status IN ('CREATING', 'ACTIVE', 'DELETING')),
-    CONSTRAINT anycast_address_pools_family_match_chk
-        CHECK (
-            (family(cidr) = 4 AND ip_version = 'IPV4') OR
-            (family(cidr) = 6 AND ip_version = 'IPV6')
-        ),
-    CONSTRAINT anycast_address_pools_reserved_range_chk
-        CHECK (
-            (ip_version = 'IPV4' AND cidr <<= '100.64.0.0/10'::cidr) OR
-            (ip_version = 'IPV6' AND cidr <<= 'fd00:ca00::/48'::cidr)
-        )
+        CHECK (status IN ('CREATING', 'ACTIVE', 'DELETING'))
 );
 
 -- Один is_default на (scope, ip_version) — платформенный fallback ровно один на
@@ -86,6 +80,30 @@ CREATE INDEX IF NOT EXISTS anycast_address_pools_created_at_idx
     ON kacho_vpc.anycast_address_pools (created_at, id);
 CREATE INDEX IF NOT EXISTS anycast_address_pools_labels_idx
     ON kacho_vpc.anycast_address_pools USING gin (labels jsonb_path_ops);
+
+-- -----------------------------------------------------------------------------
+-- 1b. anycast_address_pool_cidrs — нормализованные блоки пула
+-- -----------------------------------------------------------------------------
+-- Источник истины адресных блоков пула + DB-инвариант непересечения блоков ВНУТРИ
+-- одного пула: EXCLUDE gist (pool_id WITH =, block WITH &&) запрещает overlap двух
+-- блоков одного пула (иначе пул не приаттачить — его блоки конфликтнут друг с другом
+-- в network_cidr_claims на attach). Cross-pool пересечение допустимо: изоляция
+-- per-network через network_cidr_claims на attach, а НЕ глобально. reserved-CHECK:
+-- IPv4-блок внутри 100.64.0.0/10 (RFC 6598 Shared Address Space, provider-purpose),
+-- IPv6-блок внутри provider-ULA fd00:ca00::/48. Стиль зеркалит address_pool_cidrs
+-- (миграция 0004); btree_gist уже создан в базовой схеме.
+CREATE TABLE IF NOT EXISTS kacho_vpc.anycast_address_pool_cidrs (
+    pool_id text NOT NULL REFERENCES kacho_vpc.anycast_address_pools(id) ON DELETE CASCADE,
+    block   cidr NOT NULL,
+    PRIMARY KEY (pool_id, block),
+    CONSTRAINT anycast_address_pool_cidrs_reserved_chk CHECK (
+        (family(block) = 4 AND block <<= '100.64.0.0/10'::cidr) OR
+        (family(block) = 6 AND block <<= 'fd00:ca00::/48'::cidr)),
+    CONSTRAINT anycast_address_pool_cidrs_no_overlap
+        EXCLUDE USING gist (pool_id WITH =, block inet_ops WITH &&)
+);
+CREATE INDEX IF NOT EXISTS anycast_address_pool_cidrs_pool_id_idx
+    ON kacho_vpc.anycast_address_pool_cidrs (pool_id);
 
 -- -----------------------------------------------------------------------------
 -- 2. anycast_pool_network_attachments — M:N pivot пул↔сеть
@@ -200,12 +218,17 @@ CREATE INDEX IF NOT EXISTS network_cidr_claims_ref_idx ON kacho_vpc.network_cidr
 -- 100.64.0.0/16 из reserved 100.64.0.0/10. Детерминированный id (prefix aap +
 -- crockford-base32 тело) — фиксирован, ON CONFLICT DO NOTHING для re-run/race.
 INSERT INTO kacho_vpc.anycast_address_pools
-    (id, project_id, name, description, scope, ip_version, cidr, is_default, status)
+    (id, project_id, name, description, scope, ip_version, cidr_blocks, is_default, status)
 VALUES
     ('aap00000000000000def', 'kacho-system', 'default-internal-ipv4',
      'Platform default INTERNAL anycast address pool (IPv4), auto-available to every network.',
-     'INTERNAL', 'IPV4', '100.64.0.0/16', true, 'ACTIVE')
+     'INTERNAL', 'IPV4', ARRAY['100.64.0.0/16'], true, 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
+
+-- Нормализованная строка блока seed-пула (источник истины + EXCLUDE-инвариант).
+INSERT INTO kacho_vpc.anycast_address_pool_cidrs (pool_id, block)
+VALUES ('aap00000000000000def', '100.64.0.0/16')
+ON CONFLICT (pool_id, block) DO NOTHING;
 
 -- +goose StatementEnd
 
@@ -214,7 +237,10 @@ ON CONFLICT (id) DO NOTHING;
 
 SET search_path TO kacho_vpc, public;
 
+-- Порядок DROP — FK-дети раньше родителя: pivot и child-блоки ссылаются на
+-- anycast_address_pools (ON DELETE CASCADE), снимаем их первыми.
 DROP TABLE IF EXISTS kacho_vpc.anycast_pool_network_attachments;
+DROP TABLE IF EXISTS kacho_vpc.anycast_address_pool_cidrs;
 DROP TABLE IF EXISTS kacho_vpc.anycast_address_pools;
 
 -- Откат унификации: убрать anycast-претензии, вернуть subnet_cidr_blocks.

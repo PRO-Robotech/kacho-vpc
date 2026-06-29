@@ -158,10 +158,10 @@ type AnycastAddressPool struct {
 	// Версия IP-адресов пула (immutable после Create).
 	// Переиспользуется enum Address.IpVersion (IPV4 / IPV6).
 	IpVersion Address_IpVersion `protobuf:"varint,8,opt,name=ip_version,json=ipVersion,proto3,enum=kacho.cloud.vpc.v1.Address_IpVersion" json:"ip_version,omitempty"`
-	// CIDR-диапазон пула (immutable после Create). Для IPV4 — внутри reserved
-	// 100.64.0.0/10; для IPV6 — внутри provider-ULA /48. Может быть
-	// platform-assigned либо BYO-из-reserved.
-	Cidr string `protobuf:"bytes,9,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	// CIDR-блоки пула (immutable после Create). Блоки из reserved 100.64.0.0/10
+	// (IPv4) / provider-ULA fd00:ca00::/48 (IPv6); within-pool не пересекаются.
+	// Могут быть platform-assigned либо BYO-из-reserved.
+	CidrBlocks []string `protobuf:"bytes,9,rep,name=cidr_blocks,json=cidrBlocks,proto3" json:"cidr_blocks,omitempty"`
 	// Платформенный пул по умолчанию: admin-owned, авто-доступен каждой сети без
 	// явного attach. Output-only для тенанта (не tenant-editable).
 	IsDefault bool `protobuf:"varint,10,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
@@ -257,11 +257,11 @@ func (x *AnycastAddressPool) GetIpVersion() Address_IpVersion {
 	return Address_IP_VERSION_UNSPECIFIED
 }
 
-func (x *AnycastAddressPool) GetCidr() string {
+func (x *AnycastAddressPool) GetCidrBlocks() []string {
 	if x != nil {
-		return x.Cidr
+		return x.CidrBlocks
 	}
-	return ""
+	return nil
 }
 
 func (x *AnycastAddressPool) GetIsDefault() bool {
@@ -282,7 +282,7 @@ var File_kacho_cloud_vpc_v1_anycast_address_pool_proto protoreflect.FileDescript
 
 const file_kacho_cloud_vpc_v1_anycast_address_pool_proto_rawDesc = "" +
 	"\n" +
-	"-kacho/cloud/vpc/v1/anycast_address_pool.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a kacho/cloud/vpc/v1/address.proto\"\xcd\x05\n" +
+	"-kacho/cloud/vpc/v1/anycast_address_pool.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a kacho/cloud/vpc/v1/address.proto\"\xda\x05\n" +
 	"\x12AnycastAddressPool\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -294,8 +294,9 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_proto_rawDesc = "" +
 	"\x06labels\x18\x06 \x03(\v22.kacho.cloud.vpc.v1.AnycastAddressPool.LabelsEntryR\x06labels\x12I\n" +
 	"\x05scope\x18\a \x01(\x0e23.kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScopeR\x05scope\x12D\n" +
 	"\n" +
-	"ip_version\x18\b \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\x12\x12\n" +
-	"\x04cidr\x18\t \x01(\tR\x04cidr\x12\x1d\n" +
+	"ip_version\x18\b \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\x12\x1f\n" +
+	"\vcidr_blocks\x18\t \x03(\tR\n" +
+	"cidrBlocks\x12\x1d\n" +
 	"\n" +
 	"is_default\x18\n" +
 	" \x01(\bR\tisDefault\x12E\n" +

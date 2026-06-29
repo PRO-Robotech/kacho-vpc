@@ -234,9 +234,10 @@ type CreateAnycastAddressPoolRequest struct {
 	Scope AnycastAddressPool_AnycastScope `protobuf:"varint,5,opt,name=scope,proto3,enum=kacho.cloud.vpc.v1.AnycastAddressPool_AnycastScope" json:"scope,omitempty"`
 	// IP version of the pool (IPV4 / IPV6).
 	IpVersion Address_IpVersion `protobuf:"varint,6,opt,name=ip_version,json=ipVersion,proto3,enum=kacho.cloud.vpc.v1.Address_IpVersion" json:"ip_version,omitempty"`
-	// CIDR range. Empty → platform-assigned from the reserved slice. If set, must
-	// be within the reserved range and match `ip_version` (BYO-from-reserved).
-	Cidr          string `protobuf:"bytes,7,opt,name=cidr,proto3" json:"cidr,omitempty"`
+	// CIDR blocks. Empty → platform-assigned from the reserved slice. If set, each
+	// block must be within the reserved range and match `ip_version`
+	// (BYO-from-reserved); within-pool blocks must not overlap.
+	CidrBlocks    []string `protobuf:"bytes,7,rep,name=cidr_blocks,json=cidrBlocks,proto3" json:"cidr_blocks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -313,11 +314,11 @@ func (x *CreateAnycastAddressPoolRequest) GetIpVersion() Address_IpVersion {
 	return Address_IP_VERSION_UNSPECIFIED
 }
 
-func (x *CreateAnycastAddressPoolRequest) GetCidr() string {
+func (x *CreateAnycastAddressPoolRequest) GetCidrBlocks() []string {
 	if x != nil {
-		return x.Cidr
+		return x.CidrBlocks
 	}
-	return ""
+	return nil
 }
 
 type CreateAnycastAddressPoolMetadata struct {
@@ -370,7 +371,7 @@ type UpdateAnycastAddressPoolRequest struct {
 	// ID of the anycast address pool to update.
 	AnycastAddressPoolId string `protobuf:"bytes,1,opt,name=anycast_address_pool_id,json=anycastAddressPoolId,proto3" json:"anycast_address_pool_id,omitempty"`
 	// Field mask that specifies which attributes of the pool should be updated.
-	// Only name/description/labels are mutable; cidr/scope/ip_version/is_default
+	// Only name/description/labels are mutable; cidr_blocks/scope/ip_version/is_default
 	// are immutable after Create.
 	UpdateMask *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
 	// New name for the pool. Unique within the project.
@@ -820,7 +821,7 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"network_id\x18\x05 \x01(\tB\b\x8a\xc81\x04<=50R\tnetworkId\"\xa5\x01\n" +
 	"\x1fListAnycastAddressPoolsResponse\x12Z\n" +
 	"\x15anycast_address_pools\x18\x01 \x03(\v2&.kacho.cloud.vpc.v1.AnycastAddressPoolR\x13anycastAddressPools\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xc0\x04\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcd\x04\n" +
 	"\x1fCreateAnycastAddressPoolRequest\x12+\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tprojectId\x12B\n" +
@@ -829,8 +830,9 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"\x06labels\x18\x04 \x03(\v2?.kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.LabelsEntryB;\xf2\xc71\v[-_0-9a-z]*\x82\xc81\x04<=64\x8a\xc81\x04<=63\xb2\xc81\x18\x12\x10[a-z][-_0-9a-z]*\x1a\x041-63R\x06labels\x12I\n" +
 	"\x05scope\x18\x05 \x01(\x0e23.kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScopeR\x05scope\x12D\n" +
 	"\n" +
-	"ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\x12\x1c\n" +
-	"\x04cidr\x18\a \x01(\tB\b\x8a\xc81\x04<=49R\x04cidr\x1a9\n" +
+	"ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\x12)\n" +
+	"\vcidr_blocks\x18\a \x03(\tB\b\x8a\xc81\x04<=49R\n" +
+	"cidrBlocks\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Y\n" +

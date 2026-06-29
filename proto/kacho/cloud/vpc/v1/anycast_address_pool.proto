@@ -68,10 +68,10 @@ message AnycastAddressPool {
   // Переиспользуется enum Address.IpVersion (IPV4 / IPV6).
   Address.IpVersion ip_version = 8;
 
-  // CIDR-диапазон пула (immutable после Create). Для IPV4 — внутри reserved
-  // 100.64.0.0/10; для IPV6 — внутри provider-ULA /48. Может быть
-  // platform-assigned либо BYO-из-reserved.
-  string cidr = 9;
+  // CIDR-блоки пула (immutable после Create). Блоки из reserved 100.64.0.0/10
+  // (IPv4) / provider-ULA fd00:ca00::/48 (IPv6); within-pool не пересекаются.
+  // Могут быть platform-assigned либо BYO-из-reserved.
+  repeated string cidr_blocks = 9;
 
   // Платформенный пул по умолчанию: admin-owned, авто-доступен каждой сети без
   // явного attach. Output-only для тенанта (не tenant-editable).
