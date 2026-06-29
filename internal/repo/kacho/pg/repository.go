@@ -142,6 +142,11 @@ func (r *readerImpl) AddressPoolBindings() kacho.AddressPoolBindingReaderIface {
 	return &addressPoolBindingReader{tx: r.tx}
 }
 
+// AnycastAddressPools возвращает AnycastAddressPool-reader, привязанный к этой read-TX.
+func (r *readerImpl) AnycastAddressPools() kacho.AnycastAddressPoolReaderIface {
+	return &anycastAddressPoolReader{tx: r.tx}
+}
+
 // Close rollback'ит read-TX (read-only TX — rollback не имеет side-effects).
 // Идемпотентно. Игнорирует pgx.ErrTxClosed.
 func (r *readerImpl) Close() error {
@@ -233,6 +238,15 @@ func (w *writerImpl) AddressPools() kacho.AddressPoolWriterIface {
 func (w *writerImpl) AddressPoolBindings() kacho.AddressPoolBindingWriterIface {
 	return &addressPoolBindingWriter{
 		addressPoolBindingReader: addressPoolBindingReader{tx: w.tx},
+	}
+}
+
+// AnycastAddressPools возвращает AnycastAddressPool-writer, привязанный к этой
+// write-TX. Writer видит свои writes. CRUD + attach/detach + claim-материализация
+// идут атомарно в одной writer-TX.
+func (w *writerImpl) AnycastAddressPools() kacho.AnycastAddressPoolWriterIface {
+	return &anycastAddressPoolWriter{
+		anycastAddressPoolReader: anycastAddressPoolReader{tx: w.tx},
 	}
 }
 

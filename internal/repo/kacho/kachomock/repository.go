@@ -61,6 +61,12 @@ type Repository struct {
 	gateways          map[string]*kacho.GatewayRecord
 	// addressPools — admin-only ресурс.
 	addressPools map[string]*kacho.AddressPoolRecord
+	// anycastPools — tenant-facing project-scoped пулы anycast-адресов.
+	anycastPools map[string]*kacho.AnycastAddressPoolRecord
+	// anycastAttach — pivot пул↔сеть: pool_id → set(network_id).
+	anycastAttach map[string]map[string]struct{}
+	// anycastAlloc — seed-override живых anycast-аллокаций: "pool_id|network_id" → n.
+	anycastAlloc map[string]int64
 	// netDefBinds — explicit-биндинги pool ↔ network (network_default).
 	netDefBinds map[string]string // network_id → pool_id
 	// allocatedInCidr — override для CountAllocatedInCidrs(poolID, *): тест-фикстура
@@ -98,6 +104,9 @@ func NewRepository() *Repository {
 		addresses:          make(map[string]*kacho.AddressRecord),
 		gateways:           make(map[string]*kacho.GatewayRecord),
 		addressPools:       make(map[string]*kacho.AddressPoolRecord),
+		anycastPools:       make(map[string]*kacho.AnycastAddressPoolRecord),
+		anycastAttach:      make(map[string]map[string]struct{}),
+		anycastAlloc:       make(map[string]int64),
 		netDefBinds:        make(map[string]string),
 		allocatedInCidr:    make(map[string]int64),
 		freelistAddedCidrs: make(map[string][]string),
@@ -256,6 +265,56 @@ func (r *Repository) SeedNetworkDefaultBinding(networkID, poolID string) {
 	r.netDefBinds[networkID] = poolID
 }
 
+// SeedAnycastPool — direct insert AnycastAddressPoolRecord (тестовый fixture).
+func (r *Repository) SeedAnycastPool(rec *kacho.AnycastAddressPoolRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.anycastPools[rec.ID] = rec
+}
+
+// SeedAnycastAttachment — direct insert pivot пул↔сеть (тестовый fixture).
+func (r *Repository) SeedAnycastAttachment(poolID, networkID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.anycastAttach[poolID] == nil {
+		r.anycastAttach[poolID] = make(map[string]struct{})
+	}
+	r.anycastAttach[poolID][networkID] = struct{}{}
+}
+
+// SeedAnycastAllocation — пометить, что у пула n живых anycast-аллокаций в сети
+// (для негативного detach-теста). Mock возвращает n из CountAllocationsInNetwork.
+func (r *Repository) SeedAnycastAllocation(poolID, networkID string, n int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.anycastAlloc[poolID+"|"+networkID] = n
+}
+
+// AnycastPools возвращает копию state'а (для assertions в тестах).
+func (r *Repository) AnycastPools() []*kacho.AnycastAddressPoolRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	res := make([]*kacho.AnycastAddressPoolRecord, 0, len(r.anycastPools))
+	for _, p := range r.anycastPools {
+		res = append(res, p)
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].CreatedAt.Before(res[j].CreatedAt) })
+	return res
+}
+
+// AnycastAttachments возвращает network_id'ы, к которым приаттачен пул (для
+// assertions в тестах).
+func (r *Repository) AnycastAttachments(poolID string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.anycastAttach[poolID]))
+	for nid := range r.anycastAttach[poolID] {
+		out = append(out, nid)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Gateways возвращает копию state'а (для assertions в тестах).
 func (r *Repository) Gateways() []*kacho.GatewayRecord {
 	r.mu.Lock()
@@ -318,17 +377,43 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 	for k, v := range r.netDefBinds {
 		ndSnap[k] = v
 	}
+	aapSnap := make(map[string]*kacho.AnycastAddressPoolRecord, len(r.anycastPools))
+	for id, p := range r.anycastPools {
+		cp := *p
+		aapSnap[id] = &cp
+	}
+	aapAttachSnap := copyAttach(r.anycastAttach)
+	aapAllocSnap := make(map[string]int64, len(r.anycastAlloc))
+	for k, v := range r.anycastAlloc {
+		aapAllocSnap[k] = v
+	}
 	return &readerImpl{
-		netSnap:  netSnap,
-		sgSnap:   sgSnap,
-		subSnap:  subSnap,
-		rtSnap:   rtSnap,
-		niSnap:   niSnap,
-		addrSnap: addrSnap,
-		gwSnap:   gwSnap,
-		apSnap:   apSnap,
-		ndSnap:   ndSnap,
+		netSnap:       netSnap,
+		sgSnap:        sgSnap,
+		subSnap:       subSnap,
+		rtSnap:        rtSnap,
+		niSnap:        niSnap,
+		addrSnap:      addrSnap,
+		gwSnap:        gwSnap,
+		apSnap:        apSnap,
+		ndSnap:        ndSnap,
+		aapSnap:       aapSnap,
+		aapAttachSnap: aapAttachSnap,
+		aapAllocSnap:  aapAllocSnap,
 	}, nil
+}
+
+// copyAttach делает глубокую копию pivot-map'ы пул↔сеть.
+func copyAttach(src map[string]map[string]struct{}) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{}, len(src))
+	for pool, nets := range src {
+		inner := make(map[string]struct{}, len(nets))
+		for nid := range nets {
+			inner[nid] = struct{}{}
+		}
+		out[pool] = inner
+	}
+	return out
 }
 
 // Writer открывает RW-«TX». Изменения буферизуются в self.local и видны только
@@ -382,17 +467,25 @@ func (r *Repository) Writer(_ context.Context) (kacho.RepositoryWriter, error) {
 	for k, v := range r.netDefBinds {
 		localNDs[k] = v
 	}
+	localAAPs := make(map[string]*kacho.AnycastAddressPoolRecord, len(r.anycastPools))
+	for id, p := range r.anycastPools {
+		cp := *p
+		localAAPs[id] = &cp
+	}
+	localAAPAttach := copyAttach(r.anycastAttach)
 	return &writerImpl{
-		parent:     r,
-		local:      localNets,
-		localSGs:   localSGs,
-		localSubs:  localSubs,
-		localRTs:   localRTs,
-		localNIs:   localNIs,
-		localAddrs: localAddrs,
-		localGWs:   localGWs,
-		localAPs:   localAPs,
-		localNDs:   localNDs,
+		parent:         r,
+		local:          localNets,
+		localSGs:       localSGs,
+		localSubs:      localSubs,
+		localRTs:       localRTs,
+		localNIs:       localNIs,
+		localAddrs:     localAddrs,
+		localGWs:       localGWs,
+		localAPs:       localAPs,
+		localNDs:       localNDs,
+		localAAPs:      localAAPs,
+		localAAPAttach: localAAPAttach,
 	}, nil
 }
 
@@ -403,15 +496,18 @@ func (r *Repository) Close() {}
 // Per-resource Reader iface-методы возвращают per-resource структуры (см.
 // `network.go`, `subnet.go`, ...).
 type readerImpl struct {
-	netSnap  map[string]*kacho.NetworkRecord
-	sgSnap   map[string]*kacho.SecurityGroupRecord
-	subSnap  map[string]*kacho.SubnetRecord
-	rtSnap   map[string]*kacho.RouteTableRecord
-	niSnap   map[string]*kacho.NetworkInterfaceRecord
-	addrSnap map[string]*kacho.AddressRecord
-	gwSnap   map[string]*kacho.GatewayRecord
-	apSnap   map[string]*kacho.AddressPoolRecord
-	ndSnap   map[string]string
+	netSnap       map[string]*kacho.NetworkRecord
+	sgSnap        map[string]*kacho.SecurityGroupRecord
+	subSnap       map[string]*kacho.SubnetRecord
+	rtSnap        map[string]*kacho.RouteTableRecord
+	niSnap        map[string]*kacho.NetworkInterfaceRecord
+	addrSnap      map[string]*kacho.AddressRecord
+	gwSnap        map[string]*kacho.GatewayRecord
+	apSnap        map[string]*kacho.AddressPoolRecord
+	ndSnap        map[string]string
+	aapSnap       map[string]*kacho.AnycastAddressPoolRecord
+	aapAttachSnap map[string]map[string]struct{}
+	aapAllocSnap  map[string]int64
 }
 
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
@@ -450,6 +546,10 @@ func (rd *readerImpl) AddressPoolBindings() kacho.AddressPoolBindingReaderIface 
 	return &addressPoolBindingReader{netDef: rd.ndSnap}
 }
 
+func (rd *readerImpl) AnycastAddressPools() kacho.AnycastAddressPoolReaderIface {
+	return &anycastAddressPoolReader{snap: rd.aapSnap, attach: rd.aapAttachSnap, alloc: rd.aapAllocSnap}
+}
+
 func (rd *readerImpl) Close() error { return nil }
 
 // writerImpl — write-«TX». local-* — working set'ы, окончательно мерж'атся в
@@ -466,6 +566,11 @@ type writerImpl struct {
 	localGWs   map[string]*kacho.GatewayRecord
 	localAPs   map[string]*kacho.AddressPoolRecord
 	localNDs   map[string]string
+	// localAAPs / localAAPAttach — working-set anycast-пулов и pivot'ов, flush в
+	// parent на Commit (TX-семантика: Abort выкидывает).
+	localAAPs      map[string]*kacho.AnycastAddressPoolRecord
+	localAAPAttach map[string]map[string]struct{}
+	deletedAAPIDs  map[string]struct{} // AnycastAddressPool deletions
 	// localFreelistAdds — буфер AddCidrToFreelist-вызовов, flush в
 	// parent.freelistAddedCidrs на Commit.
 	localFreelistAdds map[string][]string
@@ -518,6 +623,10 @@ func (w *writerImpl) AddressPools() kacho.AddressPoolWriterIface {
 
 func (w *writerImpl) AddressPoolBindings() kacho.AddressPoolBindingWriterIface {
 	return &addressPoolBindingWriter{w: w}
+}
+
+func (w *writerImpl) AnycastAddressPools() kacho.AnycastAddressPoolWriterIface {
+	return &anycastAddressPoolWriter{w: w}
 }
 
 func (w *writerImpl) Outbox() kacho.OutboxEmitter {
@@ -610,6 +719,19 @@ func (w *writerImpl) Commit() error {
 	}
 	for k, v := range w.localNDs {
 		w.parent.netDefBinds[k] = v
+	}
+	// Удалить помеченные на delete (AnycastAddressPool).
+	for id := range w.deletedAAPIDs {
+		delete(w.parent.anycastPools, id)
+		delete(w.parent.anycastAttach, id)
+	}
+	// Применить writes (AnycastAddressPool) + заменить pivot целиком (захватывает
+	// attach/detach).
+	for id, p := range w.localAAPs {
+		w.parent.anycastPools[id] = p
+	}
+	if w.localAAPAttach != nil {
+		w.parent.anycastAttach = copyAttach(w.localAAPAttach)
 	}
 	// Flush freelist-add записей (для AddCidrBlocks unit-теста).
 	for poolID, cidrs := range w.localFreelistAdds {

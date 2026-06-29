@@ -65,6 +65,10 @@ type SecurityGroupFilter = kachorepo.SecurityGroupFilter
 // (`internal/repo/address_pool_repo.go`, `internal/apps/kacho/api/addresspool/*`).
 type AddressPoolFilter = kachorepo.AddressPoolFilter
 
+// AnycastAddressPoolFilter — фильтр для списка anycast-пулов. Project-scoped
+// (tenant-facing); type-alias на `kacho.AnycastAddressPoolFilter`.
+type AnycastAddressPoolFilter = kachorepo.AnycastAddressPoolFilter
+
 // ProjectClient — port для проверки существования Project.
 type ProjectClient interface {
 	Exists(ctx context.Context, projectID string) (bool, error)

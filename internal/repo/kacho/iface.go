@@ -51,6 +51,8 @@ type RepositoryReader interface {
 	// AddressPoolBindings — admin-only explicit-биндинги (network_default).
 	// Read для cascade-resolve.
 	AddressPoolBindings() AddressPoolBindingReaderIface
+	// AnycastAddressPools — tenant-facing project-scoped пулы anycast-адресов.
+	AnycastAddressPools() AnycastAddressPoolReaderIface
 	// Close завершает read-TX (rollback). Идемпотентно.
 	Close() error
 }
@@ -76,6 +78,9 @@ type RepositoryWriter interface {
 	// AddressPoolBindings — admin-only write для explicit-биндингов
 	// (Set/Unset Network default).
 	AddressPoolBindings() AddressPoolBindingWriterIface
+	// AnycastAddressPools — tenant-facing write-iface (CRUD + attach/detach +
+	// claim-материализация). Atomic DML+outbox через одну writer-TX.
+	AnycastAddressPools() AnycastAddressPoolWriterIface
 	// Outbox — emit события в vpc_outbox в той же tx-области writer'а.
 	Outbox() OutboxEmitter
 	// FGARegister — emit FGA owner-tuple register/unregister intent в

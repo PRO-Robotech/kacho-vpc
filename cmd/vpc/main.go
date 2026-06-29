@@ -38,6 +38,7 @@ import (
 
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	addresspoolapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
+	anycastpoolapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/anycastaddresspool"
 	gatewayapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/gateway"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
@@ -107,6 +108,7 @@ type services struct {
 	securityGroupHandler    *sgapp.Handler
 	gatewayHandler          *gatewayapp.Handler
 	addressPoolHandler      *addresspoolapp.Handler
+	anycastPoolHandler      *anycastpoolapp.Handler
 	networkInternal         *networkinternal.Service
 	networkInterfaceHandler *niapp.Handler
 }
@@ -936,6 +938,20 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 		sgapp.NewListOperationsUseCase(kachoRepo, opsRepo),
 	)
 
+	// AnycastAddressPool — tenant-facing project-scoped пул anycast-адресов.
+	// Все мутации (Create/Update/Delete/AttachNetwork/DetachNetwork) — async через
+	// Operation; read (Get/List) — sync с per-object FGA-фильтром (existence-hiding).
+	// networkAdapter (NetworkReader) — same-project-валидация на attach.
+	anycastPoolHandler := anycastpoolapp.NewHandler(
+		anycastpoolapp.NewCreateAnycastAddressPoolUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar),
+		anycastpoolapp.NewUpdateAnycastAddressPoolUseCase(kachoRepo, opsRepo),
+		anycastpoolapp.NewDeleteAnycastAddressPoolUseCase(kachoRepo, opsRepo),
+		anycastpoolapp.NewGetAnycastAddressPoolUseCase(kachoRepo, listFilter),
+		anycastpoolapp.NewListAnycastAddressPoolsUseCase(kachoRepo, listFilter),
+		anycastpoolapp.NewAttachNetworkUseCase(kachoRepo, networkAdapter, opsRepo),
+		anycastpoolapp.NewDetachNetworkUseCase(kachoRepo, opsRepo),
+	)
+
 	// NetworkInterface — use-case-структура. Все use-case'ы работают через
 	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к Subnet).
 	// addressAdapter передается в Create/Update/Delete UC — он удовлетворяет
@@ -959,6 +975,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 		securityGroupHandler:    sgHandler,
 		gatewayHandler:          gwHandler,
 		addressPoolHandler:      addressPoolHandler,
+		anycastPoolHandler:      anycastPoolHandler,
 		networkInternal:         networkinternal.NewService(networkAdapter, sgAdapter),
 		networkInterfaceHandler: niHandler,
 	}
@@ -973,6 +990,7 @@ func registerPublicServices(srv *grpc.Server, svcs *services, opsRepo operations
 	vpcv1.RegisterSecurityGroupServiceServer(srv, svcs.securityGroupHandler)
 	vpcv1.RegisterGatewayServiceServer(srv, svcs.gatewayHandler)
 	vpcv1.RegisterNetworkInterfaceServiceServer(srv, svcs.networkInterfaceHandler)
+	vpcv1.RegisterAnycastAddressPoolServiceServer(srv, svcs.anycastPoolHandler)
 	operationpb.RegisterOperationServiceServer(srv, handler.NewOperationHandler(opsRepo))
 }
 
