@@ -96,6 +96,7 @@ func TestPermissionMap_InternalAddressService_Mapped(t *testing.T) {
 		"AllocateInternalIP",
 		"AllocateInternalIPv6",
 		"AllocateExternalIP",
+		"AllocateExternalIPv6",
 		"SetAddressReference",
 		"ClearAddressReference",
 		"MarkAddressEphemeralInUse",
@@ -120,6 +121,12 @@ func TestPermissionMap_InternalAddressService_Mapped(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "vpc_address", objType)
 	require.Equal(t, "adr_alpha", objID)
+
+	objType, objID, err = m["/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIPv6"].
+		Extract(&vpcv1.AllocateExternalIPRequest{AddressId: "adr_alpha6"})
+	require.NoError(t, err)
+	require.Equal(t, "vpc_address", objType)
+	require.Equal(t, "adr_alpha6", objID)
 
 	objType, objID, err = m["/kacho.cloud.vpc.v1.InternalAddressService/SetAddressReference"].
 		Extract(&vpcv1.SetAddressReferenceRequest{AddressId: "adr_beta"})

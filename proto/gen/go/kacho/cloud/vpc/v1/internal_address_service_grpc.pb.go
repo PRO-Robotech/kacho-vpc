@@ -25,6 +25,7 @@ const (
 	InternalAddressService_AllocateInternalIP_FullMethodName        = "/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIP"
 	InternalAddressService_AllocateInternalIPv6_FullMethodName      = "/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIPv6"
 	InternalAddressService_AllocateExternalIP_FullMethodName        = "/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIP"
+	InternalAddressService_AllocateExternalIPv6_FullMethodName      = "/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIPv6"
 	InternalAddressService_SetAddressReference_FullMethodName       = "/kacho.cloud.vpc.v1.InternalAddressService/SetAddressReference"
 	InternalAddressService_ClearAddressReference_FullMethodName     = "/kacho.cloud.vpc.v1.InternalAddressService/ClearAddressReference"
 	InternalAddressService_GetAddressReference_FullMethodName       = "/kacho.cloud.vpc.v1.InternalAddressService/GetAddressReference"
@@ -68,6 +69,18 @@ type InternalAddressServiceClient interface {
 	//
 	// Атомарно вставляет в БД под защитой UNIQUE (pool_id, external_ip) constraint.
 	AllocateExternalIP(ctx context.Context, in *AllocateExternalIPRequest, opts ...grpc.CallOption) (*AllocateIPResponse, error)
+	// AllocateExternalIPv6 — как AllocateExternalIP, но для external_ipv6 Address:
+	// резолвит pool тем же cascade'ом (override → network_default → region default),
+	// фильтруя пулы по IPv6-family (kind=EXTERNAL_PUBLIC, v6_cidr_blocks). Выделяет
+	// адрес sparse counter-аллокатором (pop released offset → fresh cursor) под
+	// защитой UNIQUE (pool_id, ip). Идемпотентно по address_id.
+	//
+	// Errors:
+	//   - NotFound: address не существует.
+	//   - FailedPrecondition: у address нет external_ipv6-spec, pool без
+	//     v6_cidr_blocks, либо pool исчерпан. Idempotent повтор на уже-allocated
+	//     address возвращает Ok с existing IP без error'а.
+	AllocateExternalIPv6(ctx context.Context, in *AllocateExternalIPRequest, opts ...grpc.CallOption) (*AllocateIPResponse, error)
 	// SetAddressReference устанавливает (upsert) referrer для адреса — кто его
 	// использует. Идемпотентно: повторный вызов с тем же/другим referrer'ом
 	// перезаписывает запись. Также выставляет `Address.used = true`. Один
@@ -136,6 +149,16 @@ func (c *internalAddressServiceClient) AllocateExternalIP(ctx context.Context, i
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AllocateIPResponse)
 	err := c.cc.Invoke(ctx, InternalAddressService_AllocateExternalIP_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *internalAddressServiceClient) AllocateExternalIPv6(ctx context.Context, in *AllocateExternalIPRequest, opts ...grpc.CallOption) (*AllocateIPResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AllocateIPResponse)
+	err := c.cc.Invoke(ctx, InternalAddressService_AllocateExternalIPv6_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +242,18 @@ type InternalAddressServiceServer interface {
 	//
 	// Атомарно вставляет в БД под защитой UNIQUE (pool_id, external_ip) constraint.
 	AllocateExternalIP(context.Context, *AllocateExternalIPRequest) (*AllocateIPResponse, error)
+	// AllocateExternalIPv6 — как AllocateExternalIP, но для external_ipv6 Address:
+	// резолвит pool тем же cascade'ом (override → network_default → region default),
+	// фильтруя пулы по IPv6-family (kind=EXTERNAL_PUBLIC, v6_cidr_blocks). Выделяет
+	// адрес sparse counter-аллокатором (pop released offset → fresh cursor) под
+	// защитой UNIQUE (pool_id, ip). Идемпотентно по address_id.
+	//
+	// Errors:
+	//   - NotFound: address не существует.
+	//   - FailedPrecondition: у address нет external_ipv6-spec, pool без
+	//     v6_cidr_blocks, либо pool исчерпан. Idempotent повтор на уже-allocated
+	//     address возвращает Ok с existing IP без error'а.
+	AllocateExternalIPv6(context.Context, *AllocateExternalIPRequest) (*AllocateIPResponse, error)
 	// SetAddressReference устанавливает (upsert) referrer для адреса — кто его
 	// использует. Идемпотентно: повторный вызов с тем же/другим referrer'ом
 	// перезаписывает запись. Также выставляет `Address.used = true`. Один
@@ -271,6 +306,9 @@ func (UnimplementedInternalAddressServiceServer) AllocateInternalIPv6(context.Co
 }
 func (UnimplementedInternalAddressServiceServer) AllocateExternalIP(context.Context, *AllocateExternalIPRequest) (*AllocateIPResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AllocateExternalIP not implemented")
+}
+func (UnimplementedInternalAddressServiceServer) AllocateExternalIPv6(context.Context, *AllocateExternalIPRequest) (*AllocateIPResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AllocateExternalIPv6 not implemented")
 }
 func (UnimplementedInternalAddressServiceServer) SetAddressReference(context.Context, *SetAddressReferenceRequest) (*AddressReference, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetAddressReference not implemented")
@@ -356,6 +394,24 @@ func _InternalAddressService_AllocateExternalIP_Handler(srv interface{}, ctx con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(InternalAddressServiceServer).AllocateExternalIP(ctx, req.(*AllocateExternalIPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InternalAddressService_AllocateExternalIPv6_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AllocateExternalIPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InternalAddressServiceServer).AllocateExternalIPv6(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InternalAddressService_AllocateExternalIPv6_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InternalAddressServiceServer).AllocateExternalIPv6(ctx, req.(*AllocateExternalIPRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -450,6 +506,10 @@ var InternalAddressService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AllocateExternalIP",
 			Handler:    _InternalAddressService_AllocateExternalIP_Handler,
+		},
+		{
+			MethodName: "AllocateExternalIPv6",
+			Handler:    _InternalAddressService_AllocateExternalIPv6_Handler,
 		},
 		{
 			MethodName: "SetAddressReference",

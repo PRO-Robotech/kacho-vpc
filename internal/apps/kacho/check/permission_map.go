@@ -532,6 +532,12 @@ func PermissionMap() authz.RPCMap {
 				return req.(*vpcv1.AllocateExternalIPRequest).GetAddressId(), nil
 			}),
 		},
+		"/kacho.cloud.vpc.v1.InternalAddressService/AllocateExternalIPv6": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
+				return req.(*vpcv1.AllocateExternalIPRequest).GetAddressId(), nil
+			}),
+		},
 		"/kacho.cloud.vpc.v1.InternalAddressService/SetAddressReference": {
 			Relation: relationVUpdate,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {

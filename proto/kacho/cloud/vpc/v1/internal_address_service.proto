@@ -51,6 +51,21 @@ service InternalAddressService {
     option (kacho.iam.authz.v1.permission) = "<exempt>";
   }
 
+  // AllocateExternalIPv6 — как AllocateExternalIP, но для external_ipv6 Address:
+  // резолвит pool тем же cascade'ом (override → network_default → region default),
+  // фильтруя пулы по IPv6-family (kind=EXTERNAL_PUBLIC, v6_cidr_blocks). Выделяет
+  // адрес sparse counter-аллокатором (pop released offset → fresh cursor) под
+  // защитой UNIQUE (pool_id, ip). Идемпотентно по address_id.
+  //
+  // Errors:
+  //   - NotFound: address не существует.
+  //   - FailedPrecondition: у address нет external_ipv6-spec, pool без
+  //     v6_cidr_blocks, либо pool исчерпан. Idempotent повтор на уже-allocated
+  //     address возвращает Ok с existing IP без error'а.
+  rpc AllocateExternalIPv6(AllocateExternalIPRequest) returns (AllocateIPResponse) {
+    option (kacho.iam.authz.v1.permission) = "<exempt>";
+  }
+
   // SetAddressReference устанавливает (upsert) referrer для адреса — кто его
   // использует. Идемпотентно: повторный вызов с тем же/другим referrer'ом
   // перезаписывает запись. Также выставляет `Address.used = true`. Один

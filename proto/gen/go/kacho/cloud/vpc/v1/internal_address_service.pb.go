@@ -600,11 +600,12 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"\vreferrer_id\x18\x03 \x01(\tR\n" +
 	"referrerId\x12#\n" +
 	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\"#\n" +
-	"!MarkAddressEphemeralInUseResponse2\xa7\a\n" +
+	"!MarkAddressEphemeralInUseResponse2\xa4\b\n" +
 	"\x16InternalAddressService\x12y\n" +
 	"\x12AllocateInternalIP\x12-.kacho.cloud.vpc.v1.AllocateInternalIPRequest\x1a&.kacho.cloud.vpc.v1.AllocateIPResponse\"\f\x8a\xb5\x18\b<exempt>\x12{\n" +
 	"\x14AllocateInternalIPv6\x12-.kacho.cloud.vpc.v1.AllocateInternalIPRequest\x1a&.kacho.cloud.vpc.v1.AllocateIPResponse\"\f\x8a\xb5\x18\b<exempt>\x12y\n" +
-	"\x12AllocateExternalIP\x12-.kacho.cloud.vpc.v1.AllocateExternalIPRequest\x1a&.kacho.cloud.vpc.v1.AllocateIPResponse\"\f\x8a\xb5\x18\b<exempt>\x12y\n" +
+	"\x12AllocateExternalIP\x12-.kacho.cloud.vpc.v1.AllocateExternalIPRequest\x1a&.kacho.cloud.vpc.v1.AllocateIPResponse\"\f\x8a\xb5\x18\b<exempt>\x12{\n" +
+	"\x14AllocateExternalIPv6\x12-.kacho.cloud.vpc.v1.AllocateExternalIPRequest\x1a&.kacho.cloud.vpc.v1.AllocateIPResponse\"\f\x8a\xb5\x18\b<exempt>\x12y\n" +
 	"\x13SetAddressReference\x12..kacho.cloud.vpc.v1.SetAddressReferenceRequest\x1a$.kacho.cloud.vpc.v1.AddressReference\"\f\x8a\xb5\x18\b<exempt>\x12\x8a\x01\n" +
 	"\x15ClearAddressReference\x120.kacho.cloud.vpc.v1.ClearAddressReferenceRequest\x1a1.kacho.cloud.vpc.v1.ClearAddressReferenceResponse\"\f\x8a\xb5\x18\b<exempt>\x12y\n" +
 	"\x13GetAddressReference\x12..kacho.cloud.vpc.v1.GetAddressReferenceRequest\x1a$.kacho.cloud.vpc.v1.AddressReference\"\f\x8a\xb5\x18\b<exempt>\x12\x96\x01\n" +
@@ -641,19 +642,21 @@ var file_kacho_cloud_vpc_v1_internal_address_service_proto_depIdxs = []int32{
 	0,  // 1: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
 	0,  // 2: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
 	1,  // 3: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
-	4,  // 4: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:input_type -> kacho.cloud.vpc.v1.SetAddressReferenceRequest
-	5,  // 5: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:input_type -> kacho.cloud.vpc.v1.ClearAddressReferenceRequest
-	7,  // 6: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:input_type -> kacho.cloud.vpc.v1.GetAddressReferenceRequest
-	8,  // 7: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:input_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseRequest
-	2,  // 8: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	2,  // 9: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	2,  // 10: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	3,  // 11: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
-	6,  // 12: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:output_type -> kacho.cloud.vpc.v1.ClearAddressReferenceResponse
-	3,  // 13: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
-	9,  // 14: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:output_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseResponse
-	8,  // [8:15] is the sub-list for method output_type
-	1,  // [1:8] is the sub-list for method input_type
+	1,  // 4: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
+	4,  // 5: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:input_type -> kacho.cloud.vpc.v1.SetAddressReferenceRequest
+	5,  // 6: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:input_type -> kacho.cloud.vpc.v1.ClearAddressReferenceRequest
+	7,  // 7: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:input_type -> kacho.cloud.vpc.v1.GetAddressReferenceRequest
+	8,  // 8: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:input_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseRequest
+	2,  // 9: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 10: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 11: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 12: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	3,  // 13: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
+	6,  // 14: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:output_type -> kacho.cloud.vpc.v1.ClearAddressReferenceResponse
+	3,  // 15: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
+	9,  // 16: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:output_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
