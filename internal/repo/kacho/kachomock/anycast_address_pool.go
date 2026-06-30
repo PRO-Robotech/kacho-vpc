@@ -123,7 +123,7 @@ func (r *anycastAddressPoolReader) IsAttached(_ context.Context, poolID, network
 
 // CountAllocationsInNetwork — seed-override (SeedAnycastAllocation) плюс
 // фактические anycast-Address'ы пула в сети (зеркаль pg-запроса по
-// anycast.pool_id + anycast_network_id), чтобы alloc→detach-guard ловился в unit.
+// anycast_pool_id + anycast_network_id), чтобы alloc→detach-guard ловился в unit.
 func (r *anycastAddressPoolReader) CountAllocationsInNetwork(_ context.Context, poolID, networkID string) (int64, error) {
 	n := r.alloc[poolID+"|"+networkID]
 	for _, a := range r.addrs {

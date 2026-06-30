@@ -355,7 +355,8 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 		if helpers.IsFKViolation(err) {
 			return nil, fmt.Errorf("%w: anycast network not found", helpers.ErrFailedPrecondition)
 		}
-		// Глобально-уникальный anycast_host (23505) → IP уже выдан.
+		// Глобально-уникальный expression-индекс addresses_anycast_host_uniq
+		// (anycast->>'address', 23505) → IP уже выдан.
 		if helpers.IsUniqueViolation(err) {
 			return nil, helpers.ErrAlreadyExists
 		}
@@ -484,8 +485,9 @@ func (w *addressWriter) SetInternalIPv6(ctx context.Context, id string, spec *do
 
 // SetAnycast — атомарный UPDATE anycast JSONB-spec (anycast-host allocator).
 // Используется в retry-loop аллокатора: каждая попытка ставит новый host-адрес,
-// глобально-уникальный индекс addresses_anycast_host_uniq (23505) отбивает
-// уже-выданный IP → ErrAlreadyExists, аллокатор пробует следующий кандидат.
+// глобально-уникальный expression-индекс addresses_anycast_host_uniq (по
+// anycast->>'address', 23505) отбивает уже-выданный IP → ErrAlreadyExists,
+// аллокатор пробует следующий кандидат.
 //
 // Исполняется под SAVEPOINT: unique-violation попытки не отравляет внешнюю
 // writer-TX (см. withSavepoint). nil-spec → no-op (вернуть Get).

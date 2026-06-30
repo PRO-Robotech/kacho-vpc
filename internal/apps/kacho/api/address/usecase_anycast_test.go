@@ -23,7 +23,8 @@ import (
 
 // Тесты anycast-аллокации через AddressService.Create (scope #4, GWT-27..35).
 // Use-case работает через kachomock (in-memory CQRS): сеть/пул/attach сидятся
-// fixture-методами; глобально-уникальный anycast_host моделируется mock'ом
+// fixture-методами; глобально-уникальный expression-индекс
+// addresses_anycast_host_uniq (anycast->>'address') моделируется mock'ом
 // SetAnycast (дубль host → ErrAlreadyExists → exhausted).
 
 func seedAnycastNet(kr *kachomock.Repository, id string) {

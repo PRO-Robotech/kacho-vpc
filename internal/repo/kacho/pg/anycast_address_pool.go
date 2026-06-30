@@ -173,14 +173,15 @@ func (r *anycastAddressPoolReader) IsAttached(ctx context.Context, poolID, netwo
 }
 
 // CountAllocationsInNetwork — число живых anycast-Address'ов пула в сети:
-// anycast.pool_id = poolID И anycast_network_id = networkID. Detach с >0
+// anycast_pool_id = poolID И anycast_network_id = networkID (обе реальные
+// generated-колонки, покрыты addresses_anycast_alloc_idx). Detach с >0
 // аллокаций отвергается (FailedPrecondition) — иначе claim снимется, а
 // выданные адреса повиснут вне пула.
 func (r *anycastAddressPoolReader) CountAllocationsInNetwork(ctx context.Context, poolID, networkID string) (int64, error) {
 	var n int64
 	err := r.tx.QueryRow(ctx,
 		`SELECT count(*) FROM addresses
-		  WHERE anycast->>'pool_id' = $1 AND anycast_network_id = $2`,
+		  WHERE anycast_pool_id = $1 AND anycast_network_id = $2`,
 		poolID, networkID).Scan(&n)
 	if err != nil {
 		return 0, helpers.WrapPgErr(err, "Anycast address pool", poolID)
@@ -227,7 +228,7 @@ func (w *anycastAddressPoolWriter) Insert(ctx context.Context, p *domain.Anycast
 	q := fmt.Sprintf(`
 		INSERT INTO anycast_address_pools
 			(id, project_id, created_at, name, description, labels, scope, ip_version, cidr_blocks, is_default, status)
-		VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)
+		VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11)
 		RETURNING %s`, helpers.AnycastAddressPoolCols)
 	rec, err := helpers.ScanAnycastAddressPool(w.tx.QueryRow(ctx, q,
 		p.ID, p.ProjectID, now, string(p.Name), string(p.Description), labels,
@@ -285,6 +286,13 @@ func (w *anycastAddressPoolWriter) Delete(ctx context.Context, id string) error 
 	}
 	tag, err := w.tx.Exec(ctx, `DELETE FROM anycast_address_pools WHERE id = $1`, id)
 	if err != nil {
+		// FK anycast_pool_id→anycast_address_pools (23503) ON DELETE RESTRICT:
+		// в пуле есть живая anycast-аллокация. DB-backstop к software
+		// CountAttachments (закрывает is_default-пул без pivot) — маппим в тот же
+		// FailedPrecondition "anycast address pool is not empty" (GWT-16).
+		if helpers.IsFKViolation(err) {
+			return fmt.Errorf("%w: anycast address pool is not empty", helpers.ErrFailedPrecondition)
+		}
 		return helpers.WrapPgErr(err, "Anycast address pool", id)
 	}
 	if tag.RowsAffected() == 0 {

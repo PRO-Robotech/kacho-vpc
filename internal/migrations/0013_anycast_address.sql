@@ -12,11 +12,17 @@
 -- Хранится в новой JSONB-колонке `anycast` ({network_id, address, pool_id}),
 -- параллельно external/internal v4/v6-специям.
 --
--- Два GENERATED-столбца (зеркаль паттерна internal_subnet_id из 0001):
+-- Два GENERATED-столбца под cross-ресурсные FK (зеркаль internal_subnet_id из 0001;
+-- expression-индекс нельзя сделать FK-таргетом — поэтому именно колонки):
 --   - anycast_network_id — network-scope: FK→networks ON DELETE RESTRICT не даёт
 --     удалить сеть, пока в ней есть anycast-аллокации.
---   - anycast_host       — host-адрес для глобально-уникального индекса: гейт
---     против двойной аллокации одного IP во всём кластере.
+--   - anycast_pool_id     — pool-scope: FK→anycast_address_pools ON DELETE RESTRICT
+--     не даёт удалить пул, пока из него есть живая anycast-аллокация. Закрывает
+--     is_default-пул, доступный без pivot-attach (software CountAttachments по
+--     pivot-строкам его не ловит → DB-backstop).
+-- Глобально-уникальный host — partial EXPRESSION-индекс по anycast->>'address'
+-- (как addresses_external_ip_uniq в 0001): без второй STORED-колонки и второго
+-- table-rewrite.
 
 SET search_path TO kacho_vpc, public;
 
@@ -37,36 +43,35 @@ ALTER TABLE kacho_vpc.addresses
         END
     ) STORED REFERENCES kacho_vpc.networks(id) ON DELETE RESTRICT;
 
--- anycast_host — host-адрес anycast-аллокации (NULL, пока адрес не выделен или
--- адрес не anycast). Глобально-уникальный индекс ниже использует этот столбец как
--- финальный DB-гейт против двойной аллокации одного IP.
+-- anycast_pool_id — извлекаем pool_id из anycast-spec (NULL для не-anycast
+-- адресов). FK→anycast_address_pools ON DELETE RESTRICT: пул с живой аллокацией
+-- удалить нельзя. DB-backstop к software CountAttachments — закрывает is_default-пул,
+-- который auto-available без pivot-attach (CountAttachments=0 не ловит orphan).
 ALTER TABLE kacho_vpc.addresses
-    ADD COLUMN IF NOT EXISTS anycast_host text GENERATED ALWAYS AS (
+    ADD COLUMN IF NOT EXISTS anycast_pool_id text GENERATED ALWAYS AS (
         CASE
             WHEN anycast IS NOT NULL
-                 AND anycast ? 'address'
-                 AND length(anycast->>'address') > 0
-            THEN anycast->>'address'
+                 AND anycast ? 'pool_id'
+                 AND length(anycast->>'pool_id') > 0
+            THEN anycast->>'pool_id'
             ELSE NULL
         END
-    ) STORED;
+    ) STORED REFERENCES kacho_vpc.anycast_address_pools(id) ON DELETE RESTRICT;
 
 -- Глобально-уникальный host: один и тот же anycast-IP не может быть выдан дважды
--- (gate против двойной аллокации, D5). partial WHERE NOT NULL — не-anycast строки
--- и ещё-не-выделенные anycast-адреса (host пуст) не участвуют.
+-- (gate против двойной аллокации). partial EXPRESSION-индекс по anycast->>'address'
+-- (зеркаль addresses_external_ip_uniq из 0001): не-anycast строки и
+-- ещё-не-выделенные anycast-адреса (пустой address) не участвуют.
 CREATE UNIQUE INDEX IF NOT EXISTS addresses_anycast_host_uniq
-    ON kacho_vpc.addresses (anycast_host)
-    WHERE anycast_host IS NOT NULL;
+    ON kacho_vpc.addresses ((anycast ->> 'address'))
+    WHERE anycast IS NOT NULL AND (anycast ->> 'address') <> '';
 
--- Индекс под scope-проверку network (FK-таргет) и detach-guard (COUNT аллокаций).
-CREATE INDEX IF NOT EXISTS addresses_anycast_network_idx
-    ON kacho_vpc.addresses (anycast_network_id)
-    WHERE anycast_network_id IS NOT NULL;
-
--- Функциональный индекс под detach-guard CountAllocationsInNetwork:
--- COUNT(*) WHERE anycast->>'pool_id' = $pool AND anycast_network_id = $net.
-CREATE INDEX IF NOT EXISTS addresses_anycast_pool_idx
-    ON kacho_vpc.addresses ((anycast->>'pool_id'))
+-- Композитный partial-индекс под detach-guard CountAllocationsInNetwork:
+-- COUNT(*) WHERE anycast_pool_id = $pool AND anycast_network_id = $net. Покрывает
+-- обе реальные generated-колонки одним индексом (leading anycast_network_id служит
+-- и scope-проверке network FK) — отдельные одиночные partial-индексы не нужны.
+CREATE INDEX IF NOT EXISTS addresses_anycast_alloc_idx
+    ON kacho_vpc.addresses (anycast_network_id, anycast_pool_id)
     WHERE anycast IS NOT NULL;
 
 -- +goose StatementEnd
@@ -76,10 +81,9 @@ CREATE INDEX IF NOT EXISTS addresses_anycast_pool_idx
 
 SET search_path TO kacho_vpc, public;
 
-DROP INDEX IF EXISTS kacho_vpc.addresses_anycast_pool_idx;
-DROP INDEX IF EXISTS kacho_vpc.addresses_anycast_network_idx;
+DROP INDEX IF EXISTS kacho_vpc.addresses_anycast_alloc_idx;
 DROP INDEX IF EXISTS kacho_vpc.addresses_anycast_host_uniq;
-ALTER TABLE kacho_vpc.addresses DROP COLUMN IF EXISTS anycast_host;
+ALTER TABLE kacho_vpc.addresses DROP COLUMN IF EXISTS anycast_pool_id;
 ALTER TABLE kacho_vpc.addresses DROP COLUMN IF EXISTS anycast_network_id;
 ALTER TABLE kacho_vpc.addresses DROP COLUMN IF EXISTS anycast;
 

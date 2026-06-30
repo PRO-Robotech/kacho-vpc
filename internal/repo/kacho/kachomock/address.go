@@ -294,9 +294,10 @@ func (aw *addressWriter) SetInternalIPv6(_ context.Context, id string, spec *dom
 	return &cp, nil
 }
 
-// SetAnycast моделирует глобально-уникальный anycast_host: если запрашиваемый
-// host уже занят другим адресом — возвращает ErrAlreadyExists (allocator
-// ретраит следующий кандидат), зеркаля DB-индекс addresses_anycast_host_uniq.
+// SetAnycast моделирует глобально-уникальный expression-индекс
+// addresses_anycast_host_uniq (anycast->>'address'): если запрашиваемый host уже
+// занят другим адресом — возвращает ErrAlreadyExists (allocator ретраит следующий
+// кандидат).
 func (aw *addressWriter) SetAnycast(_ context.Context, id string, spec *domain.AnycastSpec) (*kacho.AddressRecord, error) {
 	if _, deleted := aw.w.deletedAddrIDs[id]; deleted {
 		return nil, repo.ErrNotFound

@@ -174,8 +174,9 @@ func (u *CreateAddressUseCase) resolveAnycastPool(ctx context.Context, w Writer,
 }
 
 // allocateAnycastHost — перебирает host-кандидатов из блоков пула, ставит каждый
-// через SetAnycast; глобально-уникальный anycast_host (23505 → ErrAlreadyExists)
-// отбивает занятый IP, аллокатор берёт следующий. Исчерпание → generic
+// через SetAnycast; глобально-уникальный expression-индекс addresses_anycast_host_uniq
+// (anycast->>'address', 23505 → ErrAlreadyExists) отбивает занятый IP, аллокатор
+// берёт следующий. Исчерпание → generic
 // FailedPrecondition (без exhausted/capacity/N-free — анти-oracle).
 func (u *CreateAddressUseCase) allocateAnycastHost(ctx context.Context, w Writer, addressID string, spec *domain.AnycastSpec, pool *kachorepo.AnycastAddressPoolRecord, ipVersion domain.IpVersion) (string, error) {
 	for _, block := range pool.CIDRBlocks {
