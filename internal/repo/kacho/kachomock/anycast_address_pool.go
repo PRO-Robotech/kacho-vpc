@@ -25,6 +25,7 @@ type anycastAddressPoolReader struct {
 	snap   map[string]*kacho.AnycastAddressPoolRecord
 	attach map[string]map[string]struct{}
 	alloc  map[string]int64
+	addrs  map[string]*kacho.AddressRecord
 }
 
 func (r *anycastAddressPoolReader) Get(_ context.Context, id string) (*kacho.AnycastAddressPoolRecord, error) {
@@ -120,8 +121,28 @@ func (r *anycastAddressPoolReader) IsAttached(_ context.Context, poolID, network
 	return ok, nil
 }
 
+// CountAllocationsInNetwork — seed-override (SeedAnycastAllocation) плюс
+// фактические anycast-Address'ы пула в сети (зеркаль pg-запроса по
+// anycast.pool_id + anycast_network_id), чтобы alloc→detach-guard ловился в unit.
 func (r *anycastAddressPoolReader) CountAllocationsInNetwork(_ context.Context, poolID, networkID string) (int64, error) {
-	return r.alloc[poolID+"|"+networkID], nil
+	n := r.alloc[poolID+"|"+networkID]
+	for _, a := range r.addrs {
+		if a.Anycast != nil && a.Anycast.AnycastPoolID == poolID && a.Anycast.NetworkID == networkID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// DefaultForFamily — платформенный is_default INTERNAL-пул семейства.
+func (r *anycastAddressPoolReader) DefaultForFamily(_ context.Context, ipVersion domain.IpVersion) (*kacho.AnycastAddressPoolRecord, error) {
+	for _, rec := range r.snap {
+		if rec.IsDefault && rec.Scope == domain.AnycastScopeInternal && rec.IPVersion == ipVersion {
+			cp := *rec
+			return &cp, nil
+		}
+	}
+	return nil, repo.ErrNotFound
 }
 
 // ---- AnycastAddressPool writer ----
@@ -139,7 +160,7 @@ func (aw *anycastAddressPoolWriter) reader() *anycastAddressPoolReader {
 		}
 		snap[id] = p
 	}
-	return &anycastAddressPoolReader{snap: snap, attach: aw.w.localAAPAttach, alloc: aw.w.parent.anycastAlloc}
+	return &anycastAddressPoolReader{snap: snap, attach: aw.w.localAAPAttach, alloc: aw.w.parent.anycastAlloc, addrs: aw.w.localAddrs}
 }
 
 func (aw *anycastAddressPoolWriter) Get(ctx context.Context, id string) (*kacho.AnycastAddressPoolRecord, error) {
@@ -168,6 +189,10 @@ func (aw *anycastAddressPoolWriter) IsAttached(ctx context.Context, poolID, netw
 
 func (aw *anycastAddressPoolWriter) CountAllocationsInNetwork(ctx context.Context, poolID, networkID string) (int64, error) {
 	return aw.reader().CountAllocationsInNetwork(ctx, poolID, networkID)
+}
+
+func (aw *anycastAddressPoolWriter) DefaultForFamily(ctx context.Context, ipVersion domain.IpVersion) (*kacho.AnycastAddressPoolRecord, error) {
+	return aw.reader().DefaultForFamily(ctx, ipVersion)
 }
 
 func (aw *anycastAddressPoolWriter) Insert(_ context.Context, p *domain.AnycastAddressPool) (*kacho.AnycastAddressPoolRecord, error) {

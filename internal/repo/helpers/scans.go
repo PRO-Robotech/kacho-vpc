@@ -30,7 +30,7 @@ const NetworkCols = `id, project_id, created_at, name, description, labels, COAL
 const SubnetCols = `id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options`
 
 // AddressCols — список колонок таблицы addresses в порядке, ожидаемом ScanAddress.
-const AddressCols = `id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
+const AddressCols = `id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6, anycast`
 
 // RouteTableCols — список колонок таблицы route_tables в порядке, ожидаемом ScanRouteTable.
 const RouteTableCols = `id, project_id, created_at, name, description, labels, network_id, static_routes`
@@ -124,7 +124,7 @@ func ScanSubnet(row Scannable) (*kachorepo.SubnetRecord, error) {
 // ScanAddress — row-scanner для AddressRecord.
 func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
 	var a kachorepo.AddressRecord
-	var labelsJSON, extJSON, intJSON, int6JSON, ext6JSON []byte
+	var labelsJSON, extJSON, intJSON, int6JSON, ext6JSON, anycastJSON []byte
 	var addrType, ipVersion int32
 	var name string
 	var description string
@@ -132,7 +132,7 @@ func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
 	err := row.Scan(
 		&a.ID, &a.ProjectID, &a.CreatedAt, &name, &description, &labelsJSON,
 		&addrType, &ipVersion, &a.Reserved, &a.Used, &a.DeletionProtection,
-		&extJSON, &intJSON, &int6JSON, &ext6JSON,
+		&extJSON, &intJSON, &int6JSON, &ext6JSON, &anycastJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -174,6 +174,13 @@ func ScanAddress(row Scannable) (*kachorepo.AddressRecord, error) {
 			return nil, err
 		}
 		a.ExternalIpv6 = &ext6
+	}
+	if anycastJSON != nil {
+		var anycast domain.AnycastSpec
+		if err := UnmarshalJSONB(anycastJSON, &anycast, "Address.anycast"); err != nil {
+			return nil, err
+		}
+		a.Anycast = &anycast
 	}
 	return &a, nil
 }

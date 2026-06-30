@@ -172,12 +172,34 @@ func (r *anycastAddressPoolReader) IsAttached(ctx context.Context, poolID, netwo
 	return exists, nil
 }
 
-// CountAllocationsInNetwork — число живых anycast-аллокаций пула в сети.
-// Anycast-аллокация через AddressService — отдельная под-фаза; до её появления
-// живых аллокаций нет, поэтому возвращаем 0 (без обращения к несуществующей
-// колонке Address). Когда аллокация появится — запрос материализуется здесь.
-func (r *anycastAddressPoolReader) CountAllocationsInNetwork(_ context.Context, _, _ string) (int64, error) {
-	return 0, nil
+// CountAllocationsInNetwork — число живых anycast-Address'ов пула в сети:
+// anycast.pool_id = poolID И anycast_network_id = networkID. Detach с >0
+// аллокаций отвергается (FailedPrecondition) — иначе claim снимется, а
+// выданные адреса повиснут вне пула.
+func (r *anycastAddressPoolReader) CountAllocationsInNetwork(ctx context.Context, poolID, networkID string) (int64, error) {
+	var n int64
+	err := r.tx.QueryRow(ctx,
+		`SELECT count(*) FROM addresses
+		  WHERE anycast->>'pool_id' = $1 AND anycast_network_id = $2`,
+		poolID, networkID).Scan(&n)
+	if err != nil {
+		return 0, helpers.WrapPgErr(err, "Anycast address pool", poolID)
+	}
+	return n, nil
+}
+
+// DefaultForFamily — платформенный is_default INTERNAL-пул семейства (IPV4/IPV6).
+// partial UNIQUE на (scope, ip_version) WHERE is_default гарантирует ≤1 строки.
+// ErrNotFound, если default-пула для семейства нет.
+func (r *anycastAddressPoolReader) DefaultForFamily(ctx context.Context, ipVersion domain.IpVersion) (*kacho.AnycastAddressPoolRecord, error) {
+	q := fmt.Sprintf(`SELECT %s FROM anycast_address_pools
+		WHERE is_default AND scope = 'INTERNAL' AND ip_version = $1 LIMIT 1`,
+		helpers.AnycastAddressPoolCols)
+	rec, err := helpers.ScanAnycastAddressPool(r.tx.QueryRow(ctx, q, helpers.IPVersionToText(ipVersion)))
+	if err != nil {
+		return nil, helpers.WrapPgErr(err, "Anycast address pool", "")
+	}
+	return rec, nil
 }
 
 // anycastAddressPoolWriter — DML над anycast_address_pools + child-таблицами

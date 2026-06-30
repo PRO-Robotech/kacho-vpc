@@ -71,6 +71,9 @@ message Address {
     InternalIpv6Address internal_ipv6_address = 22;
     // External ipv6 address specification.
     ExternalIpv6Address external_ipv6_address = 23;
+    // Anycast address specification (network-scoped /32 for IPV4, /128 for IPV6,
+    // allocated from an AnycastAddressPool; reachable only within the owner VPC).
+    AnycastAddress anycast_address = 24;
   }
 
   // Specifies if address is reserved or not.
@@ -149,6 +152,23 @@ message ExternalIpv6Address {
   AddressRequirements requirements = 3;
 }
 
+
+// AnycastAddress — output projection of an anycast Address allocation. A
+// network-scoped, globally-unique host address (/32 for IPV4, /128 for IPV6)
+// drawn from an AnycastAddressPool attached to the network.
+message AnycastAddress {
+  // ID of the network the anycast address is scoped to.
+  string network_id = 1;
+
+  // Value of the host address (e.g. "100.64.12.5").
+  string address = 2;
+
+  // ID of the AnycastAddressPool the address was allocated from.
+  string anycast_pool_id = 3;
+
+  // IP version of the allocated address (IPV4 / IPV6).
+  Address.IpVersion ip_version = 4;
+}
 
 message AddressRequirements {
   // DDoS protection provider ID.

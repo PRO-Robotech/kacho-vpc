@@ -71,6 +71,9 @@ type CreateInput struct {
 	InternalIpv6Spec *InternalAddrSpec
 	// Для external IPv6 (если ExternalIpv6Spec != nil):
 	ExternalIpv6Spec *ExternalAddrSpec
+	// Для anycast (если AnycastSpec != nil): network-scoped /32/128 из
+	// AnycastAddressPool.
+	AnycastSpec *AnycastAddrSpec
 }
 
 // CreateAddressUseCase инициирует создание Address (multi-family). Sync-
@@ -133,7 +136,14 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 			return nil, err
 		}
 	}
-	if in.ExternalSpec == nil && in.InternalSpec == nil && in.InternalIpv6Spec == nil && in.ExternalIpv6Spec == nil {
+	// Anycast: malformed network id ловим sync первым стейтментом (до Operation).
+	if in.AnycastSpec != nil {
+		if err := corevalidate.ResourceID("network", ids.PrefixNetwork, in.AnycastSpec.NetworkID); err != nil {
+			return nil, err
+		}
+	}
+	if in.ExternalSpec == nil && in.InternalSpec == nil && in.InternalIpv6Spec == nil &&
+		in.ExternalIpv6Spec == nil && in.AnycastSpec == nil {
 		return nil, status.Error(codes.InvalidArgument, "address_spec required")
 	}
 
@@ -328,6 +338,12 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 	}
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Project %s not found", in.ProjectID)
+	}
+
+	// Anycast-spec — отдельный allocate-путь (резолв пула + глобально-уникальный
+	// host в одной writer-TX); не пересекается с external/internal IPAM.
+	if in.AnycastSpec != nil {
+		return u.doCreateAnycast(ctx, addrID, in)
 	}
 
 	a := &domain.Address{

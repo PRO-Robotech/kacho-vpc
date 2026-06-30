@@ -69,6 +69,15 @@ func (address) toPb(rec kachorepo.AddressRecord) (*vpcv1.Address, error) {
 				Scope:   &vpcv1.InternalIpv6Address_SubnetId{SubnetId: rec.InternalIpv6.SubnetID},
 			},
 		}
+	case rec.Anycast != nil:
+		p.Address = &vpcv1.Address_AnycastAddress{
+			AnycastAddress: &vpcv1.AnycastAddress{
+				NetworkId:     rec.Anycast.NetworkID,
+				Address:       rec.Anycast.Address,
+				AnycastPoolId: rec.Anycast.AnycastPoolID,
+				IpVersion:     vpcv1.Address_IpVersion(rec.IpVersion),
+			},
+		}
 	case rec.InternalIpv4 != nil:
 		p.Address = &vpcv1.Address_InternalIpv4Address{
 			InternalIpv4Address: &vpcv1.InternalIpv4Address{

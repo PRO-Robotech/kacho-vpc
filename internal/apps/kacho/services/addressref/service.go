@@ -10,6 +10,7 @@ package addressref
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,11 +20,14 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
 // Repo — узкий port-интерфейс над `repo.AddressRepo`: только методы, нужные
 // для referrer-tracking. `repo.AddressRepo` ⊇ этого интерфейса.
 type Repo interface {
+	Get(ctx context.Context, id string) (*kachorepo.AddressRecord, error)
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
 	MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
 	ClearReference(ctx context.Context, addressID string) error
@@ -72,6 +76,71 @@ func (s *Service) SetAddressReference(ctx context.Context, req SetAddressReferen
 		ReferrerName: req.ReferrerName,
 	})
 	if err != nil {
+		return nil, serviceerr.MapRepoErr(err)
+	}
+	return ref, nil
+}
+
+// SetAnycastReferenceReq — параметры BYO-привязки tenant'ского anycast-Address к
+// referrer'у (напр. LoadBalancer). ExpectProjectID/ExpectIPVersion — guard
+// ownership/family: адрес обязан принадлежать ожидаемому проекту и семейству.
+type SetAnycastReferenceReq struct {
+	AddressID       string
+	ReferrerType    string
+	ReferrerID      string
+	ReferrerName    string
+	ExpectProjectID string           // ownership guard (пусто → не проверяется)
+	ExpectIPVersion domain.IpVersion // family guard (Unspecified → не проверяется)
+}
+
+// errIllegalAddressID — generic InvalidArgument для BYO-guard: не подтверждает
+// существование/ownership чужого адреса (анти-oracle, ADR §8).
+var errIllegalAddressID = status.Error(codes.InvalidArgument, "Illegal argument addressId")
+
+// SetAnycastReference — BYO-привязка anycast-Address к referrer'у с guard'ом
+// ownership/family. Адрес обязан быть anycast'ом, принадлежать ожидаемому проекту
+// и семейству — иначе generic "Illegal argument addressId" (без подтверждения
+// чужого ownership/существования). used_by-CAS: занятый другим referrer'ом адрес
+// → FailedPrecondition "address is already in use". Sync RPC (не Operation).
+func (s *Service) SetAnycastReference(ctx context.Context, req SetAnycastReferenceReq) (*domain.AddressReference, error) {
+	if err := corevalidate.ResourceID("address", ids.PrefixAddress, req.AddressID); err != nil {
+		return nil, err
+	}
+	if req.ReferrerType == "" {
+		return nil, status.Error(codes.InvalidArgument, "referrer_type required")
+	}
+	if req.ReferrerID == "" {
+		return nil, status.Error(codes.InvalidArgument, "referrer_id required")
+	}
+	a, err := s.repo.Get(ctx, req.AddressID)
+	if err != nil {
+		// Не подтверждаем существование чужого/несуществующего адреса.
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, errIllegalAddressID
+		}
+		return nil, serviceerr.MapRepoErr(err)
+	}
+	// Guard: только anycast-Address ожидаемого проекта и семейства.
+	if a.Anycast == nil {
+		return nil, errIllegalAddressID
+	}
+	if req.ExpectProjectID != "" && a.ProjectID != req.ExpectProjectID {
+		return nil, errIllegalAddressID
+	}
+	if req.ExpectIPVersion != domain.IpVersionUnspecified && a.IpVersion != req.ExpectIPVersion {
+		return nil, errIllegalAddressID
+	}
+	ref, err := s.repo.SetReference(ctx, &domain.AddressReference{
+		AddressID:    req.AddressID,
+		ReferrerType: req.ReferrerType,
+		ReferrerID:   req.ReferrerID,
+		ReferrerName: req.ReferrerName,
+	})
+	if err != nil {
+		// used_by-CAS: адрес уже привязан к другому referrer'у.
+		if errors.Is(err, repo.ErrFailedPrecondition) {
+			return nil, status.Error(codes.FailedPrecondition, "address is already in use")
+		}
 		return nil, serviceerr.MapRepoErr(err)
 	}
 	return ref, nil

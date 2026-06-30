@@ -82,6 +82,10 @@ type AddressWriterIface interface {
 	SetIPSpec(ctx context.Context, id string, externalIpv4 *domain.ExternalIpv4Spec, internalIpv4 *domain.InternalIpv4Spec) (*AddressRecord, error)
 	// SetInternalIPv6 атомарно обновляет internal_ipv6 JSONB-spec. nil → no-op.
 	SetInternalIPv6(ctx context.Context, id string, spec *domain.InternalIpv6Spec) (*AddressRecord, error)
+	// SetAnycast атомарно обновляет anycast JSONB-spec (anycast-host allocator).
+	// Глобально-уникальный anycast_host (23505) → ErrAlreadyExists (allocator
+	// ретраит следующий host-кандидат). nil → no-op.
+	SetAnycast(ctx context.Context, id string, spec *domain.AnycastSpec) (*AddressRecord, error)
 
 	// AllocateIPFromFreelist — PG-native v4 allocator: atomic pop из
 	// address_pool_free_ips (FOR UPDATE SKIP LOCKED) + UPDATE

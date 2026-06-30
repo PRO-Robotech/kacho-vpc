@@ -294,6 +294,39 @@ func (aw *addressWriter) SetInternalIPv6(_ context.Context, id string, spec *dom
 	return &cp, nil
 }
 
+// SetAnycast моделирует глобально-уникальный anycast_host: если запрашиваемый
+// host уже занят другим адресом — возвращает ErrAlreadyExists (allocator
+// ретраит следующий кандидат), зеркаля DB-индекс addresses_anycast_host_uniq.
+func (aw *addressWriter) SetAnycast(_ context.Context, id string, spec *domain.AnycastSpec) (*kacho.AddressRecord, error) {
+	if _, deleted := aw.w.deletedAddrIDs[id]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	a, ok := aw.w.localAddrs[id]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	if spec == nil {
+		cp := *a
+		return &cp, nil
+	}
+	if spec.Address != "" {
+		for other, rec := range aw.w.localAddrs {
+			if other == id {
+				continue
+			}
+			if _, deleted := aw.w.deletedAddrIDs[other]; deleted {
+				continue
+			}
+			if rec.Anycast != nil && rec.Anycast.Address == spec.Address {
+				return nil, repo.ErrAlreadyExists
+			}
+		}
+	}
+	a.Anycast = spec
+	cp := *a
+	return &cp, nil
+}
+
 // IPAM allocate-stubs — mock не моделирует freelist/cursor; возвращает
 // ErrPoolExhausted, чтобы вызов сразу fail'ил. Для unit-тестов use-case'ов с
 // pools=nil путь Allocate*External* НЕ должен достигать addressWriter (в

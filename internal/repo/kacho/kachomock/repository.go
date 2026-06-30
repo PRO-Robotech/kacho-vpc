@@ -149,6 +149,15 @@ func (r *Repository) SeedAddress(rec *kacho.AddressRecord) {
 	r.addresses[rec.ID] = rec
 }
 
+// SeedNetwork добавляет NetworkRecord в Network-state. Нужен тестам, которые
+// проверяют scope-валидацию через CQRS-Reader (anycast-аллокация резолвит сеть
+// через `kachoRepo.Writer().Networks().Get`).
+func (r *Repository) SeedNetwork(rec *kacho.NetworkRecord) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.networks[rec.ID] = rec
+}
+
 // SeedSubnet добавляет SubnetRecord в Subnet-state. Нужен тестам, которые
 // проверяют parent-Subnet validation через CQRS-Reader: NIC use-case'ы проверяют
 // существование Subnet через `kachoRepo.Reader().Subnets().Get`, поэтому
@@ -547,7 +556,7 @@ func (rd *readerImpl) AddressPoolBindings() kacho.AddressPoolBindingReaderIface 
 }
 
 func (rd *readerImpl) AnycastAddressPools() kacho.AnycastAddressPoolReaderIface {
-	return &anycastAddressPoolReader{snap: rd.aapSnap, attach: rd.aapAttachSnap, alloc: rd.aapAllocSnap}
+	return &anycastAddressPoolReader{snap: rd.aapSnap, attach: rd.aapAttachSnap, alloc: rd.aapAllocSnap, addrs: rd.addrSnap}
 }
 
 func (rd *readerImpl) Close() error { return nil }

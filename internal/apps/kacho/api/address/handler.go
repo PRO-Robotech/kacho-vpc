@@ -13,6 +13,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/pbconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 
@@ -213,6 +214,13 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAddressRequest) (
 				DdosProtectionProvider: r.DdosProtectionProvider,
 				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
 			}
+		}
+	} else if anycast := req.GetAnycastAddressSpec(); anycast != nil {
+		// anycast address — network-scoped /32/128 из AnycastAddressPool.
+		in.AnycastSpec = &AnycastAddrSpec{
+			NetworkID:     anycast.GetNetworkId(),
+			IpVersion:     domain.IpVersion(anycast.GetIpVersion()),
+			AnycastPoolID: anycast.GetAnycastPoolId(),
 		}
 	}
 

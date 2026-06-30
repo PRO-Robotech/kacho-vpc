@@ -114,6 +114,25 @@ func (s *ExternalIpv6Spec) Equal(other *ExternalIpv6Spec) bool {
 		s.AddressPoolID == other.AddressPoolID
 }
 
+// AnycastSpec — параметры anycast-адреса: network-scoped host /32 (IPv4) / /128
+// (IPv6), выделенный из AnycastAddressPool. NetworkID задаёт scope (FK→networks),
+// AnycastPoolID — пул-источник, Address — выделенный host (пуст до аллокации).
+type AnycastSpec struct {
+	NetworkID     string `json:"network_id"`
+	Address       string `json:"address"`
+	AnycastPoolID string `json:"pool_id"`
+}
+
+// Equal — deep equality. nil/nil — равны.
+func (s *AnycastSpec) Equal(other *AnycastSpec) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.NetworkID == other.NetworkID &&
+		s.Address == other.Address &&
+		s.AnycastPoolID == other.AnycastPoolID
+}
+
 // AddressReference — кто использует Address (referrer-tracking). Один referrer
 // на адрес. ReferrerType — "compute_instance" (расширяемо).
 type AddressReference struct {
@@ -161,6 +180,8 @@ type Address struct {
 	InternalIpv6 *InternalIpv6Spec
 	// Для external IPv6:
 	ExternalIpv6 *ExternalIpv6Spec
+	// Для anycast (network-scoped /32/128 из AnycastAddressPool):
+	Anycast *AnycastSpec
 	// UsedBy — кто использует адрес (referrer-tracking, output-only). Заполняется
 	// сервис-слоем в Get/List/GetByValue/ListBySubnet из address_references;
 	// для compute NIC/NAT-адресов — один элемент с ReferrerType="compute_instance".
@@ -204,7 +225,8 @@ func (a Address) Equal(other Address) bool {
 	if !a.ExternalIpv4.Equal(other.ExternalIpv4) ||
 		!a.InternalIpv4.Equal(other.InternalIpv4) ||
 		!a.InternalIpv6.Equal(other.InternalIpv6) ||
-		!a.ExternalIpv6.Equal(other.ExternalIpv6) {
+		!a.ExternalIpv6.Equal(other.ExternalIpv6) ||
+		!a.Anycast.Equal(other.Anycast) {
 		return false
 	}
 	if len(a.UsedBy) != len(other.UsedBy) {

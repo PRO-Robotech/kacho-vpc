@@ -334,19 +334,31 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 	if err != nil {
 		return nil, err
 	}
+	anycastJSON, err := marshalIPSpec(a.Anycast, "Address.anycast")
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO addresses (id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO addresses (id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6, anycast)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING %s`, helpers.AddressCols)
 	row := w.tx.QueryRow(ctx, q,
 		a.ID, a.ProjectID, now, string(a.Name), string(a.Description), labelsJSON,
 		int32(a.Type), int32(a.IpVersion), a.Reserved, a.Used, a.DeletionProtection,
-		extJSON, intJSON, int6JSON, ext6JSON,
+		extJSON, intJSON, int6JSON, ext6JSON, anycastJSON,
 	)
 	result, err := helpers.ScanAddress(row)
 	if err != nil {
+		// FK anycast_network_id→networks (23503) → network не существует/удалена.
+		if helpers.IsFKViolation(err) {
+			return nil, fmt.Errorf("%w: anycast network not found", helpers.ErrFailedPrecondition)
+		}
+		// Глобально-уникальный anycast_host (23505) → IP уже выдан.
+		if helpers.IsUniqueViolation(err) {
+			return nil, helpers.ErrAlreadyExists
+		}
 		return nil, helpers.WrapPgErr(err, "Address", string(a.Name))
 	}
 	return result, nil
@@ -465,6 +477,34 @@ func (w *addressWriter) SetInternalIPv6(ctx context.Context, id string, spec *do
 			`UPDATE addresses SET internal_ipv6 = $2::jsonb WHERE id = $1 RETURNING `+helpers.AddressCols, id, int6JSON))
 		if err != nil {
 			return nil, helpers.WrapPgErr(err, "Address", id)
+		}
+		return a, nil
+	})
+}
+
+// SetAnycast — атомарный UPDATE anycast JSONB-spec (anycast-host allocator).
+// Используется в retry-loop аллокатора: каждая попытка ставит новый host-адрес,
+// глобально-уникальный индекс addresses_anycast_host_uniq (23505) отбивает
+// уже-выданный IP → ErrAlreadyExists, аллокатор пробует следующий кандидат.
+//
+// Исполняется под SAVEPOINT: unique-violation попытки не отравляет внешнюю
+// writer-TX (см. withSavepoint). nil-spec → no-op (вернуть Get).
+func (w *addressWriter) SetAnycast(ctx context.Context, id string, spec *domain.AnycastSpec) (*kacho.AddressRecord, error) {
+	if spec == nil {
+		return w.Get(ctx, id)
+	}
+	anycastJSON, err := helpers.MarshalJSONB(spec, "Address.anycast")
+	if err != nil {
+		return nil, err
+	}
+	return withSavepoint(ctx, w.tx, func(sp pgx.Tx) (*kacho.AddressRecord, error) {
+		a, scanErr := helpers.ScanAddress(sp.QueryRow(ctx,
+			`UPDATE addresses SET anycast = $2::jsonb WHERE id = $1 RETURNING `+helpers.AddressCols, id, anycastJSON))
+		if scanErr != nil {
+			if helpers.IsUniqueViolation(scanErr) {
+				return nil, helpers.ErrAlreadyExists
+			}
+			return nil, helpers.WrapPgErr(scanErr, "Address", id)
 		}
 		return a, nil
 	})
@@ -813,6 +853,11 @@ func marshalIPSpec(v any, field string) ([]byte, error) {
 		}
 		return helpers.MarshalJSONB(s, field)
 	case *domain.ExternalIpv6Spec:
+		if s == nil {
+			return nil, nil
+		}
+		return helpers.MarshalJSONB(s, field)
+	case *domain.AnycastSpec:
 		if s == nil {
 			return nil, nil
 		}

@@ -34,10 +34,14 @@ type AnycastAddressPoolReaderIface interface {
 	CountAttachments(ctx context.Context, poolID string) (int64, error)
 	// IsAttached — приаттачен ли пул к сети (для idempotent-detach no-op).
 	IsAttached(ctx context.Context, poolID, networkID string) (bool, error)
-	// CountAllocationsInNetwork — число живых anycast-аллокаций пула в сети.
-	// Anycast-аллокация (AddressService) — отдельная под-фаза; до её появления
-	// pg-impl возвращает 0 (живых аллокаций ещё нет). Detach отвергается при >0.
+	// CountAllocationsInNetwork — число живых anycast-аллокаций пула в сети
+	// (anycast-Address'ы, у которых anycast.pool_id = poolID и
+	// anycast_network_id = networkID). Detach отвергается при >0.
 	CountAllocationsInNetwork(ctx context.Context, poolID, networkID string) (int64, error)
+	// DefaultForFamily — платформенный is_default INTERNAL-пул для семейства
+	// (IPV4/IPV6). Fallback при auto-аллокации без явного anycast_pool_id.
+	// ErrNotFound, если default-пула для семейства нет.
+	DefaultForFamily(ctx context.Context, ipVersion domain.IpVersion) (*AnycastAddressPoolRecord, error)
 }
 
 // AnycastAddressPoolWriterIface — write-операции + read (writer видит свои
