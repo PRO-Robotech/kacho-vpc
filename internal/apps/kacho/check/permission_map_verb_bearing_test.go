@@ -33,6 +33,7 @@ var verbGetRPCs = []string{
 	"/kacho.cloud.vpc.v1.SecurityGroupService/Get",
 	"/kacho.cloud.vpc.v1.GatewayService/Get",
 	"/kacho.cloud.vpc.v1.NetworkInterfaceService/Get",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Get",
 }
 
 // verbUpdateRPCs — object-self mutation (Update + domain-mutate): Check → `v_update`.
@@ -48,6 +49,9 @@ var verbUpdateRPCs = []string{
 	"/kacho.cloud.vpc.v1.SecurityGroupService/UpdateRule",
 	"/kacho.cloud.vpc.v1.GatewayService/Update",
 	"/kacho.cloud.vpc.v1.NetworkInterfaceService/Update",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Update",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/AttachNetwork",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/DetachNetwork",
 }
 
 // verbDeleteRPCs — object-self delete: Check → `v_delete`.
@@ -59,6 +63,7 @@ var verbDeleteRPCs = []string{
 	"/kacho.cloud.vpc.v1.SecurityGroupService/Delete",
 	"/kacho.cloud.vpc.v1.GatewayService/Delete",
 	"/kacho.cloud.vpc.v1.NetworkInterfaceService/Delete",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Delete",
 }
 
 // verbListOnResourceRPCs — object-self read (видимость дочерних/операций на самом
@@ -89,6 +94,7 @@ var createChildRPCs = []string{
 	"/kacho.cloud.vpc.v1.SecurityGroupService/Create",
 	"/kacho.cloud.vpc.v1.GatewayService/Create",
 	"/kacho.cloud.vpc.v1.NetworkInterfaceService/Create",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Create",
 }
 
 // projectListRPCs — top-level project-scoped List (Extract → project): остается
@@ -101,6 +107,7 @@ var projectListRPCs = []string{
 	"/kacho.cloud.vpc.v1.SecurityGroupService/List",
 	"/kacho.cloud.vpc.v1.GatewayService/List",
 	"/kacho.cloud.vpc.v1.NetworkInterfaceService/List",
+	"/kacho.cloud.vpc.v1.AnycastAddressPoolService/List",
 }
 
 func TestPermissionMap_VerbBearing_Get_VGet(t *testing.T) {

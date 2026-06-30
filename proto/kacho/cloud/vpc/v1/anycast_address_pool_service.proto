@@ -35,13 +35,13 @@ service AnycastAddressPoolService {
   // Retrieves the list of AnycastAddressPool resources in the specified project.
   rpc List(ListAnycastAddressPoolsRequest) returns (ListAnycastAddressPoolsResponse) {
     option (google.api.http) = {get: "/vpc/v1/anycastAddressPools"};
-    option (kacho.iam.authz.v1.permission)        = "vpc.anycast_address_poolses.list";
-    option (kacho.iam.authz.v1.required_relation) = "v_list";
-    option (kacho.iam.authz.v1.scope_extractor)   = {
-      object_type:        "project"
-      from_request_field: "project_id"
-    };
-    option (kacho.iam.authz.v1.required_acr_min)  = "2";
+    // Scope-filtered List: the handler resolves the FGA-allowed pool id set
+    // (viewer ∪ v_list via ListAllowedIDs) and returns 200 with only those pools
+    // (empty when the caller has no grant in the project). A single per-RPC FGA
+    // Check at the gateway would instead reject the whole call `no path` 403
+    // before the scope-filter runs, so the gateway middleware exempts this RPC.
+    // `<exempt>` skips authz, NOT authentication — a valid JWT is still required.
+    option (kacho.iam.authz.v1.permission) = "<exempt>";
   }
 
   // Creates an anycast address pool in the specified project.

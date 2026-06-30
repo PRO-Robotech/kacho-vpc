@@ -892,13 +892,11 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"\x15DetachNetworkMetadata\x125\n" +
 	"\x17anycast_address_pool_id\x18\x01 \x01(\tR\x14anycastAddressPoolId\x12\x1d\n" +
 	"\n" +
-	"network_id\x18\x02 \x01(\tR\tnetworkId2\xcf\x10\n" +
+	"network_id\x18\x02 \x01(\tR\tnetworkId2\x8f\x10\n" +
 	"\x19AnycastAddressPoolService\x12\x85\x02\n" +
 	"\x03Get\x120.kacho.cloud.vpc.v1.GetAnycastAddressPoolRequest\x1a&.kacho.cloud.vpc.v1.AnycastAddressPool\"\xa3\x01\x8a\xb5\x18\x1dvpc.anycast_address_pools.get\x92\xb5\x18\x05v_get\x9a\xb5\x183\n" +
-	"\x18vpc_anycast_address_pool\x12\x17anycast_address_pool_id\xa2\xb5\x18\x012\x82\xd3\xe4\x93\x027\x125/vpc/v1/anycastAddressPools/{anycast_address_pool_id}\x12\xe0\x01\n" +
-	"\x04List\x122.kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest\x1a3.kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse\"o\x8a\xb5\x18 vpc.anycast_address_poolses.list\x92\xb5\x18\x06v_list\x9a\xb5\x18\x15\n" +
-	"\aproject\x12\n" +
-	"project_id\xa2\xb5\x18\x012\x82\xd3\xe4\x93\x02\x1d\x12\x1b/vpc/v1/anycastAddressPools\x12\x8e\x02\n" +
+	"\x18vpc_anycast_address_pool\x12\x17anycast_address_pool_id\xa2\xb5\x18\x012\x82\xd3\xe4\x93\x027\x125/vpc/v1/anycastAddressPools/{anycast_address_pool_id}\x12\xa0\x01\n" +
+	"\x04List\x122.kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest\x1a3.kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse\"/\x8a\xb5\x18\b<exempt>\x82\xd3\xe4\x93\x02\x1d\x12\x1b/vpc/v1/anycastAddressPools\x12\x8e\x02\n" +
 	"\x06Create\x123.kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest\x1a .kacho.cloud.operation.Operation\"\xac\x01\x8a\xb5\x18 vpc.anycast_address_pools.create\x92\xb5\x18\x06editor\x9a\xb5\x18\x15\n" +
 	"\aproject\x12\n" +
 	"project_id\xa2\xb5\x18\x012\xb2\xd2*6\n" +

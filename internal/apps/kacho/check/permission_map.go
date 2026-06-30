@@ -34,6 +34,7 @@ const (
 	objectTypeSecurityGroup    = "vpc_security_group"
 	objectTypeGateway          = "vpc_gateway"
 	objectTypeNetworkInterface = "vpc_network_interface"
+	objectTypeAnycastPool      = "vpc_anycast_address_pool"
 
 	// objectTypeCluster — cluster singleton scope для internal admin/cluster-RPC
 	// (InternalNetworkService / InternalAddressPoolService). Proto-аннотация:
@@ -560,6 +561,60 @@ func PermissionMap() authz.RPCMap {
 			Relation: relationVGet,
 			Extract: authz.StaticExtractor(objectTypeAddress, func(req any) (string, error) {
 				return req.(*vpcv1.GetAddressReferenceRequest).GetAddressId(), nil
+			}),
+		},
+
+		// =========================
+		// AnycastAddressPoolService
+		//
+		// Project-scoped tenant-facing ресурс (M:N к Network). Те же verb-relations,
+		// что и у прочих vpc-ресурсов: Get/Update/Delete/Attach/Detach — object-self
+		// на `vpc_anycast_address_pool`; Create — `editor` на parent project; List —
+		// scope-filtered (handler резолвит viewer ∪ v_list через ListAllowedIDs,
+		// per-RPC Check пропускается). AttachNetwork/DetachNetwork — domain-mutate
+		// самого пула → `v_update`.
+		// =========================
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Get": {
+			Relation: relationVGet,
+			Extract: authz.StaticExtractor(objectTypeAnycastPool, func(req any) (string, error) {
+				return req.(*vpcv1.GetAnycastAddressPoolRequest).GetAnycastAddressPoolId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/List": {
+			Relation:      relationViewer,
+			ScopeFiltered: true,
+			Extract: authz.StaticExtractor(objectTypeProject, func(req any) (string, error) {
+				return req.(*vpcv1.ListAnycastAddressPoolsRequest).GetProjectId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Create": {
+			Relation: relationEditor,
+			Extract: authz.StaticExtractor(objectTypeProject, func(req any) (string, error) {
+				return req.(*vpcv1.CreateAnycastAddressPoolRequest).GetProjectId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Update": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAnycastPool, func(req any) (string, error) {
+				return req.(*vpcv1.UpdateAnycastAddressPoolRequest).GetAnycastAddressPoolId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/Delete": {
+			Relation: relationVDelete,
+			Extract: authz.StaticExtractor(objectTypeAnycastPool, func(req any) (string, error) {
+				return req.(*vpcv1.DeleteAnycastAddressPoolRequest).GetAnycastAddressPoolId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/AttachNetwork": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAnycastPool, func(req any) (string, error) {
+				return req.(*vpcv1.AttachNetworkRequest).GetAnycastAddressPoolId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.AnycastAddressPoolService/DetachNetwork": {
+			Relation: relationVUpdate,
+			Extract: authz.StaticExtractor(objectTypeAnycastPool, func(req any) (string, error) {
+				return req.(*vpcv1.DetachNetworkRequest).GetAnycastAddressPoolId(), nil
 			}),
 		},
 
