@@ -35,6 +35,7 @@ type CreateSubnetUseCase struct {
 	repo          Repo
 	projectClient ProjectClient
 	zoneReg       ZoneRegistry
+	regionReg     RegionRegistry
 	opsRepo       operations.Repo
 	registrar     fgaregister.Registrar
 }
@@ -47,17 +48,21 @@ func (u *CreateSubnetUseCase) WithRegistrar(r fgaregister.Registrar) *CreateSubn
 	return u
 }
 
-// NewCreateSubnetUseCase создает CreateSubnetUseCase.
+// NewCreateSubnetUseCase создает CreateSubnetUseCase. zoneReg/regionReg —
+// peer-валидаторы Geography (kacho-geo): zoneReg проверяет zone_id ZONAL-подсети,
+// regionReg — region_id REGIONAL-подсети.
 func NewCreateSubnetUseCase(
 	r Repo,
 	projectClient ProjectClient,
 	zoneReg ZoneRegistry,
+	regionReg RegionRegistry,
 	opsRepo operations.Repo,
 ) *CreateSubnetUseCase {
 	return &CreateSubnetUseCase{
 		repo:          r,
 		projectClient: projectClient,
 		zoneReg:       zoneReg,
+		regionReg:     regionReg,
 		opsRepo:       opsRepo,
 	}
 }
@@ -77,8 +82,11 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 	if s.NetworkID == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
-	// ZoneId: required + existence в таблице `zones` (без hardcoded whitelist).
-	if err := validateZoneID(ctx, u.zoneReg, "zone_id", s.ZoneID); err != nil {
+	// Placement: дискриминатор обязателен (UNSPECIFIED → InvalidArgument). ZONAL —
+	// zone_id required + existence (geo), region_id запрещен; REGIONAL — region_id
+	// required + existence (geo), zone_id запрещен. Существование валидируется у
+	// owner-домена Geography (kacho-geo), без hardcoded whitelist.
+	if err := validatePlacement(ctx, u.zoneReg, u.regionReg, s); err != nil {
 		return nil, err
 	}
 	// Proto contract: v4_cidr_blocks НЕ required — подсеть может быть создана без

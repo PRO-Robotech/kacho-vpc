@@ -295,8 +295,8 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 
 	now := time.Now().UTC()
 	q := fmt.Sprintf(`
-		INSERT INTO subnets (id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO subnets (id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options, placement_type, region_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING %s`, helpers.SubnetCols)
 
 	row := w.tx.QueryRow(ctx, q,
@@ -305,6 +305,7 @@ func (w *subnetWriter) Insert(ctx context.Context, s *domain.Subnet) (*kacho.Sub
 		pgtype.Array[string]{Elements: s.V4CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(s.V4CidrBlocks)), LowerBound: 1}}},
 		pgtype.Array[string]{Elements: s.V6CidrBlocks, Valid: true, Dims: []pgtype.ArrayDimension{{Length: safeconv.IntToInt32(len(s.V6CidrBlocks)), LowerBound: 1}}},
 		helpers.NullableStr(s.RouteTableID), dhcpJSON,
+		string(s.PlacementType), s.RegionID,
 	)
 	result, err := helpers.ScanSubnet(row)
 	if helpers.IsExclusionViolation(err) {

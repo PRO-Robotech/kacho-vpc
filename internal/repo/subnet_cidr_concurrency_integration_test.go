@@ -52,7 +52,8 @@ func TestIntegration_Subnet_ConcurrentAddCidr_NoLostUpdate(t *testing.T) {
 		}
 		_, e := w.Subnets().Insert(ctx, &domain.Subnet{
 			ID: subID, ProjectID: "f-cidr", Name: domain.RcNameVPC("s-cidr"),
-			NetworkID: netID, ZoneID: "zone-a", V4CidrBlocks: []string{"10.0.0.0/24"},
+			NetworkID: netID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
+			V4CidrBlocks: []string{"10.0.0.0/24"},
 		})
 		return e
 	}))

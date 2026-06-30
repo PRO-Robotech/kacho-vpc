@@ -21,17 +21,19 @@ func (subnet) toPb(rec kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 		return nil, err
 	}
 	p := &vpcv1.Subnet{
-		Id:           rec.ID,
-		ProjectId:    rec.ProjectID,
-		CreatedAt:    ts,
-		Name:         string(rec.Name),
-		Description:  string(rec.Description),
-		Labels:       domain.LabelsToMap(rec.Labels),
-		NetworkId:    rec.NetworkID,
-		ZoneId:       rec.ZoneID,
-		V4CidrBlocks: rec.V4CidrBlocks,
-		V6CidrBlocks: rec.V6CidrBlocks,
-		RouteTableId: rec.RouteTableID,
+		Id:            rec.ID,
+		ProjectId:     rec.ProjectID,
+		CreatedAt:     ts,
+		Name:          string(rec.Name),
+		Description:   string(rec.Description),
+		Labels:        domain.LabelsToMap(rec.Labels),
+		NetworkId:     rec.NetworkID,
+		PlacementType: placementToPb(rec.PlacementType),
+		ZoneId:        rec.ZoneID,
+		RegionId:      rec.RegionID,
+		V4CidrBlocks:  rec.V4CidrBlocks,
+		V6CidrBlocks:  rec.V6CidrBlocks,
+		RouteTableId:  rec.RouteTableID,
 	}
 	if rec.DhcpOptions != nil {
 		p.DhcpOptions = &vpcv1.DhcpOptions{
@@ -41,6 +43,20 @@ func (subnet) toPb(rec kachorepo.SubnetRecord) (*vpcv1.Subnet, error) {
 		}
 	}
 	return p, nil
+}
+
+// placementToPb — domain-дискриминатор → proto-enum. Пустое (UNSPECIFIED)
+// доменное значение в выдаче не появляется (CHECK гарантирует ZONAL/REGIONAL),
+// но маппится в UNSPECIFIED defensively.
+func placementToPb(p domain.SubnetPlacementType) vpcv1.SubnetPlacementType {
+	switch p {
+	case domain.PlacementZonal:
+		return vpcv1.SubnetPlacementType_ZONAL
+	case domain.PlacementRegional:
+		return vpcv1.SubnetPlacementType_REGIONAL
+	default:
+		return vpcv1.SubnetPlacementType_SUBNET_PLACEMENT_TYPE_UNSPECIFIED
+	}
 }
 
 func init() {

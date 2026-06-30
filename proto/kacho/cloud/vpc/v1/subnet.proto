@@ -9,6 +9,17 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1;vpcv1";
 
+// SubnetPlacementType — дискриминатор размещения подсети. Обязателен; задаётся
+// при Create и immutable. UNSPECIFIED невалиден (не дефолтит в ZONAL).
+enum SubnetPlacementType {
+  SUBNET_PLACEMENT_TYPE_UNSPECIFIED = 0;
+  // ZONAL — unicast-адреса, подсеть живёт в одной зоне доступности (zone_id).
+  ZONAL = 1;
+  // REGIONAL — anycast-префикс, анонсируется active-active из здоровых зон
+  // региона (region_id); адреса region-scoped, без зональности.
+  REGIONAL = 2;
+}
+
 // A Subnet resource. For more information, see [Subnets](/docs/vpc/concepts/network#subnet).
 message Subnet {
   reserved 9;
@@ -40,8 +51,17 @@ message Subnet {
   // ID of the network the subnet belongs to.
   string network_id = 7;
 
-  // ID of the availability zone where the subnet resides.
-  string zone_id = 8; // if subnet will be zonal
+  // Placement discriminator (required, immutable). ZONAL — unicast addresses in
+  // one availability zone; REGIONAL — anycast prefix announced active-active from
+  // the healthy zones of a region. Exactly one of zone_id / region_id is set.
+  SubnetPlacementType placement_type = 15;
+
+  // ID of the availability zone (set iff placement_type == ZONAL).
+  string zone_id = 8;
+
+  // ID of the region (set iff placement_type == REGIONAL). The subnet is
+  // region-scoped; its prefix is anycast across the region's zones.
+  string region_id = 14;
 
   // CIDR block.
   // The range of internal addresses that are defined for this subnet.

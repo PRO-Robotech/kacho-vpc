@@ -25,6 +25,60 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// SubnetPlacementType — дискриминатор размещения подсети. Обязателен; задаётся
+// при Create и immutable. UNSPECIFIED невалиден (не дефолтит в ZONAL).
+type SubnetPlacementType int32
+
+const (
+	SubnetPlacementType_SUBNET_PLACEMENT_TYPE_UNSPECIFIED SubnetPlacementType = 0
+	// ZONAL — unicast-адреса, подсеть живёт в одной зоне доступности (zone_id).
+	SubnetPlacementType_ZONAL SubnetPlacementType = 1
+	// REGIONAL — anycast-префикс, анонсируется active-active из здоровых зон
+	// региона (region_id); адреса region-scoped, без зональности.
+	SubnetPlacementType_REGIONAL SubnetPlacementType = 2
+)
+
+// Enum value maps for SubnetPlacementType.
+var (
+	SubnetPlacementType_name = map[int32]string{
+		0: "SUBNET_PLACEMENT_TYPE_UNSPECIFIED",
+		1: "ZONAL",
+		2: "REGIONAL",
+	}
+	SubnetPlacementType_value = map[string]int32{
+		"SUBNET_PLACEMENT_TYPE_UNSPECIFIED": 0,
+		"ZONAL":                             1,
+		"REGIONAL":                          2,
+	}
+)
+
+func (x SubnetPlacementType) Enum() *SubnetPlacementType {
+	p := new(SubnetPlacementType)
+	*p = x
+	return p
+}
+
+func (x SubnetPlacementType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubnetPlacementType) Descriptor() protoreflect.EnumDescriptor {
+	return file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[0].Descriptor()
+}
+
+func (SubnetPlacementType) Type() protoreflect.EnumType {
+	return &file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[0]
+}
+
+func (x SubnetPlacementType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubnetPlacementType.Descriptor instead.
+func (SubnetPlacementType) EnumDescriptor() ([]byte, []int) {
+	return file_kacho_cloud_vpc_v1_subnet_proto_rawDescGZIP(), []int{0}
+}
+
 type IpVersion int32
 
 const (
@@ -58,11 +112,11 @@ func (x IpVersion) String() string {
 }
 
 func (IpVersion) Descriptor() protoreflect.EnumDescriptor {
-	return file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[0].Descriptor()
+	return file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[1].Descriptor()
 }
 
 func (IpVersion) Type() protoreflect.EnumType {
-	return &file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[0]
+	return &file_kacho_cloud_vpc_v1_subnet_proto_enumTypes[1]
 }
 
 func (x IpVersion) Number() protoreflect.EnumNumber {
@@ -71,7 +125,7 @@ func (x IpVersion) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IpVersion.Descriptor instead.
 func (IpVersion) EnumDescriptor() ([]byte, []int) {
-	return file_kacho_cloud_vpc_v1_subnet_proto_rawDescGZIP(), []int{0}
+	return file_kacho_cloud_vpc_v1_subnet_proto_rawDescGZIP(), []int{1}
 }
 
 // A Subnet resource. For more information, see [Subnets](/docs/vpc/concepts/network#subnet).
@@ -98,8 +152,15 @@ type Subnet struct {
 	Labels map[string]string `protobuf:"bytes,6,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// ID of the network the subnet belongs to.
 	NetworkId string `protobuf:"bytes,7,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
-	// ID of the availability zone where the subnet resides.
-	ZoneId string `protobuf:"bytes,8,opt,name=zone_id,json=zoneId,proto3" json:"zone_id,omitempty"` // if subnet will be zonal
+	// Placement discriminator (required, immutable). ZONAL — unicast addresses in
+	// one availability zone; REGIONAL — anycast prefix announced active-active from
+	// the healthy zones of a region. Exactly one of zone_id / region_id is set.
+	PlacementType SubnetPlacementType `protobuf:"varint,15,opt,name=placement_type,json=placementType,proto3,enum=kacho.cloud.vpc.v1.SubnetPlacementType" json:"placement_type,omitempty"`
+	// ID of the availability zone (set iff placement_type == ZONAL).
+	ZoneId string `protobuf:"bytes,8,opt,name=zone_id,json=zoneId,proto3" json:"zone_id,omitempty"`
+	// ID of the region (set iff placement_type == REGIONAL). The subnet is
+	// region-scoped; its prefix is anycast across the region's zones.
+	RegionId string `protobuf:"bytes,14,opt,name=region_id,json=regionId,proto3" json:"region_id,omitempty"`
 	// CIDR block.
 	// The range of internal addresses that are defined for this subnet.
 	// This field can be set only at Subnet resource creation time and cannot be changed.
@@ -195,9 +256,23 @@ func (x *Subnet) GetNetworkId() string {
 	return ""
 }
 
+func (x *Subnet) GetPlacementType() SubnetPlacementType {
+	if x != nil {
+		return x.PlacementType
+	}
+	return SubnetPlacementType_SUBNET_PLACEMENT_TYPE_UNSPECIFIED
+}
+
 func (x *Subnet) GetZoneId() string {
 	if x != nil {
 		return x.ZoneId
+	}
+	return ""
+}
+
+func (x *Subnet) GetRegionId() string {
+	if x != nil {
+		return x.RegionId
 	}
 	return ""
 }
@@ -297,7 +372,7 @@ var File_kacho_cloud_vpc_v1_subnet_proto protoreflect.FileDescriptor
 
 const file_kacho_cloud_vpc_v1_subnet_proto_rawDesc = "" +
 	"\n" +
-	"\x1fkacho/cloud/vpc/v1/subnet.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x97\x04\n" +
+	"\x1fkacho/cloud/vpc/v1/subnet.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x84\x05\n" +
 	"\x06Subnet\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -308,8 +383,10 @@ const file_kacho_cloud_vpc_v1_subnet_proto_rawDesc = "" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12>\n" +
 	"\x06labels\x18\x06 \x03(\v2&.kacho.cloud.vpc.v1.Subnet.LabelsEntryR\x06labels\x12\x1d\n" +
 	"\n" +
-	"network_id\x18\a \x01(\tR\tnetworkId\x12\x17\n" +
-	"\azone_id\x18\b \x01(\tR\x06zoneId\x12$\n" +
+	"network_id\x18\a \x01(\tR\tnetworkId\x12N\n" +
+	"\x0eplacement_type\x18\x0f \x01(\x0e2'.kacho.cloud.vpc.v1.SubnetPlacementTypeR\rplacementType\x12\x17\n" +
+	"\azone_id\x18\b \x01(\tR\x06zoneId\x12\x1b\n" +
+	"\tregion_id\x18\x0e \x01(\tR\bregionId\x12$\n" +
 	"\x0ev4_cidr_blocks\x18\n" +
 	" \x03(\tR\fv4CidrBlocks\x12$\n" +
 	"\x0ev6_cidr_blocks\x18\v \x03(\tR\fv6CidrBlocks\x12$\n" +
@@ -324,7 +401,11 @@ const file_kacho_cloud_vpc_v1_subnet_proto_rawDesc = "" +
 	"\vdomain_name\x18\x02 \x01(\tR\n" +
 	"domainName\x12\x1f\n" +
 	"\vntp_servers\x18\x03 \x03(\tR\n" +
-	"ntpServers*;\n" +
+	"ntpServers*U\n" +
+	"\x13SubnetPlacementType\x12%\n" +
+	"!SUBNET_PLACEMENT_TYPE_UNSPECIFIED\x10\x00\x12\t\n" +
+	"\x05ZONAL\x10\x01\x12\f\n" +
+	"\bREGIONAL\x10\x02*;\n" +
 	"\tIpVersion\x12\x1a\n" +
 	"\x16IP_VERSION_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04IPV4\x10\x01\x12\b\n" +
@@ -342,24 +423,26 @@ func file_kacho_cloud_vpc_v1_subnet_proto_rawDescGZIP() []byte {
 	return file_kacho_cloud_vpc_v1_subnet_proto_rawDescData
 }
 
-var file_kacho_cloud_vpc_v1_subnet_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_kacho_cloud_vpc_v1_subnet_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_kacho_cloud_vpc_v1_subnet_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_kacho_cloud_vpc_v1_subnet_proto_goTypes = []any{
-	(IpVersion)(0),                // 0: kacho.cloud.vpc.v1.IpVersion
-	(*Subnet)(nil),                // 1: kacho.cloud.vpc.v1.Subnet
-	(*DhcpOptions)(nil),           // 2: kacho.cloud.vpc.v1.DhcpOptions
-	nil,                           // 3: kacho.cloud.vpc.v1.Subnet.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(SubnetPlacementType)(0),      // 0: kacho.cloud.vpc.v1.SubnetPlacementType
+	(IpVersion)(0),                // 1: kacho.cloud.vpc.v1.IpVersion
+	(*Subnet)(nil),                // 2: kacho.cloud.vpc.v1.Subnet
+	(*DhcpOptions)(nil),           // 3: kacho.cloud.vpc.v1.DhcpOptions
+	nil,                           // 4: kacho.cloud.vpc.v1.Subnet.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_kacho_cloud_vpc_v1_subnet_proto_depIdxs = []int32{
-	4, // 0: kacho.cloud.vpc.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
-	3, // 1: kacho.cloud.vpc.v1.Subnet.labels:type_name -> kacho.cloud.vpc.v1.Subnet.LabelsEntry
-	2, // 2: kacho.cloud.vpc.v1.Subnet.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	5, // 0: kacho.cloud.vpc.v1.Subnet.created_at:type_name -> google.protobuf.Timestamp
+	4, // 1: kacho.cloud.vpc.v1.Subnet.labels:type_name -> kacho.cloud.vpc.v1.Subnet.LabelsEntry
+	0, // 2: kacho.cloud.vpc.v1.Subnet.placement_type:type_name -> kacho.cloud.vpc.v1.SubnetPlacementType
+	3, // 3: kacho.cloud.vpc.v1.Subnet.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_kacho_cloud_vpc_v1_subnet_proto_init() }
@@ -372,7 +455,7 @@ func file_kacho_cloud_vpc_v1_subnet_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_kacho_cloud_vpc_v1_subnet_proto_rawDesc), len(file_kacho_cloud_vpc_v1_subnet_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,

@@ -244,12 +244,18 @@ message CreateSubnetRequest {
     (length) = "<=50"
   ];
 
-  // ID of the availability zone where the subnet resides.
+  // Placement discriminator (required; UNSPECIFIED → InvalidArgument). ZONAL →
+  // set zone_id; REGIONAL → set region_id (anycast prefix across the region).
+  // Enforced in the handler (enum-required + zone/region consistency).
+  SubnetPlacementType placement_type = 13;
+
+  // ID of the availability zone (set iff placement_type == ZONAL).
   // To get a list of available zones, use the [kacho.cloud.geo.v1.ZoneService.List] request.
-  string zone_id = 6 [
-    (required) = true,
-    (length) = "<=50"
-  ];
+  string zone_id = 6 [(length) = "<=50"];
+
+  // ID of the region (set iff placement_type == REGIONAL).
+  // To get a list of available regions, use the [kacho.cloud.geo.v1.RegionService.List] request.
+  string region_id = 12 [(length) = "<=50"];
 
   // CIDR block.
   // The range of internal addresses that are defined for this subnet.

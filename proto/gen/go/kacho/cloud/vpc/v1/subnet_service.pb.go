@@ -231,9 +231,16 @@ type CreateSubnetRequest struct {
 	Labels map[string]string `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// ID of the network to create subnet in.
 	NetworkId string `protobuf:"bytes,5,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
-	// ID of the availability zone where the subnet resides.
+	// Placement discriminator (required; UNSPECIFIED → InvalidArgument). ZONAL →
+	// set zone_id; REGIONAL → set region_id (anycast prefix across the region).
+	// Enforced in the handler (enum-required + zone/region consistency).
+	PlacementType SubnetPlacementType `protobuf:"varint,13,opt,name=placement_type,json=placementType,proto3,enum=kacho.cloud.vpc.v1.SubnetPlacementType" json:"placement_type,omitempty"`
+	// ID of the availability zone (set iff placement_type == ZONAL).
 	// To get a list of available zones, use the [kacho.cloud.geo.v1.ZoneService.List] request.
 	ZoneId string `protobuf:"bytes,6,opt,name=zone_id,json=zoneId,proto3" json:"zone_id,omitempty"`
+	// ID of the region (set iff placement_type == REGIONAL).
+	// To get a list of available regions, use the [kacho.cloud.geo.v1.RegionService.List] request.
+	RegionId string `protobuf:"bytes,12,opt,name=region_id,json=regionId,proto3" json:"region_id,omitempty"`
 	// CIDR block.
 	// The range of internal addresses that are defined for this subnet.
 	// For example, 10.0.0.0/22 or 192.168.0.0/24.
@@ -315,9 +322,23 @@ func (x *CreateSubnetRequest) GetNetworkId() string {
 	return ""
 }
 
+func (x *CreateSubnetRequest) GetPlacementType() SubnetPlacementType {
+	if x != nil {
+		return x.PlacementType
+	}
+	return SubnetPlacementType_SUBNET_PLACEMENT_TYPE_UNSPECIFIED
+}
+
 func (x *CreateSubnetRequest) GetZoneId() string {
 	if x != nil {
 		return x.ZoneId
+	}
+	return ""
+}
+
+func (x *CreateSubnetRequest) GetRegionId() string {
+	if x != nil {
+		return x.RegionId
 	}
 	return ""
 }
@@ -1191,7 +1212,7 @@ const file_kacho_cloud_vpc_v1_subnet_service_proto_rawDesc = "" +
 	"\x8a\xc81\x06<=1000R\x06filter\"s\n" +
 	"\x13ListSubnetsResponse\x124\n" +
 	"\asubnets\x18\x01 \x03(\v2\x1a.kacho.cloud.vpc.v1.SubnetR\asubnets\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x93\x05\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x86\x06\n" +
 	"\x13CreateSubnetRequest\x12+\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tprojectId\x12B\n" +
@@ -1199,8 +1220,10 @@ const file_kacho_cloud_vpc_v1_subnet_service_proto_rawDesc = "" +
 	"\vdescription\x18\x03 \x01(\tB\t\x8a\xc81\x05<=256R\vdescription\x12\x88\x01\n" +
 	"\x06labels\x18\x04 \x03(\v23.kacho.cloud.vpc.v1.CreateSubnetRequest.LabelsEntryB;\xf2\xc71\v[-_0-9a-z]*\x82\xc81\x04<=64\x8a\xc81\x04<=63\xb2\xc81\x18\x12\x10[a-z][-_0-9a-z]*\x1a\x041-63R\x06labels\x12+\n" +
 	"\n" +
-	"network_id\x18\x05 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tnetworkId\x12%\n" +
-	"\azone_id\x18\x06 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\x06zoneId\x12$\n" +
+	"network_id\x18\x05 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tnetworkId\x12N\n" +
+	"\x0eplacement_type\x18\r \x01(\x0e2'.kacho.cloud.vpc.v1.SubnetPlacementTypeR\rplacementType\x12!\n" +
+	"\azone_id\x18\x06 \x01(\tB\b\x8a\xc81\x04<=50R\x06zoneId\x12%\n" +
+	"\tregion_id\x18\f \x01(\tB\b\x8a\xc81\x04<=50R\bregionId\x12$\n" +
 	"\x0ev4_cidr_blocks\x18\a \x03(\tR\fv4CidrBlocks\x12$\n" +
 	"\x0ev6_cidr_blocks\x18\v \x03(\tR\fv6CidrBlocks\x12.\n" +
 	"\x0eroute_table_id\x18\t \x01(\tB\b\x8a\xc81\x04<=50R\frouteTableId\x12B\n" +
@@ -1339,46 +1362,48 @@ var file_kacho_cloud_vpc_v1_subnet_service_proto_goTypes = []any{
 	nil,                                    // 18: kacho.cloud.vpc.v1.CreateSubnetRequest.LabelsEntry
 	nil,                                    // 19: kacho.cloud.vpc.v1.UpdateSubnetRequest.LabelsEntry
 	(*Subnet)(nil),                         // 20: kacho.cloud.vpc.v1.Subnet
-	(*DhcpOptions)(nil),                    // 21: kacho.cloud.vpc.v1.DhcpOptions
-	(*fieldmaskpb.FieldMask)(nil),          // 22: google.protobuf.FieldMask
-	(*operation.Operation)(nil),            // 23: kacho.cloud.operation.Operation
-	(IpVersion)(0),                         // 24: kacho.cloud.vpc.v1.IpVersion
-	(*reference.Reference)(nil),            // 25: kacho.cloud.reference.Reference
+	(SubnetPlacementType)(0),               // 21: kacho.cloud.vpc.v1.SubnetPlacementType
+	(*DhcpOptions)(nil),                    // 22: kacho.cloud.vpc.v1.DhcpOptions
+	(*fieldmaskpb.FieldMask)(nil),          // 23: google.protobuf.FieldMask
+	(*operation.Operation)(nil),            // 24: kacho.cloud.operation.Operation
+	(IpVersion)(0),                         // 25: kacho.cloud.vpc.v1.IpVersion
+	(*reference.Reference)(nil),            // 26: kacho.cloud.reference.Reference
 }
 var file_kacho_cloud_vpc_v1_subnet_service_proto_depIdxs = []int32{
 	20, // 0: kacho.cloud.vpc.v1.ListSubnetsResponse.subnets:type_name -> kacho.cloud.vpc.v1.Subnet
 	18, // 1: kacho.cloud.vpc.v1.CreateSubnetRequest.labels:type_name -> kacho.cloud.vpc.v1.CreateSubnetRequest.LabelsEntry
-	21, // 2: kacho.cloud.vpc.v1.CreateSubnetRequest.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
-	22, // 3: kacho.cloud.vpc.v1.UpdateSubnetRequest.update_mask:type_name -> google.protobuf.FieldMask
-	19, // 4: kacho.cloud.vpc.v1.UpdateSubnetRequest.labels:type_name -> kacho.cloud.vpc.v1.UpdateSubnetRequest.LabelsEntry
-	21, // 5: kacho.cloud.vpc.v1.UpdateSubnetRequest.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
-	23, // 6: kacho.cloud.vpc.v1.ListSubnetOperationsResponse.operations:type_name -> kacho.cloud.operation.Operation
-	17, // 7: kacho.cloud.vpc.v1.ListUsedAddressesResponse.addresses:type_name -> kacho.cloud.vpc.v1.UsedAddress
-	24, // 8: kacho.cloud.vpc.v1.UsedAddress.ip_version:type_name -> kacho.cloud.vpc.v1.IpVersion
-	25, // 9: kacho.cloud.vpc.v1.UsedAddress.references:type_name -> kacho.cloud.reference.Reference
-	0,  // 10: kacho.cloud.vpc.v1.SubnetService.Get:input_type -> kacho.cloud.vpc.v1.GetSubnetRequest
-	1,  // 11: kacho.cloud.vpc.v1.SubnetService.List:input_type -> kacho.cloud.vpc.v1.ListSubnetsRequest
-	3,  // 12: kacho.cloud.vpc.v1.SubnetService.Create:input_type -> kacho.cloud.vpc.v1.CreateSubnetRequest
-	5,  // 13: kacho.cloud.vpc.v1.SubnetService.Update:input_type -> kacho.cloud.vpc.v1.UpdateSubnetRequest
-	7,  // 14: kacho.cloud.vpc.v1.SubnetService.AddCidrBlocks:input_type -> kacho.cloud.vpc.v1.AddSubnetCidrBlocksRequest
-	9,  // 15: kacho.cloud.vpc.v1.SubnetService.RemoveCidrBlocks:input_type -> kacho.cloud.vpc.v1.RemoveSubnetCidrBlocksRequest
-	11, // 16: kacho.cloud.vpc.v1.SubnetService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteSubnetRequest
-	13, // 17: kacho.cloud.vpc.v1.SubnetService.ListOperations:input_type -> kacho.cloud.vpc.v1.ListSubnetOperationsRequest
-	15, // 18: kacho.cloud.vpc.v1.SubnetService.ListUsedAddresses:input_type -> kacho.cloud.vpc.v1.ListUsedAddressesRequest
-	20, // 19: kacho.cloud.vpc.v1.SubnetService.Get:output_type -> kacho.cloud.vpc.v1.Subnet
-	2,  // 20: kacho.cloud.vpc.v1.SubnetService.List:output_type -> kacho.cloud.vpc.v1.ListSubnetsResponse
-	23, // 21: kacho.cloud.vpc.v1.SubnetService.Create:output_type -> kacho.cloud.operation.Operation
-	23, // 22: kacho.cloud.vpc.v1.SubnetService.Update:output_type -> kacho.cloud.operation.Operation
-	23, // 23: kacho.cloud.vpc.v1.SubnetService.AddCidrBlocks:output_type -> kacho.cloud.operation.Operation
-	23, // 24: kacho.cloud.vpc.v1.SubnetService.RemoveCidrBlocks:output_type -> kacho.cloud.operation.Operation
-	23, // 25: kacho.cloud.vpc.v1.SubnetService.Delete:output_type -> kacho.cloud.operation.Operation
-	14, // 26: kacho.cloud.vpc.v1.SubnetService.ListOperations:output_type -> kacho.cloud.vpc.v1.ListSubnetOperationsResponse
-	16, // 27: kacho.cloud.vpc.v1.SubnetService.ListUsedAddresses:output_type -> kacho.cloud.vpc.v1.ListUsedAddressesResponse
-	19, // [19:28] is the sub-list for method output_type
-	10, // [10:19] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	21, // 2: kacho.cloud.vpc.v1.CreateSubnetRequest.placement_type:type_name -> kacho.cloud.vpc.v1.SubnetPlacementType
+	22, // 3: kacho.cloud.vpc.v1.CreateSubnetRequest.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
+	23, // 4: kacho.cloud.vpc.v1.UpdateSubnetRequest.update_mask:type_name -> google.protobuf.FieldMask
+	19, // 5: kacho.cloud.vpc.v1.UpdateSubnetRequest.labels:type_name -> kacho.cloud.vpc.v1.UpdateSubnetRequest.LabelsEntry
+	22, // 6: kacho.cloud.vpc.v1.UpdateSubnetRequest.dhcp_options:type_name -> kacho.cloud.vpc.v1.DhcpOptions
+	24, // 7: kacho.cloud.vpc.v1.ListSubnetOperationsResponse.operations:type_name -> kacho.cloud.operation.Operation
+	17, // 8: kacho.cloud.vpc.v1.ListUsedAddressesResponse.addresses:type_name -> kacho.cloud.vpc.v1.UsedAddress
+	25, // 9: kacho.cloud.vpc.v1.UsedAddress.ip_version:type_name -> kacho.cloud.vpc.v1.IpVersion
+	26, // 10: kacho.cloud.vpc.v1.UsedAddress.references:type_name -> kacho.cloud.reference.Reference
+	0,  // 11: kacho.cloud.vpc.v1.SubnetService.Get:input_type -> kacho.cloud.vpc.v1.GetSubnetRequest
+	1,  // 12: kacho.cloud.vpc.v1.SubnetService.List:input_type -> kacho.cloud.vpc.v1.ListSubnetsRequest
+	3,  // 13: kacho.cloud.vpc.v1.SubnetService.Create:input_type -> kacho.cloud.vpc.v1.CreateSubnetRequest
+	5,  // 14: kacho.cloud.vpc.v1.SubnetService.Update:input_type -> kacho.cloud.vpc.v1.UpdateSubnetRequest
+	7,  // 15: kacho.cloud.vpc.v1.SubnetService.AddCidrBlocks:input_type -> kacho.cloud.vpc.v1.AddSubnetCidrBlocksRequest
+	9,  // 16: kacho.cloud.vpc.v1.SubnetService.RemoveCidrBlocks:input_type -> kacho.cloud.vpc.v1.RemoveSubnetCidrBlocksRequest
+	11, // 17: kacho.cloud.vpc.v1.SubnetService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteSubnetRequest
+	13, // 18: kacho.cloud.vpc.v1.SubnetService.ListOperations:input_type -> kacho.cloud.vpc.v1.ListSubnetOperationsRequest
+	15, // 19: kacho.cloud.vpc.v1.SubnetService.ListUsedAddresses:input_type -> kacho.cloud.vpc.v1.ListUsedAddressesRequest
+	20, // 20: kacho.cloud.vpc.v1.SubnetService.Get:output_type -> kacho.cloud.vpc.v1.Subnet
+	2,  // 21: kacho.cloud.vpc.v1.SubnetService.List:output_type -> kacho.cloud.vpc.v1.ListSubnetsResponse
+	24, // 22: kacho.cloud.vpc.v1.SubnetService.Create:output_type -> kacho.cloud.operation.Operation
+	24, // 23: kacho.cloud.vpc.v1.SubnetService.Update:output_type -> kacho.cloud.operation.Operation
+	24, // 24: kacho.cloud.vpc.v1.SubnetService.AddCidrBlocks:output_type -> kacho.cloud.operation.Operation
+	24, // 25: kacho.cloud.vpc.v1.SubnetService.RemoveCidrBlocks:output_type -> kacho.cloud.operation.Operation
+	24, // 26: kacho.cloud.vpc.v1.SubnetService.Delete:output_type -> kacho.cloud.operation.Operation
+	14, // 27: kacho.cloud.vpc.v1.SubnetService.ListOperations:output_type -> kacho.cloud.vpc.v1.ListSubnetOperationsResponse
+	16, // 28: kacho.cloud.vpc.v1.SubnetService.ListUsedAddresses:output_type -> kacho.cloud.vpc.v1.ListUsedAddressesResponse
+	20, // [20:29] is the sub-list for method output_type
+	11, // [11:20] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_kacho_cloud_vpc_v1_subnet_service_proto_init() }

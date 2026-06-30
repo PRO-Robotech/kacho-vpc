@@ -206,3 +206,51 @@ func validateZoneID(ctx context.Context, zr ZoneRegistry, field, zoneID string) 
 	}
 	return serviceerr.MapRepoErr(err)
 }
+
+// validateRegionID — sync-валидация region_id REGIONAL-подсети: required +
+// existence у owner-домена Geography (kacho-geo). Зеркало validateZoneID.
+//
+// Пустое значение → InvalidArgument `region_id is required`; несуществующий
+// регион → `unknown region id '<regionId>'`; geo недоступен → пробрасывается
+// (Unavailable, fail-closed на мутации). `rr == nil` — fallback для тестов без
+// regionReg (existence не проверяем).
+func validateRegionID(ctx context.Context, rr RegionRegistry, field, regionID string) error {
+	if regionID == "" {
+		return serviceerr.InvalidArg(field, field+" is required")
+	}
+	if rr == nil {
+		return nil
+	}
+	_, err := rr.Get(ctx, regionID)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, repo.ErrNotFound) {
+		return status.Errorf(codes.InvalidArgument, "unknown region id '%s'", regionID)
+	}
+	return serviceerr.MapRepoErr(err)
+}
+
+// validatePlacement — дискриминатор размещения подсети + согласованность пары
+// zone_id/region_id. placement_type обязателен (UNSPECIFIED → InvalidArgument).
+//
+//   - ZONAL    — zone_id required + existence (geo); region_id должен быть пуст.
+//   - REGIONAL — region_id required + existence (geo); zone_id должен быть пуст.
+//
+// Та же форма дублируется DB-CHECK subnets_placement_payload_chk (backstop).
+func validatePlacement(ctx context.Context, zr ZoneRegistry, rr RegionRegistry, s domain.Subnet) error {
+	switch s.PlacementType {
+	case domain.PlacementZonal:
+		if s.RegionID != "" {
+			return serviceerr.InvalidArg("region_id", "region_id must be empty for ZONAL placement")
+		}
+		return validateZoneID(ctx, zr, "zone_id", s.ZoneID)
+	case domain.PlacementRegional:
+		if s.ZoneID != "" {
+			return serviceerr.InvalidArg("zone_id", "zone_id must be empty for REGIONAL placement")
+		}
+		return validateRegionID(ctx, rr, "region_id", s.RegionID)
+	default:
+		return serviceerr.InvalidArg("placement_type", "placement_type is required (ZONAL or REGIONAL)")
+	}
+}

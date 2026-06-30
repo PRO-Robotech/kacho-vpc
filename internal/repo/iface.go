@@ -85,3 +85,13 @@ type ZoneRegistry interface {
 	Get(ctx context.Context, id string) (*domain.Zone, error)
 	ListIDs(ctx context.Context) ([]string, error)
 }
+
+// RegionRegistry — port для проверки существования региона (REGIONAL-подсеть).
+//
+// Используется SubnetService.Create для валидации `region_id`. Источник истины —
+// leaf-домен kacho-geo (geo.v1.RegionService.Get); реализация порта —
+// internal/clients/geo_region_client.go. Get возвращает ErrNotFound для
+// несуществующего региона.
+type RegionRegistry interface {
+	Get(ctx context.Context, id string) (*domain.Region, error)
+}

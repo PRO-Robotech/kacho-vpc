@@ -27,7 +27,7 @@ type Scannable interface {
 const NetworkCols = `id, project_id, created_at, name, description, labels, COALESCE(default_security_group_id, '') AS default_security_group_id, COALESCE(vrf_id, 0) AS vrf_id`
 
 // SubnetCols — список колонок таблицы subnets в порядке, ожидаемом ScanSubnet.
-const SubnetCols = `id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options`
+const SubnetCols = `id, project_id, created_at, name, description, labels, network_id, zone_id, v4_cidr_blocks, v6_cidr_blocks, route_table_id, dhcp_options, placement_type, region_id`
 
 // AddressCols — список колонок таблицы addresses в порядке, ожидаемом ScanAddress.
 const AddressCols = `id, project_id, created_at, name, description, labels, addr_type, ip_version, reserved, used, deletion_protection, external_ipv4, internal_ipv4, internal_ipv6, external_ipv6`
@@ -87,16 +87,19 @@ func ScanSubnet(row Scannable) (*kachorepo.SubnetRecord, error) {
 	var routeTableID *string
 	var name string
 	var description string
+	var placementType string
 
 	err := row.Scan(
 		&s.ID, &s.ProjectID, &s.CreatedAt, &name, &description, &labelsJSON,
 		&s.NetworkID, &s.ZoneID, &v4, &v6, &routeTableID, &dhcpJSON,
+		&placementType, &s.RegionID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	s.Name = domain.RcNameVPC(name)
 	s.Description = domain.RcDescription(description)
+	s.PlacementType = domain.SubnetPlacementType(placementType)
 	var labels map[string]string
 	if err := UnmarshalJSONB(labelsJSON, &labels, "Subnet.labels"); err != nil {
 		return nil, err

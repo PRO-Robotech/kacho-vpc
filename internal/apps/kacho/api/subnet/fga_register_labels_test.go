@@ -44,12 +44,13 @@ func createSubnet(t *testing.T, h *Handler, or *repomock.OpsRepo, netID, project
 	t.Helper()
 	ctx := context.Background()
 	op, err := h.Create(ctx, &vpcv1.CreateSubnetRequest{
-		ProjectId:    projectID,
-		NetworkId:    netID,
-		ZoneId:       testZone,
-		Name:         "sub-t3",
-		V4CidrBlocks: []string{"10.20.0.0/24"},
-		Labels:       labels,
+		ProjectId:     projectID,
+		NetworkId:     netID,
+		PlacementType: vpcv1.SubnetPlacementType_ZONAL,
+		ZoneId:        testZone,
+		Name:          "sub-t3",
+		V4CidrBlocks:  []string{"10.20.0.0/24"},
+		Labels:        labels,
 	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.Id)
