@@ -257,7 +257,12 @@ type CreateAnycastAddressPoolRequest struct {
 	// CIDR blocks. Empty → platform-assigned from the reserved slice. If set, each
 	// block must be within the reserved range and match `ip_version`
 	// (BYO-from-reserved); within-pool blocks must not overlap.
-	CidrBlocks    []string `protobuf:"bytes,7,rep,name=cidr_blocks,json=cidrBlocks,proto3" json:"cidr_blocks,omitempty"`
+	CidrBlocks []string `protobuf:"bytes,7,rep,name=cidr_blocks,json=cidrBlocks,proto3" json:"cidr_blocks,omitempty"`
+	// Optional network to attach the pool to at creation, atomically in the same
+	// operation (one-step "create a pool for this network"). The pool is M:N to
+	// networks; additional attachments use AttachNetwork. The network must belong
+	// to the same project. Empty → standalone pool (attach later).
+	NetworkId     string `protobuf:"bytes,8,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -339,6 +344,13 @@ func (x *CreateAnycastAddressPoolRequest) GetCidrBlocks() []string {
 		return x.CidrBlocks
 	}
 	return nil
+}
+
+func (x *CreateAnycastAddressPoolRequest) GetNetworkId() string {
+	if x != nil {
+		return x.NetworkId
+	}
+	return ""
 }
 
 type CreateAnycastAddressPoolMetadata struct {
@@ -844,7 +856,7 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"ip_version\x18\a \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\"\xa5\x01\n" +
 	"\x1fListAnycastAddressPoolsResponse\x12Z\n" +
 	"\x15anycast_address_pools\x18\x01 \x03(\v2&.kacho.cloud.vpc.v1.AnycastAddressPoolR\x13anycastAddressPools\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcd\x04\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xf6\x04\n" +
 	"\x1fCreateAnycastAddressPoolRequest\x12+\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tprojectId\x12B\n" +
@@ -855,7 +867,9 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"\n" +
 	"ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\x12)\n" +
 	"\vcidr_blocks\x18\a \x03(\tB\b\x8a\xc81\x04<=49R\n" +
-	"cidrBlocks\x1a9\n" +
+	"cidrBlocks\x12'\n" +
+	"\n" +
+	"network_id\x18\b \x01(\tB\b\x8a\xc81\x04<=50R\tnetworkId\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Y\n" +

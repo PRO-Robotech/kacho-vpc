@@ -199,6 +199,70 @@ func TestCreate_IAMUnavailable(t *testing.T) {
 	assert.Empty(t, kr.AnycastPools())
 }
 
+// Create с network_id — атомарный one-step attach к сети того же проекта (happy).
+func TestCreate_WithNetwork_SameProject(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	netID := "net00000000000000000"
+	uc := createUC(kr, okProject(), or).WithNetworkReader(nets(map[string]string{netID: "prj-A"}))
+	op, err := uc.Execute(context.Background(), CreateInput{
+		ProjectID: "prj-A", Scope: domain.AnycastScopeInternal, IPVersion: domain.IpVersionIPv4,
+		NetworkID: netID,
+	})
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error, "create+attach should succeed")
+}
+
+// network_id задан, но networkReader не подключён → InvalidArgument (not supported).
+func TestCreate_WithNetwork_NoReader(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	_, err := createUC(kr, okProject(), or).Execute(context.Background(), CreateInput{
+		ProjectID: "prj-A", Scope: domain.AnycastScopeInternal, IPVersion: domain.IpVersionIPv4,
+		NetworkID: "net00000000000000000",
+	})
+	requireCode(t, err, codes.InvalidArgument)
+}
+
+// network_id сети чужого проекта → InvalidArgument (same-project guard).
+func TestCreate_WithNetwork_CrossProject(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	netID := "net00000000000000000"
+	uc := createUC(kr, okProject(), or).WithNetworkReader(nets(map[string]string{netID: "prj-OTHER"}))
+	_, err := uc.Execute(context.Background(), CreateInput{
+		ProjectID: "prj-A", Scope: domain.AnycastScopeInternal, IPVersion: domain.IpVersionIPv4,
+		NetworkID: netID,
+	})
+	requireCode(t, err, codes.InvalidArgument)
+}
+
+// network_id несуществующей сети → NotFound.
+func TestCreate_WithNetwork_NotFound(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := createUC(kr, okProject(), or).WithNetworkReader(nets(map[string]string{}))
+	_, err := uc.Execute(context.Background(), CreateInput{
+		ProjectID: "prj-A", Scope: domain.AnycastScopeInternal, IPVersion: domain.IpVersionIPv4,
+		NetworkID: "net00000000000000000",
+	})
+	requireCode(t, err, codes.NotFound)
+}
+
+// malformed network_id → sync InvalidArgument.
+func TestCreate_WithNetwork_Malformed(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	uc := createUC(kr, okProject(), or).WithNetworkReader(nets(map[string]string{}))
+	_, err := uc.Execute(context.Background(), CreateInput{
+		ProjectID: "prj-A", Scope: domain.AnycastScopeInternal, IPVersion: domain.IpVersionIPv4,
+		NetworkID: "bad-id",
+	})
+	requireCode(t, err, codes.InvalidArgument)
+}
+
 // GWT-09: Get — несуществующий пул (negative).
 func TestGet_NotFound(t *testing.T) {
 	kr := kachomock.NewRepository()

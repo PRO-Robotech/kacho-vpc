@@ -103,6 +103,7 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateAnycastAddressPoo
 		Scope:       scopeFromProto(req.Scope),
 		IPVersion:   ipVersionFromProto(req.IpVersion),
 		CIDRBlocks:  req.CidrBlocks,
+		NetworkID:   req.NetworkId,
 	})
 	if err != nil {
 		return nil, err

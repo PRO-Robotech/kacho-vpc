@@ -226,6 +226,12 @@ message CreateAnycastAddressPoolRequest {
   // block must be within the reserved range and match `ip_version`
   // (BYO-from-reserved); within-pool blocks must not overlap.
   repeated string cidr_blocks = 7 [(length) = "<=49"];
+
+  // Optional network to attach the pool to at creation, atomically in the same
+  // operation (one-step "create a pool for this network"). The pool is M:N to
+  // networks; additional attachments use AttachNetwork. The network must belong
+  // to the same project. Empty → standalone pool (attach later).
+  string network_id = 8 [(length) = "<=50"];
 }
 
 message CreateAnycastAddressPoolMetadata {

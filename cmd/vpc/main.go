@@ -943,7 +943,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// Operation; read (Get/List) — sync с per-object FGA-фильтром (existence-hiding).
 	// networkAdapter (NetworkReader) — same-project-валидация на attach.
 	anycastPoolHandler := anycastpoolapp.NewHandler(
-		anycastpoolapp.NewCreateAnycastAddressPoolUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar),
+		anycastpoolapp.NewCreateAnycastAddressPoolUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar).WithNetworkReader(networkAdapter),
 		anycastpoolapp.NewUpdateAnycastAddressPoolUseCase(kachoRepo, opsRepo),
 		anycastpoolapp.NewDeleteAnycastAddressPoolUseCase(kachoRepo, opsRepo),
 		anycastpoolapp.NewGetAnycastAddressPoolUseCase(kachoRepo, listFilter),

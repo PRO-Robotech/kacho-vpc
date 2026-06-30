@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/H-BF/corlib v1.2.31-dev
-	github.com/PRO-Robotech/kacho-corelib v1.0.3-0.20260629221224-9ee70b8d274e
+	github.com/PRO-Robotech/kacho-corelib v1.0.3-0.20260630192211-a6a25f680153
 	github.com/PRO-Robotech/kacho-geo v1.0.2
 	github.com/PRO-Robotech/kacho-iam v1.0.2
 	github.com/go-viper/mapstructure/v2 v2.5.0

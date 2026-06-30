@@ -5,6 +5,7 @@ package anycastaddresspool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
+	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -22,6 +24,8 @@ import (
 )
 
 // CreateInput — параметры создания пула. CIDRBlocks пуст → platform-assigned.
+// NetworkID непуст → пул атомарно аттачится к сети в той же операции (one-step
+// «создать пул для этой сети»); сеть обязана быть того же проекта.
 type CreateInput struct {
 	ProjectID   string
 	Name        string
@@ -30,6 +34,7 @@ type CreateInput struct {
 	Scope       domain.AnycastScope
 	IPVersion   domain.IpVersion
 	CIDRBlocks  []string
+	NetworkID   string
 }
 
 // CreateAnycastAddressPoolUseCase — async Create через Operation Worker.
@@ -42,6 +47,7 @@ type CreateAnycastAddressPoolUseCase struct {
 	projectClient ProjectClient
 	opsRepo       operations.Repo
 	registrar     fgaregister.Registrar
+	networkReader NetworkReader
 }
 
 // NewCreateAnycastAddressPoolUseCase собирает use-case.
@@ -53,6 +59,14 @@ func NewCreateAnycastAddressPoolUseCase(r Repo, projectClient ProjectClient, ops
 // owner-tuple синхронно регистрируется в kacho-iam). Nil → только async drainer.
 func (u *CreateAnycastAddressPoolUseCase) WithRegistrar(r fgaregister.Registrar) *CreateAnycastAddressPoolUseCase {
 	u.registrar = r
+	return u
+}
+
+// WithNetworkReader подключает NetworkReader для one-step create+attach
+// (валидация существования и same-project сети при заданном NetworkID). Nil →
+// NetworkID запрещён (InvalidArgument), пул создаётся только standalone.
+func (u *CreateAnycastAddressPoolUseCase) WithNetworkReader(nr NetworkReader) *CreateAnycastAddressPoolUseCase {
+	u.networkReader = nr
 	return u
 }
 
@@ -75,6 +89,28 @@ func (u *CreateAnycastAddressPoolUseCase) Execute(ctx context.Context, in Create
 	if len(in.CIDRBlocks) > 0 {
 		if err := validateCIDRBlocks(in.CIDRBlocks, in.IPVersion); err != nil {
 			return nil, err
+		}
+	}
+	// network_id (optional one-step attach) — валидируем формат, существование и
+	// same-project синхронно (fast-fail), как в AttachNetwork. Сам attach — в
+	// doCreate, атомарно в writer-TX с Insert пула.
+	if in.NetworkID != "" {
+		if u.networkReader == nil {
+			return nil, status.Error(codes.InvalidArgument, "network_id is not supported")
+		}
+		if err := corevalidate.ResourceID("network", ids.PrefixNetwork, in.NetworkID); err != nil {
+			return nil, err
+		}
+		net, nerr := u.networkReader.Get(ctx, in.NetworkID)
+		if nerr != nil {
+			if errors.Is(nerr, repo.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "Network %s not found", in.NetworkID)
+			}
+			return nil, serviceerr.MapRepoErr(nerr)
+		}
+		if net.ProjectID != in.ProjectID {
+			return nil, status.Error(codes.InvalidArgument,
+				"Illegal argument networkId: network and anycast address pool must belong to the same project")
 		}
 	}
 	// Self-validating domain: name/description/labels.
@@ -162,6 +198,18 @@ func (u *CreateAnycastAddressPoolUseCase) doCreate(ctx context.Context, poolID s
 	}
 	if err := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); err != nil {
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, err))
+	}
+	// One-step attach: пул аттачится к сети в той же writer-TX (атомарно с Insert).
+	// Existence/same-project проверены sync в Execute; здесь FK + claim-EXCLUDE —
+	// финальный DB-гард (race с удалением сети / claim-overlap → rollback всего Create).
+	if in.NetworkID != "" {
+		if aerr := w.AnycastAddressPools().AttachNetwork(ctx, created.ID, in.NetworkID, blocks); aerr != nil {
+			return nil, serviceerr.MapRepoErr(aerr)
+		}
+		if oerr := w.Outbox().Emit(ctx, "AnycastAddressPool", created.ID, "NETWORK_ATTACHED",
+			map[string]any{"pool_id": created.ID, "network_id": in.NetworkID}); oerr != nil {
+			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
+		}
 	}
 	if err := w.Commit(); err != nil {
 		return nil, serviceerr.MapRepoErr(err)
