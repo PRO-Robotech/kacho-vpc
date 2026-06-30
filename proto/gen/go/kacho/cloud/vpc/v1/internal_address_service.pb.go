@@ -260,13 +260,20 @@ func (x *AddressReference) GetAttachedAt() *timestamppb.Timestamp {
 }
 
 type SetAddressReferenceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AddressId     string                 `protobuf:"bytes,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
-	ReferrerType  string                 `protobuf:"bytes,2,opt,name=referrer_type,json=referrerType,proto3" json:"referrer_type,omitempty"`
-	ReferrerId    string                 `protobuf:"bytes,3,opt,name=referrer_id,json=referrerId,proto3" json:"referrer_id,omitempty"`
-	ReferrerName  string                 `protobuf:"bytes,4,opt,name=referrer_name,json=referrerName,proto3" json:"referrer_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	AddressId    string                 `protobuf:"bytes,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
+	ReferrerType string                 `protobuf:"bytes,2,opt,name=referrer_type,json=referrerType,proto3" json:"referrer_type,omitempty"`
+	ReferrerId   string                 `protobuf:"bytes,3,opt,name=referrer_id,json=referrerId,proto3" json:"referrer_id,omitempty"`
+	ReferrerName string                 `protobuf:"bytes,4,opt,name=referrer_name,json=referrerName,proto3" json:"referrer_name,omitempty"`
+	// expect_project_id / expect_ip_version — server-side CAS-guard для BYO-привязки
+	// (consumer берёт «свой» Address). vpc проверяет ownership/family атомарно в той
+	// же tx, что и SetReference; mismatch → InvalidArgument (generic, анти-oracle —
+	// без подтверждения чужого ownership/семейства). Пустые значения = без проверки
+	// (back-compat: existing consumer'ы, не передающие guard).
+	ExpectProjectId string            `protobuf:"bytes,5,opt,name=expect_project_id,json=expectProjectId,proto3" json:"expect_project_id,omitempty"`
+	ExpectIpVersion Address_IpVersion `protobuf:"varint,6,opt,name=expect_ip_version,json=expectIpVersion,proto3,enum=kacho.cloud.vpc.v1.Address_IpVersion" json:"expect_ip_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SetAddressReferenceRequest) Reset() {
@@ -325,6 +332,20 @@ func (x *SetAddressReferenceRequest) GetReferrerName() string {
 		return x.ReferrerName
 	}
 	return ""
+}
+
+func (x *SetAddressReferenceRequest) GetExpectProjectId() string {
+	if x != nil {
+		return x.ExpectProjectId
+	}
+	return ""
+}
+
+func (x *SetAddressReferenceRequest) GetExpectIpVersion() Address_IpVersion {
+	if x != nil {
+		return x.ExpectIpVersion
+	}
+	return Address_IP_VERSION_UNSPECIFIED
 }
 
 type ClearAddressReferenceRequest struct {
@@ -559,7 +580,7 @@ var File_kacho_cloud_vpc_v1_internal_address_service_proto protoreflect.FileDesc
 
 const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"\n" +
-	"1kacho/cloud/vpc/v1/internal_address_service.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a&kacho/iam/authz/v1/authz_options.proto\":\n" +
+	"1kacho/cloud/vpc/v1/internal_address_service.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a kacho/cloud/vpc/v1/address.proto\x1a&kacho/iam/authz/v1/authz_options.proto\":\n" +
 	"\x19AllocateInternalIPRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\":\n" +
@@ -578,14 +599,16 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"referrerId\x12#\n" +
 	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12;\n" +
 	"\vattached_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"attachedAt\"\xa6\x01\n" +
+	"attachedAt\"\xa5\x02\n" +
 	"\x1aSetAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\x12#\n" +
 	"\rreferrer_type\x18\x02 \x01(\tR\freferrerType\x12\x1f\n" +
 	"\vreferrer_id\x18\x03 \x01(\tR\n" +
 	"referrerId\x12#\n" +
-	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\"=\n" +
+	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12*\n" +
+	"\x11expect_project_id\x18\x05 \x01(\tR\x0fexpectProjectId\x12Q\n" +
+	"\x11expect_ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\x0fexpectIpVersion\"=\n" +
 	"\x1cClearAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\"\x1f\n" +
@@ -636,30 +659,32 @@ var file_kacho_cloud_vpc_v1_internal_address_service_proto_goTypes = []any{
 	(*MarkAddressEphemeralInUseRequest)(nil),  // 8: kacho.cloud.vpc.v1.MarkAddressEphemeralInUseRequest
 	(*MarkAddressEphemeralInUseResponse)(nil), // 9: kacho.cloud.vpc.v1.MarkAddressEphemeralInUseResponse
 	(*timestamppb.Timestamp)(nil),             // 10: google.protobuf.Timestamp
+	(Address_IpVersion)(0),                    // 11: kacho.cloud.vpc.v1.Address.IpVersion
 }
 var file_kacho_cloud_vpc_v1_internal_address_service_proto_depIdxs = []int32{
 	10, // 0: kacho.cloud.vpc.v1.AddressReference.attached_at:type_name -> google.protobuf.Timestamp
-	0,  // 1: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
-	0,  // 2: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
-	1,  // 3: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
-	1,  // 4: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
-	4,  // 5: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:input_type -> kacho.cloud.vpc.v1.SetAddressReferenceRequest
-	5,  // 6: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:input_type -> kacho.cloud.vpc.v1.ClearAddressReferenceRequest
-	7,  // 7: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:input_type -> kacho.cloud.vpc.v1.GetAddressReferenceRequest
-	8,  // 8: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:input_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseRequest
-	2,  // 9: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	2,  // 10: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	2,  // 11: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	2,  // 12: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
-	3,  // 13: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
-	6,  // 14: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:output_type -> kacho.cloud.vpc.v1.ClearAddressReferenceResponse
-	3,  // 15: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
-	9,  // 16: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:output_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseResponse
-	9,  // [9:17] is the sub-list for method output_type
-	1,  // [1:9] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	11, // 1: kacho.cloud.vpc.v1.SetAddressReferenceRequest.expect_ip_version:type_name -> kacho.cloud.vpc.v1.Address.IpVersion
+	0,  // 2: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
+	0,  // 3: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateInternalIPRequest
+	1,  // 4: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
+	1,  // 5: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:input_type -> kacho.cloud.vpc.v1.AllocateExternalIPRequest
+	4,  // 6: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:input_type -> kacho.cloud.vpc.v1.SetAddressReferenceRequest
+	5,  // 7: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:input_type -> kacho.cloud.vpc.v1.ClearAddressReferenceRequest
+	7,  // 8: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:input_type -> kacho.cloud.vpc.v1.GetAddressReferenceRequest
+	8,  // 9: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:input_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseRequest
+	2,  // 10: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 11: kacho.cloud.vpc.v1.InternalAddressService.AllocateInternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 12: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIP:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	2,  // 13: kacho.cloud.vpc.v1.InternalAddressService.AllocateExternalIPv6:output_type -> kacho.cloud.vpc.v1.AllocateIPResponse
+	3,  // 14: kacho.cloud.vpc.v1.InternalAddressService.SetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
+	6,  // 15: kacho.cloud.vpc.v1.InternalAddressService.ClearAddressReference:output_type -> kacho.cloud.vpc.v1.ClearAddressReferenceResponse
+	3,  // 16: kacho.cloud.vpc.v1.InternalAddressService.GetAddressReference:output_type -> kacho.cloud.vpc.v1.AddressReference
+	9,  // 17: kacho.cloud.vpc.v1.InternalAddressService.MarkAddressEphemeralInUse:output_type -> kacho.cloud.vpc.v1.MarkAddressEphemeralInUseResponse
+	10, // [10:18] is the sub-list for method output_type
+	2,  // [2:10] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_kacho_cloud_vpc_v1_internal_address_service_proto_init() }
@@ -667,6 +692,7 @@ func file_kacho_cloud_vpc_v1_internal_address_service_proto_init() {
 	if File_kacho_cloud_vpc_v1_internal_address_service_proto != nil {
 		return
 	}
+	file_kacho_cloud_vpc_v1_address_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
