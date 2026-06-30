@@ -185,6 +185,24 @@ func (a *AddressAdapter) SetReference(ctx context.Context, ref *domain.AddressRe
 	return out, nil
 }
 
+// SetReferenceGuarded — SetReference с BYO ownership/family-guard в CAS
+// WHERE-условии (атомарно). Свежая writer-TX. Outbox НЕ emit'ит.
+func (a *AddressAdapter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
+	w, err := a.repo.Writer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer w.Abort()
+	out, err := w.Addresses().SetReferenceGuarded(ctx, ref, expectProjectID, expectIPVersion)
+	if err != nil {
+		return nil, err
+	}
+	if err := w.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MarkEphemeralInUse — атомарно reserved=false + used=true + upsert referrer.
 // Свежая writer-TX.
 func (a *AddressAdapter) MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {

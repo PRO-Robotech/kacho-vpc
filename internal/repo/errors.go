@@ -42,3 +42,8 @@ var ErrMacCollision = helpers.ErrMacCollision
 
 // ErrPoolExhausted — address_pool_free_ips пуст для запрошенного pool_id.
 var ErrPoolExhausted = helpers.ErrPoolExhausted
+
+// ErrGuardMismatch — BYO ownership/family-guard SetReferenceGuarded не совпал
+// (чужой проект/семейство либо адрес не существует). Service маппит в generic
+// InvalidArgument "Illegal argument addressId" (анти-oracle).
+var ErrGuardMismatch = helpers.ErrGuardMismatch

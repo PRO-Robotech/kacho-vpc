@@ -111,6 +111,11 @@ type AddressWriterIface interface {
 	// Конфликт по адресу с ЧУЖИМ referrer'ом → ErrFailedPrecondition. Idempotent
 	// re-attach к тому же referrer проходит.
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
+	// SetReferenceGuarded — SetReference с BYO ownership/family-guard, вложенным в
+	// CAS WHERE-условие (атомарно, без TOCTOU). expectProjectID=="" /
+	// expectIPVersion==Unspecified отключают соответствующую проверку. Несовпадение
+	// guard'а (или отсутствие адреса под guard'ом) → ErrGuardMismatch (анти-oracle).
+	SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error)
 	// MarkEphemeralInUse — атомарно reserved=false + used=true + upsert referrer
 	// (= SetReference + reset reserved).
 	MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)

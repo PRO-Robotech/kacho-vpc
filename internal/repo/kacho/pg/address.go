@@ -754,11 +754,34 @@ func (w *addressWriter) FreeExternalIPv6(ctx context.Context, addressID string) 
 // Конфликт по адресу с ЧУЖИМ referrer'ом → ErrFailedPrecondition. Idempotent
 // re-attach к тому же referrer проходит.
 func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
-	tag, err := w.tx.Exec(ctx, `UPDATE addresses SET used = true WHERE id = $1`, ref.AddressID)
+	return w.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified)
+}
+
+// SetReferenceGuarded — SetReference с server-side BYO ownership/family-guard,
+// вложенным в CAS WHERE-условие: ownership/family — immutable-колонки Address,
+// поэтому проверка идёт тем же single-statement UPDATE, что и used_by-CAS (без
+// TOCTOU read-then-update). expectProjectID=="" и expectIPVersion==Unspecified
+// отключают соответствующую проверку (back-compat для consumer'ов без guard'а).
+//
+// 0 строк из первого UPDATE под guard'ом → ErrGuardMismatch (чужой проект/
+// семейство ЛИБО адрес не существует — не различаем, чтобы не раскрыть чужой
+// ownership/существование, анти-oracle). Без guard'а 0 строк → ErrNotFound.
+// Конфликт used_by с ЧУЖИМ referrer'ом → ErrFailedPrecondition.
+func (w *addressWriter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
+	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified
+	tag, err := w.tx.Exec(ctx, `
+		UPDATE addresses SET used = true
+		 WHERE id = $1
+		   AND ($2 = '' OR project_id = $2)
+		   AND ($3 = 0 OR ip_version = $3)`,
+		ref.AddressID, expectProjectID, int32(expectIPVersion))
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}
 	if tag.RowsAffected() == 0 {
+		if guarded {
+			return nil, helpers.ErrGuardMismatch
+		}
 		return nil, fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, ref.AddressID)
 	}
 	const q = `

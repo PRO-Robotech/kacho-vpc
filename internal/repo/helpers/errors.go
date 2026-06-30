@@ -55,3 +55,10 @@ var ErrMacCollision = errors.New("network interface mac collision")
 // ErrPoolExhausted — address_pool_free_ips пуст (PG-native freelist allocator).
 // Service-слой маппит в gRPC FailedPrecondition.
 var ErrPoolExhausted = errors.New("address pool exhausted")
+
+// ErrGuardMismatch — BYO ownership/family-guard не совпал: целевой Address
+// принадлежит другому проекту/семейству, чем ожидает consumer (либо не существует).
+// Под guard'ом не различаем эти случаи — единый сигнал, чтобы service отдал
+// generic InvalidArgument без подтверждения чужого ownership/существования
+// (анти-oracle).
+var ErrGuardMismatch = errors.New("address guard mismatch")

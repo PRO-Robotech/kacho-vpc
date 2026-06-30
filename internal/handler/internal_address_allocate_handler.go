@@ -138,10 +138,12 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 		return nil, status.Error(codes.InvalidArgument, "address_id required")
 	}
 	ref, err := h.refs.SetAddressReference(ctx, addressref.SetAddressReferenceReq{
-		AddressID:    req.GetAddressId(),
-		ReferrerType: req.GetReferrerType(),
-		ReferrerID:   req.GetReferrerId(),
-		ReferrerName: req.GetReferrerName(),
+		AddressID:       req.GetAddressId(),
+		ReferrerType:    req.GetReferrerType(),
+		ReferrerID:      req.GetReferrerId(),
+		ReferrerName:    req.GetReferrerName(),
+		ExpectProjectID: req.GetExpectProjectId(),
+		ExpectIPVersion: domain.IpVersion(req.GetExpectIpVersion()),
 	})
 	if err != nil {
 		return nil, err

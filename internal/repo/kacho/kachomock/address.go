@@ -353,10 +353,24 @@ func (aw *addressWriter) FreeExternalIPv6(_ context.Context, _ string) error {
 }
 
 // Referrer-tracking stubs — минимальная семантика для compile-time gate.
-func (aw *addressWriter) SetReference(_ context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+func (aw *addressWriter) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
+	return aw.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified)
+}
+
+func (aw *addressWriter) SetReferenceGuarded(_ context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
+	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified
 	a, ok := aw.w.localAddrs[ref.AddressID]
 	if !ok {
+		if guarded {
+			return nil, repo.ErrGuardMismatch
+		}
 		return nil, repo.ErrNotFound
+	}
+	if expectProjectID != "" && a.ProjectID != expectProjectID {
+		return nil, repo.ErrGuardMismatch
+	}
+	if expectIPVersion != domain.IpVersionUnspecified && a.IpVersion != expectIPVersion {
+		return nil, repo.ErrGuardMismatch
 	}
 	a.Used = true
 	cp := *ref
