@@ -144,6 +144,7 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 		ReferrerName:    req.GetReferrerName(),
 		ExpectProjectID: req.GetExpectProjectId(),
 		ExpectIPVersion: domain.IpVersion(req.GetExpectIpVersion()),
+		ExpectAnycast:   req.GetExpectAnycast(),
 	})
 	if err != nil {
 		return nil, err

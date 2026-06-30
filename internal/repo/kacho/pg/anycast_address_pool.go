@@ -51,30 +51,70 @@ func (r *anycastAddressPoolReader) list(ctx context.Context, f kacho.AnycastAddr
 		return nil, "", err
 	}
 	args := []any{}
-	conds := []string{}
 	idx := 1
+
+	// Tenant-ветка: project-scoped пулы, опц. суженные именем / FGA-allowlist'ом /
+	// принадлежностью к сети (EXISTS pivot вместо JOIN, чтобы скомпоновать OR с
+	// is_default-веткой без потери строки без pivot) / scope / семейством.
+	tenantConds := []string{}
 	if f.ProjectID != "" {
-		conds = append(conds, fmt.Sprintf("p.project_id = $%d", idx))
+		tenantConds = append(tenantConds, fmt.Sprintf("p.project_id = $%d", idx))
 		args = append(args, f.ProjectID)
 		idx++
 	}
 	if f.Name != "" {
-		conds = append(conds, fmt.Sprintf("p.name = $%d", idx))
+		tenantConds = append(tenantConds, fmt.Sprintf("p.name = $%d", idx))
 		args = append(args, f.Name)
 		idx++
 	}
 	if allowedIDs != nil {
-		conds = append(conds, fmt.Sprintf("p.id = ANY($%d)", idx))
+		tenantConds = append(tenantConds, fmt.Sprintf("p.id = ANY($%d)", idx))
 		args = append(args, allowedIDs)
 		idx++
 	}
-	from := "anycast_address_pools p"
 	if f.NetworkID != "" {
-		from += " JOIN anycast_pool_network_attachments a ON a.pool_id = p.id"
-		conds = append(conds, fmt.Sprintf("a.network_id = $%d", idx))
+		tenantConds = append(tenantConds, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM anycast_pool_network_attachments a WHERE a.pool_id = p.id AND a.network_id = $%d)", idx))
 		args = append(args, f.NetworkID)
 		idx++
 	}
+	if f.Scope != domain.AnycastScopeUnspecified {
+		tenantConds = append(tenantConds, fmt.Sprintf("p.scope = $%d", idx))
+		args = append(args, helpers.AnycastScopeToText(f.Scope))
+		idx++
+	}
+	if f.IPVersion != domain.IpVersionUnspecified {
+		tenantConds = append(tenantConds, fmt.Sprintf("p.ip_version = $%d", idx))
+		args = append(args, helpers.IPVersionToText(f.IPVersion))
+		idx++
+	}
+
+	// Платформенный is_default-пул авто-доступен каждой сети без pivot-строки. В
+	// selector-контексте (задан NetworkID) сурфейсим его поверх tenant-ветки, чтобы
+	// клиент мог выбрать дефолт. Вне network-контекста is_default остаётся
+	// не-enumerable для тенанта. Scope/семейство дефолт-ветки совпадают с фильтром —
+	// surfacing согласован с DefaultForFamily (тем, что реально резолвится на аллокации).
+	tenantBranch := "TRUE"
+	if len(tenantConds) > 0 {
+		tenantBranch = helpers.JoinAnd(tenantConds)
+	}
+	branch := "(" + tenantBranch + ")"
+	if f.NetworkID != "" {
+		defConds := []string{"p.is_default"}
+		if f.Scope != domain.AnycastScopeUnspecified {
+			defConds = append(defConds, fmt.Sprintf("p.scope = $%d", idx))
+			args = append(args, helpers.AnycastScopeToText(f.Scope))
+			idx++
+		}
+		if f.IPVersion != domain.IpVersionUnspecified {
+			defConds = append(defConds, fmt.Sprintf("p.ip_version = $%d", idx))
+			args = append(args, helpers.IPVersionToText(f.IPVersion))
+			idx++
+		}
+		branch = "(" + branch + " OR (" + helpers.JoinAnd(defConds) + "))"
+	}
+
+	conds := []string{branch}
 	if p.PageToken != "" {
 		ts, id, derr := helpers.DecodePageToken(p.PageToken)
 		if derr != nil {
@@ -84,13 +124,10 @@ func (r *anycastAddressPoolReader) list(ctx context.Context, f kacho.AnycastAddr
 		args = append(args, ts, id)
 		idx += 2
 	}
-	where := ""
-	if len(conds) > 0 {
-		where = "WHERE " + helpers.JoinAnd(conds)
-	}
+	where := "WHERE " + helpers.JoinAnd(conds)
 	cols := "p." + helpers.AnycastAddressPoolCols
-	q := fmt.Sprintf(`SELECT %s FROM %s %s ORDER BY p.created_at ASC, p.id ASC LIMIT $%d`,
-		colsWithAlias(cols), from, where, idx)
+	q := fmt.Sprintf(`SELECT %s FROM anycast_address_pools p %s ORDER BY p.created_at ASC, p.id ASC LIMIT $%d`,
+		colsWithAlias(cols), where, idx)
 	args = append(args, pageSize+1)
 
 	rows, err := r.tx.Query(ctx, q, args...)

@@ -40,6 +40,7 @@ var vpcResourceTables = []struct {
 	{"vpc_security_group", "kacho_vpc.security_groups"},
 	{"vpc_gateway", "kacho_vpc.gateways"},
 	{"vpc_network_interface", "kacho_vpc.network_interfaces"},
+	{"vpc_anycast_address_pool", "kacho_vpc.anycast_address_pools"},
 }
 
 // FGAReconcileAdapter реализует reconciler.ResourceEnumerator (живые resource-строки

@@ -27,7 +27,7 @@ import (
 // для referrer-tracking. `repo.AddressRepo` ⊇ этого интерфейса.
 type Repo interface {
 	SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
-	SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error)
+	SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion, expectAnycast bool) (*domain.AddressReference, error)
 	MarkEphemeralInUse(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error)
 	ClearReference(ctx context.Context, addressID string) error
 	GetReference(ctx context.Context, addressID string) (*domain.AddressReference, error)
@@ -47,12 +47,13 @@ func NewService(repo Repo) *Service {
 
 // SetAddressReferenceReq — параметры привязки referrer'а к адресу.
 //
-// ExpectProjectID / ExpectIPVersion — server-side BYO ownership/family-guard для
-// consumer'ов, приносящих «свой» Address (напр. nlb BYO-VIP). Адрес обязан
-// принадлежать ожидаемому проекту и семейству — иначе generic InvalidArgument
-// (без подтверждения чужого ownership/существования, анти-oracle). Пустые
-// значения отключают соответствующую проверку (back-compat: consumer'ы без guard'а,
-// напр. compute NIC-attach).
+// ExpectProjectID / ExpectIPVersion / ExpectAnycast — server-side BYO
+// ownership/family/anycast-guard для consumer'ов, приносящих «свой» Address (напр.
+// nlb BYO-VIP). Адрес обязан принадлежать ожидаемому проекту и семейству, а
+// ExpectAnycast=true дополнительно требует, чтобы адрес был anycast — иначе generic
+// InvalidArgument (без подтверждения чужого ownership/существования, анти-oracle).
+// Пустые значения / ExpectAnycast==false отключают соответствующую проверку
+// (back-compat: consumer'ы без guard'а, напр. compute NIC-attach).
 type SetAddressReferenceReq struct {
 	AddressID       string
 	ReferrerType    string
@@ -60,6 +61,7 @@ type SetAddressReferenceReq struct {
 	ReferrerName    string
 	ExpectProjectID string
 	ExpectIPVersion domain.IpVersion
+	ExpectAnycast   bool
 }
 
 // errIllegalAddressID — generic InvalidArgument для BYO-guard: не подтверждает
@@ -69,11 +71,13 @@ var errIllegalAddressID = status.Error(codes.InvalidArgument, "Illegal argument 
 // SetAddressReference upsert'ит referrer-row адреса (кто его использует) и
 // выставляет Address.used=true. Идемпотентно. Sync RPC (не Operation).
 //
-// BYO ownership/family-guard (ExpectProjectID/ExpectIPVersion) энфорсится
-// server-side в рамках used_by-CAS: проверка ownership/family — immutable-колонки
-// Address — вложена в то же атомарное CAS-условие (без TOCTOU). Несовпадение →
-// generic InvalidArgument "Illegal argument addressId" (без раскрытия чужого
-// ownership/существования). Пустые expect_* → проверка пропускается.
+// BYO ownership/family/anycast-guard (ExpectProjectID/ExpectIPVersion/ExpectAnycast)
+// энфорсится server-side в рамках used_by-CAS: проверка ownership/family/anycast —
+// immutable-колонки Address — вложена в то же атомарное CAS-условие (без TOCTOU).
+// ExpectAnycast=true требует anycast-адрес (закрывает привязку внешнего публичного
+// Address как VIP к INTERNAL-LB). Несовпадение → generic InvalidArgument "Illegal
+// argument addressId" (без раскрытия чужого ownership/существования). Пустые
+// expect_* / ExpectAnycast==false → проверка пропускается.
 //
 // Errors: InvalidArgument (пустой/malformed address_id, пустой referrer_type/id,
 // guard-mismatch), NotFound (address не существует, без guard'а),
@@ -93,7 +97,7 @@ func (s *Service) SetAddressReference(ctx context.Context, req SetAddressReferen
 		ReferrerType: req.ReferrerType,
 		ReferrerID:   req.ReferrerID,
 		ReferrerName: req.ReferrerName,
-	}, req.ExpectProjectID, req.ExpectIPVersion)
+	}, req.ExpectProjectID, req.ExpectIPVersion, req.ExpectAnycast)
 	if err != nil {
 		if errors.Is(err, repo.ErrGuardMismatch) {
 			return nil, errIllegalAddressID

@@ -92,8 +92,14 @@ type ListAnycastAddressPoolsRequest struct {
 	// A filter expression that filters resources listed in the response.
 	// Currently you can filter only on the [AnycastAddressPool.name] field.
 	Filter string `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
-	// Optional: list only pools attached to this network.
-	NetworkId     string `protobuf:"bytes,5,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	// Optional: list only pools attached to this network. When set, the platform
+	// is_default pool (auto-available to every network without an attachment row)
+	// is also surfaced — so the selector can offer the INTERNAL default.
+	NetworkId string `protobuf:"bytes,5,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	// Optional: filter pools by reachability scope (phase 1 — only INTERNAL).
+	Scope AnycastAddressPool_AnycastScope `protobuf:"varint,6,opt,name=scope,proto3,enum=kacho.cloud.vpc.v1.AnycastAddressPool_AnycastScope" json:"scope,omitempty"`
+	// Optional: filter pools by IP version (IPV4 / IPV6).
+	IpVersion     Address_IpVersion `protobuf:"varint,7,opt,name=ip_version,json=ipVersion,proto3,enum=kacho.cloud.vpc.v1.Address_IpVersion" json:"ip_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,6 +167,20 @@ func (x *ListAnycastAddressPoolsRequest) GetNetworkId() string {
 		return x.NetworkId
 	}
 	return ""
+}
+
+func (x *ListAnycastAddressPoolsRequest) GetScope() AnycastAddressPool_AnycastScope {
+	if x != nil {
+		return x.Scope
+	}
+	return AnycastAddressPool_ANYCAST_SCOPE_UNSPECIFIED
+}
+
+func (x *ListAnycastAddressPoolsRequest) GetIpVersion() Address_IpVersion {
+	if x != nil {
+		return x.IpVersion
+	}
+	return Address_IP_VERSION_UNSPECIFIED
 }
 
 type ListAnycastAddressPoolsResponse struct {
@@ -808,7 +828,7 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"\n" +
 	"5kacho/cloud/vpc/v1/anycast_address_pool_service.proto\x12\x12kacho.cloud.vpc.v1\x1a\x1cgoogle/api/annotations.proto\x1a google/protobuf/field_mask.proto\x1a\x1fkacho/cloud/api/operation.proto\x1a%kacho/cloud/operation/operation.proto\x1a\x1ckacho/cloud/validation.proto\x1a kacho/cloud/vpc/v1/address.proto\x1a-kacho/cloud/vpc/v1/anycast_address_pool.proto\x1a&kacho/iam/authz/v1/authz_options.proto\"c\n" +
 	"\x1cGetAnycastAddressPoolRequest\x12C\n" +
-	"\x17anycast_address_pool_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\x14anycastAddressPoolId\"\xe1\x01\n" +
+	"\x17anycast_address_pool_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\x14anycastAddressPoolId\"\xf2\x02\n" +
 	"\x1eListAnycastAddressPoolsRequest\x12+\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB\f\xe8\xc71\x01\x8a\xc81\x04<=50R\tprojectId\x12'\n" +
@@ -818,7 +838,10 @@ const file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tB\t\x8a\xc81\x05<=100R\tpageToken\x12\x16\n" +
 	"\x06filter\x18\x04 \x01(\tR\x06filter\x12'\n" +
 	"\n" +
-	"network_id\x18\x05 \x01(\tB\b\x8a\xc81\x04<=50R\tnetworkId\"\xa5\x01\n" +
+	"network_id\x18\x05 \x01(\tB\b\x8a\xc81\x04<=50R\tnetworkId\x12I\n" +
+	"\x05scope\x18\x06 \x01(\x0e23.kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScopeR\x05scope\x12D\n" +
+	"\n" +
+	"ip_version\x18\a \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\tipVersion\"\xa5\x01\n" +
 	"\x1fListAnycastAddressPoolsResponse\x12Z\n" +
 	"\x15anycast_address_pools\x18\x01 \x03(\v2&.kacho.cloud.vpc.v1.AnycastAddressPoolR\x13anycastAddressPools\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xcd\x04\n" +
@@ -922,38 +945,40 @@ var file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_goTypes = []any{
 	(*DetachNetworkMetadata)(nil),            // 12: kacho.cloud.vpc.v1.DetachNetworkMetadata
 	nil,                                      // 13: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.LabelsEntry
 	nil,                                      // 14: kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.LabelsEntry
-	(*AnycastAddressPool)(nil),               // 15: kacho.cloud.vpc.v1.AnycastAddressPool
-	(AnycastAddressPool_AnycastScope)(0),     // 16: kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScope
-	(Address_IpVersion)(0),                   // 17: kacho.cloud.vpc.v1.Address.IpVersion
+	(AnycastAddressPool_AnycastScope)(0),     // 15: kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScope
+	(Address_IpVersion)(0),                   // 16: kacho.cloud.vpc.v1.Address.IpVersion
+	(*AnycastAddressPool)(nil),               // 17: kacho.cloud.vpc.v1.AnycastAddressPool
 	(*fieldmaskpb.FieldMask)(nil),            // 18: google.protobuf.FieldMask
 	(*operation.Operation)(nil),              // 19: kacho.cloud.operation.Operation
 }
 var file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_depIdxs = []int32{
-	15, // 0: kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse.anycast_address_pools:type_name -> kacho.cloud.vpc.v1.AnycastAddressPool
-	13, // 1: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.labels:type_name -> kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.LabelsEntry
-	16, // 2: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.scope:type_name -> kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScope
-	17, // 3: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.ip_version:type_name -> kacho.cloud.vpc.v1.Address.IpVersion
-	18, // 4: kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.update_mask:type_name -> google.protobuf.FieldMask
-	14, // 5: kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.labels:type_name -> kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.LabelsEntry
-	0,  // 6: kacho.cloud.vpc.v1.AnycastAddressPoolService.Get:input_type -> kacho.cloud.vpc.v1.GetAnycastAddressPoolRequest
-	1,  // 7: kacho.cloud.vpc.v1.AnycastAddressPoolService.List:input_type -> kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest
-	3,  // 8: kacho.cloud.vpc.v1.AnycastAddressPoolService.Create:input_type -> kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest
-	5,  // 9: kacho.cloud.vpc.v1.AnycastAddressPoolService.Update:input_type -> kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest
-	7,  // 10: kacho.cloud.vpc.v1.AnycastAddressPoolService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteAnycastAddressPoolRequest
-	9,  // 11: kacho.cloud.vpc.v1.AnycastAddressPoolService.AttachNetwork:input_type -> kacho.cloud.vpc.v1.AttachNetworkRequest
-	11, // 12: kacho.cloud.vpc.v1.AnycastAddressPoolService.DetachNetwork:input_type -> kacho.cloud.vpc.v1.DetachNetworkRequest
-	15, // 13: kacho.cloud.vpc.v1.AnycastAddressPoolService.Get:output_type -> kacho.cloud.vpc.v1.AnycastAddressPool
-	2,  // 14: kacho.cloud.vpc.v1.AnycastAddressPoolService.List:output_type -> kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse
-	19, // 15: kacho.cloud.vpc.v1.AnycastAddressPoolService.Create:output_type -> kacho.cloud.operation.Operation
-	19, // 16: kacho.cloud.vpc.v1.AnycastAddressPoolService.Update:output_type -> kacho.cloud.operation.Operation
-	19, // 17: kacho.cloud.vpc.v1.AnycastAddressPoolService.Delete:output_type -> kacho.cloud.operation.Operation
-	19, // 18: kacho.cloud.vpc.v1.AnycastAddressPoolService.AttachNetwork:output_type -> kacho.cloud.operation.Operation
-	19, // 19: kacho.cloud.vpc.v1.AnycastAddressPoolService.DetachNetwork:output_type -> kacho.cloud.operation.Operation
-	13, // [13:20] is the sub-list for method output_type
-	6,  // [6:13] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	15, // 0: kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest.scope:type_name -> kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScope
+	16, // 1: kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest.ip_version:type_name -> kacho.cloud.vpc.v1.Address.IpVersion
+	17, // 2: kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse.anycast_address_pools:type_name -> kacho.cloud.vpc.v1.AnycastAddressPool
+	13, // 3: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.labels:type_name -> kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.LabelsEntry
+	15, // 4: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.scope:type_name -> kacho.cloud.vpc.v1.AnycastAddressPool.AnycastScope
+	16, // 5: kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest.ip_version:type_name -> kacho.cloud.vpc.v1.Address.IpVersion
+	18, // 6: kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.update_mask:type_name -> google.protobuf.FieldMask
+	14, // 7: kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.labels:type_name -> kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest.LabelsEntry
+	0,  // 8: kacho.cloud.vpc.v1.AnycastAddressPoolService.Get:input_type -> kacho.cloud.vpc.v1.GetAnycastAddressPoolRequest
+	1,  // 9: kacho.cloud.vpc.v1.AnycastAddressPoolService.List:input_type -> kacho.cloud.vpc.v1.ListAnycastAddressPoolsRequest
+	3,  // 10: kacho.cloud.vpc.v1.AnycastAddressPoolService.Create:input_type -> kacho.cloud.vpc.v1.CreateAnycastAddressPoolRequest
+	5,  // 11: kacho.cloud.vpc.v1.AnycastAddressPoolService.Update:input_type -> kacho.cloud.vpc.v1.UpdateAnycastAddressPoolRequest
+	7,  // 12: kacho.cloud.vpc.v1.AnycastAddressPoolService.Delete:input_type -> kacho.cloud.vpc.v1.DeleteAnycastAddressPoolRequest
+	9,  // 13: kacho.cloud.vpc.v1.AnycastAddressPoolService.AttachNetwork:input_type -> kacho.cloud.vpc.v1.AttachNetworkRequest
+	11, // 14: kacho.cloud.vpc.v1.AnycastAddressPoolService.DetachNetwork:input_type -> kacho.cloud.vpc.v1.DetachNetworkRequest
+	17, // 15: kacho.cloud.vpc.v1.AnycastAddressPoolService.Get:output_type -> kacho.cloud.vpc.v1.AnycastAddressPool
+	2,  // 16: kacho.cloud.vpc.v1.AnycastAddressPoolService.List:output_type -> kacho.cloud.vpc.v1.ListAnycastAddressPoolsResponse
+	19, // 17: kacho.cloud.vpc.v1.AnycastAddressPoolService.Create:output_type -> kacho.cloud.operation.Operation
+	19, // 18: kacho.cloud.vpc.v1.AnycastAddressPoolService.Update:output_type -> kacho.cloud.operation.Operation
+	19, // 19: kacho.cloud.vpc.v1.AnycastAddressPoolService.Delete:output_type -> kacho.cloud.operation.Operation
+	19, // 20: kacho.cloud.vpc.v1.AnycastAddressPoolService.AttachNetwork:output_type -> kacho.cloud.operation.Operation
+	19, // 21: kacho.cloud.vpc.v1.AnycastAddressPoolService.DetachNetwork:output_type -> kacho.cloud.operation.Operation
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_kacho_cloud_vpc_v1_anycast_address_pool_service_proto_init() }

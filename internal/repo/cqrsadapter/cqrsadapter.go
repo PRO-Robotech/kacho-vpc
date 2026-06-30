@@ -185,15 +185,15 @@ func (a *AddressAdapter) SetReference(ctx context.Context, ref *domain.AddressRe
 	return out, nil
 }
 
-// SetReferenceGuarded — SetReference с BYO ownership/family-guard в CAS
+// SetReferenceGuarded — SetReference с BYO ownership/family/anycast-guard в CAS
 // WHERE-условии (атомарно). Свежая writer-TX. Outbox НЕ emit'ит.
-func (a *AddressAdapter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
+func (a *AddressAdapter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion, expectAnycast bool) (*domain.AddressReference, error) {
 	w, err := a.repo.Writer(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer w.Abort()
-	out, err := w.Addresses().SetReferenceGuarded(ctx, ref, expectProjectID, expectIPVersion)
+	out, err := w.Addresses().SetReferenceGuarded(ctx, ref, expectProjectID, expectIPVersion, expectAnycast)
 	if err != nil {
 		return nil, err
 	}

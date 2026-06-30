@@ -158,6 +158,12 @@ message SetAddressReferenceRequest {
   // (back-compat: existing consumer'ы, не передающие guard).
   string expect_project_id = 5;
   Address.IpVersion expect_ip_version = 6;
+
+  // expect_anycast — server-side CAS-guard: при true привязка проходит только если
+  // адрес является anycast (anycast-spec присутствует). Закрывает дыру, когда
+  // внешний публичный Address ошибочно привязывался как VIP к INTERNAL-LB. mismatch
+  // → InvalidArgument (generic, анти-oracle). false = без проверки (back-compat).
+  bool expect_anycast = 7;
 }
 
 message ClearAddressReferenceRequest {

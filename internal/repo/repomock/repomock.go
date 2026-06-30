@@ -373,16 +373,17 @@ func (r *AddressRepo) GetByValue(_ context.Context, ext, intl, _ string) (*kacho
 // CAS-семантика: если уже есть referrer-row с ДРУГИМ referrer_id →
 // ErrFailedPrecondition (как в repo.AddressRepo.SetReference).
 func (r *AddressRepo) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
-	return r.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified)
+	return r.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified, false)
 }
 
-// SetReferenceGuarded — SetReference с BYO ownership/family-guard. Чужой проект/
-// семейство (либо отсутствие адреса под guard'ом) → ErrGuardMismatch (анти-oracle);
-// пустые expect_* отключают проверку (back-compat: NotFound на отсутствующий адрес).
-func (r *AddressRepo) SetReferenceGuarded(_ context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
+// SetReferenceGuarded — SetReference с BYO ownership/family/anycast-guard. Чужой
+// проект/семейство/не-anycast (либо отсутствие адреса под guard'ом) →
+// ErrGuardMismatch (анти-oracle); пустые expect_* / expectAnycast==false отключают
+// проверку (back-compat: NotFound на отсутствующий адрес).
+func (r *AddressRepo) SetReferenceGuarded(_ context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion, expectAnycast bool) (*domain.AddressReference, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified
+	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified || expectAnycast
 	a, ok := r.data[ref.AddressID]
 	if !ok {
 		if guarded {
@@ -394,6 +395,9 @@ func (r *AddressRepo) SetReferenceGuarded(_ context.Context, ref *domain.Address
 		return nil, repo.ErrGuardMismatch
 	}
 	if expectIPVersion != domain.IpVersionUnspecified && a.IpVersion != expectIPVersion {
+		return nil, repo.ErrGuardMismatch
+	}
+	if expectAnycast && a.Anycast == nil {
 		return nil, repo.ErrGuardMismatch
 	}
 	if r.refs == nil {

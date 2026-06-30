@@ -272,8 +272,13 @@ type SetAddressReferenceRequest struct {
 	// (back-compat: existing consumer'ы, не передающие guard).
 	ExpectProjectId string            `protobuf:"bytes,5,opt,name=expect_project_id,json=expectProjectId,proto3" json:"expect_project_id,omitempty"`
 	ExpectIpVersion Address_IpVersion `protobuf:"varint,6,opt,name=expect_ip_version,json=expectIpVersion,proto3,enum=kacho.cloud.vpc.v1.Address_IpVersion" json:"expect_ip_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// expect_anycast — server-side CAS-guard: при true привязка проходит только если
+	// адрес является anycast (anycast-spec присутствует). Закрывает дыру, когда
+	// внешний публичный Address ошибочно привязывался как VIP к INTERNAL-LB. mismatch
+	// → InvalidArgument (generic, анти-oracle). false = без проверки (back-compat).
+	ExpectAnycast bool `protobuf:"varint,7,opt,name=expect_anycast,json=expectAnycast,proto3" json:"expect_anycast,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetAddressReferenceRequest) Reset() {
@@ -346,6 +351,13 @@ func (x *SetAddressReferenceRequest) GetExpectIpVersion() Address_IpVersion {
 		return x.ExpectIpVersion
 	}
 	return Address_IP_VERSION_UNSPECIFIED
+}
+
+func (x *SetAddressReferenceRequest) GetExpectAnycast() bool {
+	if x != nil {
+		return x.ExpectAnycast
+	}
+	return false
 }
 
 type ClearAddressReferenceRequest struct {
@@ -599,7 +611,7 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"referrerId\x12#\n" +
 	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12;\n" +
 	"\vattached_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"attachedAt\"\xa5\x02\n" +
+	"attachedAt\"\xcc\x02\n" +
 	"\x1aSetAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\x12#\n" +
@@ -608,7 +620,8 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"referrerId\x12#\n" +
 	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12*\n" +
 	"\x11expect_project_id\x18\x05 \x01(\tR\x0fexpectProjectId\x12Q\n" +
-	"\x11expect_ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\x0fexpectIpVersion\"=\n" +
+	"\x11expect_ip_version\x18\x06 \x01(\x0e2%.kacho.cloud.vpc.v1.Address.IpVersionR\x0fexpectIpVersion\x12%\n" +
+	"\x0eexpect_anycast\x18\a \x01(\bR\rexpectAnycast\"=\n" +
 	"\x1cClearAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\"\x1f\n" +

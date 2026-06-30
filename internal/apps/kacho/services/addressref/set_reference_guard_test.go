@@ -36,6 +36,63 @@ func seedGuardAddr(ar *repomock.AddressRepo, projectID string, family domain.IpV
 	return rec
 }
 
+// seedExternalGuardAddr — внешний публичный (non-anycast) Address: Anycast == nil.
+func seedExternalGuardAddr(ar *repomock.AddressRepo, projectID string, family domain.IpVersion) *kachorepo.AddressRecord {
+	rec := &kachorepo.AddressRecord{Address: domain.Address{
+		ID:           ids.NewID(ids.PrefixAddress),
+		ProjectID:    projectID,
+		Type:         domain.AddressTypeExternal,
+		IpVersion:    family,
+		ExternalIpv4: &domain.ExternalIpv4Spec{Address: "203.0.113.50"},
+	}}
+	ar.Seed(rec)
+	return rec
+}
+
+// anycast guard: non-anycast адрес под expect_anycast=true → generic InvalidArgument
+// (закрывает привязку внешнего публичного Address как VIP к INTERNAL-LB).
+func TestSetAddressReference_Guard_NonAnycastRejected(t *testing.T) {
+	ar := repomock.NewAddressRepo()
+	svc := NewService(ar)
+	a := seedExternalGuardAddr(ar, "prj-A", domain.IpVersionIPv4)
+
+	_, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
+		AddressID:       a.ID,
+		ReferrerType:    "nlb_load_balancer",
+		ReferrerID:      "lb000000000000001",
+		ExpectProjectID: "prj-A",
+		ExpectIPVersion: domain.IpVersionIPv4,
+		ExpectAnycast:   true,
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Equal(t, "Illegal argument addressId", st.Message())
+
+	got, _ := ar.Get(context.Background(), a.ID)
+	assert.False(t, got.Used, "non-anycast под expect_anycast → bind не состоялся")
+}
+
+// anycast guard: anycast-адрес под expect_anycast=true → bind проходит.
+func TestSetAddressReference_Guard_AnycastOK(t *testing.T) {
+	ar := repomock.NewAddressRepo()
+	svc := NewService(ar)
+	a := seedGuardAddr(ar, "prj-A", domain.IpVersionIPv4) // anycast-адрес
+
+	ref, err := svc.SetAddressReference(context.Background(), SetAddressReferenceReq{
+		AddressID:       a.ID,
+		ReferrerType:    "nlb_load_balancer",
+		ReferrerID:      "lb000000000000001",
+		ExpectProjectID: "prj-A",
+		ExpectIPVersion: domain.IpVersionIPv4,
+		ExpectAnycast:   true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, a.ID, ref.AddressID)
+	got, _ := ar.Get(context.Background(), a.ID)
+	assert.True(t, got.Used)
+}
+
 // happy: совпадающие expect_project_id/expect_ip_version → bind проходит.
 func TestSetAddressReference_Guard_OK(t *testing.T) {
 	ar := repomock.NewAddressRepo()

@@ -74,6 +74,8 @@ func (h *Handler) List(ctx context.Context, req *vpcv1.ListAnycastAddressPoolsRe
 		ProjectID: req.ProjectId,
 		Name:      req.Filter,
 		NetworkID: req.NetworkId,
+		Scope:     scopeFromProto(req.Scope),
+		IPVersion: ipVersionFromProto(req.IpVersion),
 	}, Pagination{
 		PageToken: req.PageToken,
 		PageSize:  req.PageSize,

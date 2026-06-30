@@ -61,7 +61,7 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: okID, ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000001",
-		}, "prj-A", domain.IpVersionIPv4)
+		}, "prj-A", domain.IpVersionIPv4, false)
 		return e
 	}))
 	rd, err := r.Reader(ctx)
@@ -76,7 +76,7 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: foreignID, ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000001",
-		}, "prj-A", domain.IpVersionIPv4)
+		}, "prj-A", domain.IpVersionIPv4, false)
 		return e
 	})
 	require.ErrorIs(t, err, helpers.ErrGuardMismatch, "чужой проект → ErrGuardMismatch")
@@ -92,7 +92,7 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: famID, ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000001",
-		}, "prj-A", domain.IpVersionIPv6)
+		}, "prj-A", domain.IpVersionIPv6, false)
 		return e
 	})
 	require.ErrorIs(t, err, helpers.ErrGuardMismatch, "чужое семейство → ErrGuardMismatch")
@@ -101,7 +101,7 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: "e9bnonexistent00001", ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000001",
-		}, "prj-A", domain.IpVersionIPv4)
+		}, "prj-A", domain.IpVersionIPv4, false)
 		return e
 	})
 	require.ErrorIs(t, err, helpers.ErrGuardMismatch, "несуществующий под guard'ом → ErrGuardMismatch (не NotFound)")
@@ -110,7 +110,7 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: "e9bnonexistent00002", ReferrerType: "compute_instance", ReferrerID: "x",
-		}, "", domain.IpVersionUnspecified)
+		}, "", domain.IpVersionUnspecified, false)
 		return e
 	})
 	require.ErrorIs(t, err, helpers.ErrNotFound, "без guard'а несуществующий → ErrNotFound")
@@ -120,13 +120,13 @@ func TestIntegration_AddressRepo_SetReferenceGuarded(t *testing.T) {
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: casID, ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000001",
-		}, "prj-A", domain.IpVersionIPv4)
+		}, "prj-A", domain.IpVersionIPv4, false)
 		return e
 	}))
 	err = legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Addresses().SetReferenceGuarded(ctx, &domain.AddressReference{
 			AddressID: casID, ReferrerType: "nlb_load_balancer", ReferrerID: "lb000000000000002",
-		}, "prj-A", domain.IpVersionIPv4)
+		}, "prj-A", domain.IpVersionIPv4, false)
 		return e
 	})
 	require.ErrorIs(t, err, helpers.ErrFailedPrecondition,

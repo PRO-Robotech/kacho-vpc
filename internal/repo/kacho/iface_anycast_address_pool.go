@@ -11,11 +11,15 @@ import (
 
 // AnycastAddressPoolFilter — фильтр списка AnycastAddressPool. Пул project-scoped
 // (tenant-facing), поэтому первичный фильтр — ProjectID (закрывает cross-project
-// enumeration; is_default-пул живёт в платформенном project и тенанту не виден).
+// enumeration). is_default-пул живёт в платформенном project; он сурфейсится в
+// результат ТОЛЬКО когда задан NetworkID (selector-контекст), т.к. is_default
+// авто-доступен каждой сети без pivot-строки.
 type AnycastAddressPoolFilter struct {
-	ProjectID string // обязателен на List
-	Name      string // exact-match по имени (для uniqueness-precheck)
-	NetworkID string // опц.: только пулы, приаттаченные к этой сети
+	ProjectID string              // обязателен на List
+	Name      string              // exact-match по имени (для uniqueness-precheck)
+	NetworkID string              // опц.: пулы, приаттаченные к этой сети, ∪ платформенный is_default
+	Scope     domain.AnycastScope // опц.: фильтр по scope (Unspecified → не фильтруем)
+	IPVersion domain.IpVersion    // опц.: фильтр по семейству (Unspecified → не фильтруем)
 }
 
 // AnycastAddressPoolReaderIface — read-операции над AnycastAddressPool в

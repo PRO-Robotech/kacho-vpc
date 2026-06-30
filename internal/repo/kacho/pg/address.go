@@ -754,27 +754,31 @@ func (w *addressWriter) FreeExternalIPv6(ctx context.Context, addressID string) 
 // Конфликт по адресу с ЧУЖИМ referrer'ом → ErrFailedPrecondition. Idempotent
 // re-attach к тому же referrer проходит.
 func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressReference) (*domain.AddressReference, error) {
-	return w.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified)
+	return w.SetReferenceGuarded(ctx, ref, "", domain.IpVersionUnspecified, false)
 }
 
-// SetReferenceGuarded — SetReference с server-side BYO ownership/family-guard,
-// вложенным в CAS WHERE-условие: ownership/family — immutable-колонки Address,
-// поэтому проверка идёт тем же single-statement UPDATE, что и used_by-CAS (без
-// TOCTOU read-then-update). expectProjectID=="" и expectIPVersion==Unspecified
-// отключают соответствующую проверку (back-compat для consumer'ов без guard'а).
+// SetReferenceGuarded — SetReference с server-side BYO ownership/family/anycast-
+// guard, вложенным в CAS WHERE-условие: ownership/family/признак anycast — все
+// immutable-колонки Address (anycast jsonb ≠ null ⟺ адрес anycast), поэтому
+// проверка идёт тем же single-statement UPDATE, что и used_by-CAS (без TOCTOU
+// read-then-update). expectProjectID=="" / expectIPVersion==Unspecified /
+// expectAnycast==false отключают соответствующую проверку (back-compat для
+// consumer'ов без guard'а). expectAnycast=true требует anycast-адрес — закрывает
+// привязку внешнего публичного Address как VIP к INTERNAL-LB.
 //
 // 0 строк из первого UPDATE под guard'ом → ErrGuardMismatch (чужой проект/
-// семейство ЛИБО адрес не существует — не различаем, чтобы не раскрыть чужой
-// ownership/существование, анти-oracle). Без guard'а 0 строк → ErrNotFound.
+// семейство/не-anycast ЛИБО адрес не существует — не различаем, чтобы не раскрыть
+// чужой ownership/существование, анти-oracle). Без guard'а 0 строк → ErrNotFound.
 // Конфликт used_by с ЧУЖИМ referrer'ом → ErrFailedPrecondition.
-func (w *addressWriter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion) (*domain.AddressReference, error) {
-	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified
+func (w *addressWriter) SetReferenceGuarded(ctx context.Context, ref *domain.AddressReference, expectProjectID string, expectIPVersion domain.IpVersion, expectAnycast bool) (*domain.AddressReference, error) {
+	guarded := expectProjectID != "" || expectIPVersion != domain.IpVersionUnspecified || expectAnycast
 	tag, err := w.tx.Exec(ctx, `
 		UPDATE addresses SET used = true
 		 WHERE id = $1
 		   AND ($2 = '' OR project_id = $2)
-		   AND ($3 = 0 OR ip_version = $3)`,
-		ref.AddressID, expectProjectID, int32(expectIPVersion))
+		   AND ($3 = 0 OR ip_version = $3)
+		   AND ($4 = false OR anycast IS NOT NULL)`,
+		ref.AddressID, expectProjectID, int32(expectIPVersion), expectAnycast)
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Address", ref.AddressID)
 	}

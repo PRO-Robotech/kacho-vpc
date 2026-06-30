@@ -171,8 +171,16 @@ message ListAnycastAddressPoolsRequest {
   // Currently you can filter only on the [AnycastAddressPool.name] field.
   string filter = 4;
 
-  // Optional: list only pools attached to this network.
+  // Optional: list only pools attached to this network. When set, the platform
+  // is_default pool (auto-available to every network without an attachment row)
+  // is also surfaced — so the selector can offer the INTERNAL default.
   string network_id = 5 [(length) = "<=50"];
+
+  // Optional: filter pools by reachability scope (phase 1 — only INTERNAL).
+  AnycastAddressPool.AnycastScope scope = 6;
+
+  // Optional: filter pools by IP version (IPV4 / IPV6).
+  Address.IpVersion ip_version = 7;
 }
 
 message ListAnycastAddressPoolsResponse {
