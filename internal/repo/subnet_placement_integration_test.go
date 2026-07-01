@@ -92,6 +92,60 @@ func TestIntegration_Subnet_Placement_CheckRejectsInconsistent(t *testing.T) {
 	assert.True(t, errors.Is(err, helpers.ErrInvalidArg), "CHECK violation must map to ErrInvalidArg, got %v", err)
 }
 
+// TestIntegration_Subnet_Placement_ListFilterByPlacement — server-side
+// `filter=placement_type="REGIONAL"` возвращает только региональные подсети
+// (whitelist фильтра включает placement_type; SQL-предикат параметризован).
+func TestIntegration_Subnet_Placement_ListFilterByPlacement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	dsn := setupTestDB(t)
+	pool, err := coredb.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+	r := kachopg.New(pool, nil)
+	defer r.Close()
+
+	netID := ids.NewID(ids.PrefixNetwork)
+	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		if _, e := w.Networks().Insert(ctx, &domain.Network{ID: netID, ProjectID: "f-flt", Name: domain.RcNameVPC("n-flt")}); e != nil {
+			return e
+		}
+		if _, e := w.Subnets().Insert(ctx, &domain.Subnet{
+			ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-flt", Name: domain.RcNameVPC("s-zonal"),
+			NetworkID: netID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
+			V4CidrBlocks: []string{"10.0.0.0/24"},
+		}); e != nil {
+			return e
+		}
+		_, e := w.Subnets().Insert(ctx, &domain.Subnet{
+			ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-flt", Name: domain.RcNameVPC("s-regional"),
+			NetworkID: netID, PlacementType: domain.PlacementRegional, RegionID: "region-1",
+			V4CidrBlocks: []string{"192.168.0.0/24"},
+		})
+		return e
+	}))
+
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+
+	regional, _, err := rd.Subnets().List(ctx,
+		kacho.SubnetFilter{ProjectID: "f-flt", Filter: `placement_type="REGIONAL"`},
+		kacho.Pagination{})
+	require.NoError(t, err)
+	require.Len(t, regional, 1, "filter placement_type=REGIONAL must return exactly the regional subnet")
+	assert.Equal(t, domain.PlacementRegional, regional[0].PlacementType)
+
+	zonal, _, err := rd.Subnets().List(ctx,
+		kacho.SubnetFilter{ProjectID: "f-flt", Filter: `placement_type="ZONAL"`},
+		kacho.Pagination{})
+	require.NoError(t, err)
+	require.Len(t, zonal, 1)
+	assert.Equal(t, domain.PlacementZonal, zonal[0].PlacementType)
+}
+
 // TestIntegration_Subnet_Placement_RegionalOverlapsZonal_PerNetworkExclude —
 // REGIONAL-подсеть с CIDR, пересекающимся с существующей ZONAL-подсетью той же
 // сети, отвергается per-network EXCLUDE (subnet_cidr_blocks). Подтверждает: единый
