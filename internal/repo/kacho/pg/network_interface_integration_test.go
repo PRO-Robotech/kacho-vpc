@@ -32,7 +32,7 @@ func insertSubnetForNIC(t *testing.T, ctx context.Context, dsn string) (projectI
 	_, err = pool.Exec(ctx, `INSERT INTO networks(id, project_id, name, description, labels) VALUES ($1,$2,$3,$4,'{}'::jsonb)`,
 		netID, projectID, "net-nic", "")
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO subnets(id, project_id, network_id, zone_id, name, description, labels, v4_cidr_blocks, v6_cidr_blocks) VALUES ($1,$2,$3,$4,$5,$6,'{}'::jsonb, ARRAY['10.0.0.0/24']::text[], ARRAY[]::text[])`,
+	_, err = pool.Exec(ctx, `INSERT INTO subnets(id, project_id, network_id, zone_id, placement_type, name, description, labels, v4_cidr_blocks, v6_cidr_blocks) VALUES ($1,$2,$3,$4,'ZONAL',$5,$6,'{}'::jsonb, ARRAY['10.0.0.0/24']::text[], ARRAY[]::text[])`,
 		subnetID, projectID, netID, "zone-a", "sn-nic", "")
 	require.NoError(t, err)
 	return projectID, subnetID
