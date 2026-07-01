@@ -189,7 +189,12 @@ type AddressReference struct {
 	// Имя ресурса-владельца на момент привязки (best-effort; может устареть).
 	ReferrerName string `protobuf:"bytes,4,opt,name=referrer_name,json=referrerName,proto3" json:"referrer_name,omitempty"`
 	// Когда привязка установлена.
-	AttachedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=attached_at,json=attachedAt,proto3" json:"attached_at,omitempty"`
+	AttachedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=attached_at,json=attachedAt,proto3" json:"attached_at,omitempty"`
+	// owned — referrer владеет адресом (lifecycle адреса связан с referrer'ом), а
+	// не просто ссылается. true — адрес заказан referrer'ом неявно (release =
+	// ClearReference + Delete); false — адрес создан tenant'ом заранее и
+	// залинкован (release = только ClearReference, адрес остается).
+	Owned         bool `protobuf:"varint,6,opt,name=owned,proto3" json:"owned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -259,12 +264,22 @@ func (x *AddressReference) GetAttachedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *AddressReference) GetOwned() bool {
+	if x != nil {
+		return x.Owned
+	}
+	return false
+}
+
 type SetAddressReferenceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AddressId     string                 `protobuf:"bytes,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
-	ReferrerType  string                 `protobuf:"bytes,2,opt,name=referrer_type,json=referrerType,proto3" json:"referrer_type,omitempty"`
-	ReferrerId    string                 `protobuf:"bytes,3,opt,name=referrer_id,json=referrerId,proto3" json:"referrer_id,omitempty"`
-	ReferrerName  string                 `protobuf:"bytes,4,opt,name=referrer_name,json=referrerName,proto3" json:"referrer_name,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	AddressId    string                 `protobuf:"bytes,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
+	ReferrerType string                 `protobuf:"bytes,2,opt,name=referrer_type,json=referrerType,proto3" json:"referrer_type,omitempty"`
+	ReferrerId   string                 `protobuf:"bytes,3,opt,name=referrer_id,json=referrerId,proto3" json:"referrer_id,omitempty"`
+	ReferrerName string                 `protobuf:"bytes,4,opt,name=referrer_name,json=referrerName,proto3" json:"referrer_name,omitempty"`
+	// owned — объявляет владение адресом (см. AddressReference.owned). Default
+	// false (link-семантика).
+	Owned         bool `protobuf:"varint,5,opt,name=owned,proto3" json:"owned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -325,6 +340,13 @@ func (x *SetAddressReferenceRequest) GetReferrerName() string {
 		return x.ReferrerName
 	}
 	return ""
+}
+
+func (x *SetAddressReferenceRequest) GetOwned() bool {
+	if x != nil {
+		return x.Owned
+	}
+	return false
 }
 
 type ClearAddressReferenceRequest struct {
@@ -569,7 +591,7 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"\x12AllocateIPResponse\x12\x0e\n" +
 	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x17\n" +
 	"\apool_id\x18\x02 \x01(\tR\x06poolId\x12+\n" +
-	"\x11already_allocated\x18\x03 \x01(\bR\x10alreadyAllocated\"\xd9\x01\n" +
+	"\x11already_allocated\x18\x03 \x01(\bR\x10alreadyAllocated\"\xef\x01\n" +
 	"\x10AddressReference\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\x12#\n" +
@@ -578,14 +600,16 @@ const file_kacho_cloud_vpc_v1_internal_address_service_proto_rawDesc = "" +
 	"referrerId\x12#\n" +
 	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12;\n" +
 	"\vattached_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"attachedAt\"\xa6\x01\n" +
+	"attachedAt\x12\x14\n" +
+	"\x05owned\x18\x06 \x01(\bR\x05owned\"\xbc\x01\n" +
 	"\x1aSetAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\x12#\n" +
 	"\rreferrer_type\x18\x02 \x01(\tR\freferrerType\x12\x1f\n" +
 	"\vreferrer_id\x18\x03 \x01(\tR\n" +
 	"referrerId\x12#\n" +
-	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\"=\n" +
+	"\rreferrer_name\x18\x04 \x01(\tR\freferrerName\x12\x14\n" +
+	"\x05owned\x18\x05 \x01(\bR\x05owned\"=\n" +
 	"\x1cClearAddressReferenceRequest\x12\x1d\n" +
 	"\n" +
 	"address_id\x18\x01 \x01(\tR\taddressId\"\x1f\n" +

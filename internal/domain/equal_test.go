@@ -213,6 +213,11 @@ func TestAddress_Equal(t *testing.T) {
 	}
 	assert.False(t, base.Equal(diffUsed))
 
+	// diff UsedBy owned (единственное отличие — owned-флаг)
+	diffOwned := newAddress()
+	diffOwned.UsedBy[0].Owned = true
+	assert.False(t, base.Equal(diffOwned))
+
 	// empty UsedBy → not equal
 	emptyUsed := newAddress()
 	emptyUsed.UsedBy = nil

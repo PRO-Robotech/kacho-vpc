@@ -74,9 +74,14 @@ func (Reference_Type) EnumDescriptor() ([]byte, []int) {
 }
 
 type Reference struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Referrer      *Referrer              `protobuf:"bytes,1,opt,name=referrer,proto3" json:"referrer,omitempty"`
-	Type          Reference_Type         `protobuf:"varint,2,opt,name=type,proto3,enum=kacho.cloud.reference.Reference_Type" json:"type,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Referrer *Referrer              `protobuf:"bytes,1,opt,name=referrer,proto3" json:"referrer,omitempty"`
+	Type     Reference_Type         `protobuf:"varint,2,opt,name=type,proto3,enum=kacho.cloud.reference.Reference_Type" json:"type,omitempty"`
+	// owned — referrer владеет ресурсом (его lifecycle связан с referrer'ом), а не
+	// просто ссылается. Для VIP-адреса network load balancer'а owned=true, когда
+	// адрес заказан LB неявно (auto), и owned=false, когда tenant создал адрес
+	// заранее и залинковал его (link). Output-only, tenant-facing.
+	Owned         bool `protobuf:"varint,3,opt,name=owned,proto3" json:"owned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -125,6 +130,13 @@ func (x *Reference) GetType() Reference_Type {
 	return Reference_TYPE_UNSPECIFIED
 }
 
+func (x *Reference) GetOwned() bool {
+	if x != nil {
+		return x.Owned
+	}
+	return false
+}
+
 type Referrer struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// * `type = compute.instance, id = <instance id>`
@@ -132,8 +144,11 @@ type Referrer struct {
 	// * `type = loadbalancer.networkLoadBalancer, id = <networkLoadBalancer id>`
 	// * `type = managed-kubernetes.cluster, id = <cluster id>`
 	// * `type = managed-mysql.cluster, id = <cluster id>`
-	Type          string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Id            string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Id   string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// name — имя ресурса-referrer'а на момент привязки (best-effort, может
+	// устареть). Output-only, tenant-facing.
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -182,22 +197,31 @@ func (x *Referrer) GetId() string {
 	return ""
 }
 
+func (x *Referrer) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var File_kacho_cloud_reference_reference_proto protoreflect.FileDescriptor
 
 const file_kacho_cloud_reference_reference_proto_rawDesc = "" +
 	"\n" +
-	"%kacho/cloud/reference/reference.proto\x12\x15kacho.cloud.reference\"\xbe\x01\n" +
+	"%kacho/cloud/reference/reference.proto\x12\x15kacho.cloud.reference\"\xd4\x01\n" +
 	"\tReference\x12;\n" +
 	"\breferrer\x18\x01 \x01(\v2\x1f.kacho.cloud.reference.ReferrerR\breferrer\x129\n" +
-	"\x04type\x18\x02 \x01(\x0e2%.kacho.cloud.reference.Reference.TypeR\x04type\"9\n" +
+	"\x04type\x18\x02 \x01(\x0e2%.kacho.cloud.reference.Reference.TypeR\x04type\x12\x14\n" +
+	"\x05owned\x18\x03 \x01(\bR\x05owned\"9\n" +
 	"\x04Type\x12\x14\n" +
 	"\x10TYPE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"MANAGED_BY\x10\x01\x12\v\n" +
-	"\aUSED_BY\x10\x02\".\n" +
+	"\aUSED_BY\x10\x02\"B\n" +
 	"\bReferrer\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02idBRZPgithub.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/reference;referencev1b\x06proto3"
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04nameBRZPgithub.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/reference;referencev1b\x06proto3"
 
 var (
 	file_kacho_cloud_reference_reference_proto_rawDescOnce sync.Once

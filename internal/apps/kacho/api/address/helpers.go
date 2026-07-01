@@ -24,6 +24,23 @@ import (
 // `internal/apps/kacho/api/networkinterface/create.go::niReferrerType`.
 const niReferrerType = "network_interface"
 
+// lbReferrerType — ReferrerType в address_references для VIP-адресов, привязанных
+// к network load balancer'у (owner-сервис хранит referrer через SetReference).
+const lbReferrerType = "network_load_balancer"
+
+// referrerTypeLabel переводит машинный ReferrerType в человекочитаемую форму для
+// Delete-guard-сообщения. Неизвестный тип отдается как есть.
+func referrerTypeLabel(referrerType string) string {
+	switch referrerType {
+	case niReferrerType:
+		return "network interface"
+	case lbReferrerType:
+		return "network_load_balancer"
+	default:
+		return referrerType
+	}
+}
+
 // isUniqueViolation распознает UNIQUE-violation для retry-loop в allocate.
 //
 // Принципиальный путь: repo через wrapPgErr оборачивает SQLSTATE 23505 в

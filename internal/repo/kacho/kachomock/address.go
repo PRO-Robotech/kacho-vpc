@@ -24,6 +24,9 @@ import (
 
 type addressReader struct {
 	snap map[string]*kacho.AddressRecord
+	// refs — seeded referrer-строки по address_id (кто использует адрес + owned).
+	// nil, если тест не seed'ил referrer'ов.
+	refs map[string]*domain.AddressReference
 }
 
 func (r *addressReader) Get(_ context.Context, id string) (*kacho.AddressRecord, error) {
@@ -99,14 +102,26 @@ func (r *addressReader) ExistsIP(_ context.Context, ip string) (bool, error) {
 	return false, nil
 }
 
-func (r *addressReader) GetReference(_ context.Context, _ string) (*domain.AddressReference, error) {
-	// Mock не моделирует address_references — references-tracking для unit-тестов
-	// use-case'ов покрывается `internal/repo/repomock.AddressRepo`.
+func (r *addressReader) GetReference(_ context.Context, id string) (*domain.AddressReference, error) {
+	// Seeded referrer (SeedReference) → возвращаем его; иначе ErrNotFound. Более
+	// богатая референс-семантика для use-case'ов покрывается
+	// `internal/repo/repomock.AddressRepo`.
+	if ref, ok := r.refs[id]; ok && ref != nil {
+		cp := *ref
+		return &cp, nil
+	}
 	return nil, repo.ErrNotFound
 }
 
-func (r *addressReader) ReferencesForAddresses(_ context.Context, _ []string) (map[string]*domain.AddressReference, error) {
-	return map[string]*domain.AddressReference{}, nil
+func (r *addressReader) ReferencesForAddresses(_ context.Context, ids []string) (map[string]*domain.AddressReference, error) {
+	out := make(map[string]*domain.AddressReference, len(ids))
+	for _, id := range ids {
+		if ref, ok := r.refs[id]; ok && ref != nil {
+			cp := *ref
+			out[id] = &cp
+		}
+	}
+	return out, nil
 }
 
 // ---- Address writer ----

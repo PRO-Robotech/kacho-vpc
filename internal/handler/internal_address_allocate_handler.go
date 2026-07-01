@@ -142,6 +142,7 @@ func (h *InternalAddressAllocateHandler) SetAddressReference(ctx context.Context
 		ReferrerType: req.GetReferrerType(),
 		ReferrerID:   req.GetReferrerId(),
 		ReferrerName: req.GetReferrerName(),
+		Owned:        req.GetOwned(),
 	})
 	if err != nil {
 		return nil, err
@@ -194,6 +195,7 @@ func addressReferenceToProto(r *domain.AddressReference) *vpcv1.AddressReference
 		ReferrerType: r.ReferrerType,
 		ReferrerId:   r.ReferrerID,
 		ReferrerName: r.ReferrerName,
+		Owned:        r.Owned,
 		AttachedAt:   timestamppb.New(r.AttachedAt.Truncate(time.Second)),
 	}
 }

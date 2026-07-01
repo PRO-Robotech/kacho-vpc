@@ -48,6 +48,9 @@ type SetAddressReferenceReq struct {
 	ReferrerType string
 	ReferrerID   string
 	ReferrerName string
+	// Owned — referrer владеет адресом (lifecycle связан). Default false
+	// (link-семантика). Для MarkAddressEphemeralInUse не используется.
+	Owned bool
 }
 
 // SetAddressReference upsert'ит referrer-row адреса (кто его использует) и
@@ -70,6 +73,7 @@ func (s *Service) SetAddressReference(ctx context.Context, req SetAddressReferen
 		ReferrerType: req.ReferrerType,
 		ReferrerID:   req.ReferrerID,
 		ReferrerName: req.ReferrerName,
+		Owned:        req.Owned,
 	})
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)

@@ -16,6 +16,11 @@ message Reference {
 
   Referrer referrer = 1;
   Type type = 2;
+  // owned — referrer владеет ресурсом (его lifecycle связан с referrer'ом), а не
+  // просто ссылается. Для VIP-адреса network load balancer'а owned=true, когда
+  // адрес заказан LB неявно (auto), и owned=false, когда tenant создал адрес
+  // заранее и залинковал его (link). Output-only, tenant-facing.
+  bool owned = 3;
 }
 
 message Referrer {
@@ -26,4 +31,7 @@ message Referrer {
   // * `type = managed-mysql.cluster, id = <cluster id>`
   string type = 1;
   string id = 2;
+  // name — имя ресурса-referrer'а на момент привязки (best-effort, может
+  // устареть). Output-only, tenant-facing.
+  string name = 3;
 }

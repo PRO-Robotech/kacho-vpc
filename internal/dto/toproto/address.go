@@ -77,14 +77,17 @@ func (address) toPb(rec kachorepo.AddressRecord) (*vpcv1.Address, error) {
 			},
 		}
 	}
-	// used_by (kacho extension, output-only) — кто использует адрес.
+	// used_by (kacho extension, output-only) — кто использует адрес: type/id/name
+	// referrer'а + owned (владеет ли он адресом). name/owned tenant-facing — это
+	// намерение (какой ресурс держит адрес), не инфра-данные.
 	for _, ref := range rec.UsedBy {
 		if ref == nil {
 			continue
 		}
 		p.UsedBy = append(p.UsedBy, &reference.Reference{
-			Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID},
+			Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID, Name: ref.ReferrerName},
 			Type:     reference.Reference_USED_BY,
+			Owned:    ref.Owned,
 		})
 	}
 	return p, nil

@@ -142,6 +142,11 @@ message AddressReference {
   string referrer_name = 4;
   // Когда привязка установлена.
   google.protobuf.Timestamp attached_at = 5;
+  // owned — referrer владеет адресом (lifecycle адреса связан с referrer'ом), а
+  // не просто ссылается. true — адрес заказан referrer'ом неявно (release =
+  // ClearReference + Delete); false — адрес создан tenant'ом заранее и
+  // залинкован (release = только ClearReference, адрес остается).
+  bool owned = 6;
 }
 
 message SetAddressReferenceRequest {
@@ -149,6 +154,9 @@ message SetAddressReferenceRequest {
   string referrer_type = 2;
   string referrer_id = 3;
   string referrer_name = 4;
+  // owned — объявляет владение адресом (см. AddressReference.owned). Default
+  // false (link-семантика).
+  bool owned = 5;
 }
 
 message ClearAddressReferenceRequest {
