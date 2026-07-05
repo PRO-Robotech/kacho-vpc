@@ -64,7 +64,7 @@ func (f *fakeGeoZoneClient) List(_ context.Context, _ *geov1.ListZonesRequest, _
 // newTestGeoZoneClient собирает GeoZoneClient поверх fake ZoneServiceClient,
 // инъектируя stub в обход gRPC-conn (unit-уровень, без сети).
 func newTestGeoZoneClient(fake geov1.ZoneServiceClient) *GeoZoneClient {
-	return &GeoZoneClient{zones: fake, known: make(map[string]time.Time)}
+	return &GeoZoneClient{zones: fake, cache: newExistsCache(geoZoneExistsTTL)}
 }
 
 func TestGeoZoneClient_Get_FoundOK(t *testing.T) {

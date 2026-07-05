@@ -154,6 +154,79 @@ func TestExternalIPv6_ConcurrentAllocateUnique(t *testing.T) {
 		"drained pool must report ErrPoolExhausted, got %v", err)
 }
 
+// TestExternalIPv6_ConcurrentAllocateSameAddress — N goroutine аллоцируют для
+// ОДНОГО и того же address_id (idempotent-retry, гоняющий сам себя во время
+// instance-create IPAM). Контракт (project-rule #10): выделение external_ipv6
+// для адреса атомарно и идемпотентно — ровно ОДНА строка ipv6_allocated_ips на
+// address_id, ни одного «сожжённого» лишнего cursor-offset (утечка из пула).
+// До фикса: каждая goroutine читала пустой external_ipv6 в отдельной reader-TX,
+// затем безусловно жгла cursor-offset + INSERT ipv6_allocated_ips + перезаписывала
+// addresses.external_ipv6 → second-writer-wins, orphan-строка утекала из пула.
+func TestExternalIPv6_ConcurrentAllocateSameAddress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	pgPool, err := coredb.NewPool(ctx, setupTestDB(t))
+	require.NoError(t, err)
+	defer pgPool.Close()
+
+	r := kachopg.New(pgPool, nil)
+
+	// Большой пул — exhaustion не мешает (тестируем idempotency, не границу).
+	poolID := insertV6Pool(t, ctx, pgPool, "fd00:1de:b0a7::/112")
+	require.NoError(t, v6Tx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		return w.Addresses().InitIPv6PoolCursor(ctx, poolID)
+	}))
+
+	addrID := insertV6Address(t, ctx, pgPool)
+
+	const N = 16 // все гоняют один и тот же address_id
+	var (
+		mu   sync.Mutex
+		ips  = make(map[string]bool)
+		errs []error
+		wg   sync.WaitGroup
+	)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var ip string
+			aerr := v6Tx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+				var e error
+				ip, e = w.Addresses().AllocateExternalIPv6(ctx, poolID, addrID, "zone-a")
+				return e
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if aerr != nil {
+				errs = append(errs, aerr)
+				return
+			}
+			ips[ip] = true
+		}()
+	}
+	wg.Wait()
+
+	require.Empty(t, errs, "concurrent same-address allocate must not error")
+	require.Len(t, ips, 1, "all concurrent allocations for one address must converge on a single IP")
+
+	// Ровно одна строка ipv6_allocated_ips на address_id — никаких orphan-утечек.
+	var allocRows int
+	require.NoError(t, pgPool.QueryRow(ctx,
+		`SELECT count(*) FROM ipv6_allocated_ips WHERE address_id = $1`, addrID).Scan(&allocRows))
+	require.Equal(t, 1, allocRows, "exactly one ipv6_allocated_ips row per address (no leaked offsets)")
+
+	// addresses.external_ipv6 указывает на тот единственный allocated ip.
+	var addrIP, allocIP string
+	require.NoError(t, pgPool.QueryRow(ctx,
+		`SELECT external_ipv6->>'address' FROM addresses WHERE id = $1`, addrID).Scan(&addrIP))
+	require.NoError(t, pgPool.QueryRow(ctx,
+		`SELECT host(ip) FROM ipv6_allocated_ips WHERE address_id = $1`, addrID).Scan(&allocIP))
+	require.Equal(t, allocIP, addrIP, "addresses.external_ipv6 must match the single allocated row")
+}
+
 // TestExternalIPv6_ConcurrentReleasedOffsetReuse — освобожденные offset'ы
 // переиспользуются под нагрузкой без дублей. Сначала аллоцируем M адресов из
 // большого пула и освобождаем их (offset'ы → ipv6_released_offsets), затем M

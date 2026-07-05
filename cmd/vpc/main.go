@@ -916,7 +916,7 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo, listFilter)
-	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo)
+	addressGetByValueUC := addressapp.NewGetByValueUseCase(kachoRepo, listFilter)
 	addressListUC := addressapp.NewListAddressesUseCase(kachoRepo, listFilter)
 	addressListBySubnetUC := addressapp.NewListBySubnetUseCase(kachoRepo, subnetAdapter)
 	addressListOpsUC := addressapp.NewListOperationsUseCase(opsRepo)
