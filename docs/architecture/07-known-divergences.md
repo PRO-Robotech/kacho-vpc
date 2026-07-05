@@ -102,3 +102,74 @@ mapper'а оставлены отдельными **осознанно**:
 Если появится необходимость дать IPAM-allocate-пути богаче классификацию — это
 поведенческое изменение внутреннего edge (нужен отдельный тикет + согласование с
 Compute-retry), а не «причёсывание» дубликата.
+
+## 12. `authn.trusted-forwarder=true` без server-mTLS — осознанный escape-hatch
+
+В `authn.mode=production` (non-strict) публичный `:9090` listener принимает
+identity caller'а (`x-kacho-principal-*` / `x-kacho-project-id`) как plaintext-
+metadata, **если** оператор явно выставил `authn.trusted-forwarder=true` и НЕ
+включил public server-mTLS. Это **намеренный** escape-hatch для деплоя за
+аутентифицирующим forwarder'ом / service-mesh, который сам терминирует identity
+до `:9090` (типовой ingress-mTLS / SPIFFE-mesh паттерн).
+
+Гардрейлы, которые делают это безопасным-by-default:
+
+- `authn.trusted-forwarder` по умолчанию `false` (fail-closed) — plaintext-
+  principal без mTLS требует **явного** opt-in оператора.
+- `ValidateServerMTLS` в production требует **ЛИБО** `PublicServerMTLS.Enable`,
+  **ЛИБО** `trusted-forwarder=true` — «ни того ни другого» = отказ старта.
+- `authn.mode=production-strict` **игнорирует** флаг: server-mTLS обязателен
+  всегда (escape-hatch не действует). Для сред, где cryptographic binding identity
+  к соединению обязателен, — это правильный режим.
+- При активном escape-hatch на boot'е печатается WARN.
+
+Trade-off осознан: при `trusted-forwarder=true` безопасность зависит от сетевой
+изоляции `:9090` (NetworkPolicy / mesh-sidecar) — прямой доступ в обход forwarder'а
+позволил бы подделать principal (CWE-290). Кто не может гарантировать сетевую
+изоляцию — использует `production-strict` (server-mTLS). Дефолт менять на
+«всегда требовать mTLS» нельзя: это сломало бы поддерживаемые mesh-деплои, где
+identity терминируется вне процесса.
+
+## 13. Dev-режим: internal listener + VRFID доступны анонимно — только вне production
+
+Когда `authn.mode != production` **и** `authz.iam-endpoint` пуст, authz-interceptor
+не навешивается (WARN-only), а `assertAdminAccess` пропускает анонимных caller'ов.
+На internal `:9091` это делает `InternalAddressPoolService` (admin-CRUD пулов) и
+`InternalNetworkService.GetNetwork` (отдаёт инфра-чувствительный `VRFID`)
+доступными без authN/authZ. Это **намеренное** dev-поведение (локальный стенд /
+port-forward / тесты без поднятого kacho-iam).
+
+Production жёстко защищён и это **не** обходится:
+
+- `authzWiringDecision` возвращает **fatal** (отказ старта), если в production
+  IAM-endpoint отсутствует — анонимный admin в production невозможен.
+- Internal-only ресурсы (`AddressPool`, `VRFID`-несущий `GetNetwork`) по контракту
+  живут только на cluster-internal `:9091`, который не публикуется на external TLS
+  endpoint и не проксируется api-gateway на публичную поверхность (Запрет #6).
+
+Требование к оператору: `:9091` в любом shared/staging окружении должен быть за
+NetworkPolicy (cluster-internal), а authz включается выставлением `authz.iam-endpoint`.
+«Скопировали dev-values на общий стенд» — конфиг-ошибка оператора, а не дефолт:
+production-дефолт (`authn.mode=production`) fail-closed.
+
+## 14. `cmd/vpc/runServe` — единый линейный composition root, намеренно длинный
+
+`runServe` длинный (весь boot-sequence в одной функции): signal-setup, пулы
+master/slave, ops-repo, метрики, mTLS load+validate, dial'ы vpc→iam / vpc→geo /
+authz, list-filter, registrar/drainer, два gRPC-listener'а, graceful-shutdown.
+CLAUDE.md **предписывает** `cmd/main.go` как **единственное** место wiring
+(composition root) — размазывать инициализацию по пакетам запрещено. Длина —
+следствие этого правила плюс плотных inline-комментариев с security-обоснованием
+каждого fail-closed гардрейла (ValidateServerMTLS, mTLS-creds-ветвления,
+breakglass-WARN).
+
+Тело — почти линейная последовательность `create → defer Close()` без глубокого
+ветвления; порядок `defer`-ов (pool/conn Close, cancel) значим и завязан на
+scope самой `runServe`. Когезивные под-шаги уже вынесены в помощники
+(`buildAuthorizeConn` / `buildListFilter` / `buildSyncRegistrar` /
+`startRegisterDrainer` / `buildServices`). Дальнейшее «дробление ради длины» без
+теста на composition root несёт ровно тот риск (сбитый порядок `defer`/bind-до-
+guardrail), от которого предостерегает сам ресурс — поэтому не делается как
+чистый рефакторинг. Новые под-шаги выносятся в помощник, только когда появляется
+**самостоятельная** когезивная единица (как перечисленные выше), а не для
+сокращения счётчика строк.

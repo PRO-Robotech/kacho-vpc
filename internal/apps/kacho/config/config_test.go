@@ -285,6 +285,70 @@ func TestLoad_LegacyENV(t *testing.T) {
 	require.True(t, cfg.ExtAPI.Geo.TLS.Enable)
 }
 
+// TestLoad_IAMFlags_Defaults — секция iam: fail-closed boot-gate выключен по
+// умолчанию (require=false), register-drainer включён (default-on).
+func TestLoad_IAMFlags_Defaults(t *testing.T) {
+	clearLegacyEnv(t)
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.False(t, cfg.IAM.Require, "iam.require default must be false (dev: Create allowed, Warn only)")
+	require.True(t, cfg.IAM.RegisterDrainerEnabled, "iam.register-drainer-enabled default must be true (default-on)")
+}
+
+// TestLoad_IAMFlags_LegacyENV — старые ENV KACHO_VPC_REQUIRE_IAM /
+// KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED транслируются в новые ключи
+// iam.require / iam.register-drainer-enabled (backward-compat для задеплоенного
+// Helm chart, ранее читались ad-hoc через os.LookupEnv в cmd/).
+func TestLoad_IAMFlags_LegacyENV(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_REQUIRE_IAM", "true")
+	t.Setenv("KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED", "false")
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.True(t, cfg.IAM.Require, "KACHO_VPC_REQUIRE_IAM=true → iam.require=true")
+	require.False(t, cfg.IAM.RegisterDrainerEnabled, "KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED=false → false")
+}
+
+// TestLoad_IAMFlags_NumericLegacyENV — «1» тоже включает флаг (совместимость с
+// прежним requireIAM(): v=="true" || v=="1").
+func TestLoad_IAMFlags_NumericLegacyENV(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_REQUIRE_IAM", "1")
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.True(t, cfg.IAM.Require, "KACHO_VPC_REQUIRE_IAM=1 → iam.require=true")
+}
+
+// TestLoad_IAMFlags_RejectsUnrecognizedBool — ключевое ужесточение: нераспознанное
+// значение security-свитча (yes/enabled/on) обязано ОТКАЗАТЬ загрузку, а не тихо
+// свалиться в false (прежний requireIAM() принимал только "true"/"1" и молча
+// возвращал false на "yes" → fail-open). Строгая bool-валидация на decode.
+func TestLoad_IAMFlags_RejectsUnrecognizedBool(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_REQUIRE_IAM", "yes")
+
+	_, err := Load("")
+	require.Error(t, err, "unrecognized bool for iam.require must fail loudly, not silently default to false")
+}
+
+// TestLoad_IAMFlags_NewKeyENV — новый двойной-underscore ENV-ключ тоже работает
+// (KACHO_VPC_IAM__REGISTER_DRAINER_ENABLED).
+func TestLoad_IAMFlags_NewKeyENV(t *testing.T) {
+	clearLegacyEnv(t)
+
+	t.Setenv("KACHO_VPC_IAM__REGISTER_DRAINER_ENABLED", "false")
+
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.False(t, cfg.IAM.RegisterDrainerEnabled)
+}
+
 // TestValidate_ProductionStrict_RequiresTLSAndSSL — production-strict не пускает
 // без TLS на peer и не пускает с sslmode=disable.
 func TestValidate_ProductionStrict_RequiresTLSAndSSL(t *testing.T) {

@@ -34,6 +34,32 @@ type Config struct {
 	AuthZ       AuthZConfig       `mapstructure:"authz"`
 	ExtAPI      ExtAPIConfig      `mapstructure:"extapi"`
 	Network     NetworkConfig     `mapstructure:"network"`
+	IAM         IAMConfig         `mapstructure:"iam"`
+}
+
+// IAMConfig — секция iam: интеграция с kacho-iam (fail-closed boot-gate +
+// register-drainer owner-tuple publisher).
+//
+// Оба флага раньше читались ad-hoc через os.LookupEnv прямо в cmd/ (requireIAM /
+// registerDrainerEnabled) с лёгким парсингом `v=="true" || v=="1"` — любое иное
+// значение молча становилось false. Для security-свитча (Require) это fail-open:
+// `KACHO_VPC_REQUIRE_IAM=yes` тихо ОТКЛЮЧАЛ gate. Теперь оба идут через
+// типизированный Config — единый парсинг, YAML-override, и строгая bool-валидация
+// на decode (нераспознанное значение → Load-ошибка, а не тихий false).
+type IAMConfig struct {
+	// Require — fail-closed boot-gate. true → мутирующий Create отвергается и
+	// сервис отдаёт NotReady, пока register-drainer не подключится к kacho-iam.
+	// Default false (dev: Create разрешён, только Warn).
+	// Legacy env: KACHO_VPC_REQUIRE_IAM. Новый ключ: iam.require /
+	// KACHO_VPC_IAM__REQUIRE.
+	Require bool `mapstructure:"require"`
+
+	// RegisterDrainerEnabled — register-drainer default-on: дренит
+	// kacho_vpc.fga_register_outbox в kacho-iam (owner-tuple на каждый Create).
+	// Без него созданные ресурсы не получат owner-tuple. Отключается только явным
+	// false. Legacy env: KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED. Новый ключ:
+	// iam.register-drainer-enabled / KACHO_VPC_IAM__REGISTER_DRAINER_ENABLED.
+	RegisterDrainerEnabled bool `mapstructure:"register-drainer-enabled"`
 }
 
 // AuthZConfig — секция authz. Если IAMEndpoint пуст и Breakglass=false —

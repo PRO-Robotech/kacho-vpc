@@ -317,7 +317,7 @@ func runServe(cfg config.Config) error {
 	// register-creds, что и у drainer'а. Пустой endpoint / drainer disabled → nil
 	// (dev/no-iam: остается только async-путь).
 	var syncRegistrar fgaregister.Registrar
-	if registerDrainerEnabled() && cfg.AuthZ.IAMEndpoint != "" {
+	if cfg.IAM.RegisterDrainerEnabled && cfg.AuthZ.IAMEndpoint != "" {
 		reg, closeReg, rerr := buildSyncRegistrar(cfg.AuthZ.IAMEndpoint, mtlsCfg)
 		if rerr != nil {
 			return fmt.Errorf("build sync owner-tuple registrar: %w", rerr)
@@ -332,7 +332,7 @@ func runServe(cfg config.Config) error {
 	// а readiness = NotReady, пока register-drainer не подключен к IAM. Стартует
 	// неподключенным; SetConnected(true) срабатывает ниже, как только dial drainer'а
 	// успешен.
-	bootGate := bootgate.New(bootgate.Config{RequireIAM: requireIAM(), Service: "kacho-vpc"})
+	bootGate := bootgate.New(bootgate.Config{RequireIAM: cfg.IAM.Require, Service: "kacho-vpc"})
 	// Prometheus-backed outbox-recorder: backlog/oldest/poisoned register-outbox
 	// экспортируются на /metrics (заменяет in-memory MemRecorder). Тот же adapter
 	// — operations.Recorder для reconciler'а ниже.
@@ -345,7 +345,7 @@ func runServe(cfg config.Config) error {
 	// per-resource Check DENY. Дилит iam-internal listener :9091 (cfg.AuthZ.IAMEndpoint
 	// — RegisterResource Internal-only, ban #6). Пустой endpoint → drainer не стартует
 	// (dev / no-iam).
-	if registerDrainerEnabled() {
+	if cfg.IAM.RegisterDrainerEnabled {
 		if cfg.AuthZ.IAMEndpoint == "" {
 			logger.Warn("FGA register-drainer NOT started — authz.iam-endpoint unset " +
 				"(no kacho-iam internal endpoint to apply register-intents); intents stay durable until configured")
@@ -723,16 +723,6 @@ func buildListFilter(cfg config.Config, conn clients.Conn, logger *slog.Logger) 
 		"fail_open", cfg.AuthZ.ListFilter.FailOpen,
 	)
 	return f
-}
-
-// registerDrainerEnabled — register-drainer default-on (без него созданные ресурсы
-// не получат owner-tuple). Отключается только явным
-// KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED=false.
-func registerDrainerEnabled() bool {
-	if v, ok := os.LookupEnv("KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED"); ok {
-		return v == "true" || v == "1"
-	}
-	return true
 }
 
 // startRegisterDrainer — дилит internal endpoint kacho-iam по ребру vpc→iam (mTLS

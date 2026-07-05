@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,17 +32,6 @@ const (
 	fgaRegisterOutboxTable   = "kacho_vpc.fga_register_outbox"
 	fgaRegisterOutboxChannel = "kacho_vpc_fga_register_outbox"
 )
-
-// requireIAM сообщает, взведен ли fail-closed boot-gate.
-// KACHO_VPC_REQUIRE_IAM=true → мутирующий Create отвергается + NotReady, пока
-// register-drainer не подключен к IAM. Default false (dev: Create разрешен, только
-// Warn). Зеркалит registerDrainerEnabled.
-func requireIAM() bool {
-	if v, ok := os.LookupEnv("KACHO_VPC_REQUIRE_IAM"); ok {
-		return v == "true" || v == "1"
-	}
-	return false
-}
 
 // startBackstop — собирает reconciler + metrics Collector поверх vpc
 // register-outbox и крутит их в фоне, пока ctx не отменен. Оба — best-effort
