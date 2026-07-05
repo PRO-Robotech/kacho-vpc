@@ -28,6 +28,9 @@ data:
       endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.grpc | quote }}
       internal-endpoint: {{ printf "tcp://0.0.0.0:%v" .Values.ports.internalGrpc | quote }}
       graceful-shutdown: {{ default "10s" .Values.apiServer.gracefulShutdown | quote }}
+      # request-timeout — server-side deadline на один RPC (bounded-pool exhaustion
+      # guard, CWE-770). 0 → без границы (нет long-lived server-streams в kacho-vpc).
+      request-timeout: {{ default "30s" .Values.apiServer.requestTimeout | quote }}
 
     metrics:
       enable: {{ default true .Values.metrics.enable }}
@@ -39,11 +42,21 @@ data:
       postgres:
         url: {{ printf "postgres://%s@%s:%v/%s" .Values.db.user .Values.db.host .Values.db.port .Values.db.name | quote }}
         max-conns: {{ default 0 .Values.repository.postgres.maxConns }}
+        # serving-only DB-тайм-ауты (в миграции не попадают): бесконечно висящий
+        # запрос/lock не держит pooled-connection (CWE-770/400). 0 → без лимита.
+        statement-timeout: {{ default "30s" .Values.repository.postgres.statementTimeout | quote }}
+        lock-timeout: {{ default "15s" .Values.repository.postgres.lockTimeout | quote }}
         ssl-mode: {{ default "disable" .Values.repository.postgres.sslMode | quote }}
         password-from-env: KACHO_VPC_DB_PASSWORD
 
     authn:
       mode: {{ default "dev" .Values.authn.mode | quote }}
+      # trusted-forwarder — в production (non-strict) без server-mTLS публичный
+      # :9090 listener принимает client-asserted x-kacho-* principal'а только под
+      # этим явным подтверждением (оператор гарантирует, что listener стоит за
+      # аутентифицирующим forwarder'ом/mesh). false + mode=production + без
+      # public-mTLS → отказ старта (fail-closed). production-strict игнорирует флаг.
+      trusted-forwarder: {{ default false .Values.authn.trustedForwarder }}
 
     # per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
     # project-level list-filter тоже идет через InternalIAMService.Check

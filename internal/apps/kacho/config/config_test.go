@@ -25,7 +25,13 @@ func TestLoad_Defaults(t *testing.T) {
 	// authz.iam-endpoint (либо authn.mode=dev). Задаем endpoint, чтобы изолировать
 	// проверку дефолтов от guardrail-отказа.
 	cfg.AuthZ.IAMEndpoint = "kacho-iam.kacho.svc.cluster.local:9091"
+	// S1b prod-гардрейл: production требует защищённый sslmode. Дефолт "disable"
+	// (проверяется ниже) валиден только для dev — переопределяем, чтобы изолировать
+	// проверку загрузки дефолтов от sslmode-гардрейла.
+	loadedSSLMode := cfg.Repository.Postgres.SSLMode
+	cfg.Repository.Postgres.SSLMode = "require"
 	require.NoError(t, cfg.Validate())
+	cfg.Repository.Postgres.SSLMode = loadedSSLMode
 
 	require.Equal(t, "INFO", cfg.Logger.Level)
 	require.Equal(t, "tcp://0.0.0.0:9090", cfg.APIServer.Endpoint)
@@ -65,6 +71,7 @@ func TestLoad_GeoEndpointDialHost(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 	cfg.AuthZ.IAMEndpoint = "kacho-iam.kacho.svc.cluster.local:9091" // S1 prod-гардрейл
+	cfg.Repository.Postgres.SSLMode = "require"                      // S1b prod-гардрейл
 	require.NoError(t, cfg.Validate())
 
 	require.Equal(t, "kacho-geo.kacho.svc.cluster.local:9090", cfg.ExtAPI.Geo.Endpoint,
@@ -147,6 +154,39 @@ extapi:
 	// `public` (default) и не найдет таблицы схемы kacho_vpc.
 	require.Contains(t, cfg.DSN(), "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
 	require.Contains(t, cfg.MigrateDSN(), "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
+}
+
+// TestDSN_ServingTimeouts_InServingNotMigrate — statement_timeout / lock_timeout
+// попадают только в serving-DSN (DSN/SlaveDSN), НЕ в MigrateDSN (миграции могут
+// легитимно превышать лимит). Защита от bounded-pool exhaustion (CWE-770).
+func TestDSN_ServingTimeouts_InServingNotMigrate(t *testing.T) {
+	var c Config
+	c.Repository.Postgres.URL = "postgres://u@h:5432/db"
+	c.Repository.Postgres.StatementTimeout = 30 * time.Second
+	c.Repository.Postgres.LockTimeout = 15 * time.Second
+
+	dsn := c.DSN()
+	require.Contains(t, dsn, "statement_timeout%3D30000", "serving DSN must carry statement_timeout (ms)")
+	require.Contains(t, dsn, "lock_timeout%3D15000", "serving DSN must carry lock_timeout (ms)")
+	// search_path остаётся первым сегментом options (обратная совместимость).
+	require.Contains(t, dsn, "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
+
+	mig := c.MigrateDSN()
+	require.NotContains(t, mig, "statement_timeout", "MigrateDSN must NOT bound migrations")
+	require.NotContains(t, mig, "lock_timeout", "MigrateDSN must NOT bound migrations")
+	require.Contains(t, mig, "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
+}
+
+// TestDSN_ZeroTimeouts_Omitted — 0-Duration → соответствующий GUC не добавляется
+// (Postgres default). search_path всё равно присутствует.
+func TestDSN_ZeroTimeouts_Omitted(t *testing.T) {
+	var c Config
+	c.Repository.Postgres.URL = "postgres://u@h:5432/db"
+	// StatementTimeout / LockTimeout = 0 (zero-value).
+	dsn := c.DSN()
+	require.NotContains(t, dsn, "statement_timeout")
+	require.NotContains(t, dsn, "lock_timeout")
+	require.Contains(t, dsn, "options=-c%20search_path%3Dkacho_vpc%2Cpublic")
 }
 
 // TestLoad_ENVOverride — KACHO_VPC_REPOSITORY__POSTGRES__URL перекрывает YAML/defaults.
