@@ -312,6 +312,81 @@ func (u *CreateAddressUseCase) validateInternalIPv6InSubnet(ctx context.Context,
 	)
 }
 
+// mapRequirements — общий маппинг spec-Requirements → domain для external-family
+// (v4 и v6 несут одинаковый AddrRequirements). nil → nil (поле остается пустым).
+func mapRequirements(r *AddrRequirements) *domain.AddressRequirements {
+	if r == nil {
+		return nil
+	}
+	return &domain.AddressRequirements{
+		DdosProtectionProvider: r.DdosProtectionProvider,
+		OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+	}
+}
+
+// checkSubnetExists — общая FK-валидация ("Subnet <X> not found") для
+// internal-family (v4 и v6). Пустой subnetID пропускается (CIDR-less подсеть
+// легальна). Это чтение связанного ресурса, а не side-effect — остается в
+// use-case.
+func (u *CreateAddressUseCase) checkSubnetExists(ctx context.Context, subnetID string) error {
+	if subnetID == "" {
+		return nil
+	}
+	if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
+		return status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+	}
+	return nil
+}
+
+// applyAddressSpec — заполняет family-specific поля domain.Address по тому
+// единственному из четырех spec'ов, что задан в CreateInput (взаимоисключимость
+// гарантирована валидатором Execute). Все четыре ветви идут через общие
+// helper'ы (mapRequirements для external, checkSubnetExists для internal), чтобы
+// новое family-инвариант-правило не пришлось дублировать по-семейно.
+func (u *CreateAddressUseCase) applyAddressSpec(ctx context.Context, a *domain.Address, in CreateInput) error {
+	switch {
+	case in.ExternalSpec != nil:
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv4
+		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
+			Address:      in.ExternalSpec.Address,
+			ZoneID:       in.ExternalSpec.ZoneID,
+			Requirements: mapRequirements(in.ExternalSpec.Requirements),
+		}
+	case in.InternalSpec != nil:
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv4
+		if err := u.checkSubnetExists(ctx, in.InternalSpec.SubnetID); err != nil {
+			return err
+		}
+		a.InternalIpv4 = &domain.InternalIpv4Spec{
+			Address:  in.InternalSpec.Address,
+			SubnetID: in.InternalSpec.SubnetID,
+		}
+	case in.InternalIpv6Spec != nil:
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv6
+		if err := u.checkSubnetExists(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
+			return err
+		}
+		a.InternalIpv6 = &domain.InternalIpv6Spec{
+			Address:  in.InternalIpv6Spec.Address,
+			SubnetID: in.InternalIpv6Spec.SubnetID,
+		}
+	default:
+		// external IPv6: sparse counter-based allocator из глобального
+		// AddressPool с v6 CIDR (cascade resolve как у v4).
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv6
+		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
+			Address:      in.ExternalIpv6Spec.Address,
+			ZoneID:       in.ExternalIpv6Spec.ZoneID,
+			Requirements: mapRequirements(in.ExternalIpv6Spec.Requirements),
+		}
+	}
+	return nil
+}
+
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный
 // backstop: project-exists + Insert + multi-family IPAM allocation +
 // outbox-emit Address.CREATED — все в одной writer-TX. Defer w.Abort() —
@@ -336,62 +411,8 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 		Reserved:           true,
 	}
 
-	if in.ExternalSpec != nil {
-		a.Type = domain.AddressTypeExternal
-		a.IpVersion = domain.IpVersionIPv4
-		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
-			Address: in.ExternalSpec.Address,
-			ZoneID:  in.ExternalSpec.ZoneID,
-		}
-		if r := in.ExternalSpec.Requirements; r != nil {
-			a.ExternalIpv4.Requirements = &domain.AddressRequirements{
-				DdosProtectionProvider: r.DdosProtectionProvider,
-				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
-			}
-		}
-	} else if in.InternalSpec != nil {
-		a.Type = domain.AddressTypeInternal
-		a.IpVersion = domain.IpVersionIPv4
-		subnetID := in.InternalSpec.SubnetID
-		// FK-валидация ("Subnet <X> not found"). Остается в use-case — это
-		// чтение связанного ресурса, а не side-effect.
-		if subnetID != "" {
-			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
-			}
-		}
-		a.InternalIpv4 = &domain.InternalIpv4Spec{
-			Address:  in.InternalSpec.Address,
-			SubnetID: subnetID,
-		}
-	} else if in.InternalIpv6Spec != nil {
-		a.Type = domain.AddressTypeInternal
-		a.IpVersion = domain.IpVersionIPv6
-		subnetID := in.InternalIpv6Spec.SubnetID
-		if subnetID != "" {
-			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
-			}
-		}
-		a.InternalIpv6 = &domain.InternalIpv6Spec{
-			Address:  in.InternalIpv6Spec.Address,
-			SubnetID: subnetID,
-		}
-	} else {
-		// external IPv6: sparse counter-based allocator из глобального
-		// AddressPool с v6 CIDR (cascade resolve как у v4).
-		a.Type = domain.AddressTypeExternal
-		a.IpVersion = domain.IpVersionIPv6
-		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
-			Address: in.ExternalIpv6Spec.Address,
-			ZoneID:  in.ExternalIpv6Spec.ZoneID,
-		}
-		if r := in.ExternalIpv6Spec.Requirements; r != nil {
-			a.ExternalIpv6.Requirements = &domain.AddressRequirements{
-				DdosProtectionProvider: r.DdosProtectionProvider,
-				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
-			}
-		}
+	if err := u.applyAddressSpec(ctx, a, in); err != nil {
+		return nil, err
 	}
 
 	// Резолвим external-пулы ДО открытия Writer-TX (отдельная Reader-TX).
