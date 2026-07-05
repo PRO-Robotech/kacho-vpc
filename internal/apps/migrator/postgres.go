@@ -99,9 +99,8 @@ func (p *postgresDialect) Create(physDir, name string) error {
 	return goose.Create(nil, physDir, name, "sql")
 }
 
-// openPgxDB и setupGoose — общие helpers для postgres + cockroach (оба идут
-// через pgx driver и goose-dialect="postgres"). Вынесены сюда (postgres.go),
-// потому что postgres — primary impl; cockroach их переиспользует.
+// openPgxDB и setupGoose — helpers postgres-диалекта (pgx driver +
+// goose-dialect="postgres").
 
 func openPgxDB(dsn string, spec DialectSpec) (*sql.DB, error) {
 	db, err := sql.Open(spec.SQLDriver, dsn)

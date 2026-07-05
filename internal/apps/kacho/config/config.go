@@ -222,9 +222,8 @@ type HealthcheckConfig struct {
 	Enable bool `mapstructure:"enable"`
 }
 
-// RepositoryConfig — секция repository. Сейчас single-backend (Postgres);
-// `Type` зарезервирован под мульти-БД (migrator должен уметь
-// postgres|cockroach|…).
+// RepositoryConfig — секция repository. Single-backend (Postgres); `Type`
+// оставлен как mapstructure-поле конфига, но продукт Postgres-only.
 type RepositoryConfig struct {
 	Type     string         `mapstructure:"type"`
 	Postgres PostgresConfig `mapstructure:"postgres"`

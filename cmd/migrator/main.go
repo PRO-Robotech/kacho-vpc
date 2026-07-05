@@ -12,7 +12,7 @@
 //
 // Флаги верхнего уровня:
 //
-//	--dialect oneof<postgres|cockroach>   (default postgres; multi-dialect-ready)
+//	--dialect postgres                    (default; продукт Postgres-only)
 //	--dsn     <connection-string>         (или ENV KACHO_MIGRATOR_DSN)
 //
 // Помимо ENV KACHO_MIGRATOR_DSN, для удобства dev-стенда (тот же набор переменных,
@@ -74,7 +74,7 @@ func newRootCmd(migrationsFS fs.FS) *cobra.Command {
 		SilenceUsage: true, // не показывать usage на runtime-ошибках (только на parse-ошибках)
 	}
 	root.PersistentFlags().StringVar(&opts.dialect, "dialect", defaultDialect,
-		"SQL dialect (postgres|cockroach)")
+		"SQL dialect (postgres)")
 	root.PersistentFlags().StringVar(&opts.dsn, "dsn", "",
 		"database DSN; if empty — read ENV "+envDSN+", then fall back to kacho-vpc config (envconfig)")
 

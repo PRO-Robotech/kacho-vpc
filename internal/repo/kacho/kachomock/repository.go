@@ -81,6 +81,12 @@ type Repository struct {
 	// для проверок в unit-тестах что DML-путь эмитит правильный owner-tuple в той
 	// же writer-TX.
 	fgaRegister []FGARegisterEvent
+	// niInsertHook — опциональный тест-хук перед каждым NIC Insert: получает
+	// текущий MAC и, вернув ненулевую ошибку (напр. repo.ErrMacCollision),
+	// подменяет реальную вставку. Позволяет unit-тесту прогнать mac-collision
+	// retry-петлю doCreate (retry-to-success и exhaustion), которую не
+	// воспроизводит рандомный macutil.GenerateMAC. nil → обычная вставка.
+	niInsertHook func(mac string) error
 }
 
 // FGARegisterEvent — снимок одной fga_register_outbox-строки (для проверок в
@@ -156,6 +162,16 @@ func (r *Repository) SeedReference(ref *domain.AddressReference) {
 	defer r.mu.Unlock()
 	cp := *ref
 	r.references[ref.AddressID] = &cp
+}
+
+// SetNIInsertHook устанавливает тест-хук, вызываемый перед каждым NIC Insert
+// (см. поле niInsertHook). Хук получает MAC вставляемого NIC и, вернув
+// ненулевую ошибку, подменяет вставку — так unit-тест воспроизводит
+// mac-collision retry-петлю doCreate. nil сбрасывает хук.
+func (r *Repository) SetNIInsertHook(fn func(mac string) error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.niInsertHook = fn
 }
 
 // SeedSubnet добавляет SubnetRecord в Subnet-state. Нужен тестам, которые

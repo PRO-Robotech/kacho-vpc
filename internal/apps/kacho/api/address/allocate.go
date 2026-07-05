@@ -35,7 +35,9 @@ import (
 // AllocateUseCase — internal-only IPAM allocate (4 family-варианта).
 //
 // Результат allocate-операций — `domain.AllocateResult` (вынесен в domain
-// leaf, чтобы избежать import-cycle с `internal/handler.AddressAllocator`).
+// leaf, чтобы port `internal/handler.AddressAllocator` мог ссылаться на этот тип,
+// не импортируя use-case-пакет address — dependency-rule: transport зависит от
+// domain+port, а не от use-case-конкрета).
 //
 // Принимает CQRS-порт `Repo`. Каждый Allocate-метод открывает writer-TX и
 // делает Get + Set/Allocate + Outbox.UPDATED атомарно.

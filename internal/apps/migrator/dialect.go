@@ -3,11 +3,13 @@
 
 // Package migrator — бизнес-логика отдельного бинаря cmd/migrator.
 //
-// dialect.go определяет ключевую абстракцию пакета — интерфейс [Dialect].
-// Каждая поддерживаемая БД — отдельная реализация (`postgres.go`,
-// `cockroach.go`); фабрика [NewDialect] выбирает реализацию по имени из
-// CLI/конфига. Это позволяет per-dialect tweaks без if-ветвей внутри общего
-// Runner'а.
+// dialect.go определяет абстракцию пакета — интерфейс [Dialect]. Продукт
+// Postgres-only (rules: Postgres 16, database-per-service), поэтому реализация
+// одна — [postgresDialect] (`postgres.go`); фабрика [NewDialect] резолвит ее по
+// имени из CLI/конфига. Интерфейс — тонкий seam вокруг goose-конфигурации
+// (goose-имя / driver / Up-Down-Status-Create), а не задел под мульти-БД: второй
+// диалект добавляется только когда станет реальным требованием (non-negotiable
+// #11 — без speculative-абстракций).
 //
 // CLI-метадата диалекта (имя, goose-имя, driver-имя) вынесена в [DialectSpec] —
 // внутренний descriptor, отдельный от runtime-поведения.
@@ -22,12 +24,7 @@ import (
 
 // Dialect — абстракция SQL-диалекта для миграций.
 //
-// Реализации:
-//   - [postgresDialect] (`postgres.go`) — основная, через goose + pgx driver;
-//   - [cockroachDialect] (`cockroach.go`) — CockroachDB SQL-совместим с Postgres
-//     wire protocol, но не поддерживает часть PG-фич (`EXCLUDE USING gist`,
-//     `xmin`-OCC, `LISTEN/NOTIFY`), поэтому часть миграций kacho-vpc на нем пока
-//     не проходит — см. шапку cockroach.go.
+// Реализация одна: [postgresDialect] (`postgres.go`) — через goose + pgx driver.
 //
 // Все методы принимают context.Context, DSN и embed.FS — это позволяет тестам
 // подменять FS на `fstest.MapFS`, а боевому коду использовать
@@ -62,48 +59,38 @@ type Dialect interface {
 // Это НЕ runtime-behaviour: реальная Up/Down/Status/Create логика живет в
 // реализации [Dialect]-интерфейса. Spec нужен, чтобы:
 //   - CLI мог напечатать список зарегистрированных диалектов в help;
-//   - тесты могли проверить, что `--dialect cockroach` правильно резолвится;
+//   - тесты могли проверить, что `--dialect postgres` правильно резолвится;
 //   - registry хранил пары name→constructor.
 type DialectSpec struct {
-	// Name — имя диалекта для CLI (postgres, cockroach, ...).
+	// Name — имя диалекта для CLI (postgres).
 	Name string
-	// GooseDialect — строка, ожидаемая goose.SetDialect. У cockroach значение
-	// тоже "postgres" (он SQL-совместим с PG wire); хранится отдельно,
-	// чтобы name в CLI мог быть "cockroach", а goose все еще получал "postgres".
+	// GooseDialect — строка, ожидаемая goose.SetDialect.
 	GooseDialect string
 	// SQLDriver — имя драйвера для sql.Open. Регистрируется через blank
 	// import в main.go отдельного бинаря (`_ "github.com/jackc/pgx/v5/stdlib"`
-	// регистрирует "pgx" driver и для postgres, и для cockroach).
+	// регистрирует "pgx" driver).
 	SQLDriver string
 }
 
-// Built-in spec'и — exposed для тестов и diagnostics.
-var (
-	SpecPostgres = DialectSpec{
-		Name:         "postgres",
-		GooseDialect: "postgres",
-		SQLDriver:    "pgx",
-	}
-	SpecCockroach = DialectSpec{
-		Name:         "cockroach",
-		GooseDialect: "postgres", // CockroachDB SQL-совместим с PG wire
-		SQLDriver:    "pgx",
-	}
-)
+// Built-in spec — exposed для тестов и diagnostics.
+var SpecPostgres = DialectSpec{
+	Name:         "postgres",
+	GooseDialect: "postgres",
+	SQLDriver:    "pgx",
+}
 
 // dialectFactory — конструктор реализации [Dialect] по имени.
 type dialectFactory func() Dialect
 
-// registry — name → factory. Заполняется init()'ом.
+// registry — name → factory.
 var registry = map[string]dialectFactory{
-	SpecPostgres.Name:  func() Dialect { return newPostgresDialect() },
-	SpecCockroach.Name: func() Dialect { return newCockroachDialect() },
+	SpecPostgres.Name: func() Dialect { return newPostgresDialect() },
 }
 
 // NewDialect — фабрика, возвращает реализацию [Dialect] по имени.
 //
-// Поддерживаемые: "postgres", "cockroach". Неизвестное имя → ошибка
-// со списком зарегистрированных.
+// Поддерживаемый: "postgres". Неизвестное имя → ошибка со списком
+// зарегистрированных.
 func NewDialect(name string) (Dialect, error) {
 	factory, ok := registry[name]
 	if !ok {

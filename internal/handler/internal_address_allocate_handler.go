@@ -14,10 +14,12 @@
 // их методы; оба собираются в composition root (cmd/vpc/main.go) и передаются
 // в `NewInternalAddressAllocateHandler`.
 //
-// Чтобы не было import-cycle, handler не импортирует use-case-пакет address
-// напрямую (тот импортирует `internal/handler` ради AssertProjectOwnership):
-// вместо этого определены узкие port-абстракции `AddressAllocator` (ее
-// удовлетворяет `*address.AllocateUseCase`) и `AddressReferenceManager`.
+// По dependency-rule (architecture.md) transport-слой не импортирует use-case-
+// конкреты: handler НЕ тянет пакет `internal/apps/kacho/api/address` напрямую, а
+// определяет узкие port-абстракции `AddressAllocator` (ее удовлетворяет
+// `*address.AllocateUseCase`) и `AddressReferenceManager`, которые связываются в
+// composition root. (AssertProjectOwnership живет в `internal/tenant`; use-case
+// address `internal/handler` не импортирует.)
 //
 // AuthZ: per-RPC FGA-Check (object-scoped на `vpc_address:<address_id>`,
 // v_update для мутаций / v_get для чтения referrer'а) выполняет authz-interceptor
@@ -42,9 +44,9 @@ import (
 
 // AddressAllocator — port для allocate-методов; реализуется
 // `*address.AllocateUseCase` в composition root (cmd/vpc/main.go).
-// Возвращает `*domain.AllocateResult` — общий тип в domain leaf, чтобы
-// избежать import-cycle между `internal/handler` и use-case-пакетом address
-// (тот импортирует `internal/handler` ради AssertProjectOwnership).
+// Возвращает `*domain.AllocateResult` — общий тип в domain leaf, чтобы и этот
+// port, и use-case address ссылались на него, не импортируя пакеты друг друга
+// (transport ↔ use-case развязаны через domain-тип и port-абстракцию).
 type AddressAllocator interface {
 	AllocateInternalIP(ctx context.Context, addressID string) (*domain.AllocateResult, error)
 	AllocateInternalIPv6(ctx context.Context, addressID string) (*domain.AllocateResult, error)

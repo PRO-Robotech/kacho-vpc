@@ -14,7 +14,7 @@ import (
 )
 
 func TestNewDialect_Valid(t *testing.T) {
-	for _, name := range []string{"postgres", "cockroach"} {
+	for _, name := range []string{"postgres"} {
 		t.Run(name, func(t *testing.T) {
 			d, err := NewDialect(name)
 			if err != nil {
@@ -70,34 +70,6 @@ func TestPostgresDialect_Spec(t *testing.T) {
 	}
 }
 
-func TestCockroachDialect_Spec(t *testing.T) {
-	d, _ := NewDialect("cockroach")
-	spec := d.Spec()
-	if spec != SpecCockroach {
-		t.Fatalf("cockroach dialect spec mismatch: got %+v, want %+v", spec, SpecCockroach)
-	}
-	// CockroachDB должен использовать goose-dialect "postgres" (wire-compat).
-	if spec.GooseDialect != "postgres" {
-		t.Errorf("cockroach must use GooseDialect=postgres (wire-compat), got %q", spec.GooseDialect)
-	}
-	// И тот же pgx driver.
-	if spec.SQLDriver != "pgx" {
-		t.Errorf("cockroach must use SQLDriver=pgx, got %q", spec.SQLDriver)
-	}
-}
-
-func TestCockroachDialect_CreateRejectsEmpty(t *testing.T) {
-	// Create — единственный метод, который не открывает БД; можно дернуть
-	// без testcontainers и проверить validation-ветви.
-	d, _ := NewDialect("cockroach")
-	if err := d.Create("", "foo"); err == nil {
-		t.Error("expected error for empty physDir")
-	}
-	if err := d.Create("/tmp", ""); err == nil {
-		t.Error("expected error for empty name")
-	}
-}
-
 func TestPostgresDialect_CreateRejectsEmpty(t *testing.T) {
 	d, _ := NewDialect("postgres")
 	if err := d.Create("", "foo"); err == nil {
@@ -108,11 +80,8 @@ func TestPostgresDialect_CreateRejectsEmpty(t *testing.T) {
 	}
 }
 
-// Compile-time assertion: оба built-in dialect'а удовлетворяют интерфейсу.
-var (
-	_ Dialect = (*postgresDialect)(nil)
-	_ Dialect = (*cockroachDialect)(nil)
-)
+// Compile-time assertion: built-in dialect удовлетворяет интерфейсу.
+var _ Dialect = (*postgresDialect)(nil)
 
 // Дополнительный compile-check: реальная FS-based фабрика не паникует.
 func TestNewDialect_FactoryReturnsFresh(t *testing.T) {

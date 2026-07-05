@@ -18,6 +18,7 @@ import (
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
@@ -213,6 +214,119 @@ func TestCreateUseCase_AttachesAddressInSameWriterTX(t *testing.T) {
 	_ = rd.Close()
 	require.NoError(t, err)
 	require.True(t, a.Used, "attached address must be used=true after commit")
+}
+
+// TestCreateUseCase_MacCollision_RetryThenSuccess — cloud-wide MAC UNIQUE-collision
+// на первой Insert-попытке: doCreate делает Abort, генерирует новый MAC и
+// переигрывает attach+insert в свежей writer-TX (create.go:198-259). Вторая
+// попытка коммитится → Operation успешна, а pre-reserved address всё равно
+// приаттачен (used=true) — reservation не потеряна на retry (attach в той же TX).
+//
+// Хук kachomock.SetNIInsertHook инъектирует repo.ErrMacCollision ровно один раз
+// (mock не моделирует UNIQUE mac_address; рандомный GenerateMAC сам не сталкивается).
+func TestCreateUseCase_MacCollision_RetryThenSuccess(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	kr.SeedSubnet(&kachorepo.SubnetRecord{
+		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
+	})
+	kr.SeedAddress(&kachorepo.AddressRecord{Address: domain.Address{
+		ID: "e9ba1", ProjectID: "f1", Type: domain.AddressTypeInternal,
+		IpVersion: domain.IpVersionIPv4, Used: false,
+		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: "e9bsub1", Address: "10.0.0.5"},
+	}})
+
+	attempts := 0
+	var macs []string
+	kr.SetNIInsertHook(func(mac string) error {
+		attempts++
+		macs = append(macs, mac)
+		if attempts == 1 {
+			return repo.ErrMacCollision // первая попытка сталкивается
+		}
+		return nil // вторая — успех
+	})
+
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
+	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
+		ProjectID:    "f1",
+		Name:         "nic",
+		SubnetID:     "e9bsub1",
+		V4AddressIDs: []string{"e9ba1"},
+	}})
+	require.NoError(t, err)
+
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error, "второй attempt должен закоммититься после retry на mac-collision")
+
+	require.Equal(t, 2, attempts, "ожидаем ровно 2 Insert-попытки (collision + success)")
+	require.Len(t, macs, 2)
+	require.NotEqual(t, macs[0], macs[1], "retry обязан генерировать НОВЫЙ MAC")
+
+	// NIC закоммичен ровно один раз.
+	require.Len(t, kr.NetworkInterfaces(), 1)
+
+	// Address приаттачен (used=true) — reservation пережила retry (attach
+	// переигрался в свежей TX и осел вместе с NIC).
+	rd, err := kr.Reader(context.Background())
+	require.NoError(t, err)
+	a, err := rd.Addresses().Get(context.Background(), "e9ba1")
+	_ = rd.Close()
+	require.NoError(t, err)
+	require.True(t, a.Used, "приаттаченный адрес должен быть used=true после успешного retry")
+}
+
+// TestCreateUseCase_MacCollision_Exhausted — MAC-collision на КАЖДОЙ из
+// niMacRetryAttempts=3 попыток: doCreate исчерпывает retry и возвращает
+// codes.Internal "could not allocate unique MAC after 3 attempts" (create.go:259).
+// Последняя attach-TX откачена (Abort на collision) → address-reservation НЕ
+// протекла (used остаётся false в committed-state).
+func TestCreateUseCase_MacCollision_Exhausted(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	kr.SeedSubnet(&kachorepo.SubnetRecord{
+		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
+	})
+	kr.SeedAddress(&kachorepo.AddressRecord{Address: domain.Address{
+		ID: "e9ba1", ProjectID: "f1", Type: domain.AddressTypeInternal,
+		IpVersion: domain.IpVersionIPv4, Used: false,
+		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: "e9bsub1", Address: "10.0.0.5"},
+	}})
+
+	attempts := 0
+	kr.SetNIInsertHook(func(string) error {
+		attempts++
+		return repo.ErrMacCollision // все попытки сталкиваются
+	})
+
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
+	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
+		ProjectID:    "f1",
+		Name:         "nic",
+		SubnetID:     "e9bsub1",
+		V4AddressIDs: []string{"e9ba1"},
+	}})
+	require.NoError(t, err)
+
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.NotNil(t, saved.Error, "исчерпание retry → Operation.error")
+	assert.Equal(t, int32(codes.Internal), saved.Error.Code)
+	assert.Contains(t, saved.Error.Message, "could not allocate unique MAC after 3 attempts")
+
+	require.Equal(t, 3, attempts, "ожидаем ровно niMacRetryAttempts=3 попытки")
+
+	// NIC не закоммичен.
+	require.Empty(t, kr.NetworkInterfaces())
+
+	// Address-reservation не протекла — все attach-TX откатились (Abort на collision).
+	rd, err := kr.Reader(context.Background())
+	require.NoError(t, err)
+	a, err := rd.Addresses().Get(context.Background(), "e9ba1")
+	_ = rd.Close()
+	require.NoError(t, err)
+	require.False(t, a.Used, "после исчерпания retry address не должен остаться used=true (нет orphan reservation)")
 }
 
 func TestCreateUseCase_OK(t *testing.T) {

@@ -118,8 +118,9 @@ func TestValidateServerMTLS_Production_NoMTLS_NoForwarder_Fails(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "public listener mTLS required")
 	require.Contains(t, err.Error(), "production mode (production)")
-	// production (non-strict) НЕ требует internal-mTLS — сообщение не должно всплыть.
-	require.NotContains(t, err.Error(), "internal listener mTLS required")
+	// SEC-hardening r6: internal :9091 — service→service, mTLS обязателен и в
+	// non-strict production → его сообщение тоже всплывает.
+	require.Contains(t, err.Error(), "internal listener mTLS required")
 }
 
 // vpc8-C-10b: production + public-mTLS включён (без trusted-forwarder) → старт разрешён.
@@ -127,6 +128,8 @@ func TestValidateServerMTLS_Production_PublicMTLS_Passes(t *testing.T) {
 	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
 	var m MTLSConfig
 	m.PublicServerMTLS.Enable = true
+	// internal :9091 — service→service, mTLS обязателен в ЛЮБОМ production-режиме.
+	m.InternalServerMTLS.Enable = true
 	require.NoError(t, c.ValidateServerMTLS(m))
 }
 
@@ -135,8 +138,42 @@ func TestValidateServerMTLS_Production_PublicMTLS_Passes(t *testing.T) {
 func TestValidateServerMTLS_Production_TrustedForwarder_Passes(t *testing.T) {
 	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
 	c.AuthN.TrustedForwarder = true
-	var m MTLSConfig // public-mTLS выключен
+	var m MTLSConfig // public-mTLS выключен, но internal обязателен всегда в production
+	m.InternalServerMTLS.Enable = true
 	require.NoError(t, c.ValidateServerMTLS(m))
+}
+
+// vpc8-C-10f: production (non-strict) БЕЗ internal-mTLS → отказ.
+// SEC-hardening r6 (2026-07-05): internal :9091 — service→service, поэтому mTLS
+// обязателен в ЛЮБОМ production-режиме (security.md AuthN-инвариант: «Internal
+// (:9091) НЕ освобождён: mTLS обязателен»). Раньше non-strict production запускал
+// internal listener без транспортной аутентификации, доверяя client-asserted
+// x-kacho-* subject на admin/IPAM поверхности (InternalAddressPoolService,
+// InternalNetworkService.GetNetwork с infra vrf_id, InternalAddressService) —
+// principal-spoofing (CWE-306/290). У internal НЕТ trusted-forwarder escape-hatch
+// (в отличие от публичного user→edge listener'а).
+func TestValidateServerMTLS_Production_NoInternalMTLS_Fails(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	var m MTLSConfig
+	m.PublicServerMTLS.Enable = true    // публичный удовлетворён
+	m.InternalServerMTLS.Enable = false // internal выключен → отказ
+	err := c.ValidateServerMTLS(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "internal listener mTLS required")
+	require.Contains(t, err.Error(), "production mode (production)")
+}
+
+// vpc8-C-10g: production (non-strict) + trusted-forwarder НЕ спасает internal —
+// escape-hatch действует только для публичного listener'а.
+func TestValidateServerMTLS_Production_TrustedForwarder_StillRequiresInternalMTLS(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.AuthN.TrustedForwarder = true
+	var m MTLSConfig // оба выключены; trusted-forwarder закрывает только public
+	err := c.ValidateServerMTLS(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "internal listener mTLS required")
+	// public удовлетворён trusted-forwarder'ом — его сообщение всплыть не должно.
+	require.NotContains(t, err.Error(), "public listener mTLS required")
 }
 
 // vpc8-C-10d: production-strict ИГНОРИРУЕТ trusted-forwarder — server-mTLS обязателен

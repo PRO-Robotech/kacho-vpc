@@ -143,6 +143,10 @@ Production жёстко защищён и это **не** обходится:
 
 - `authzWiringDecision` возвращает **fatal** (отказ старта), если в production
   IAM-endpoint отсутствует — анонимный admin в production невозможен.
+- `ValidateServerMTLS` требует internal `:9091` server-mTLS в **ЛЮБОМ**
+  production-режиме (не только strict; SEC-hardening r6 2026-07-05) — internal —
+  это service→service, mTLS обязателен, trusted-forwarder escape-hatch на него не
+  распространяется. Без mTLS на internal старт в production **отказывает**.
 - Internal-only ресурсы (`AddressPool`, `VRFID`-несущий `GetNetwork`) по контракту
   живут только на cluster-internal `:9091`, который не публикуется на external TLS
   endpoint и не проксируется api-gateway на публичную поверхность (Запрет #6).
@@ -173,3 +177,27 @@ guardrail), от которого предостерегает сам ресур
 чистый рефакторинг. Новые под-шаги выносятся в помощник, только когда появляется
 **самостоятельная** когезивная единица (как перечисленные выше), а не для
 сокращения счётчика строк.
+
+## 15. DTO record→proto реестр (`internal/dto`) — единый entry-point, boot-checked
+
+Конвертация `record → proto` идёт через generic-реестр `internal/dto`
+(`Transfer(FromTo(rec,&dst))`), а маппинг-реализации (`toproto/*.go`)
+регистрируются `init()`-функциями в **выделенном** пакете `internal/dto/toproto`,
+который composition root подключает blank-import'ом. Это **намеренный** дизайн, а
+не tech-debt:
+
+- Цель — **единый entry-point** вместо россыпи прямых `toproto.Network(d)`-хелперов
+  по сервису (пакет-doc `dto/base.go`). Форма вывода proto идентична прямому вызову
+  (контракт не меняется).
+- `init()` вне `cmd/` — известное отступление от буквы `architecture.md` («no
+  init()-side-effects outside cmd/»), но оно **локализовано** в одном dedicated
+  пакете `toproto` (не размазано), и разрыв «зарегистрирован ли трансфер» закрыт
+  **двумя** гардами: (а) compile-time closed-union `Transferrable` — вызвать
+  `Transfer` с незарегистрированной парой `(F,T)` невозможно на этапе компиляции;
+  (б) boot-time `dto.MustBeRegistered()` (зовёт composition root на старте) —
+  потерянный blank-import → **паника на старте** (fail-fast), а не `codes.Internal`
+  на первом live `Get/List`. То есть failure-mode — startup, как у миграций.
+- Замена реестра на прямые exported-функции — поведенчески-нейтральный
+  рефакторинг ~28 call-site'ов в ~16 файлах; выигрыш спорный (компайл-ошибка
+  вместо boot-паники), а blast radius в security-ветке неоправдан. Если делать —
+  отдельным clean-refactor тикетом с полным newman-прогоном, не в hardening-pass.
