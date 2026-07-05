@@ -51,6 +51,8 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
+	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
+	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto" // регистрирует DTO-трансферы (init); boot-check ниже
 	"github.com/PRO-Robotech/kacho-vpc/internal/fgaboot"
 	"github.com/PRO-Robotech/kacho-vpc/internal/handler"
 	"github.com/PRO-Robotech/kacho-vpc/internal/observability/health"
@@ -126,6 +128,11 @@ func runServe(cfg config.Config) error {
 	logger := observability.NewSloggerLevel(os.Stdout, cfg.SlogLevel())
 	slog.SetDefault(logger)
 
+	// Boot-time self-check DTO-реестра: fail-fast, если blank-import
+	// internal/dto/toproto потерян и init()-регистрации не отработали (иначе —
+	// codes.Internal «no transfer registered» на первом же валидном Get/List).
+	dto.MustBeRegistered()
+
 	// Логируем insecure dev-defaults.
 	for _, w := range cfg.InsecureDevWarnings() {
 		logger.Warn(w)
@@ -198,21 +205,12 @@ func runServe(cfg config.Config) error {
 	// server-auth путь через clients.Build (dev backward-compat). Обязателен, когда
 	// kacho-iam требует и проверяет client-cert — иначе TLS-handshake этого dial падает.
 	iamPeer := cfg.ExtAPI.IAM
-	var iamConn clients.Conn
-	if mtlsCfg.IAMProjectMTLS.Enable {
-		var icreds grpc.DialOption
-		icreds, err = mtlsCfg.IAMProjectClientCreds()
-		if err != nil {
-			return fmt.Errorf("vpc→iam project mTLS creds: %w", err)
-		}
-		iamConn, err = grpc.NewClient(iamPeer.Endpoint, icreds, grpcclient.KeepaliveDialOption(false))
-	} else {
-		iamConn, err = clients.Build(ctx, clients.BuildOptions{
+	iamConn, err := dialPeer(ctx, "vpc→iam project", mtlsCfg.IAMProjectMTLS.Enable,
+		mtlsCfg.IAMProjectClientCreds, false, clients.BuildOptions{
 			Endpoint: iamPeer.Endpoint,
 			TLS:      iamPeer.TLS.Enable,
 			DNSLB:    iamPeer.DNSLB,
 		})
-	}
 	if err != nil {
 		return fmt.Errorf("dial iam: %w", err)
 	}
@@ -237,20 +235,11 @@ func runServe(cfg config.Config) error {
 	// mTLS включен (KACHO_VPC_GEO_MTLS_ENABLE=true) — дилим geo с corelib client-cert
 	// creds (fail-closed); иначе insecure/one-way-TLS путь через clients.Build (dev
 	// backward-compat).
-	var geoConn clients.Conn
-	if mtlsCfg.GeoMTLS.Enable {
-		var gcreds grpc.DialOption
-		gcreds, err = mtlsCfg.GeoClientCreds()
-		if err != nil {
-			return fmt.Errorf("vpc→geo mTLS creds: %w", err)
-		}
-		geoConn, err = grpc.NewClient(cfg.ExtAPI.Geo.Endpoint, gcreds, grpcclient.KeepaliveDialOption(false))
-	} else {
-		geoConn, err = clients.Build(ctx, clients.BuildOptions{
+	geoConn, err := dialPeer(ctx, "vpc→geo", mtlsCfg.GeoMTLS.Enable,
+		mtlsCfg.GeoClientCreds, false, clients.BuildOptions{
 			Endpoint: cfg.ExtAPI.Geo.Endpoint,
 			TLS:      cfg.ExtAPI.Geo.TLS.Enable,
 		})
-	}
 	if err != nil {
 		return fmt.Errorf("dial geo: %w", err)
 	}
@@ -270,19 +259,11 @@ func runServe(cfg config.Config) error {
 	// clients.Build (dev).
 	var authzConn clients.Conn
 	if cfg.AuthZ.IAMEndpoint != "" {
-		if mtlsCfg.IAMAuthzMTLS.Enable {
-			var acreds grpc.DialOption
-			acreds, err = mtlsCfg.IAMAuthzClientCreds()
-			if err != nil {
-				return fmt.Errorf("vpc→iam authz mTLS creds: %w", err)
-			}
-			authzConn, err = grpc.NewClient(cfg.AuthZ.IAMEndpoint, acreds, grpcclient.KeepaliveDialOption(false))
-		} else {
-			authzConn, err = clients.Build(ctx, clients.BuildOptions{
+		authzConn, err = dialPeer(ctx, "vpc→iam authz", mtlsCfg.IAMAuthzMTLS.Enable,
+			mtlsCfg.IAMAuthzClientCreds, false, clients.BuildOptions{
 				Endpoint: cfg.AuthZ.IAMEndpoint,
 				TLS:      cfg.AuthZ.IAMTLS.Enable,
 			})
-		}
 		if err != nil {
 			return fmt.Errorf("dial kacho-iam (authz): %w", err)
 		}
@@ -670,27 +651,40 @@ func buildAuthorizeConn(ctx context.Context, cfg config.Config, mtlsCfg config.M
 		logger.Warn("authz.list-filter.enabled=true but neither authorize-endpoint nor iam-endpoint set — per-object list-filter disabled")
 		return nil, nil
 	}
-	if cfg.AuthZ.ListFilter.AuthorizeTLS.Enable || mtlsCfg.IAMAuthzMTLS.Enable {
-		creds, err := mtlsCfg.IAMAuthzClientCreds()
-		if err != nil {
-			return nil, fmt.Errorf("vpc→iam authorize mTLS creds: %w", err)
-		}
-		conn, err := grpc.NewClient(endpoint, creds, grpcclient.KeepaliveDialOption(false))
-		if err != nil {
-			return nil, fmt.Errorf("dial kacho-iam (authorize/list-filter): %w", err)
-		}
-		logger.Info("per-object list-filter authorize edge configured", "endpoint", endpoint, "mtls", true)
-		return conn, nil
-	}
-	conn, err := clients.Build(ctx, clients.BuildOptions{
-		Endpoint: endpoint,
-		TLS:      cfg.AuthZ.ListFilter.AuthorizeTLS.Enable,
-	})
+	useMTLS := cfg.AuthZ.ListFilter.AuthorizeTLS.Enable || mtlsCfg.IAMAuthzMTLS.Enable
+	conn, err := dialPeer(ctx, "vpc→iam authorize", useMTLS,
+		mtlsCfg.IAMAuthzClientCreds, false, clients.BuildOptions{
+			Endpoint: endpoint,
+			TLS:      cfg.AuthZ.ListFilter.AuthorizeTLS.Enable,
+		})
 	if err != nil {
 		return nil, fmt.Errorf("dial kacho-iam (authorize/list-filter): %w", err)
 	}
-	logger.Info("per-object list-filter authorize edge configured", "endpoint", endpoint, "mtls", false)
+	logger.Info("per-object list-filter authorize edge configured", "endpoint", endpoint, "mtls", useMTLS)
 	return conn, nil
+}
+
+// dialPeer собирает cross-service gRPC conn для одного edge. useMTLS=true → per-edge
+// client-cert creds через credsFn (fail-closed на плохой тройке); useMTLS=false →
+// insecure/one-way-TLS путь через clients.Build (dev backward-compat). keepalive
+// управляет idle-keepalive пингами (для idle-склонных ребер). endpoint берется из
+// opts.Endpoint (opts.TLS/DNSLB игнорируются на mTLS-пути — creds несут TLS сами).
+func dialPeer(
+	ctx context.Context,
+	label string,
+	useMTLS bool,
+	credsFn func() (grpc.DialOption, error),
+	keepalive bool,
+	opts clients.BuildOptions,
+) (clients.Conn, error) {
+	if useMTLS {
+		creds, err := credsFn()
+		if err != nil {
+			return nil, fmt.Errorf("%s mTLS creds: %w", label, err)
+		}
+		return grpc.NewClient(opts.Endpoint, creds, grpcclient.KeepaliveDialOption(keepalive))
+	}
+	return clients.Build(ctx, opts)
 }
 
 // buildListFilter — возвращает per-object фильтр, готовый питать И фильтрованный

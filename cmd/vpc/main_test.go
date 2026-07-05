@@ -80,6 +80,12 @@ func TestBuildListFilter_EnabledWithConn_ReturnsFilter(t *testing.T) {
 // read/authz iam-dial оставить server-auth-only/plaintext, то, когда kacho-iam
 // требует и проверяет client-cert, handshake падает — guard запрещает эту регрессию,
 // проверяя, что оба dial'а консультируются с mTLS-хелперами.
+//
+// Все четыре peer-dial'а идут через общий хелпер `dialPeer`, которому per-edge
+// creds-функция передается значением (`mtlsCfg.IAM*ClientCreds`, без вызова на
+// call-site); сам вызов `credsFn()` — внутри `dialPeer`. Guard проверяет и то, что
+// creds-хелперы протянуты в каждый edge, и то, что `dialPeer` их действительно
+// вызывает (иначе creds были бы «протянуты, но не предъявлены»).
 func TestSECI_CompletenessGuard_EveryIAMDialThreadsClientCreds(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	require.NoError(t, err)
@@ -88,10 +94,12 @@ func TestSECI_CompletenessGuard_EveryIAMDialThreadsClientCreds(t *testing.T) {
 	for _, want := range []string{
 		// Ребро ProjectService.Get (iamConn) консультируется с IAM-project mTLS-хелпером.
 		"mtlsCfg.IAMProjectMTLS.Enable",
-		"IAMProjectClientCreds()",
+		"mtlsCfg.IAMProjectClientCreds",
 		// Ребро Check + list-filter (authzConn) консультируется с IAM-authz mTLS-хелпером.
 		"mtlsCfg.IAMAuthzMTLS.Enable",
-		"IAMAuthzClientCreds()",
+		"mtlsCfg.IAMAuthzClientCreds",
+		// dialPeer действительно предъявляет переданную creds-функцию (вызывает её).
+		"creds, err := credsFn()",
 	} {
 		require.Contains(t, main, want,
 			"composition root must thread client-cert mTLS into every vpc→iam read/authz dial; missing %q", want)
@@ -104,10 +112,9 @@ func TestSECI_CompletenessGuard_EveryIAMDialThreadsClientCreds(t *testing.T) {
 	// Защита от старого server-auth-only bool-пути на read/authz dial'ах: ни iamConn,
 	// ни authzConn не должны дилить только с `TLS: ...IAM.TLS.Enable` /
 	// `TLS: ...IAMTLS.Enable`, когда соответствующее mTLS-ребро включено. Проверяем,
-	// что mTLS-ветка существует перед каждым clients.Build-fallback, требуя, чтобы
-	// вызов хелпера текстуально предшествовал bool-пути.
+	// что creds-хелпер текстуально предшествует bool-TLS-пути iamConn edge'а.
 	require.Less(t,
-		strings.Index(main, "IAMProjectClientCreds()"),
+		strings.Index(main, "mtlsCfg.IAMProjectClientCreds"),
 		strings.LastIndex(main, "iamPeer.TLS.Enable"),
 		"IAMProjectClientCreds mTLS branch must guard the iamConn insecure/server-auth fallback")
 }

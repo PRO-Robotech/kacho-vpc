@@ -161,3 +161,44 @@ type Transferrable interface {
 func Transfer[V Transferrable](dto V) error {
 	return dto.Perform()
 }
+
+// MustBeRegistered — boot-time self-check: для каждого члена закрытого
+// Transferrable-union'а обязан быть зарегистрирован impl. Вызывается
+// композиционным корнем (cmd/vpc) на старте. Если blank-import
+// `_ "internal/dto/toproto"` где-то потерян и его init() не отработал — паника
+// на старте (fail-closed), вместо codes.Internal «no transfer registered» на
+// первом же валидном Get/List в рантайме. Compile-time constraint гарантирует
+// лишь допустимость пары (F,T), но НЕ факт регистрации — этот метод закрывает
+// разрыв «compile-time union ↔ runtime registry».
+func MustBeRegistered() {
+	// Порядок и состав — 1-в-1 с type-set Transferrable выше.
+	checks := []struct {
+		name string
+		ok   bool
+	}{
+		{"time.Time→Timestamp", isRegistered[time.Time, *timestamppb.Timestamp]()},
+		{"NetworkRecord→Network", isRegistered[kachorepo.NetworkRecord, *vpcv1.Network]()},
+		{"SubnetRecord→Subnet", isRegistered[kachorepo.SubnetRecord, *vpcv1.Subnet]()},
+		{"AddressRecord→Address", isRegistered[kachorepo.AddressRecord, *vpcv1.Address]()},
+		{"RouteTableRecord→RouteTable", isRegistered[kachorepo.RouteTableRecord, *vpcv1.RouteTable]()},
+		{"SecurityGroupRecord→SecurityGroup", isRegistered[kachorepo.SecurityGroupRecord, *vpcv1.SecurityGroup]()},
+		{"GatewayRecord→Gateway", isRegistered[kachorepo.GatewayRecord, *vpcv1.Gateway]()},
+		{"NetworkInterfaceRecord→NetworkInterface", isRegistered[kachorepo.NetworkInterfaceRecord, *vpcv1.NetworkInterface]()},
+	}
+	var missing []string
+	for _, c := range checks {
+		if !c.ok {
+			missing = append(missing, c.name)
+		}
+	}
+	if len(missing) > 0 {
+		panic(fmt.Sprintf("dto: transfers not registered: %v "+
+			"(потерян blank-import internal/dto/toproto?)", missing))
+	}
+}
+
+// isRegistered — есть ли зарегистрированный Interface[F,T] в реестре.
+func isRegistered[F any, T any]() bool {
+	_, ok := findTransfer[F, T]()
+	return ok
+}
