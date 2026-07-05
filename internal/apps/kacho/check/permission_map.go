@@ -124,16 +124,18 @@ func PermissionMap() authz.RPCMap {
 				return req.(*vpcv1.GetNetworkRequest).GetNetworkId(), nil
 			}),
 		},
-		// NetworkService/List — scope-filtered List RPC: handler
-		// (ListNetworksUseCase) резолвит набор разрешенных FGA id Network через
-		// ListObjects и возвращает 200 + отфильтрованный список (пустой, если у
-		// caller'а нет грантов в запрошенном project'е). Один per-RPC Check здесь
-		// отклонил бы весь вызов `no path` 403 еще до scope-filter'а.
-		// ScopeFiltered → interceptor пропускает Check; authn по-прежнему
-		// энфорсится выше (api-gateway JWT). Extract оставлен для parity с каталогом/tooling.
+		// NetworkService/List — top-level project List: server-side FGA-Check
+		// `viewer` на `project:<project_id>` (parity с остальными 6 top-level
+		// List RPC). data-level list-filter (ListNetworksUseCase → ListObjects)
+		// сужает результат per-object ПОВЕРХ Check'а, но НЕ заменяет его: при
+		// выключенном фильтре (helm-default) единственным гейтом остался бы
+		// header-trusted handler-side AssertProjectOwnership → cross-project
+		// enumeration. Поэтому Check обязателен (НЕ ScopeFiltered) — object-scope
+		// авторизация не деградирует до client-заголовка (SEC audit 2026-07-05,
+		// CWE-862/CWE-639). visibility per-object — через iam ListObjects
+		// `viewer ∪ v_list`, см. authzfilter.
 		"/kacho.cloud.vpc.v1.NetworkService/List": {
-			Relation:      relationViewer,
-			ScopeFiltered: true,
+			Relation: relationViewer,
 			Extract: authz.StaticExtractor(objectTypeProject, func(req any) (string, error) {
 				return req.(*vpcv1.ListNetworksRequest).GetProjectId(), nil
 			}),

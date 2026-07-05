@@ -95,6 +95,7 @@ var createChildRPCs = []string{
 // `viewer`. Visibility per-object идет через iam ListObjects `viewer ∪ v_list`
 // (authzfilter), не через per-RPC Check relation.
 var projectListRPCs = []string{
+	"/kacho.cloud.vpc.v1.NetworkService/List",
 	"/kacho.cloud.vpc.v1.SubnetService/List",
 	"/kacho.cloud.vpc.v1.AddressService/List",
 	"/kacho.cloud.vpc.v1.RouteTableService/List",
