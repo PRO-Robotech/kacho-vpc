@@ -44,6 +44,9 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("api-server.endpoint", "tcp://0.0.0.0:9090")
 	v.SetDefault("api-server.internal-endpoint", "tcp://0.0.0.0:9091")
 	v.SetDefault("api-server.graceful-shutdown", 10*time.Second)
+	// request-timeout — server-side deadline на один RPC (защита от bounded-pool
+	// exhaustion / deadline-less запросов, CWE-770). 0 → без границы.
+	v.SetDefault("api-server.request-timeout", 30*time.Second)
 
 	// metrics / healthcheck — cluster-internal diagnostic listener (/metrics +
 	// /healthz + /readyz). endpoint=:9095 зеркалит kacho-iam; enable=false ИЛИ
@@ -62,6 +65,11 @@ func RegisterDefaults(v *viper.Viper) {
 	// values.yaml / ENV KACHO_VPC_REPOSITORY__POSTGRES__SLAVE_URL.
 	v.SetDefault("repository.postgres.slave-url", "")
 	v.SetDefault("repository.postgres.max-conns", 0)
+	// serving-only DB-тайм-ауты (в MigrateDSN не попадают): ограничивают время
+	// одного запроса / ожидания блокировки, чтобы зависший запрос не держал
+	// pooled-connection бесконечно (CWE-770/400). 0 → Postgres default (без лимита).
+	v.SetDefault("repository.postgres.statement-timeout", 30*time.Second)
+	v.SetDefault("repository.postgres.lock-timeout", 15*time.Second)
 	v.SetDefault("repository.postgres.ssl-mode", "disable")
 	v.SetDefault("repository.postgres.password-from-env", "KACHO_VPC_DB_PASSWORD")
 
@@ -69,6 +77,12 @@ func RegisterDefaults(v *viper.Viper) {
 	// режим без AuthN (anonymous как admin) включается явно: authn.mode=dev
 	// (values-dev.yaml / KACHO_VPC_AUTH_MODE=dev) — только для dev-стенда и тестов.
 	v.SetDefault("authn.mode", "production")
+	// trusted-forwarder — fail-closed default. В production (non-strict) публичный
+	// :9090 listener требует ЛИБО server-mTLS, ЛИБО явного trusted-forwarder=true
+	// (оператор подтверждает, что listener стоит за аутентифицированным
+	// forwarder'ом/mesh). Без одного из двух production-старт отвергается
+	// (ValidateServerMTLS) — client-asserted principal по plaintext недопустим.
+	v.SetDefault("authn.trusted-forwarder", false)
 
 	// extapi
 	// project-existence peer — kacho-iam (ProjectService.Get).

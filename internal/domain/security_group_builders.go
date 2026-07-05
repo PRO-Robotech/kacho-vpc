@@ -3,8 +3,6 @@
 
 package domain
 
-import "github.com/PRO-Robotech/kacho-corelib/ids"
-
 // Builders для inline-собираемых domain-сущностей вокруг Network. Держат подальше
 // от service-слоя inline-литералы с magic-константами, инкапсулируя:
 //   * имя default-SG (formula: "default-sg-" + TruncateID(networkID)),
@@ -35,14 +33,17 @@ func NewDefaultSecurityGroupRules() []SecurityGroupRule {
 }
 
 // NewDefaultSecurityGroup собирает domain.SecurityGroup для default-SG сети.
-// CreatedAt сюда не входит (DB-managed); caller (репозиторий) выставит время
-// в Insert. Name/Description — newtypes (RcNameVPC / RcDescription).
+// Чистый value-builder: `id` минтит use-case/repo-слой (ids.NewID(PrefixSecurityGroup))
+// и передаёт сюда — domain не тянет infra-утилиту и остаётся детерминированным
+// (stdlib+proto-only, dependency-rule). CreatedAt сюда не входит (DB-managed);
+// caller (репозиторий) выставит время в Insert. Name/Description — newtypes
+// (RcNameVPC / RcDescription).
 //
 // Используется service-слоем в worker'е Network.Create при
 // KACHO_VPC_DEFAULT_SG_INLINE=true.
-func NewDefaultSecurityGroup(net Network) SecurityGroup {
+func NewDefaultSecurityGroup(id string, net Network) SecurityGroup {
 	return SecurityGroup{
-		ID:                ids.NewID(ids.PrefixSecurityGroup),
+		ID:                id,
 		ProjectID:         net.ProjectID,
 		NetworkID:         net.ID,
 		Name:              RcNameVPC(DefaultSGName(net.ID)),

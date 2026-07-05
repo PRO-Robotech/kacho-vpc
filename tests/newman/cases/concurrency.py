@@ -601,6 +601,22 @@ CASES.append(Case(
                 "opIds.forEach(oid => tryOne(oid, 0));",
             ],
         ),
+        # Читаем финальный набор правил SG: сколько наших conc-rule-* реально осело.
+        # Это timing-независимый детектор lost-update: при исправном xmin-OCC число
+        # осевших правил ВСЕГДА равно числу ok-операций (overlap → ok=1/present=1;
+        # сериализовано → ok=2/present=2). Если OCC сломан (оба ok, но second-writer
+        # затёр набор) → present<ok → assert ниже краснеет.
+        Step(
+            name="fetch-sg-rules-after-occ", method="GET", path="/vpc/v1/securityGroups/{{sgId}}",
+            test_script=[
+                "const j = pm.response.json();",
+                "pm.test('sg fetch ok', () => pm.expect(pm.response.code).to.eql(200));",
+                "const rules = (j && j.rules) || [];",
+                "const present = rules.filter(r => r && typeof r.description === 'string' "
+                "&& /^conc-rule-\\d+$/.test(r.description)).length;",
+                "pm.environment.set('occRulesPresent', String(present));",
+            ],
+        ),
         Step(
             name="assert-occ", method="GET", path="/healthz",
             test_script=[
@@ -608,11 +624,16 @@ CASES.append(Case(
                 "pm.test('2 occ ops resolved', () => pm.expect(ops.length).to.eql(2));",
                 "const ok = ops.filter(o => !o.hasError && o.done).length;",
                 "const conflict = ops.filter(o => o.hasError && (o.errCode === 9 || o.errCode === 10)).length;",
+                "const present = parseInt(pm.environment.get('occRulesPresent') || '-1', 10);",
                 "// gRPC 9=FailedPrecondition, 10=Aborted. Race может разрешаться обоими способами:",
                 "// если xmin-CAS попал — второй writer получает 0 rows → ErrFailedPrecondition; либо Aborted.",
-                "pm.test('xmin OCC: ровно 1 OK + 1 conflict (FailedPrecondition или Aborted)', () => {",
+                "// Оба исхода валидны (overlap → 1 OK+1 conflict; сериализовано → 2 OK, оба",
+                "// правила осели). НО обе операции успешными с ПОТЕРЕЙ одного правила",
+                "// (second-writer-wins) — недопустимо: ключевой assert — present === ok.",
+                "pm.test('xmin OCC: no lost update — rules present === ok (1|2), conflict surfaced as 9/10', () => {",
                 "  pm.expect(ok + conflict, `ok=${ok} conflict=${conflict} ops=${JSON.stringify(ops)}`).to.eql(2);",
                 "  pm.expect(ok, 'at least one must succeed').to.be.at.least(1);",
+                "  pm.expect(present, `lost update: rules present=${present} != ok=${ok} (second-writer-wins?)`).to.eql(ok);",
                 "});",
             ],
         ),

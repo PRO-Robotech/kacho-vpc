@@ -632,12 +632,13 @@ CASES.append(Case(
 
 # SG, привязанный к NIC через security_group_ids[], нельзя удалить. Пока DB-уровневый
 # ref-trigger не реализован, SG.Delete проходит, оставляя dangling ref в
-# NIC.security_group_ids; assert FailedPrecondition станет зеленым после появления
-# trigger / partial UNIQUE / эквивалента (within-service refs через БД, не software
-# refcheck).
+# NIC.security_group_ids; assert FailedPrecondition (code 9) остаётся КРАСНЫМ до
+# появления within-service refcheck на уровне БД (trigger / partial UNIQUE /
+# эквивалент — НЕ software refcheck). Persistent-RED по rule #13.
+# verifies https://github.com/PRO-Robotech/kacho-vpc/issues/27
 CASES.append(Case(
     id="SG-DEL-NEG-NIC-ATTACHED",
-    title="Delete SG, прилинкованного к NIC через security_group_ids → FailedPrecondition (TDD-red до DB-trigger)",
+    title="Delete SG, прилинкованного к NIC через security_group_ids → FailedPrecondition (persistent-RED: verifies #27)",
     classes=["NEG", "STATE", "CONF"], priority="P0",
     steps=[
         Step(name="cr-net", method="POST", path="/vpc/v1/networks",
@@ -678,18 +679,15 @@ CASES.append(Case(
              test_script=[
                  "const j = pm.response.json();",
                  "pm.test('sg delete op completed', () => pm.expect(j.done).to.eql(true));",
-                 # Пока DB-уровневый ref-trigger не реализован, SG.Delete проходит без
-                 # отказа и оставляет dangling ref в NIC.security_group_ids. Через
-                 # `pm.test.skip` кейс остается в suite как pending; после реализации
-                 # DB-trigger assertion станет нормальным green/red.
-                 "const refcheckEnforced = !!(j.error && j.error.code === 9);",
-                 "console.log('refcheck enforced =', refcheckEnforced, JSON.stringify(j.error || {}));",
-                 "(refcheckEnforced ? pm.test : pm.test.skip)("
-                 "  'SG.Delete failed FAILED_PRECONDITION (NIC-attached) — pending DB-trigger refcheck', "
-                 "  () => {",
-                 "    pm.expect(j.error, JSON.stringify(j)).to.be.an('object');",
-                 "    pm.expect(j.error.code).to.eql(9);",  # FAILED_PRECONDITION
-                 "  });",
+                 # Persistent-RED (rule #13): SG.Delete SG'а, прилинкованного к NIC через
+                 # security_group_ids[], ОБЯЗАНА отвергаться FAILED_PRECONDITION (code 9).
+                 # Пока within-service refcheck на уровне БД не реализован (issue #27),
+                 # SG.Delete проходит и оставляет dangling ref → этот assert КРАСНЫЙ.
+                 # НИКАКОГО pm.test.skip — безусловная проверка (rule #13 запрещает skip).
+                 "pm.test('SG.Delete NIC-attached must fail FAILED_PRECONDITION (verifies #27)', () => {",
+                 "    pm.expect(j.error, 'expected op error, got: ' + JSON.stringify(j)).to.be.an('object');",
+                 "    pm.expect(j.error.code, 'expected FAILED_PRECONDITION(9)').to.eql(9);",
+                 "});",
              ]),
         # Cleanup: сначала detach SG из NIC (PATCH securityGroupIds=[]),
         # затем удаление снизу вверх. Если кейс красный (refcheck нет),

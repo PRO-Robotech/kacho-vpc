@@ -25,6 +25,9 @@ logger:
   level: INFO
 apiServer:
   gracefulShutdown: 10s
+  # server-side deadline на один RPC (bounded-pool exhaustion guard, CWE-770).
+  # 0 → без границы. В kacho-vpc нет long-lived server-streams, поэтому безопасно.
+  requestTimeout: 30s
 metrics:
   enable: true
 healthcheck:
@@ -34,9 +37,18 @@ repository:
     # ⚠️ Tuned for high-throughput Address.Create: pgxpool default of 4 caps
     # write throughput. 200 conns/pod уже unlock'aет 10k RPS.
     maxConns: 200
+    # serving-only DB-тайм-ауты (не применяются к миграциям): висящий запрос/lock
+    # не держит pooled-connection бесконечно (CWE-770/400). 0 → без лимита.
+    statementTimeout: 30s
+    lockTimeout: 15s
     sslMode: disable
 authn:
   mode: dev
+  # trustedForwarder — только для mode=production БЕЗ public server-mTLS: явное
+  # подтверждение оператора, что :9090 стоит за аутентифицирующим forwarder'ом/mesh
+  # (client identity терминируется до listener'а). Иначе production-старт без
+  # public-mTLS отвергается (fail-closed, CWE-290). production-strict игнорирует.
+  trustedForwarder: false
 # per-RPC Check через kacho-iam.InternalIAMService.Check (port 9091).
 # project-level list-filter тоже идет через InternalIAMService.Check на
 #   INTERNAL :9091 (iamEndpoint) — НЕ на public :9090. listFilter.authorizeEndpoint

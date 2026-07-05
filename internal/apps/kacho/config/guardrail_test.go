@@ -107,10 +107,54 @@ func TestValidateServerMTLS_ProductionStrict_BothOn_Passes(t *testing.T) {
 	require.NoError(t, c.ValidateServerMTLS(m))
 }
 
-// vpc8-C-10: production (не strict) НЕ требует server-mTLS (граница).
-func TestValidateServerMTLS_Production_NotStrict_NoMTLSRequired(t *testing.T) {
+// vpc8-C-10: production (не strict) БЕЗ public-mTLS и БЕЗ trusted-forwarder → отказ.
+// SEC-hardening r2 (2026-07-05): публичный :9090 listener выводит authz-principal'а
+// из client-asserted x-kacho-* metadata; в production он не должен доверять ей по
+// незашифрованному транспорту без явного подтверждения границы доверия (CWE-290).
+func TestValidateServerMTLS_Production_NoMTLS_NoForwarder_Fails(t *testing.T) {
 	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
-	var m MTLSConfig // оба server-mTLS выключены
+	var m MTLSConfig // оба server-mTLS выключены, trusted-forwarder не выставлен
+	err := c.ValidateServerMTLS(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "public listener mTLS required")
+	require.Contains(t, err.Error(), "production mode (production)")
+	// production (non-strict) НЕ требует internal-mTLS — сообщение не должно всплыть.
+	require.NotContains(t, err.Error(), "internal listener mTLS required")
+}
+
+// vpc8-C-10b: production + public-mTLS включён (без trusted-forwarder) → старт разрешён.
+func TestValidateServerMTLS_Production_PublicMTLS_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	var m MTLSConfig
+	m.PublicServerMTLS.Enable = true
+	require.NoError(t, c.ValidateServerMTLS(m))
+}
+
+// vpc8-C-10c: production + trusted-forwarder=true (без public-mTLS) → старт разрешён
+// (оператор явно подтвердил, что listener за аутентифицированным forwarder'ом).
+func TestValidateServerMTLS_Production_TrustedForwarder_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.AuthN.TrustedForwarder = true
+	var m MTLSConfig // public-mTLS выключен
+	require.NoError(t, c.ValidateServerMTLS(m))
+}
+
+// vpc8-C-10d: production-strict ИГНОРИРУЕТ trusted-forwarder — server-mTLS обязателен
+// всегда (escape-hatch не действует в strict).
+func TestValidateServerMTLS_ProductionStrict_TrustedForwarder_StillRequiresMTLS(t *testing.T) {
+	c := prodCfg(ModeProductionStrict, "kacho-iam:9091", false)
+	c.AuthN.TrustedForwarder = true
+	var m MTLSConfig // оба выключены
+	err := c.ValidateServerMTLS(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "public listener mTLS required")
+	require.Contains(t, err.Error(), "internal listener mTLS required")
+}
+
+// vpc8-C-10e: dev-режим гардом не затронут (public-mTLS не требуется).
+func TestValidateServerMTLS_Dev_NoMTLSRequired(t *testing.T) {
+	c := prodCfg(ModeDev, "kacho-iam:9091", false)
+	var m MTLSConfig
 	require.NoError(t, c.ValidateServerMTLS(m))
 }
 
@@ -136,6 +180,37 @@ func TestValidateBoot_ProductionStrict_AggregatesAllViolations(t *testing.T) {
 	require.Contains(t, msg, "ssl-mode must be one of require|verify-ca|verify-full")
 	require.Contains(t, msg, "public listener mTLS required")
 	require.Contains(t, msg, "internal listener mTLS required")
+}
+
+// vpc8-C-12: production (non-strict) с ssl-mode=disable → отказ (DB-трафик и пароль
+// открытым текстом). SEC-hardening r2 (2026-07-05, CWE-319): защищённый sslmode
+// требуется в ЛЮБОМ IsProduction() режиме, не только strict.
+func TestValidate_Production_SSLModeDisable_Fails(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.Repository.Postgres.SSLMode = "disable"
+	err := c.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ssl-mode must be one of require|verify-ca|verify-full")
+	require.Contains(t, err.Error(), "production mode (production)")
+}
+
+// vpc8-C-13: production с ssl-mode=require → проходит.
+func TestValidate_Production_SSLModeRequire_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.Repository.Postgres.SSLMode = "require"
+	require.NoError(t, c.Validate())
+}
+
+// vpc8-C-14: dev с ssl-mode=disable — не затронут (dev допускает plaintext).
+func TestValidate_Dev_SSLModeDisable_Passes(t *testing.T) {
+	var c Config
+	c.AuthN.Mode = ModeDev
+	c.APIServer.Endpoint = "tcp://0.0.0.0:9090"
+	c.APIServer.InternalEndpoint = "tcp://0.0.0.0:9091"
+	c.Repository.Postgres.URL = "postgres://u@h:5432/db"
+	c.Repository.Postgres.SSLMode = "disable"
+	c.Logger.Level = "INFO"
+	require.NoError(t, c.Validate())
 }
 
 // H-D3: невалидный logger.level → ошибка валидации при старте (fail-fast,

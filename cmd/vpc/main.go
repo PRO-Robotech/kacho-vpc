@@ -392,12 +392,19 @@ func runServe(cfg config.Config) error {
 	// отвергается (UNAVAILABLE), когда KACHO_VPC_REQUIRE_IAM взведен, а
 	// register-drainer не подключен к IAM, — чтобы ни один tenant-ресурс не создавался
 	// без доставляемого owner-tuple intent. Read RPC не затронуты.
+	// request-deadline interceptor стоит ПЕРВЫМ (outermost): кладёт верхнюю
+	// границу на всю обработку RPC (включая authz Check и DB-запросы), чтобы
+	// deadline-less/долгий запрос не держал pooled-connection бесконечно
+	// (bounded-pool exhaustion / DoS, CWE-770). timeout<=0 → no-op.
+	reqTimeout := cfg.APIServer.RequestTimeout
 	publicUnary := []grpc.UnaryServerInterceptor{
+		handler.UnaryTimeoutInterceptor(reqTimeout),
 		fgaboot.GuardCreateUnary(bootGate),
 		grpcsrv.UnaryPrincipalExtract(),
 		handler.TenantUnaryInterceptor(false, productionMode),
 	}
 	publicStream := []grpc.StreamServerInterceptor{
+		handler.StreamTimeoutInterceptor(reqTimeout),
 		grpcsrv.StreamPrincipalExtract(),
 		handler.TenantStreamInterceptor(false, productionMode),
 	}
@@ -412,10 +419,12 @@ func runServe(cfg config.Config) error {
 	// Check; IPAM InternalAddressService.* — object-scoped verb-bearing Check на
 	// `vpc_address` (v_update/v_get), все в PermissionMap.
 	internalUnary := []grpc.UnaryServerInterceptor{
+		handler.UnaryTimeoutInterceptor(reqTimeout),
 		grpcsrv.UnaryPrincipalExtract(),
 		handler.TenantUnaryInterceptor(true, productionMode),
 	}
 	internalStream := []grpc.StreamServerInterceptor{
+		handler.StreamTimeoutInterceptor(reqTimeout),
 		grpcsrv.StreamPrincipalExtract(),
 		handler.TenantStreamInterceptor(true, productionMode),
 	}
@@ -485,6 +494,17 @@ func runServe(cfg config.Config) error {
 	logger.Info("kacho-vpc listener mTLS",
 		"public_mtls", mtlsCfg.PublicServerMTLS.Enable,
 		"internal_mtls", mtlsCfg.InternalServerMTLS.Enable)
+	// SEC: production без public-mTLS допущен boot-гардрейлом только под явный
+	// trusted-forwarder ack — принимаем client-asserted x-kacho-* principal'а по
+	// незашифрованному :9090. Громко предупреждаем, что безопасность целиком
+	// зависит от аутентифицирующего forwarder'а/mesh перед listener'ом.
+	if cfg.AuthN.Mode == config.ModeProduction && !mtlsCfg.PublicServerMTLS.Enable && cfg.AuthN.TrustedForwarder {
+		logger.Warn("public :9090 listener trusts client-asserted principal WITHOUT server-mTLS "+
+			"(authn.trusted-forwarder=true) — the public endpoint MUST be reachable only via an "+
+			"authenticated forwarder/service-mesh that terminates client identity; direct network "+
+			"access to :9090 allows principal spoofing / cross-tenant authz bypass",
+			"mode", cfg.AuthN.Mode.String())
+	}
 	registerPublicServices(grpcSrv, svcs, opsRepo)
 	registerInternalServices(internalSrv, svcs)
 
@@ -946,11 +966,11 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 
 	// NetworkInterface — use-case-структура. Все use-case'ы работают через
 	// CQRS-Repository (`kachoRepo`). У NIC нет Move RPC (NIC привязан к Subnet).
-	// addressAdapter передается в Create/Update/Delete UC — он удовлетворяет
-	// `networkinterface.AddressRepo` port (Get + SetReference + ClearReference).
+	// Address-attach/detach идёт через writer-TX (`w.Addresses()`) внутри Create/
+	// Update — отдельный addressAdapter в эти UC больше не передаётся.
 	niHandler := niapp.NewHandler(
-		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, addressAdapter, projectClient, opsRepo).WithRegistrar(registrar),
-		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, addressAdapter, opsRepo),
+		niapp.NewCreateNetworkInterfaceUseCase(kachoRepo, projectClient, opsRepo).WithRegistrar(registrar),
+		niapp.NewUpdateNetworkInterfaceUseCase(kachoRepo, opsRepo),
 		niapp.NewDeleteNetworkInterfaceUseCase(kachoRepo, opsRepo),
 		niapp.NewGetNetworkInterfaceUseCase(kachoRepo, listFilter),
 		niapp.NewListNetworkInterfacesUseCase(kachoRepo, listFilter),

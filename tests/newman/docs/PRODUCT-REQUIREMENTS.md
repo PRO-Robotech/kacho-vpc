@@ -665,7 +665,7 @@ sync, либо op.error.code=9 async). Для удаления — сначал�
 Способ enforcement — **DB-уровень** (within-service refs выражаются на стороне БД,
 software-side TOCTOU-precheck запрещен within-service инвариантом на DB-уровне). Текущий gap: для
 JSONB-массива `security_group_ids` ссылочный constraint еще не оформлен (нет FK / trigger).
-- Validated-by: `SG-DEL-NEG-NIC-ATTACHED` (**TDD-red** до реализации DB-trigger)
+- Validated-by: `SG-DEL-NEG-NIC-ATTACHED` (**persistent-RED** (verifies [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27)) до DB-trigger)
 - Blocked by: (within-service refs through DB)
 - Проверка: `internal/migrations/*.sql` — миграция, выражающая инвариант (BEFORE DELETE
  trigger на `security_groups`, проверяющий `NOT EXISTS … FROM network_interfaces WHERE

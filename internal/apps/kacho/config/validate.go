@@ -15,8 +15,13 @@ import (
 const (
 	errAuthzEndpointRequired = "production mode (%s): authz.iam-endpoint is required " +
 		"(set the kacho-iam internal endpoint, or authz.breakglass=true to bypass authz)"
-	errPublicMTLSRequired = "production-strict mode: public listener mTLS required " +
-		"(set KACHO_VPC_PUBLIC_SERVER_MTLS_ENABLE=true with cert/key/ca)"
+	errPublicMTLSRequired = "production mode (%s): public listener mTLS required " +
+		"(set KACHO_VPC_PUBLIC_SERVER_MTLS_ENABLE=true with cert/key/ca) — the public :9090 " +
+		"listener derives the authorization principal from client-asserted x-kacho-* metadata; " +
+		"without verified transport auth any direct caller can spoof an arbitrary principal " +
+		"(cross-tenant authz bypass). If the listener sits behind an authenticated " +
+		"forwarder/service-mesh that terminates client identity, set authn.trusted-forwarder=true " +
+		"to acknowledge that trust boundary (production-strict ignores this escape hatch)"
 	errInternalMTLSRequired = "production-strict mode: internal listener mTLS required " +
 		"(set KACHO_VPC_INTERNAL_SERVER_MTLS_ENABLE=true with cert/key/ca)"
 
@@ -93,41 +98,64 @@ func (c Config) Validate() error {
 			fmt.Errorf(errAuthzEndpointRequired, c.AuthN.Mode))
 	}
 
-	if c.AuthN.Mode == ModeProductionStrict {
-		if !c.ExtAPI.IAM.TLS.Enable {
-			errs = multierr.Append(errs,
-				fmt.Errorf("production-strict mode: extapi.iam.tls.enable=true required"))
-		}
+	// S1b: защищённый DB-транспорт требуется в ЛЮБОМ production-режиме, не только
+	// strict (CWE-319). ssl-mode=disable в production → пароль KACHO_VPC_DB_PASSWORD
+	// и весь query-трафик идут открытым текстом; sniffer в DB-сегменте перехватывает
+	// креды. dev допускает disable (plaintext локально).
+	if c.AuthN.Mode.IsProduction() {
 		switch strings.ToLower(c.Repository.Postgres.SSLMode) {
 		case "require", "verify-ca", "verify-full":
 			// OK
 		default:
 			errs = multierr.Append(errs,
-				fmt.Errorf("production-strict mode: repository.postgres.ssl-mode must be one of require|verify-ca|verify-full (got %q)",
-					c.Repository.Postgres.SSLMode))
+				fmt.Errorf("production mode (%s): repository.postgres.ssl-mode must be one of require|verify-ca|verify-full (got %q)",
+					c.AuthN.Mode, c.Repository.Postgres.SSLMode))
+		}
+	}
+
+	if c.AuthN.Mode == ModeProductionStrict {
+		if !c.ExtAPI.IAM.TLS.Enable {
+			errs = multierr.Append(errs,
+				fmt.Errorf("production-strict mode: extapi.iam.tls.enable=true required"))
 		}
 	}
 
 	return errs
 }
 
-// ValidateServerMTLS — boot-гардрейл S2: production-strict требует включенный
-// server-mTLS на ОБОИХ листенерах (public :9090 + internal :9091). MTLSConfig
-// грузится отдельно от viper-Config (envconfig, LoadMTLS), поэтому проверка —
-// отдельный метод, вызываемый сразу после config.LoadMTLS() и ДО net.Listen.
+// ValidateServerMTLS — boot-гардрейл S2: транспортная аутентификация публичного
+// (:9090) и internal (:9091) листенеров. MTLSConfig грузится отдельно от
+// viper-Config (envconfig, LoadMTLS), поэтому проверка — отдельный метод,
+// вызываемый сразу после config.LoadMTLS() и ДО net.Listen.
 //
-// Для не-strict режимов (dev / production) server-mTLS не обязателен — это
-// эксклюзивное требование production-strict (fail-closed + строго-проверенный
-// транспорт). Возвращает multierr со всеми нарушениями сразу.
+// Публичный :9090 listener выводит authz-principal'а из client-asserted x-kacho-*
+// metadata. В ЛЮБОМ production-режиме доверять этой metadata по незашифрованному
+// транспорту запрещено (CWE-290 spoofing): иначе прямой вызов :9090 подделывает
+// произвольного principal'а и обходит tenant-изоляцию. Поэтому:
+//   - production-strict — server-mTLS обязателен на ОБОИХ листенерах, без
+//     исключений (trusted-forwarder-флаг игнорируется).
+//   - production (non-strict) — публичный listener требует ЛИБО PublicServerMTLS,
+//     ЛИБО явного authn.trusted-forwarder=true (оператор подтверждает, что :9090
+//     стоит за аутентифицированным forwarder'ом/mesh, который сам терминирует
+//     идентичность клиента); internal listener mTLS в non-strict не обязателен.
+//   - dev — требований нет.
+//
+// Возвращает multierr со всеми нарушениями сразу.
 func (c Config) ValidateServerMTLS(m MTLSConfig) error {
-	if c.AuthN.Mode != ModeProductionStrict {
+	if !c.AuthN.Mode.IsProduction() {
 		return nil
 	}
 	var errs error
-	if !m.PublicServerMTLS.Enable {
-		errs = multierr.Append(errs, fmt.Errorf("%s", errPublicMTLSRequired))
+
+	// Публичный listener: server-mTLS ИЛИ (только в non-strict) trusted-forwarder ack.
+	publicAuthenticated := m.PublicServerMTLS.Enable ||
+		(c.AuthN.Mode == ModeProduction && c.AuthN.TrustedForwarder)
+	if !publicAuthenticated {
+		errs = multierr.Append(errs, fmt.Errorf(errPublicMTLSRequired, c.AuthN.Mode))
 	}
-	if !m.InternalServerMTLS.Enable {
+
+	// Internal listener: обязателен только в strict (cluster-internal :9091).
+	if c.AuthN.Mode == ModeProductionStrict && !m.InternalServerMTLS.Enable {
 		errs = multierr.Append(errs, fmt.Errorf("%s", errInternalMTLSRequired))
 	}
 	return errs

@@ -244,7 +244,7 @@
 | `*-DEL-NEG-HAS-SUBNETS` | CONF,NEG,STATE | P0 | 1 (net) | Delete Network c Subnet → FailedPrecondition (FK RESTRICT) |
 | `*-DEL-NEG-NF-INVALID-PREFIX` | NEG,STATE | P1 | 1 (net) | Delete с id без VPC-префикса → sync 404 |
 | `*-DEL-STATE-DEFAULT-SG` | NEG,STATE | P1 | 1 (sec) | Delete default-SG напрямую → должен fail (нельзя delete default SG в обход) |
-| `SG-DEL-NEG-NIC-ATTACHED` | NEG,STATE,CONF | P0 | 1 (sec) | Delete SG, прилинкованного к NIC через `security_group_ids[]` → `FailedPrecondition`. **TDD-red**: пока DB-уровневый ref-trigger не реализован, кейс падает (SG удаляется, оставляя dangling ref в NIC.security_group_ids). Verifies REQ-SG-DEL-NIC-REFCHECK. |
+| `SG-DEL-NEG-NIC-ATTACHED` | NEG,STATE,CONF | P0 | 1 (sec) | Delete SG, прилинкованного к NIC через `security_group_ids[]` → `FailedPrecondition`. **persistent-RED** (rule #13, verifies [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27)): пока DB-уровневый ref-trigger не реализован, кейс падает (SG удаляется, оставляя dangling ref в NIC.security_group_ids). Verifies REQ-SG-DEL-NIC-REFCHECK. |
 
 ### Get
 

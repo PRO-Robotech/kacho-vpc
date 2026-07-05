@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/PRO-Robotech/kacho-corelib/ids"
+
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
@@ -47,7 +49,9 @@ func (u *CreateDefaultSGUseCase) Execute(
 	w Writer,
 	network domain.Network,
 ) (*kachorepo.NetworkRecord, error) {
-	sg := domain.NewDefaultSecurityGroup(network)
+	// ID минтится в use-case-слое (не в domain-builder'е) — domain остаётся
+	// чистым value-слоем без infra-зависимости на corelib/ids.
+	sg := domain.NewDefaultSecurityGroup(ids.NewID(ids.PrefixSecurityGroup), network)
 	sgRec, err := w.SecurityGroups().Insert(ctx, &sg)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)

@@ -39,14 +39,15 @@ type UpdateInput struct {
 // update_mask и значения (Name/Description/Labels). Async-часть в одной writer-TX
 // делает diff address-refs + applyMask + writer.UpdateMeta + outbox-emit.
 type UpdateNetworkInterfaceUseCase struct {
-	repo        Repo
-	addressRepo AddressRepo
-	opsRepo     operations.Repo
+	repo    Repo
+	opsRepo operations.Repo
 }
 
 // NewUpdateNetworkInterfaceUseCase создает UpdateNetworkInterfaceUseCase.
-func NewUpdateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, opsRepo operations.Repo) *UpdateNetworkInterfaceUseCase {
-	return &UpdateNetworkInterfaceUseCase{repo: r, addressRepo: addressRepo, opsRepo: opsRepo}
+// Address-refs diff идёт через writer-TX (`w.Addresses()`), отдельный AddressRepo
+// не инъектируется.
+func NewUpdateNetworkInterfaceUseCase(r Repo, opsRepo operations.Repo) *UpdateNetworkInterfaceUseCase {
+	return &UpdateNetworkInterfaceUseCase{repo: r, opsRepo: opsRepo}
 }
 
 // Execute — sync-валидация и запуск Update в worker'е.

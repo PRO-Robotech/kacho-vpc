@@ -27,9 +27,24 @@
 > репозитория вместе с доменом Geography; покрытие Region/Zone — в сервисе compute. Цифры
 > в таблице выше — без него.
 
-**100% PASS**. Покрыты internal/admin-only IPAM RPC (`InternalAddressPoolService`) —
+**100% PASS, кроме 1 declared known-failing (rule #13)** — см. «Known failing tests —
+product bugs» ниже. Покрыты internal/admin-only IPAM RPC (`InternalAddressPoolService`) —
 kacho-only RPC проброшены через api-gateway cluster-internal mux, возвращают ресурсы
 напрямую (не Operation).
+
+## Known failing tests — product bugs (rule #13)
+
+Persistent-RED кейсы — тест корректен, но GREEN требует фикса продукта. Допустимое
+исключение из «100% pass» с явной декларацией (rule #13). Кейс краснеет до фикса
+прод-бага; в case-файле стоит `# verifies <issue-url>`, `pm.test.skip` запрещён.
+
+| Case | Suite | Verifies | Что доказывает | Причина RED |
+|---|---|---|---|---|
+| `SG-DEL-NEG-NIC-ATTACHED` | security-group | [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27) | `SG.Delete` SG'а, прилинкованного к NIC через `security_group_ids[]`, обязана отвергаться `FAILED_PRECONDITION` (code 9) | Нет within-service refcheck на уровне БД (`network_interfaces.security_group_ids` — jsonb без FK/trigger; `securitygroup/delete.go` гардит только `DefaultForNetwork`; repo `Delete` безусловен) → SG удаляется, оставляя dangling ref. Фикс — DB-level BEFORE DELETE trigger (rule #10), отдельным behavioral-PR. |
+
+> До 2026-07-05 этот кейс маскировался условным `pm.test.skip` (assertion пропускался,
+> когда refcheck не срабатывал) → suite ложно зелёный. SEC-hardening r2 конвертировал
+> его в безусловный persistent-RED + issue #27 (rule #13).
 
 > Деплоймент-замечание: suite требует `KACHO_VPC_DEFAULT_SG_INLINE=true`
 > (default) — `*-LSG-CRUD-DEFAULT-SG` / `*-DEL-STATE-DEFAULT-SG` проверяют

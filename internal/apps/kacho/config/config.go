@@ -157,6 +157,18 @@ type APIServerConfig struct {
 	Endpoint         string        `mapstructure:"endpoint"`
 	InternalEndpoint string        `mapstructure:"internal-endpoint"`
 	GracefulShutdown time.Duration `mapstructure:"graceful-shutdown"`
+
+	// RequestTimeout — верхняя граница на обработку одного RPC (server-side
+	// deadline). Устанавливается deadline-interceptor'ом на обоих листенерах:
+	// если у входящего ctx нет deadline (или он дальше этого лимита) — ctx
+	// оборачивается context.WithDeadline(now+RequestTimeout). Более строгий
+	// client-deadline уважается. 0 → interceptor не навешивается (без границы).
+	//
+	// Защита от bounded-pool exhaustion (CWE-770/400): без server-deadline
+	// deadline-less RPC держат pooled-connection бесконечно; MaxConns таких
+	// запросов исчерпывают pool → service-wide DoS. Дополняет DB-level
+	// statement_timeout (repository.postgres.statement-timeout).
+	RequestTimeout time.Duration `mapstructure:"request-timeout"`
 }
 
 // MetricsConfig — секция metrics: cluster-internal diagnostic HTTP-listener
@@ -211,11 +223,22 @@ type RepositoryConfig struct {
 // read-from-env через явный `password-from-env` мостик. Default —
 // `KACHO_VPC_DB_PASSWORD` (backward-compat).
 type PostgresConfig struct {
-	URL             string `mapstructure:"url"`
-	SlaveURL        string `mapstructure:"slave-url"`
-	MaxConns        int    `mapstructure:"max-conns"`
-	SSLMode         string `mapstructure:"ssl-mode"`
-	PasswordFromEnv string `mapstructure:"password-from-env"`
+	URL      string `mapstructure:"url"`
+	SlaveURL string `mapstructure:"slave-url"`
+	MaxConns int    `mapstructure:"max-conns"`
+	SSLMode  string `mapstructure:"ssl-mode"`
+	// StatementTimeout — libpq `-c statement_timeout` для serving-пулов (master +
+	// slave). Ограничивает длительность одного запроса на стороне сервера БД →
+	// зависший/долгий запрос не держит pooled-connection бесконечно (защита от
+	// bounded-pool exhaustion / DoS, CWE-770/400). Применяется ТОЛЬКО к serving
+	// DSN (DSN/SlaveDSN), НЕ к MigrateDSN — миграции (index build / backfill)
+	// могут легитимно превышать лимит. 0 → не задаётся (Postgres default = без лимита).
+	StatementTimeout time.Duration `mapstructure:"statement-timeout"`
+	// LockTimeout — libpq `-c lock_timeout` для serving-пулов: верхняя граница
+	// ожидания блокировки (lock contention не должна пинить connection на весь
+	// statement_timeout). Так же не применяется к MigrateDSN. 0 → не задаётся.
+	LockTimeout     time.Duration `mapstructure:"lock-timeout"`
+	PasswordFromEnv string        `mapstructure:"password-from-env"`
 }
 
 // AuthNConfig — секция authn.
@@ -226,6 +249,21 @@ type PostgresConfig struct {
 type AuthNConfig struct {
 	Mode Mode      `mapstructure:"mode"`
 	TLS  TLSServer `mapstructure:"tls"`
+
+	// TrustedForwarder — явное подтверждение оператора, что публичный listener
+	// (:9090) стоит ЗА аутентифицированным forwarder'ом/service-mesh, который сам
+	// терминирует идентичность клиента, и потому client-asserted x-kacho-*
+	// metadata можно доверять БЕЗ server-mTLS на самом listener'е.
+	//
+	// Default false (fail-closed). В production (non-strict) публичный listener
+	// выводит authz-principal'а именно из этой metadata; без server-mTLS ИЛИ без
+	// этого явного подтверждения любой прямой вызов :9090 может подделать
+	// произвольного principal'а (CWE-290). Поэтому ValidateServerMTLS в production
+	// требует ЛИБО PublicServerMTLS.Enable, ЛИБО trusted-forwarder=true.
+	//
+	// production-strict игнорирует этот флаг — там server-mTLS обязателен всегда
+	// (escape-hatch не действует).
+	TrustedForwarder bool `mapstructure:"trusted-forwarder"`
 }
 
 // TLSServer — TLS-параметры server-side listener'а (зарезервировано).
@@ -282,10 +320,12 @@ type ProjectCacheConfigStruct struct {
 	MaxSize     int           `mapstructure:"max-size"`
 }
 
-// schemaOptionsParam — URL-encoded libpq-параметр `options=-c search_path=…`.
-// Добавляется в baseDSN автоматически (если еще не задано), чтобы каждое
-// соединение (pgxpool, dedicated pgx.Conn для LISTEN, goose-через-database/sql)
-// видело таблицы kacho-vpc по unqualified-имени.
+// searchPathOpt — URL-encoded libpq-фрагмент `-c search_path=kacho_vpc,public`
+// (без префикса `options=`). Первый сегмент libpq-`options`; после него могут
+// дописываться serving-only тайм-ауты (statement_timeout / lock_timeout).
+// Добавляется во все DSN автоматически, чтобы каждое соединение (pgxpool,
+// dedicated pgx.Conn для LISTEN, goose-через-database/sql) видело таблицы
+// kacho-vpc по unqualified-имени.
 //
 // Значение search_path — «kacho_vpc, public»:
 //   - `kacho_vpc` впереди — наши таблицы (схема создается в baseline
@@ -296,13 +336,30 @@ type ProjectCacheConfigStruct struct {
 // Пробел в `-c search_path=…` обязан быть `%20`; знак `=` внутри значения —
 // `%3D`; запятая — `%2C`. При смене схемы (ребрендинг / multi-tenant) — менять
 // здесь и в `0001_initial.sql` одновременно.
-const schemaOptionsParam = "options=-c%20search_path%3Dkacho_vpc%2Cpublic"
+const searchPathOpt = "-c%20search_path%3Dkacho_vpc%2Cpublic"
 
-// baseDSN — стандартный postgres DSN без pgxpool-параметров; используется
-// и pgxpool, и database/sql.Open("pgx"). Делегирует composeDSN(URL) — общему
-// формирователю для master- и slave-DSN.
+// pgOptionsParam собирает libpq `options=` для DSN. search_path — всегда;
+// statement_timeout / lock_timeout — только при withTimeouts (serving-пулы),
+// и только если соответствующий Duration > 0. search_path идёт первым, поэтому
+// подстрока `options=-c%20search_path%3Dkacho_vpc%2Cpublic` всегда присутствует
+// (обратная совместимость).
+func (c Config) pgOptionsParam(withTimeouts bool) string {
+	opt := searchPathOpt
+	if withTimeouts {
+		if ms := c.Repository.Postgres.StatementTimeout.Milliseconds(); ms > 0 {
+			opt += fmt.Sprintf("%%20-c%%20statement_timeout%%3D%d", ms)
+		}
+		if ms := c.Repository.Postgres.LockTimeout.Milliseconds(); ms > 0 {
+			opt += fmt.Sprintf("%%20-c%%20lock_timeout%%3D%d", ms)
+		}
+	}
+	return "options=" + opt
+}
+
+// baseDSN — стандартный postgres DSN без pgxpool-параметров и БЕЗ serving-тайм-аутов;
+// используется миграциями (database/sql.Open("pgx")). Делегирует composeDSN(URL,false).
 func (c Config) baseDSN() string {
-	return c.composeDSN(c.Repository.Postgres.URL)
+	return c.composeDSN(c.Repository.Postgres.URL, false)
 }
 
 // composeDSN добавляет к raw-DSN (master URL или slave URL) недостающие libpq-
@@ -314,7 +371,7 @@ func (c Config) baseDSN() string {
 // Если соответствующий параметр уже задан в raw-URL — не перетираем (упрощает
 // override через прямой ENV/yaml). Для пустого raw возвращаем пустую строку
 // — caller интерпретирует это как «slave не настроен».
-func (c Config) composeDSN(raw string) string {
+func (c Config) composeDSN(raw string, withTimeouts bool) string {
 	if raw == "" {
 		return ""
 	}
@@ -329,16 +386,16 @@ func (c Config) composeDSN(raw string) string {
 		}
 		raw = raw + sep + "sslmode=" + mode
 	}
-	// Append search_path via libpq `options` parameter, если еще не задан.
-	// Распознаем как `options=`, так и URL-encoded `options%3D` (на всякий
-	// случай). Если пользователь сам прописал `options=...` в URL — оставляем
-	// его, не перетираем (упрощает override в dev/debug).
+	// Append search_path (+ serving-тайм-ауты при withTimeouts) via libpq
+	// `options` parameter, если еще не задан. Распознаем как `options=`, так и
+	// URL-encoded `options%3D`. Если пользователь сам прописал `options=...` в
+	// URL — оставляем его, не перетираем (упрощает override в dev/debug).
 	if !dsnHas(raw, "options=") && !dsnHas(raw, "options%3D") {
 		sep := "?"
 		if dsnHas(raw, "?") {
 			sep = "&"
 		}
-		raw = raw + sep + schemaOptionsParam
+		raw = raw + sep + c.pgOptionsParam(withTimeouts)
 	}
 	return raw
 }
@@ -346,7 +403,7 @@ func (c Config) composeDSN(raw string) string {
 // DSN — connection string для pgxpool (поддерживает pool_max_conns).
 // НЕ использовать для database/sql.Open("pgx") — pool_max_conns там FATAL.
 func (c Config) DSN() string {
-	dsn := c.baseDSN()
+	dsn := c.composeDSN(c.Repository.Postgres.URL, true)
 	if dsn == "" {
 		return ""
 	}
@@ -367,7 +424,7 @@ func (c Config) SlaveDSN() string {
 	if slaveRaw == "" || slaveRaw == c.Repository.Postgres.URL {
 		return ""
 	}
-	dsn := c.composeDSN(slaveRaw)
+	dsn := c.composeDSN(slaveRaw, true)
 	if dsn == "" {
 		return ""
 	}
