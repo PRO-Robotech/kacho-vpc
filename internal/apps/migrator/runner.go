@@ -5,10 +5,10 @@
 // goose, которую дергает cmd/migrator/main.go (cobra). Вынесена в свой бинарь,
 // чтобы миграции не были subcommand'ом основного сервиса.
 //
-// # Multi-dialect
+// # Dialect
 //
 // Per-dialect логика инкапсулирована в [Dialect]-интерфейсе (`dialect.go` +
-// `postgres.go` + `cockroach.go`); Runner — тонкая обертка, которая:
+// `postgres.go`); Runner — тонкая обертка, которая:
 //   - валидирует Config до обращения к goose (friendly-error на FS==nil и т.п. —
 //     иначе goose упадет где-нибудь в недрах с малопонятным сообщением);
 //   - проксирует Up/Down/Status/Create на Dialect-impl.
@@ -109,7 +109,7 @@ func (r *Runner) Create(physDir, name string) error {
 // написать "0010" как в имени файла; конвертация — fmt.Sscanf вместо
 // strconv.ParseInt для устойчивости к leading zeros.
 //
-// Helper переиспользуется postgres.go / cockroach.go.
+// Helper используется postgres.go.
 func parseTargetVersion(s string) (int64, error) {
 	var v int64
 	if _, err := fmt.Sscanf(s, "%d", &v); err != nil {

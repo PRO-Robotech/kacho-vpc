@@ -22,8 +22,12 @@ const (
 		"(cross-tenant authz bypass). If the listener sits behind an authenticated " +
 		"forwarder/service-mesh that terminates client identity, set authn.trusted-forwarder=true " +
 		"to acknowledge that trust boundary (production-strict ignores this escape hatch)"
-	errInternalMTLSRequired = "production-strict mode: internal listener mTLS required " +
-		"(set KACHO_VPC_INTERNAL_SERVER_MTLS_ENABLE=true with cert/key/ca)"
+	errInternalMTLSRequired = "production mode (%s): internal listener mTLS required " +
+		"(set KACHO_VPC_INTERNAL_SERVER_MTLS_ENABLE=true with cert/key/ca) — the internal :9091 " +
+		"listener hosts admin/IPAM RPC (InternalAddressPoolService, InternalNetworkService.GetNetwork " +
+		"which leaks infra vrf_id, InternalAddressService) and derives the authorization subject from " +
+		"client-asserted x-kacho-* metadata; internal is service→service, so mTLS is mandatory in any " +
+		"production mode (no trusted-forwarder escape hatch — that applies to the public user→edge listener only)"
 
 	// S3-гардрейлы (list-filter обязателен для ScopeFiltered RPC в production).
 	// %s = Mode.String(); %d = число ScopeFiltered RPC; %s = их имена через ", ".
@@ -137,7 +141,10 @@ func (c Config) Validate() error {
 //   - production (non-strict) — публичный listener требует ЛИБО PublicServerMTLS,
 //     ЛИБО явного authn.trusted-forwarder=true (оператор подтверждает, что :9090
 //     стоит за аутентифицированным forwarder'ом/mesh, который сам терминирует
-//     идентичность клиента); internal listener mTLS в non-strict не обязателен.
+//     идентичность клиента). Internal listener (:9091) — service→service, поэтому
+//     server-mTLS обязателен в ЛЮБОМ production-режиме (security.md AuthN-инвариант:
+//     «Internal (:9091) НЕ освобождён: mTLS обязателен»); trusted-forwarder на него
+//     НЕ распространяется — это escape-hatch только для user→edge публичного listener'а.
 //   - dev — требований нет.
 //
 // Возвращает multierr со всеми нарушениями сразу.
@@ -154,9 +161,12 @@ func (c Config) ValidateServerMTLS(m MTLSConfig) error {
 		errs = multierr.Append(errs, fmt.Errorf(errPublicMTLSRequired, c.AuthN.Mode))
 	}
 
-	// Internal listener: обязателен только в strict (cluster-internal :9091).
-	if c.AuthN.Mode == ModeProductionStrict && !m.InternalServerMTLS.Enable {
-		errs = multierr.Append(errs, fmt.Errorf("%s", errInternalMTLSRequired))
+	// Internal listener (:9091): service→service, server-mTLS обязателен в ЛЮБОМ
+	// production-режиме (не только strict). Без транспортной аутентификации admin/
+	// IPAM-поверхность доверяет client-asserted x-kacho-* subject — principal-spoofing
+	// (CWE-306/290). trusted-forwarder сюда НЕ применяется (он для публичного listener'а).
+	if !m.InternalServerMTLS.Enable {
+		errs = multierr.Append(errs, fmt.Errorf(errInternalMTLSRequired, c.AuthN.Mode))
 	}
 	return errs
 }

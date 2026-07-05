@@ -187,6 +187,15 @@ func (nw *networkInterfaceWriter) ListBySubnet(_ context.Context, subnetID strin
 }
 
 func (nw *networkInterfaceWriter) Insert(_ context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
+	// Тест-хук mac-collision: если установлен, вызывается перед вставкой с текущим
+	// MAC. Ненулевая ошибка (обычно repo.ErrMacCollision) заменяет вставку — так
+	// unit-тест гоняет retry-петлю use-case'а (mock не моделирует UNIQUE mac_address).
+	// Хук выставляется до старта worker-goroutine, гонки на чтении нет.
+	if hook := nw.w.parent.niInsertHook; hook != nil {
+		if err := hook(n.MAC); err != nil {
+			return nil, err
+		}
+	}
 	rec := &kacho.NetworkInterfaceRecord{NetworkInterface: *n, CreatedAt: time.Now().UTC()}
 	nw.w.localNIs[n.ID] = rec
 	cp := *rec
