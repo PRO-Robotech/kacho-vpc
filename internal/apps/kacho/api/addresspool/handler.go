@@ -5,11 +5,8 @@ package addresspool
 
 import (
 	"context"
-	"errors"
 	"strings"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -305,39 +302,15 @@ func poolToProto(rec *kachorepo.AddressPoolRecord) *vpcv1.AddressPool {
 
 // mapPoolErr — error mapping admin-handler'а.
 //
-// Назначение: гарантировать, что raw pgx-text (хранит hostname/db/query-fragment)
-// не уходит в response даже на cluster-internal listener'е :9091 (admin-tooling,
-// port-forward, lateral movement из соседнего pod).
+// Тонкая обёртка над единым leak-safe classifier'ом serviceerr.MapRepoErrLeakSafe:
+// гарантирует, что raw pgx-text (хранит hostname/db/query-fragment) не уходит в
+// response даже на cluster-internal listener'е :9091 (admin-tooling, port-forward,
+// lateral movement из соседнего pod). Sentinel service-errors классифицируются
+// (голый sentinel.Error()); raw pgErr → generic Internal с fallback-тегом без
+// leak'а; уже-сформированный gRPC status (UC-level InvalidArg) идёт как есть.
 //
-// Sentinel service-errors классифицируются; raw pgErr → generic Internal без
-// leak'а; уже-сформированный gRPC status (UC-level InvalidArg) идет как есть.
+// Классификационный switch раньше жил здесь копией serviceerr.MapRepoErr /
+// handler.internalMapErr — консолидирован в один classifier.
 func mapPoolErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	switch {
-	case errors.Is(err, ErrNotFound):
-		return status.Error(codes.NotFound, ErrNotFound.Error())
-	case errors.Is(err, serviceerr.ErrAlreadyExists):
-		return status.Error(codes.AlreadyExists, serviceerr.ErrAlreadyExists.Error())
-	case errors.Is(err, serviceerr.ErrFailedPrecondition):
-		return status.Error(codes.FailedPrecondition, serviceerr.ErrFailedPrecondition.Error())
-	case errors.Is(err, ErrPoolNotResolved):
-		// Ни один шаг IPAM cascade не дал pool — это FailedPrecondition
-		// (конфигурация пулов неполна), а не INTERNAL. Без leak'а raw-текста.
-		return status.Error(codes.FailedPrecondition, ErrPoolNotResolved.Error())
-	case errors.Is(err, serviceerr.ErrInvalidArg):
-		return status.Error(codes.InvalidArgument, serviceerr.ErrInvalidArg.Error())
-	case errors.Is(err, serviceerr.ErrInternal):
-		// DB/transport-сбой — фиксированный текст, без leak'а pgx/SQL деталей
-		// (raw err остается в Go-цепочке для server-side логов).
-		return status.Error(codes.Internal, "internal database error")
-	}
-	// Уже-сформированный gRPC status (не Unknown) пробрасываем — например
-	// status.Error из самого UC-слоя (InvalidArgument из CreateAddressPoolUseCase).
-	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-		return err
-	}
-	// Defensive: raw err — без leak'а текста.
-	return status.Error(codes.Internal, "address pool admin error")
+	return serviceerr.MapRepoErrLeakSafe(err, "address pool admin error")
 }
