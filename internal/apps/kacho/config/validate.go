@@ -20,6 +20,17 @@ const (
 	errInternalMTLSRequired = "production-strict mode: internal listener mTLS required " +
 		"(set KACHO_VPC_INTERNAL_SERVER_MTLS_ENABLE=true with cert/key/ca)"
 
+	// S3-гардрейлы (list-filter обязателен для ScopeFiltered RPC в production).
+	// %s = Mode.String(); %d = число ScopeFiltered RPC; %s = их имена через ", ".
+	errListFilterRequiredForScopeFiltered = "production mode (%s): authz.list-filter.enabled=true is required " +
+		"— %d RPC(s) are ScopeFiltered (%s) and rely on the data-level list-filter for object-scope " +
+		"authorization; with the filter off their authz degrades to header-trusted ownership " +
+		"(cross-project enumeration). Enable authz.list-filter or drop ScopeFiltered from the permission map"
+	errListFilterEndpointRequired = "production mode (%s): authz.list-filter.enabled=true but no resolvable " +
+		"authorize/iam endpoint (authz.list-filter.authorize-endpoint and authz.iam-endpoint both empty) " +
+		"— the filter degrades to passthrough (unfiltered), leaving %d ScopeFiltered RPC(s) fail-open; " +
+		"set authz.list-filter.authorize-endpoint (or authz.iam-endpoint)"
+
 	// WarnBreakglassProduction — громкое предупреждение boot'а, когда authz целиком
 	// обойден в production (emergency-обход). Логируется composition root'ом на WARN.
 	WarnBreakglassProduction = "authz.breakglass=true in production mode (%s): " +
@@ -122,10 +133,47 @@ func (c Config) ValidateServerMTLS(m MTLSConfig) error {
 	return errs
 }
 
+// ValidateListFilter — boot-гардрейл S3: если permission-map несёт хотя бы один
+// ScopeFiltered RPC, его object-scope авторизация возлагается на data-level
+// list-filter (authz-interceptor отдаёт для ScopeFiltered DecisionInternal и
+// пропускает per-RPC Check). В production фильтр ОБЯЗАН быть включён и иметь
+// резолвимый authorize/iam эндпоинт — иначе авторизация деградирует до
+// header-trusted AssertProjectOwnership (cross-project enumeration).
+//
+// scopeFilteredRPCs — имена ScopeFiltered методов из permission-map. Передаются
+// composition root'ом (check.ScopeFilteredRPCs()), чтобы config НЕ импортировал
+// пакет check — Validate остаётся чистой и без import-цикла. Пустой список
+// (текущее состояние карты после SEC-фикса 2026-07-05) → guard no-op.
+//
+// Fail-closed: закрывает "helm default fail-open" residual — stock production
+// install с values.yaml default (list-filter.enabled=false) при наличии
+// ScopeFiltered RPC теперь ОТКАЗЫВАЕТ старт, а не логирует WARN и тихо запускается
+// в degraded state. dev-режим гардом не затронут (может гонять unfiltered).
+func (c Config) ValidateListFilter(scopeFilteredRPCs []string) error {
+	if len(scopeFilteredRPCs) == 0 || !c.AuthN.Mode.IsProduction() {
+		return nil
+	}
+	if !c.AuthZ.ListFilter.Enabled {
+		return fmt.Errorf(errListFilterRequiredForScopeFiltered,
+			c.AuthN.Mode, len(scopeFilteredRPCs), strings.Join(scopeFilteredRPCs, ", "))
+	}
+	// Enabled, но без резолвимого endpoint'а → buildListFilter даёт passthrough
+	// (conn==nil, WARN + nil-фильтр) — тот же fail-open. Отказываем.
+	if strings.TrimSpace(c.AuthZ.ListFilter.AuthorizeEndpoint) == "" &&
+		strings.TrimSpace(c.AuthZ.IAMEndpoint) == "" {
+		return fmt.Errorf(errListFilterEndpointRequired, c.AuthN.Mode, len(scopeFilteredRPCs))
+	}
+	return nil
+}
+
 // ValidateBoot — единый boot-валидатор: агрегирует Validate (S1 + базовые
 // инварианты) и ValidateServerMTLS (S2) в один multierr, чтобы оператор увидел
 // полный список проблем за один прогон. Используется как single-shot gate перед
 // привязкой листенеров.
+//
+// S3 (ValidateListFilter) НЕ входит сюда: ему нужен список ScopeFiltered RPC из
+// permission-map (пакет check), который config не импортирует — его вызывает
+// composition root отдельно (см. cmd/vpc/main.go).
 func (c Config) ValidateBoot(m MTLSConfig) error {
 	return multierr.Append(c.Validate(), c.ValidateServerMTLS(m))
 }
