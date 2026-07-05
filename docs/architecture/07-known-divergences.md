@@ -76,3 +76,29 @@ malformed id → `InvalidArgument "invalid operation id '<X>'"`; well-formed id 
 prefix, но бэкенд не подключен) → `NotFound "Operation <X> not found"`; id с prefix
 домена с подключенным бэкендом → роутится туда. Реализация — `kacho-api-gateway`
 `internal/opsproxy/proxy.go`.
+
+## 11. Два error-mapper'а НЕ слиты в общий classifier — намеренно
+
+Общий repo-sentinel→gRPC classifier — `serviceerr.classifyRepoSentinel`
+(обёртки `MapRepoErr` для публичных сервисов и `MapRepoErrLeakSafe` для
+Internal/admin-handler'ов). В него **сведены** три бывших full-switch дубликата
+(`MapRepoErr`, `handler.internalMapErr`, `addresspool.mapPoolErr`). Ещё два
+mapper'а оставлены отдельными **осознанно**:
+
+- **`handler.mapAllocErr`** (`internal_address_allocate_handler.go`) — политика
+  IPAM-allocate-пути намеренно **у́же** (compute→vpc внутренний edge): классифицируется только
+  `ErrNotFound`, все прочие repo-ошибки (в т.ч. `ErrPoolNotResolved`,
+  `ErrPoolExhausted`, `ErrInvalidIPv4`) сворачиваются в `Internal "internal
+  allocator error"`. Это **другая** политика, чем superset-classifier
+  (`ErrPoolNotResolved`→`FailedPrecondition`): маппинг на внутреннем edge влияет
+  на retry-логику вызывающего Compute, менять его в рамках чисто-рефакторинга
+  нельзя. Дублирования switch'а нет — функция узкая (NotFound + passthrough +
+  fallback).
+- **`handler.mapOpGetErr`** (`operation_handler.go`) — оперирует sentinel'ами
+  **другого семейства**: `operations.ErrNotFound` / `operations.ErrAlreadyDone`
+  из `kacho-corelib/operations`, а не `repo.Err*`. К repo-sentinel classifier'у
+  отношения не имеет.
+
+Если появится необходимость дать IPAM-allocate-пути богаче классификацию — это
+поведенческое изменение внутреннего edge (нужен отдельный тикет + согласование с
+Compute-retry), а не «причёсывание» дубликата.
