@@ -352,6 +352,19 @@ func (w *addressWriter) Insert(ctx context.Context, a *domain.Address) (*kacho.A
 	return result, nil
 }
 
+// GetForUpdate — Get с row-lock (`FOR UPDATE`) в writer-TX. Сериализует
+// конкурентный read-modify-write в Update (doUpdate): второй concurrent Update
+// блокируется на GetForUpdate до commit первого, затем читает уже обновлённый row
+// и применяет свою маску поверх — lost-update исключён (project-rule #10).
+func (w *addressWriter) GetForUpdate(ctx context.Context, id string) (*kacho.AddressRecord, error) {
+	q := fmt.Sprintf(`SELECT %s FROM addresses WHERE id = $1 FOR UPDATE`, helpers.AddressCols)
+	a, err := helpers.ScanAddress(w.tx.QueryRow(ctx, q, id))
+	if err != nil {
+		return nil, helpers.WrapPgErr(err, "Address", id)
+	}
+	return a, nil
+}
+
 // Update — UPDATE name/description/labels/reserved/deletion_protection.
 // IP-spec колонки НЕ трогаем (immutable; для них есть SetIPSpec).
 //

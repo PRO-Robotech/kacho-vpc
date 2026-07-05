@@ -251,6 +251,20 @@ func (w *networkInterfaceWriter) Insert(ctx context.Context, n *domain.NetworkIn
 	return rec, nil
 }
 
+// GetForUpdate — Get с row-lock (`FOR UPDATE`) в writer-TX. Сериализует
+// конкурентный read-modify-write в UpdateMeta (doUpdate): второй concurrent
+// Update блокируется на GetForUpdate до commit первого, затем читает уже
+// обновлённый row и применяет свою маску поверх — lost-update mutable-колонок
+// NIC исключён (project-rule #10).
+func (w *networkInterfaceWriter) GetForUpdate(ctx context.Context, id string) (*kacho.NetworkInterfaceRecord, error) {
+	q := fmt.Sprintf(`SELECT %s FROM network_interfaces WHERE id = $1 FOR UPDATE`, helpers.NICCols)
+	n, err := helpers.ScanNI(w.tx.QueryRow(ctx, q, id))
+	if err != nil {
+		return nil, helpers.WrapPgErr(err, "Network interface", id)
+	}
+	return n, nil
+}
+
 // UpdateMeta — UPDATE name/description/labels/security_group_ids/v4_address_ids/v6_address_ids.
 // outbox-write — в use-case'е.
 func (w *networkInterfaceWriter) UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {

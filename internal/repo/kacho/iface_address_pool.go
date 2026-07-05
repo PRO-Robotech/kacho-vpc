@@ -56,6 +56,12 @@ type AddressPoolWriterIface interface {
 	AddressPoolReaderIface
 	Insert(ctx context.Context, p *domain.AddressPool) (*AddressPoolRecord, error)
 	Update(ctx context.Context, p *domain.AddressPool) (*AddressPoolRecord, error)
+	// GetForUpdate — Get с `SELECT ... FOR UPDATE` (row-lock) внутри writer-TX.
+	// Сериализует read-modify-write в UpdateAddressPoolUseCase: конкурентный
+	// admin-Update блокируется до commit первого, затем читает уже обновлённый row
+	// и применяет свою маску поверх — lost-update (silent revert is_default /
+	// selector_priority) исключён (project-rule #10).
+	GetForUpdate(ctx context.Context, id string) (*AddressPoolRecord, error)
 	Delete(ctx context.Context, id string) error
 	// LockForUpdate берет row-lock (SELECT ... FOR UPDATE) на pool в writer-TX.
 	// AddressPool.Delete вызывает его перед count-проверкой, а external-allocate

@@ -90,8 +90,11 @@ func (u *UpdateAddressUseCase) doUpdate(ctx context.Context, in UpdateInput) (*a
 	}
 	defer w.Abort()
 
-	// Get + Update внутри одной writer-TX: race-free read-modify-write.
-	rec, err := w.Addresses().Get(ctx, in.AddressID)
+	// GetForUpdate + Update внутри одной writer-TX: row-lock (`FOR UPDATE`)
+	// сериализует read-modify-write — конкурентный disjoint-mask Update не может
+	// затереть un-masked поле (напр. deletion_protection). Голый Get здесь был бы
+	// TOCTOU-race (project-rule #10).
+	rec, err := w.Addresses().GetForUpdate(ctx, in.AddressID)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}

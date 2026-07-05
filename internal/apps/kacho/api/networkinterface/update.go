@@ -103,7 +103,11 @@ func (u *UpdateNetworkInterfaceUseCase) doUpdate(ctx context.Context, in UpdateI
 	}
 	defer w.Abort()
 
-	rec, err := w.NetworkInterfaces().Get(ctx, in.NetworkInterfaceID)
+	// GetForUpdate: row-lock (`FOR UPDATE`) сериализует read-modify-write mutable-
+	// колонок NIC — конкурентный disjoint-mask Update не может затереть un-masked
+	// поле (напр. security_group_ids). address-ref side ниже уже защищён
+	// SetReference-CAS; голый Get здесь был бы TOCTOU-race (project-rule #10).
+	rec, err := w.NetworkInterfaces().GetForUpdate(ctx, in.NetworkInterfaceID)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}

@@ -77,7 +77,11 @@ func (u *UpdateAddressPoolUseCase) Execute(ctx context.Context, req UpdatePoolRe
 	}
 	defer w.Abort()
 
-	curRec, err := w.AddressPools().Get(ctx, req.ID)
+	// GetForUpdate: row-lock (`FOR UPDATE`) сериализует read-modify-write —
+	// конкурентный admin disjoint-mask Update не может silently затереть un-masked
+	// поле (напр. is_default / selector_priority). Голый Get здесь был бы
+	// TOCTOU-race (project-rule #10).
+	curRec, err := w.AddressPools().GetForUpdate(ctx, req.ID)
 	if err != nil {
 		return nil, err
 	}

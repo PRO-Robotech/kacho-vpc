@@ -60,6 +60,12 @@ type NetworkInterfaceWriterIface interface {
 	// UpdateMeta мутирует name/description/labels/security_group_ids/v4_address_ids/
 	// v6_address_ids. immutable: project_id/subnet_id/mac_address (handler maskcheck).
 	UpdateMeta(ctx context.Context, n *domain.NetworkInterface) (*NetworkInterfaceRecord, error)
+	// GetForUpdate — Get с `SELECT ... FOR UPDATE` (row-lock) внутри writer-TX.
+	// Сериализует read-modify-write в Update (doUpdate): конкурентный Update
+	// блокируется на GetForUpdate до commit первого, затем читает уже обновлённый
+	// row и применяет свою маску поверх — lost-update mutable-колонок NIC исключён
+	// (project-rule #10; address-ref side уже защищён SetReference-CAS).
+	GetForUpdate(ctx context.Context, id string) (*NetworkInterfaceRecord, error)
 	// Delete — DELETE network_interfaces WHERE id = $1; row не затронут →
 	// ErrNotFound. NIC не имеет children FK, но имеет parent FK на subnets
 	// (ON DELETE RESTRICT). outbox-write — в use-case'е.

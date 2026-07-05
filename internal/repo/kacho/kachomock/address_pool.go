@@ -90,6 +90,12 @@ func (aw *addressPoolWriter) Get(_ context.Context, id string) (*kacho.AddressPo
 	return &cp, nil
 }
 
+// GetForUpdate — in-memory mock не моделирует row-lock; делегирует Get
+// (сериализация проверяется integration-тестом на реальном Postgres).
+func (aw *addressPoolWriter) GetForUpdate(ctx context.Context, id string) (*kacho.AddressPoolRecord, error) {
+	return aw.Get(ctx, id)
+}
+
 func (aw *addressPoolWriter) List(ctx context.Context, f kacho.AddressPoolFilter, p kacho.Pagination) ([]*kacho.AddressPoolRecord, string, error) {
 	// Делегируем reader-семантике поверх writer'овского working-set'а.
 	rd := &addressPoolReader{snap: aw.w.localAPs}
