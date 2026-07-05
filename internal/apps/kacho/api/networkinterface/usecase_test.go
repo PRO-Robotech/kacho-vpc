@@ -26,10 +26,11 @@ import (
 // Тесты NetworkInterface use-case'ов и handler'а.
 //
 // NIC use-case'ы работают поверх CQRS-Repository. NIC-mock — `kachomock.Repository`
-// (in-memory CQRS-impl с TX-семантикой и outbox-буфером); Address пока через
-// `repomock.AddressRepo` (CQRS-writer для Address-SetReference еще не готов).
-// Parent-Subnet валидируется через CQRS-Reader (`kachoRepo.Reader().Subnets().Get`),
-// fixture-Subnet seed'ится через `kachomock.SeedSubnet`.
+// (in-memory CQRS-impl с TX-семантикой и outbox-буфером); Address-attach/detach
+// идёт через тот же writer-TX (`w.Addresses()`), поэтому адреса seed'ятся в
+// `kachomock` (`SeedAddress`), а не в отдельный store. Parent-Subnet валидируется
+// через CQRS-Reader (`kachoRepo.Reader().Subnets().Get`), fixture-Subnet seed'ится
+// через `kachomock.SeedSubnet`.
 //
 // NIC-specific:
 //   - Нет Move RPC (NIC привязан к Subnet).
@@ -41,13 +42,12 @@ import (
 
 func makeHandler(t *testing.T,
 	kr *kachomock.Repository,
-	ar *repomock.AddressRepo,
 	or *repomock.OpsRepo,
 	fc *repomock.ProjectClient,
 ) *Handler {
 	t.Helper()
-	create := NewCreateNetworkInterfaceUseCase(kr, ar, fc, or)
-	update := NewUpdateNetworkInterfaceUseCase(kr, ar, or)
+	create := NewCreateNetworkInterfaceUseCase(kr, fc, or)
+	update := NewUpdateNetworkInterfaceUseCase(kr, or)
 	deleteUC := NewDeleteNetworkInterfaceUseCase(kr, or)
 	get := NewGetNetworkInterfaceUseCase(kr, nil)
 	list := NewListNetworkInterfacesUseCase(kr, nil)
@@ -55,13 +55,12 @@ func makeHandler(t *testing.T,
 	return NewHandler(create, update, deleteUC, get, list, listOps)
 }
 
-func minimalHandler(t *testing.T, projectOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository, *repomock.AddressRepo) {
+func minimalHandler(t *testing.T, projectOK bool) (*Handler, *repomock.OpsRepo, *kachomock.Repository) {
 	t.Helper()
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	fc := &repomock.ProjectClient{OK: projectOK}
-	return makeHandler(t, kr, ar, or, fc), or, kr, ar
+	return makeHandler(t, kr, or, fc), or, kr
 }
 
 // preloadNIC помещает NIC прямо в state mock-Repository (как если бы он
@@ -82,7 +81,7 @@ func preloadNIC(t *testing.T, kr *kachomock.Repository, rec *kachorepo.NetworkIn
 // ---- Handler — sync paths ----
 
 func TestHandler_Get_InvalidArg(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -90,7 +89,7 @@ func TestHandler_Get_InvalidArg(t *testing.T) {
 }
 
 func TestHandler_Get_NotFound(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.Get(context.Background(), &vpcv1.GetNetworkInterfaceRequest{NetworkInterfaceId: ids.NewID(ids.PrefixSubnet)})
 	require.Error(t, err)
 	st, _ := status.FromError(err)
@@ -98,35 +97,35 @@ func TestHandler_Get_NotFound(t *testing.T) {
 }
 
 func TestHandler_List_Empty(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	resp, err := h.List(context.Background(), &vpcv1.ListNetworkInterfacesRequest{ProjectId: "f1"})
 	require.NoError(t, err)
 	assert.Empty(t, resp.NetworkInterfaces)
 }
 
 func TestHandler_Create_Validates(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.Create(context.Background(), &vpcv1.CreateNetworkInterfaceRequest{Name: "nic"})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Update_RequiresID(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.Update(context.Background(), &vpcv1.UpdateNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_Delete_InvalidArg(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.Delete(context.Background(), &vpcv1.DeleteNetworkInterfaceRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 func TestHandler_ListOperations_RequiresID(t *testing.T) {
-	h, _, _, _ := minimalHandler(t, true)
+	h, _, _ := minimalHandler(t, true)
 	_, err := h.ListOperations(context.Background(), &vpcv1.ListNetworkInterfaceOperationsRequest{NetworkInterfaceId: ""})
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())
@@ -136,9 +135,8 @@ func TestHandler_ListOperations_RequiresID(t *testing.T) {
 
 func TestCreateUseCase_ProjectRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{Name: "nic"}})
 	require.Error(t, err)
@@ -148,9 +146,8 @@ func TestCreateUseCase_ProjectRequired(t *testing.T) {
 
 func TestCreateUseCase_SubnetRequired(t *testing.T) {
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{ProjectID: "f1", Name: "nic"}})
 	require.Error(t, err)
@@ -160,9 +157,8 @@ func TestCreateUseCase_SubnetRequired(t *testing.T) {
 
 func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	_, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		ProjectID:    "f1",
@@ -175,15 +171,58 @@ func TestCreateUseCase_CardinalityV4_TooMany(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, st.Code())
 }
 
+// TestCreateUseCase_AttachesAddressInSameWriterTX — Create аттачит pre-reserved
+// Address в ТОЙ ЖЕ writer-TX, что и Insert NIC (атомарность: reservation +
+// insert коммитятся/откатываются вместе; на краше нет orphan used=true без NIC).
+//
+// RED→GREEN: до фикса Create аттачил через отдельный injected addressRepo (иной
+// store/TX), поэтому адрес, засиженный в NIC-репо (kachomock), там не находился →
+// op падал "address ... not found". После фикса attach идёт через
+// `w.Addresses()` (единый writer-TX) → адрес найден, помечен used=true и
+// закоммичен атомарно с NIC.
+func TestCreateUseCase_AttachesAddressInSameWriterTX(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	kr.SeedSubnet(&kachorepo.SubnetRecord{
+		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
+	})
+	// Pre-reserved internal-IPv4 адрес в NIC-репо (kachomock) — used=false.
+	kr.SeedAddress(&kachorepo.AddressRecord{Address: domain.Address{
+		ID: "e9ba1", ProjectID: "f1", Type: domain.AddressTypeInternal,
+		IpVersion: domain.IpVersionIPv4, Used: false,
+		InternalIpv4: &domain.InternalIpv4Spec{SubnetID: "e9bsub1", Address: "10.0.0.5"},
+	}})
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
+
+	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
+		ProjectID:    "f1",
+		Name:         "nic",
+		SubnetID:     "e9bsub1",
+		V4AddressIDs: []string{"e9ba1"},
+	}})
+	require.NoError(t, err)
+
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.Nil(t, saved.Error, "attach+insert must commit atomically in one writer-TX")
+
+	// Адрес помечен used=true в committed-state NIC-репо (attach осел вместе с NIC).
+	rd, err := kr.Reader(context.Background())
+	require.NoError(t, err)
+	a, err := rd.Addresses().Get(context.Background(), "e9ba1")
+	_ = rd.Close()
+	require.NoError(t, err)
+	require.True(t, a.Used, "attached address must be used=true after commit")
+}
+
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	// заранее заданный subnet — fixture в kachomock (CQRS-Reader.Subnets().Get).
 	kr.SeedSubnet(&kachorepo.SubnetRecord{
 		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
 	})
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: true}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		ProjectID: "f1",
@@ -202,12 +241,11 @@ func TestCreateUseCase_OK(t *testing.T) {
 // возвращает NotFound с каноническим текстом "<Resource> %s not found".
 func TestCreateUseCase_ProjectNotFound(t *testing.T) {
 	kr := kachomock.NewRepository()
-	ar := repomock.NewAddressRepo()
 	or := repomock.NewOpsRepo()
 	kr.SeedSubnet(&kachorepo.SubnetRecord{
 		Subnet: domain.Subnet{ID: "e9bsub1", ProjectID: "f1", Name: domain.RcNameVPC("sn")},
 	})
-	uc := NewCreateNetworkInterfaceUseCase(kr, ar, &repomock.ProjectClient{OK: false}, or)
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: false}, or)
 
 	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
 		ProjectID: "f1",
@@ -225,7 +263,7 @@ func TestCreateUseCase_ProjectNotFound(t *testing.T) {
 }
 
 func TestUpdateUseCase_RequiresID(t *testing.T) {
-	uc := NewUpdateNetworkInterfaceUseCase(kachomock.NewRepository(), repomock.NewAddressRepo(), repomock.NewOpsRepo())
+	uc := NewUpdateNetworkInterfaceUseCase(kachomock.NewRepository(), repomock.NewOpsRepo())
 	_, err := uc.Execute(context.Background(), UpdateInput{NetworkInterfaceID: ""})
 	require.Error(t, err)
 	st, _ := status.FromError(err)

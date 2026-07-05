@@ -24,7 +24,6 @@ import (
 	niapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/networkinterface"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
@@ -77,10 +76,9 @@ func TestNetworkInterfaceRepo_T32Create01_CreateEmitsLabels_UpdateRevokes(t *tes
 	t.Cleanup(r.Close)
 	or := repomock.NewOpsRepo()
 	pc := &repomock.ProjectClient{OK: true}
-	addrAdapter := cqrsadapter.NewAddress(r)
 
-	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, addrAdapter, pc, or)
-	updateUC := niapp.NewUpdateNetworkInterfaceUseCase(r, addrAdapter, or)
+	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, pc, or)
+	updateUC := niapp.NewUpdateNetworkInterfaceUseCase(r, or)
 
 	subID := insertSubnetRow(ctx, t, r, "prj-A", "nic")
 
@@ -149,9 +147,8 @@ func TestNetworkInterfaceRepo_T32FullPatch01_EmptyMaskEmits(t *testing.T) {
 	t.Cleanup(r.Close)
 	or := repomock.NewOpsRepo()
 	pc := &repomock.ProjectClient{OK: true}
-	addrAdapter := cqrsadapter.NewAddress(r)
-	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, addrAdapter, pc, or)
-	updateUC := niapp.NewUpdateNetworkInterfaceUseCase(r, addrAdapter, or)
+	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, pc, or)
+	updateUC := niapp.NewUpdateNetworkInterfaceUseCase(r, or)
 
 	subID := insertSubnetRow(ctx, t, r, "prj-A", "nic-fp")
 	op, err := createUC.Execute(ctx, niapp.CreateInput{
@@ -195,8 +192,7 @@ func TestNetworkInterfaceRepo_T32Atom01_RollbackNoIntent(t *testing.T) {
 	t.Cleanup(r.Close)
 	or := repomock.NewOpsRepo()
 	pc := &repomock.ProjectClient{OK: true}
-	addrAdapter := cqrsadapter.NewAddress(r)
-	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, addrAdapter, pc, or)
+	createUC := niapp.NewCreateNetworkInterfaceUseCase(r, pc, or)
 
 	subID := insertSubnetRow(ctx, t, r, "prj-A", "nic-atom")
 	op, err := createUC.Execute(ctx, niapp.CreateInput{

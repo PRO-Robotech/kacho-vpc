@@ -30,8 +30,8 @@ func insertNetworkInTx(t *testing.T, ctx context.Context, w kacho.RepositoryWrit
 }
 
 func newDefaultSG(projectID, networkID string) *domain.SecurityGroup {
-	sg := domain.NewDefaultSecurityGroup(domain.Network{ID: networkID, ProjectID: projectID})
-	sg.ID = ids.NewID(ids.PrefixSecurityGroup)
+	sg := domain.NewDefaultSecurityGroup(ids.NewID(ids.PrefixSecurityGroup),
+		domain.Network{ID: networkID, ProjectID: projectID})
 	return &sg
 }
 

@@ -315,7 +315,7 @@ func TestCQRS_Network_SetDefaultSGID_AtomicWithSG(t *testing.T) {
 
 	// Insert default SG first (FK Network.default_security_group_id →
 	// security_groups.id), затем SetDefaultSGID.
-	sgDom := domain.NewDefaultSecurityGroup(created.Network)
+	sgDom := domain.NewDefaultSecurityGroup(ids.NewID(ids.PrefixSecurityGroup), created.Network)
 	sgRec, err := w.SecurityGroups().Insert(ctx, &sgDom)
 	require.NoError(t, err)
 

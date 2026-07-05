@@ -46,8 +46,10 @@ func TestNewDefaultSecurityGroup(t *testing.T) {
 		ID:        "enpabcdefghij",
 		ProjectID: "project-1",
 	}
-	sg := domain.NewDefaultSecurityGroup(net)
-	assert.NotEmpty(t, sg.ID, "ID generated")
+	// Чистый value-builder: id передаётся снаружи и сохраняется как есть
+	// (детерминированный вывод — domain больше не минтит ID через infra-утилиту).
+	sg := domain.NewDefaultSecurityGroup("e9bsg-fixed-id", net)
+	assert.Equal(t, "e9bsg-fixed-id", sg.ID, "builder must preserve the injected id verbatim")
 	assert.Equal(t, "project-1", sg.ProjectID)
 	assert.Equal(t, "enpabcdefghij", sg.NetworkID)
 	assert.Equal(t, domain.RcNameVPC("default-sg-enpabcde"), sg.Name)

@@ -14,9 +14,10 @@
 // validation в Create идет через `kachoRepo.Reader().Subnets().Get`; Reader-TX
 // автоматически уходит на slave-pool, если он настроен.
 //
-// Address-attach при NIC.Create / Update идет через `AddressRepo` отдельной TX
-// (`AddressRepo.SetReference`) — единая writer-TX для Insert(NIC) + SetReference(addr)
-// потребует CQRS-writer-iface для Address.
+// Address-attach/detach при NIC.Create / Update идёт через writer-TX
+// (`w.Addresses()`) в ТОЙ ЖЕ транзакции, что и Insert/UpdateMeta(NIC) + outbox +
+// fga-register — reservation и NIC коммитятся/откатываются атомарно (нет orphan
+// used=true без persisted NIC при краше worker'а; project-rule #10/#11).
 package networkinterface
 
 import (

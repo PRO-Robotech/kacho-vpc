@@ -54,19 +54,17 @@ type CreateInput struct {
 }
 
 // CreateNetworkInterfaceUseCase инициирует создание NIC. Sync-проверки (name
-// валиден, cardinality v4/v6, address-refs) выполняются ДО создания Operation.
-// Async-часть (`doCreate`) опирается на атомарный DB-backstop: FK / CHECK /
-// UNIQUE MAC.
+// валиден, cardinality v4/v6) выполняются ДО создания Operation; validate+attach
+// address-refs — уже в async `doCreate` внутри writer-TX. Async-часть опирается
+// на атомарный DB-backstop: FK / CHECK / UNIQUE MAC + atomic-CAS на addresses.used.
 //
-// Worker открывает ОДНУ writer-TX и делает в ней Insert(NIC) + outbox-emit
-// атомарно. Address-attach (SetReference на addresses) пока идет через AddressRepo
-// отдельной TX — Address еще не полностью переведен на CQRS-writer для SetReference.
-//
-// Parent-Subnet validation в `doCreate` идет через `kachoRepo.Reader().Subnets().Get`
-// (Reader-TX, уходит на slave-pool, если он настроен).
+// Worker открывает ОДНУ writer-TX и делает в ней validate+attach address-refs
+// (`w.Addresses()`) + Insert(NIC) + outbox-emit + fga-register атомарно —
+// reservation и NIC коммитятся/откатываются вместе (нет orphan used=true без NIC
+// при краше). Parent-Subnet validation в `doCreate` идет через
+// `kachoRepo.Reader().Subnets().Get` (Reader-TX, уходит на slave-pool, если он настроен).
 type CreateNetworkInterfaceUseCase struct {
 	repo          Repo
-	addressRepo   AddressRepo
 	projectClient ProjectClient
 	opsRepo       operations.Repo
 	registrar     fgaregister.Registrar
@@ -81,10 +79,11 @@ func (u *CreateNetworkInterfaceUseCase) WithRegistrar(r fgaregister.Registrar) *
 }
 
 // NewCreateNetworkInterfaceUseCase создает CreateNetworkInterfaceUseCase.
-func NewCreateNetworkInterfaceUseCase(r Repo, addressRepo AddressRepo, projectClient ProjectClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
+// Address-attach идёт через writer-TX (`w.Addresses()`), поэтому отдельный
+// AddressRepo больше не инъектируется.
+func NewCreateNetworkInterfaceUseCase(r Repo, projectClient ProjectClient, opsRepo operations.Repo) *CreateNetworkInterfaceUseCase {
 	return &CreateNetworkInterfaceUseCase{
 		repo:          r,
-		addressRepo:   addressRepo,
 		projectClient: projectClient,
 		opsRepo:       opsRepo,
 	}
@@ -136,12 +135,13 @@ func (u *CreateNetworkInterfaceUseCase) Execute(ctx context.Context, in CreateIn
 }
 
 // doCreate — async-часть Create (внутри Operation worker'а): project-exists +
-// Subnet.Get + валидация Address-refs + маркировка (used + referrer) + Insert NIC,
-// с retry MAC-allocation на cloud-wide UNIQUE-collision.
+// Subnet.Get, затем в writer-TX — validate+attach Address-refs (used + referrer) +
+// Insert NIC + outbox + fga-register, с retry MAC-allocation на cloud-wide
+// UNIQUE-collision.
 //
-// Insert(NIC) + outbox-emit идут в одной writer-TX. Address-маркировка — отдельная
-// TX в `AddressRepo.SetReference`; rollback маркировки при ошибке Insert делается
-// best-effort через `detachAddresses`.
+// Attach(addresses) + Insert(NIC) + outbox-emit + fga-register идут в ОДНОЙ
+// writer-TX (`w.Addresses()`), поэтому reservation и NIC коммитятся/откатываются
+// атомарно — `w.Abort()` на любой ошибке снимает reservation, компенсация не нужна.
 func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID string, in CreateInput) (*anypb.Any, error) {
 	n := in.NetworkInterface
 	exists, err := u.projectClient.Exists(ctx, n.ProjectID)
@@ -164,13 +164,6 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	if serr != nil {
 		return nil, serviceerr.MapRepoErr(serr)
 	}
-	// Валидируем ссылки на Address-ресурсы (существуют, нужной версии, в той же
-	// подсети, не заняты другим референтом) и помечаем их used=true + referrer.
-	// Best-effort v1: валидация/маркировка адресов и Insert NIC не в одной tx —
-	// rollback маркировки при ошибке делается через `detachAddresses` ниже.
-	if err := u.validateAndAttachAddresses(ctx, niID, string(n.Name), n.SubnetID, n.V4AddressIDs, n.V6AddressIDs); err != nil {
-		return nil, err
-	}
 	st := domain.NIStatusAvailable
 	usedByType, usedByID := "", ""
 	if in.InstanceID != "" {
@@ -191,35 +184,44 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		UsedByID:         usedByID,
 		Status:           st,
 	}
-	allAddrs := append(append([]string{}, n.V4AddressIDs...), n.V6AddressIDs...)
 	// MAC аллоцируется здесь и больше не меняется на протяжении жизни NIC.
 	// При cloud-wide UNIQUE-collision генерируем новый MAC и повторяем Insert.
 	// Каждая попытка — отдельная writer-TX (CAS-конфликт на MAC требует start-over).
+	//
+	// Address-attach (validate + SetReference на addresses) идёт в ТОЙ ЖЕ writer-TX,
+	// что и Insert(NIC) + outbox + fga-register — всё коммитится/откатывается атомарно
+	// (`w.Abort()` на любой ошибке снимает reservation). Так исключается orphan
+	// used=true без persisted NIC при краше worker'а (project-rule #10/#11). На
+	// mac-collision retry attach просто переигрывается в свежей TX (после Abort
+	// адрес снова свободен). Attach-ошибка (InvalidArgument/FailedPrecondition) —
+	// НЕ retry: Abort + возврат сразу.
 	for attempt := 0; attempt < niMacRetryAttempts; attempt++ {
 		mac, merr := macutil.GenerateMAC()
 		if merr != nil {
-			u.detachAddresses(ctx, allAddrs)
 			return nil, status.Errorf(codes.Internal, "generate mac: %v", merr)
 		}
 		rec.MAC = mac
 
 		w, werr := u.repo.Writer(ctx)
 		if werr != nil {
-			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(werr)
+		}
+		// Validate + attach address-refs в этой writer-TX (используем w.Addresses(),
+		// а не отдельный addressRepo). Ошибка attach — не MAC-collision → Abort + return.
+		if aerr := attachNICAddresses(ctx, w.Addresses(), niID, string(n.Name), n.SubnetID, n.V4AddressIDs, n.V6AddressIDs); aerr != nil {
+			w.Abort()
+			return nil, aerr
 		}
 		created, insertErr := w.NetworkInterfaces().Insert(ctx, rec)
 		if insertErr != nil {
 			w.Abort()
 			if errors.Is(insertErr, repo.ErrMacCollision) {
-				continue // retry с новым MAC
+				continue // retry с новым MAC (attach переиграется в свежей TX)
 			}
-			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(insertErr)
 		}
 		if oerr := w.Outbox().Emit(ctx, "NetworkInterface", created.ID, "CREATED", helpers.DomainToMap(created)); oerr != nil {
 			w.Abort()
-			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, oerr))
 		}
 		// Публикуем intent на owner-hierarchy-tuple vpc_network_interface→project
@@ -234,16 +236,16 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		}
 		if rerr := w.FGARegister().EmitRegister(ctx, fgaregister.RegisterItems(items...)); rerr != nil {
 			w.Abort()
-			u.detachAddresses(ctx, allAddrs)
 			return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: fga register intent: %v", repo.ErrInternal, rerr))
 		}
 		if cerr := w.Commit(); cerr != nil {
-			u.detachAddresses(ctx, allAddrs)
+			// Commit не прошёл → address-reservation откатилась вместе с TX
+			// (attach был в этой же writer-TX). Компенсация не нужна.
 			return nil, serviceerr.MapRepoErr(cerr)
 		}
 		// Sync-primary owner-tuple registration (после durable commit). NIC уже
-		// закоммичен и валиден — на ошибке регистрации НЕ detach'им адреса (это
-		// испортило бы валидный NIC); возвращаем error → Operation fail-closed,
+		// закоммичен и валиден — на ошибке регистрации адреса НЕ трогаем (attach
+		// закоммичен вместе с NIC); возвращаем error → Operation fail-closed,
 		// backstop drainer дорегистрирует tuple при восстановлении iam.
 		if u.registrar != nil {
 			if rerr := u.registrar.Register(ctx, items); rerr != nil {
@@ -252,8 +254,8 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 		}
 		return marshalNetworkInterfaceRecord(created)
 	}
-	// Все попытки исчерпаны — rollback маркировки адресов best-effort.
-	u.detachAddresses(ctx, allAddrs)
+	// Все попытки исчерпаны. Последняя attach-TX уже откачена (`w.Abort()` на
+	// mac-collision) — reservation не осталась, компенсация не нужна.
 	return nil, status.Errorf(codes.Internal, "could not allocate unique MAC after %d attempts", niMacRetryAttempts)
 }
 
@@ -289,28 +291,6 @@ func validateNICAddressRef(ctx context.Context, ar AddressRepo, id, nicSubnet st
 		return status.Errorf(codes.FailedPrecondition, "address %s is already in use", id)
 	}
 	return nil
-}
-
-// validateAndAttachAddresses (Create) — best-effort: attach идет ДО writer-TX
-// NIC-insert'а (отдельные SetReference-TX), поэтому при сбое нужна явная
-// компенсация detachAddresses. Делегирует общим attach/detach-функциям.
-//
-// Защита от attach-race: SetReference на repo-уровне делает atomic CAS на
-// `addresses.used` — параллельная попытка занять тот же адрес → ErrFailedPrecondition.
-// Ошибка ловится, уже-attached адреса откатываются, ошибка возвращается клиенту.
-func (u *CreateNetworkInterfaceUseCase) validateAndAttachAddresses(ctx context.Context, nicID, nicName, nicSubnet string, v4IDs, v6IDs []string) error {
-	if err := attachNICAddresses(ctx, u.addressRepo, nicID, nicName, nicSubnet, v4IDs, v6IDs); err != nil {
-		// Компенсация: attach частично закоммитился (отдельные TX), откатываем.
-		all := append(append([]string{}, v4IDs...), v6IDs...)
-		_ = detachNICAddresses(ctx, u.addressRepo, all)
-		return err
-	}
-	return nil
-}
-
-// detachAddresses (Create) — best-effort компенсация (ошибки игнорируются).
-func (u *CreateNetworkInterfaceUseCase) detachAddresses(ctx context.Context, ids []string) {
-	_ = detachNICAddresses(ctx, u.addressRepo, ids)
 }
 
 // attachNICAddresses — валидирует и помечает used=true + referrer для каждого
