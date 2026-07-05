@@ -6,7 +6,6 @@ package repo_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -77,7 +76,8 @@ func TestIntegration_Address_ConcurrentDisjointUpdate_NoLostUpdate(t *testing.T)
 		bDone <- wb.Commit()
 	}()
 
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться реального lock-contention (детерминированно вместо фиксированного сна).
+	waitForLockWaiter(t, ctx, pool)
 
 	recA.Name = domain.RcNameVPC("nameA")
 	_, err = wa.Addresses().Update(ctx, &recA.Address)
@@ -156,7 +156,8 @@ func TestIntegration_NetworkInterface_ConcurrentDisjointUpdate_NoLostUpdate(t *t
 		bDone <- wb.Commit()
 	}()
 
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться реального lock-contention (детерминированно вместо фиксированного сна).
+	waitForLockWaiter(t, ctx, pool)
 
 	recA.Name = domain.RcNameVPC("nameA")
 	_, err = wa.NetworkInterfaces().UpdateMeta(ctx, &recA.NetworkInterface)
@@ -226,7 +227,8 @@ func TestIntegration_AddressPool_ConcurrentDisjointUpdate_NoLostUpdate(t *testin
 		bDone <- wb.Commit()
 	}()
 
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться реального lock-contention (детерминированно вместо фиксированного сна).
+	waitForLockWaiter(t, ctx, pool)
 
 	pa := recA.AddressPool
 	pa.Name = domain.RcNameVPC("nameA")

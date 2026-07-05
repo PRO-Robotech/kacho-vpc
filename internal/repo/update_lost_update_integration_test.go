@@ -97,8 +97,8 @@ func TestIntegration_RouteTable_ConcurrentDisjointUpdate_NoLostUpdate(t *testing
 		bDone <- wb.Commit()
 	}()
 
-	// Дать TX-B дойти до GetForUpdate и заблокироваться.
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться, пока TX-B реально встанет в очередь за row-lock'ом (детерминированно).
+	waitForLockWaiter(t, ctx, pool)
 
 	// TX-A: ставит name → Update → commit (освобождает lock).
 	recA.Name = domain.RcNameVPC("nameA") // disjoint-поле A
@@ -315,7 +315,8 @@ func TestIntegration_Network_ConcurrentDisjointUpdate_NoLostUpdate(t *testing.T)
 		bDone <- wb.Commit()
 	}()
 
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться реального lock-contention (детерминированно вместо фиксированного сна).
+	waitForLockWaiter(t, ctx, pool)
 
 	recA.Name = domain.RcNameVPC("nameA")
 	_, err = wa.Networks().Update(ctx, &recA.Network)
