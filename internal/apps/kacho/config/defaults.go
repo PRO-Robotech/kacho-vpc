@@ -122,6 +122,13 @@ func RegisterDefaults(v *viper.Viper) {
 	v.SetDefault("authz.list-filter.model-id", "")
 	v.SetDefault("authz.list-filter.fail-open", false)
 
+	// iam — интеграция с kacho-iam. require — fail-closed boot-gate (default off:
+	// dev/Create разрешён, только Warn). register-drainer-enabled — default-on
+	// (owner-tuple publisher). Ранее оба читались os.LookupEnv в cmd/; теперь —
+	// типизированные ключи со строгой bool-валидацией на decode.
+	v.SetDefault("iam.require", false)
+	v.SetDefault("iam.register-drainer-enabled", true)
+
 	// network (VPC-domain)
 	v.SetDefault("network.default-sg-inline", true)
 	v.SetDefault("network.project-cache.positive-ttl", 30*time.Second)

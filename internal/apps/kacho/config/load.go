@@ -128,6 +128,13 @@ func applyLegacyEnv(v *viper.Viper) {
 		// RegisterDefaults, поэтому AutomaticEnv его подхватил бы, но явный
 		// биндинг держит оба источника FGA model-id ENV согласованными.
 		{"KACHO_VPC_AUTHZ__LIST_FILTER__MODEL_ID", "authz.list-filter.model-id"},
+		// IAM-integration флаги — ранее читались ad-hoc os.LookupEnv в cmd/
+		// (requireIAM / registerDrainerEnabled). Мост держит backward-compat со
+		// старыми ENV-именами; значение уходит в bool-поле Config через Unmarshal
+		// (строгая bool-валидация: нераспознанная строка → decode-ошибка, а не
+		// тихий false — важно для fail-closed security-свитча Require).
+		{"KACHO_VPC_REQUIRE_IAM", "iam.require"},
+		{"KACHO_VPC_FGA_REGISTER_DRAINER_ENABLED", "iam.register-drainer-enabled"},
 	}
 	for _, m := range simple {
 		if val, ok := os.LookupEnv(m.env); ok {
