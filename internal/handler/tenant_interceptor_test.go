@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
 )
 
 // callInterceptor — helper: прогон unary interceptor с заданными metadata.
@@ -22,6 +24,22 @@ func callInterceptor(t *testing.T, productionMode bool, requireAdmin bool, fullM
 	info := &grpc.UnaryServerInfo{FullMethod: fullMethod}
 	_, err := interceptor(ctx, struct{}{}, info, noopHandler)
 	return err
+}
+
+// runInterceptorCapture — прогон unary interceptor, возвращает TenantCtx,
+// доставшийся downstream-хендлеру (zero, если interceptor отверг запрос).
+func runInterceptorCapture(t *testing.T, productionMode, requireAdmin bool, fullMethod string, md metadata.MD) (tenant.TenantCtx, error) {
+	t.Helper()
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	interceptor := TenantUnaryInterceptor(requireAdmin, productionMode)
+	var captured tenant.TenantCtx
+	h := func(ctx context.Context, req any) (any, error) {
+		captured = tenant.TenantFromCtx(ctx)
+		return nil, nil
+	}
+	info := &grpc.UnaryServerInfo{FullMethod: fullMethod}
+	_, err := interceptor(ctx, struct{}{}, info, h)
+	return captured, err
 }
 
 // TestTenantUnary_AnonymousDevPasses — dev-mode пропускает anonymous (backward-compat).
@@ -63,11 +81,56 @@ func TestTenantUnary_ProjectProductionPasses(t *testing.T) {
 	}
 }
 
-// TestTenantUnary_AdminProductionPasses — admin claim → пропускается.
-func TestTenantUnary_AdminProductionPasses(t *testing.T) {
-	md := metadata.MD{"x-kacho-admin": []string{"true"}}
-	if err := callInterceptor(t, true, false, "/svc/M", md); err != nil {
-		t.Fatalf("admin caller должен пройти в production, got: %v", err)
+// TestTenantUnary_AdminHeaderNotHonoredOnPublic — на public-listener'е
+// (requireAdmin=false) client-supplied x-kacho-admin НЕ должен давать
+// cluster-admin: t.Admin остается false, поэтому AssertProjectOwnership не
+// обходится подделанным заголовком (SEC-low hardening). Admin-only header в
+// production → без реального project-claim'а caller anonymous → PermissionDenied.
+func TestTenantUnary_AdminHeaderNotHonoredOnPublic(t *testing.T) {
+	// dev-mode: admin header игнорируется на public, t.Admin=false.
+	captured, err := runInterceptorCapture(t, false, false, "/svc/M",
+		metadata.MD{"x-kacho-admin": []string{"true"}})
+	if err != nil {
+		t.Fatalf("dev public admin-header: unexpected err %v", err)
+	}
+	if captured.Admin {
+		t.Fatal("public listener не должен доверять client x-kacho-admin (t.Admin=true) — обход AssertProjectOwnership")
+	}
+	// production-mode: admin-only header не авторизует → anonymous → reject.
+	_, perr := runInterceptorCapture(t, true, false, "/svc/M",
+		metadata.MD{"x-kacho-admin": []string{"true"}})
+	if status.Code(perr) != codes.PermissionDenied {
+		t.Fatalf("public admin-only header в production должен быть отвергнут, got %v", perr)
+	}
+}
+
+// TestTenantUnary_AdminHeaderHonoredOnInternal — на :9091 (requireAdmin=true)
+// x-kacho-admin по-прежнему честен: t.Admin=true, admin-gate пропускает.
+func TestTenantUnary_AdminHeaderHonoredOnInternal(t *testing.T) {
+	captured, err := runInterceptorCapture(t, true, true,
+		"/kacho.cloud.vpc.v1.InternalNetworkService/Foo",
+		metadata.MD{"x-kacho-admin": []string{"true"}})
+	if err != nil {
+		t.Fatalf("internal admin caller должен пройти, got %v", err)
+	}
+	if !captured.Admin {
+		t.Fatal("internal listener должен доверять x-kacho-admin (t.Admin=true)")
+	}
+}
+
+// TestTenantUnary_PublicProjectClaimStillHonored — hardening не ломает
+// легитимного tenant'а: project-claim на public по-прежнему авторизует.
+func TestTenantUnary_PublicProjectClaimStillHonored(t *testing.T) {
+	captured, err := runInterceptorCapture(t, true, false, "/svc/M",
+		metadata.MD{"x-kacho-project-id": []string{"f1"}})
+	if err != nil {
+		t.Fatalf("public project-claim caller должен пройти, got %v", err)
+	}
+	if captured.Admin {
+		t.Fatal("project-claim не должен давать Admin")
+	}
+	if !captured.HasProjectAccess("f1") || captured.HasProjectAccess("f2") {
+		t.Fatal("project-scope нарушен: должен видеть f1, не f2")
 	}
 }
 

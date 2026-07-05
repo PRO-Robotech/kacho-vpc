@@ -36,9 +36,15 @@ import (
 // requireAdmin=true (internal :9091 listener) — отвергает не-admin caller'а.
 // productionMode=true — fail-closed: anonymous caller → PermissionDenied сразу
 // (KACHO_VPC_AUTH_MODE=production; защита от deploy без IAM sidecar).
+//
+// x-kacho-admin honored ТОЛЬКО на internal listener (honorAdmin=requireAdmin):
+// на public listener'е client-supplied admin-заголовок игнорируется, чтобы
+// подделанный `x-kacho-admin:true` не превращал AssertProjectOwnership в no-op
+// cluster-wide (SEC hardening — defense-in-depth: admin-полномочия не выводятся
+// из plaintext-заголовка на tenant-facing поверхности).
 func TenantUnaryInterceptor(requireAdmin, productionMode bool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		t := tenantFromMetadata(ctx)
+		t := tenantFromMetadata(ctx, requireAdmin)
 		if productionMode && t.IsAnonymous() {
 			return nil, status.Error(codes.PermissionDenied,
 				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
@@ -52,10 +58,11 @@ func TenantUnaryInterceptor(requireAdmin, productionMode bool) grpc.UnaryServerI
 	}
 }
 
-// TenantStreamInterceptor — то же для server-stream RPC.
+// TenantStreamInterceptor — то же для server-stream RPC. x-kacho-admin honored
+// только на internal listener (honorAdmin=requireAdmin), см. TenantUnaryInterceptor.
 func TenantStreamInterceptor(requireAdmin, productionMode bool) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		t := tenantFromMetadata(ss.Context())
+		t := tenantFromMetadata(ss.Context(), requireAdmin)
 		if productionMode && t.IsAnonymous() {
 			return status.Error(codes.PermissionDenied,
 				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
@@ -96,7 +103,12 @@ type wrappedStream struct {
 func (w *wrappedStream) Context() context.Context { return w.ctx }
 
 // tenantFromMetadata — извлекает tenant.TenantCtx из gRPC metadata.
-func tenantFromMetadata(ctx context.Context) tenant.TenantCtx {
+//
+// honorAdmin=false (public listener) — client-supplied x-kacho-admin
+// игнорируется: t.Admin остается false, чтобы подделанный заголовок не давал
+// cluster-wide bypass AssertProjectOwnership. honorAdmin=true — только internal
+// admin-listener (:9091), где admin-полномочия легитимны.
+func tenantFromMetadata(ctx context.Context, honorAdmin bool) tenant.TenantCtx {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return tenant.TenantCtx{}
@@ -105,8 +117,10 @@ func tenantFromMetadata(ctx context.Context) tenant.TenantCtx {
 	if v := md.Get("x-kacho-actor"); len(v) > 0 {
 		t.Actor = v[0]
 	}
-	if v := md.Get("x-kacho-admin"); len(v) > 0 && v[0] == "true" {
-		t.Admin = true
+	if honorAdmin {
+		if v := md.Get("x-kacho-admin"); len(v) > 0 && v[0] == "true" {
+			t.Admin = true
+		}
 	}
 	// x-kacho-project-id — projects, к которым caller имеет access (повторяемый).
 	if projectIDs := md.Get("x-kacho-project-id"); len(projectIDs) > 0 {
