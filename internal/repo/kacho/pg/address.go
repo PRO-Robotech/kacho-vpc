@@ -595,6 +595,29 @@ func (w *addressWriter) AllocateExternalIPv6(ctx context.Context, poolID, addres
 		return "", fmt.Errorf("%w: pool %s has unparseable v6 prefix %q", helpers.ErrInternal, poolID, v6Blocks[0])
 	}
 
+	// Row-lock target address + атомарная re-check emptiness ВНУТРИ writer-TX
+	// (project-rule #10). Идемпотентность/сериализация конкурентных
+	// AllocateExternalIPv6 для одного address_id: use-case делает check в
+	// отдельной Reader-TX, поэтому без этого lock'а два writer'а прошли бы guard,
+	// оба сожгли бы cursor-offset + INSERT ipv6_allocated_ips + безусловный UPDATE
+	// (second-writer-wins → orphan-строка утекает из пула). Порядок блокировок
+	// (pool FOR SHARE → address FOR UPDATE) совпадает с v4 freelist — нет
+	// lock-order inversion. Второй writer блокируется здесь до commit'а первого,
+	// затем видит непустой external_ipv6 → возвращает существующий IP, НЕ трогая
+	// cursor/allocated.
+	var curExt6 string
+	if err := w.tx.QueryRow(ctx,
+		`SELECT COALESCE(external_ipv6 ->> 'address', '') FROM addresses WHERE id = $1 FOR UPDATE`,
+		addressID).Scan(&curExt6); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", helpers.ErrNotFound
+		}
+		return "", helpers.WrapPgErr(err, "Address", addressID)
+	}
+	if curExt6 != "" {
+		return curExt6, nil // идемпотентный re-allocate: адрес уже имеет external_ipv6
+	}
+
 	var offset *big.Int
 	{
 		var offStr string

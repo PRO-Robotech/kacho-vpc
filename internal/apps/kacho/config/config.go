@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -405,9 +406,9 @@ func (c Config) composeDSN(raw string, withTimeouts bool) string {
 	if mode == "" {
 		mode = "disable"
 	}
-	if !dsnHas(raw, "sslmode=") {
+	if !strings.Contains(raw, "sslmode=") {
 		sep := "?"
-		if dsnHas(raw, "?") {
+		if strings.Contains(raw, "?") {
 			sep = "&"
 		}
 		raw = raw + sep + "sslmode=" + mode
@@ -416,9 +417,9 @@ func (c Config) composeDSN(raw string, withTimeouts bool) string {
 	// `options` parameter, если еще не задан. Распознаем как `options=`, так и
 	// URL-encoded `options%3D`. Если пользователь сам прописал `options=...` в
 	// URL — оставляем его, не перетираем (упрощает override в dev/debug).
-	if !dsnHas(raw, "options=") && !dsnHas(raw, "options%3D") {
+	if !strings.Contains(raw, "options=") && !strings.Contains(raw, "options%3D") {
 		sep := "?"
-		if dsnHas(raw, "?") {
+		if strings.Contains(raw, "?") {
 			sep = "&"
 		}
 		raw = raw + sep + c.pgOptionsParam(withTimeouts)
@@ -463,12 +464,3 @@ func (c Config) SlaveDSN() string {
 // MigrateDSN — connection string для goose/database/sql (без pool_max_conns).
 // Всегда master — goose не должен писать в реплику.
 func (c Config) MigrateDSN() string { return c.baseDSN() }
-
-func dsnHas(dsn, frag string) bool {
-	for i := 0; i+len(frag) <= len(dsn); i++ {
-		if dsn[i:i+len(frag)] == frag {
-			return true
-		}
-	}
-	return false
-}

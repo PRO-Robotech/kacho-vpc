@@ -97,7 +97,8 @@ func (h *Handler) GetByValue(ctx context.Context, req *vpcv1.GetAddressByValueRe
 	externalIP := req.GetExternalIpv4Address()
 	internalIP := req.GetInternalIpv4Address()
 	subnetID := req.GetSubnetId()
-	a, err := h.getByValue.Execute(ctx, externalIP, internalIP, subnetID)
+	subject := pbconv.SubjectFromContext(ctx)
+	a, err := h.getByValue.Execute(ctx, subject, externalIP, internalIP, subnetID)
 	if err != nil {
 		return nil, err
 	}

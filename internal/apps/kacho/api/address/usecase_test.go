@@ -58,7 +58,7 @@ func makeHandler(t *testing.T,
 	update := NewUpdateAddressUseCase(kr, or)
 	deleteUC := NewDeleteAddressUseCase(kr, or)
 	get := NewGetAddressUseCase(kr, nil)
-	getByValue := NewGetByValueUseCase(kr)
+	getByValue := NewGetByValueUseCase(kr, nil)
 	list := NewListAddressesUseCase(kr, nil)
 	listBySubnet := NewListBySubnetUseCase(kr, sr)
 	listOps := NewListOperationsUseCase(or)
@@ -431,8 +431,8 @@ func TestListBySubnetUseCase_NotFound(t *testing.T) {
 
 func TestGetByValueUseCase_Empty(t *testing.T) {
 	kr := kachomock.NewRepository()
-	uc := NewGetByValueUseCase(kr)
-	_, err := uc.Execute(context.Background(), "", "", "")
+	uc := NewGetByValueUseCase(kr, nil)
+	_, err := uc.Execute(context.Background(), "", "", "", "")
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.InvalidArgument, st.Code())

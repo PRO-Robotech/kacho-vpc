@@ -5,7 +5,6 @@ package clients
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -35,9 +34,7 @@ const geoZoneExistsTTL = 60 * time.Second
 // через owner-сервис, без собственного зеркала зон.
 type GeoZoneClient struct {
 	zones geov1.ZoneServiceClient
-
-	mu    sync.RWMutex
-	known map[string]time.Time // zoneID → время до которого «существует» валидно
+	cache *existsCache // positive-only TTL «зона существует»
 }
 
 // NewGeoZoneClient создает GeoZoneClient. conn — обычно `clients.Build(...)`
@@ -46,7 +43,7 @@ type GeoZoneClient struct {
 func NewGeoZoneClient(conn grpc.ClientConnInterface) *GeoZoneClient {
 	return &GeoZoneClient{
 		zones: geov1.NewZoneServiceClient(conn),
-		known: make(map[string]time.Time),
+		cache: newExistsCache(geoZoneExistsTTL),
 	}
 }
 
@@ -56,10 +53,7 @@ func NewGeoZoneClient(conn grpc.ClientConnInterface) *GeoZoneClient {
 //   - geo недоступен → gRPC Unavailable пробрасывается как есть (fail-closed на
 //     мутации; consumer не смог провалидировать zone).
 func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error) {
-	c.mu.RLock()
-	exp, ok := c.known[id]
-	c.mu.RUnlock()
-	if ok && time.Now().Before(exp) {
+	if c.cache.hit(id) {
 		return &domain.Zone{ID: id}, nil
 	}
 
@@ -78,9 +72,7 @@ func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error
 	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	c.known[id] = time.Now().Add(geoZoneExistsTTL)
-	c.mu.Unlock()
+	c.cache.remember(id)
 	return z, nil
 }
 

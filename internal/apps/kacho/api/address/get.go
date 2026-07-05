@@ -85,16 +85,28 @@ func (u *GetAddressUseCase) Execute(ctx context.Context, subjectID, id string) (
 // internal). oneof external_ipv4_address / internal_ipv4_address; optional
 // subnet_id scope.
 type GetByValueUseCase struct {
-	repo Repo
+	repo   Repo
+	filter ListFilter
 }
 
-// NewGetByValueUseCase создает GetByValueUseCase.
-func NewGetByValueUseCase(r Repo) *GetByValueUseCase {
-	return &GetByValueUseCase{repo: r}
+// NewGetByValueUseCase создает GetByValueUseCase. filter может быть nil
+// (list-filter disabled / dev) → per-object no-leak enforce пропускается,
+// как и в GetAddressUseCase.
+func NewGetByValueUseCase(r Repo, filter ListFilter) *GetByValueUseCase {
+	return &GetByValueUseCase{repo: r, filter: filter}
 }
 
-// Execute — sync-валидация + lookup по IP + загрузка UsedBy.
-func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP, subnetID string) (*kachorepo.AddressRecord, error) {
+// Execute — sync-валидация + lookup по IP + per-object no-leak enforce +
+// загрузка UsedBy.
+//
+// Per-object no-leak: после lookup'а по значению проверяем, что найденный
+// address id входит в тот же FGA grant-set, что и List (read==enforce) —
+// идентично GetAddressUseCase. Это защита-в-глубину поверх per-RPC
+// interceptor'а (v_get на subnet_id) и SQL subnet-scope: оба read-пути одного
+// ресурса применяют одинаковую object-level авторизацию независимо от
+// конфигурации interceptor'а / list-filter. filter == nil / subject == "" →
+// enforce делает per-RPC interceptor (dev / system-principal).
+func (u *GetByValueUseCase) Execute(ctx context.Context, subjectID, externalIP, internalIP, subnetID string) (*kachorepo.AddressRecord, error) {
 	if externalIP == "" && internalIP == "" {
 		return nil, serviceerr.InvalidArg("address", "address (external_ipv4_address or internal_ipv4_address) is required")
 	}
@@ -106,6 +118,9 @@ func (u *GetByValueUseCase) Execute(ctx context.Context, externalIP, internalIP,
 	a, err := r.Addresses().GetByValue(ctx, externalIP, internalIP, subnetID)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
+	}
+	if err := enforceGetVisible(ctx, u.filter, subjectID, a.ID, "Address"); err != nil {
+		return nil, err
 	}
 	loadUsedBy(ctx, r.Addresses(), []*kachorepo.AddressRecord{a})
 	return a, nil

@@ -5,7 +5,6 @@ package clients
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -31,16 +30,14 @@ const geoRegionExistsTTL = 60 * time.Second
 // region_id REGIONAL-подсети через owner-сервис, без собственного зеркала регионов.
 type GeoRegionClient struct {
 	regions geov1.RegionServiceClient
-
-	mu    sync.RWMutex
-	known map[string]time.Time // regionID → время до которого «существует» валидно
+	cache   *existsCache // positive-only TTL «регион существует»
 }
 
 // NewGeoRegionClient создает GeoRegionClient поверх общего geo-conn.
 func NewGeoRegionClient(conn grpc.ClientConnInterface) *GeoRegionClient {
 	return &GeoRegionClient{
 		regions: geov1.NewRegionServiceClient(conn),
-		known:   make(map[string]time.Time),
+		cache:   newExistsCache(geoRegionExistsTTL),
 	}
 }
 
@@ -50,10 +47,7 @@ func NewGeoRegionClient(conn grpc.ClientConnInterface) *GeoRegionClient {
 //   - geo недоступен → gRPC Unavailable пробрасывается как есть (fail-closed на
 //     мутации; consumer не смог провалидировать region).
 func (c *GeoRegionClient) Get(ctx context.Context, id string) (*domain.Region, error) {
-	c.mu.RLock()
-	exp, ok := c.known[id]
-	c.mu.RUnlock()
-	if ok && time.Now().Before(exp) {
+	if c.cache.hit(id) {
 		return &domain.Region{ID: id}, nil
 	}
 
@@ -72,8 +66,6 @@ func (c *GeoRegionClient) Get(ctx context.Context, id string) (*domain.Region, e
 	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	c.known[id] = time.Now().Add(geoRegionExistsTTL)
-	c.mu.Unlock()
+	c.cache.remember(id)
 	return r, nil
 }
