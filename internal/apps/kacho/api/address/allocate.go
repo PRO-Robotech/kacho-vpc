@@ -62,7 +62,12 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 	}
 	defer w.Abort()
 
-	addr, err := w.Addresses().Get(ctx, addressID)
+	// GetForUpdate (row-lock), НЕ plain Get: сериализует read-modify-write
+	// internal_ipv4 под конкурентными дублирующими allocate одного address'а.
+	// Второй вызов блокируется до commit первого, затем видит уже проставленный
+	// internal_ipv4 и возвращает его идемпотентно ниже — вместо software
+	// Get→check→unconditional-Set (second-writer-wins, project-rule #10).
+	addr, err := w.Addresses().GetForUpdate(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +180,10 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 	}
 	defer w.Abort()
 
-	addr, err := w.Addresses().Get(ctx, addressID)
+	// GetForUpdate (row-lock), НЕ plain Get: сериализует read-modify-write
+	// internal_ipv6 под конкурентными дублирующими allocate одного address'а
+	// (см. AllocateInternalIP; project-rule #10).
+	addr, err := w.Addresses().GetForUpdate(ctx, addressID)
 	if err != nil {
 		return nil, err
 	}
