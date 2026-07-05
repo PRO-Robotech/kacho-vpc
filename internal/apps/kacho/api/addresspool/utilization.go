@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PRO-Robotech/kacho-corelib/safeconv"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -63,7 +64,7 @@ func (u *GetPoolUtilizationUseCase) Execute(ctx context.Context, poolID string) 
 	}
 	out := &PoolUtilization{PoolID: poolID}
 	for _, c := range pool.V4CIDRBlocks {
-		total := usableIPv4Count(c)
+		total := domain.UsableIPv4Count(c)
 		used := perCIDR[c]
 		out.CIDRs = append(out.CIDRs, CIDRUsage{CIDR: c, Total: total, Used: used})
 		out.TotalIPs += total

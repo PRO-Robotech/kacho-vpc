@@ -189,25 +189,3 @@ func poolHasFamily(pool *domain.AddressPool, family AddressFamily) bool {
 		return len(pool.V4CIDRBlocks) > 0
 	}
 }
-
-// usableIPv4Count — usable IPs в CIDR (исключая network+broadcast).
-// Для /N: 2^(32-N) - 2; для /31: 2 (RFC 3021); для /32: 1.
-// Если CIDR невалиден — 0.
-func usableIPv4Count(cidr string) int64 {
-	p, err := netip.ParsePrefix(strings.TrimSpace(cidr))
-	if err != nil || !p.Addr().Is4() {
-		return 0
-	}
-	bits := p.Bits()
-	if bits == 32 {
-		return 1
-	}
-	if bits == 31 {
-		return 2
-	}
-	hostBits := 32 - bits
-	if hostBits >= 31 {
-		return 0
-	}
-	return int64(1)<<hostBits - 2
-}

@@ -106,7 +106,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 		tried := make(map[string]struct{}, allocateMaxAttempts)
 		// Phase 1: random pick.
 		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
-			ip, err := pickRandomIPv4(cidr)
+			ip, err := domain.PickRandomIPv4(cidr)
 			if err != nil {
 				break
 			}
@@ -129,7 +129,7 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 			return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
 		}
 		// Phase 2: deterministic sweep.
-		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+		for _, candidate := range domain.UsableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
 			if _, dup := tried[candidate]; dup {
 				continue
 			}
@@ -202,7 +202,7 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 	tried := make(map[string]struct{}, v6AllocateMaxAttempts)
 	conflicts := 0
 	for attempt := 0; attempt < v6AllocateMaxAttempts; attempt++ {
-		ip, perr := pickRandomIPv6(prefix)
+		ip, perr := domain.PickRandomIPv6(prefix)
 		if perr != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "subnet %s: cannot pick IPv6 in %s: %v", sub.ID, prefix, perr)
 		}
