@@ -34,10 +34,10 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	// Blank-import регистрирует record→proto трансферы (Network/Subnet/...),
 	// которыми resolver упаковывает текущий ресурс в Operation.response.

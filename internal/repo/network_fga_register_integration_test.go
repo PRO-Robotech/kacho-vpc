@@ -26,12 +26,12 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	networkapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/network"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // ---- helpers ----
