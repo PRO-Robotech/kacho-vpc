@@ -265,9 +265,9 @@ func (r *addressReader) ExistsIP(ctx context.Context, ip string) (bool, error) {
 func (r *addressReader) GetReference(ctx context.Context, addressID string) (*domain.AddressReference, error) {
 	var out domain.AddressReference
 	err := r.tx.QueryRow(ctx, `
-		SELECT address_id, referrer_type, referrer_id, referrer_name, attached_at
+		SELECT address_id, referrer_type, referrer_id, referrer_name, owned, attached_at
 		FROM address_references WHERE address_id = $1`, addressID).
-		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt)
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.Owned, &out.AttachedAt)
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Address", addressID)
 	}
@@ -281,7 +281,7 @@ func (r *addressReader) ReferencesForAddresses(ctx context.Context, addressIDs [
 		return out, nil
 	}
 	rows, err := r.tx.Query(ctx, `
-		SELECT address_id, referrer_type, referrer_id, referrer_name, attached_at
+		SELECT address_id, referrer_type, referrer_id, referrer_name, owned, attached_at
 		FROM address_references WHERE address_id = ANY($1)`, addressIDs)
 	if err != nil {
 		return nil, helpers.WrapPgErr(err, "Address", "")
@@ -289,7 +289,7 @@ func (r *addressReader) ReferencesForAddresses(ctx context.Context, addressIDs [
 	defer rows.Close()
 	for rows.Next() {
 		var ref domain.AddressReference
-		if err := rows.Scan(&ref.AddressID, &ref.ReferrerType, &ref.ReferrerID, &ref.ReferrerName, &ref.AttachedAt); err != nil {
+		if err := rows.Scan(&ref.AddressID, &ref.ReferrerType, &ref.ReferrerID, &ref.ReferrerName, &ref.Owned, &ref.AttachedAt); err != nil {
 			return nil, helpers.WrapPgErr(err, "Address", "")
 		}
 		out[ref.AddressID] = &ref
@@ -720,18 +720,19 @@ func (w *addressWriter) SetReference(ctx context.Context, ref *domain.AddressRef
 		return nil, fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, ref.AddressID)
 	}
 	const q = `
-		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
-		VALUES ($1, $2, $3, $4, now())
+		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, owned, attached_at)
+		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (address_id) DO UPDATE
 		  SET referrer_type = EXCLUDED.referrer_type,
 		      referrer_id   = EXCLUDED.referrer_id,
 		      referrer_name = EXCLUDED.referrer_name,
+		      owned         = EXCLUDED.owned,
 		      attached_at   = now()
 		  WHERE address_references.referrer_id = EXCLUDED.referrer_id
-		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
+		RETURNING address_id, referrer_type, referrer_id, referrer_name, owned, attached_at`
 	var out domain.AddressReference
-	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
-		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName, ref.Owned).
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.Owned, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: address already referenced by another resource", helpers.ErrFailedPrecondition)
 		}
@@ -750,18 +751,19 @@ func (w *addressWriter) MarkEphemeralInUse(ctx context.Context, ref *domain.Addr
 		return nil, fmt.Errorf("%w: Address %s not found", helpers.ErrNotFound, ref.AddressID)
 	}
 	const q = `
-		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, attached_at)
-		VALUES ($1, $2, $3, $4, now())
+		INSERT INTO address_references (address_id, referrer_type, referrer_id, referrer_name, owned, attached_at)
+		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (address_id) DO UPDATE
 		  SET referrer_type = EXCLUDED.referrer_type,
 		      referrer_id   = EXCLUDED.referrer_id,
 		      referrer_name = EXCLUDED.referrer_name,
+		      owned         = EXCLUDED.owned,
 		      attached_at   = now()
 		  WHERE address_references.referrer_id = EXCLUDED.referrer_id
-		RETURNING address_id, referrer_type, referrer_id, referrer_name, attached_at`
+		RETURNING address_id, referrer_type, referrer_id, referrer_name, owned, attached_at`
 	var out domain.AddressReference
-	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName).
-		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.AttachedAt); err != nil {
+	if err := w.tx.QueryRow(ctx, q, ref.AddressID, ref.ReferrerType, ref.ReferrerID, ref.ReferrerName, ref.Owned).
+		Scan(&out.AddressID, &out.ReferrerType, &out.ReferrerID, &out.ReferrerName, &out.Owned, &out.AttachedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: address already referenced by another resource", helpers.ErrFailedPrecondition)
 		}

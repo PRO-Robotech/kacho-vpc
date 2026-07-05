@@ -85,7 +85,7 @@ func TestIntegration_IPAM_Cascade(t *testing.T) {
 	}))
 	sub := &domain.Subnet{
 		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "project-netdef",
-		Name: domain.RcNameVPC("sub-netdef"), NetworkID: net.ID, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
+		Name: domain.RcNameVPC("sub-netdef"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: zone, V4CidrBlocks: []string{"10.10.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Subnets().Insert(ctx, sub)

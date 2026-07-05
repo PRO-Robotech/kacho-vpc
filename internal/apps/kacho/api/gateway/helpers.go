@@ -10,7 +10,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	// Blank-import регистрирует трансферы Gateway/time через init().
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"

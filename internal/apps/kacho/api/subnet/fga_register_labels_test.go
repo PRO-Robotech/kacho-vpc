@@ -13,7 +13,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // vpc публикует labels+parent в FGA register-intent, чтобы kacho-iam
@@ -44,12 +44,13 @@ func createSubnet(t *testing.T, h *Handler, or *repomock.OpsRepo, netID, project
 	t.Helper()
 	ctx := context.Background()
 	op, err := h.Create(ctx, &vpcv1.CreateSubnetRequest{
-		ProjectId:    projectID,
-		NetworkId:    netID,
-		ZoneId:       testZone,
-		Name:         "sub-t3",
-		V4CidrBlocks: []string{"10.20.0.0/24"},
-		Labels:       labels,
+		ProjectId:     projectID,
+		NetworkId:     netID,
+		PlacementType: vpcv1.SubnetPlacementType_ZONAL,
+		ZoneId:        testZone,
+		Name:          "sub-t3",
+		V4CidrBlocks:  []string{"10.20.0.0/24"},
+		Labels:        labels,
 	})
 	require.NoError(t, err)
 	saved := repomock.AwaitOpDone(t, or, op.Id)

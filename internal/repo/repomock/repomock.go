@@ -795,6 +795,23 @@ func (m *ZoneRegistry) ListIDs(_ context.Context) ([]string, error) {
 	return out, nil
 }
 
+// ---- RegionRegistry ----
+
+type RegionRegistry struct {
+	Known []string // region_id, которые считаются существующими в kacho-geo
+}
+
+func NewRegionRegistry(ids ...string) *RegionRegistry { return &RegionRegistry{Known: ids} }
+
+func (m *RegionRegistry) Get(_ context.Context, id string) (*domain.Region, error) {
+	for _, k := range m.Known {
+		if k == id {
+			return &domain.Region{ID: id}, nil
+		}
+	}
+	return nil, repo.ErrNotFound
+}
+
 // ---- operations.Repo ----
 
 // OpsRepo — in-memory реализация kacho-corelib/operations.Repo.
@@ -907,7 +924,8 @@ func AwaitOpDone(t TestingT, r *OpsRepo, opID string) *operations.Operation {
 // Порты `ProjectClient` / `ZoneRegistry` — кросс-сервисные, общие для всех
 // use-case'ов, поэтому живут в общем `internal/repo`-пакете и проверяются здесь.
 var (
-	_ repo.ProjectClient = (*ProjectClient)(nil)
-	_ repo.ZoneRegistry  = (*ZoneRegistry)(nil)
-	_ operations.Repo    = (*OpsRepo)(nil)
+	_ repo.ProjectClient  = (*ProjectClient)(nil)
+	_ repo.ZoneRegistry   = (*ZoneRegistry)(nil)
+	_ repo.RegionRegistry = (*RegionRegistry)(nil)
+	_ operations.Repo     = (*OpsRepo)(nil)
 )

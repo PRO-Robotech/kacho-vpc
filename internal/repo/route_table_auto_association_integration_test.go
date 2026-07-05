@@ -72,7 +72,7 @@ func TestIntegration_VPC_AutoAssociation_RT_AutoAssoc_Subnets(t *testing.T) {
 	}))
 
 	subA := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-a", Name: domain.RcNameVPC("sub-assoc-a"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-a", Name: domain.RcNameVPC("sub-assoc-a"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.71.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -160,7 +160,7 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-b", Name: domain.RcNameVPC("sub-autopick"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-b", Name: domain.RcNameVPC("sub-autopick"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.72.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -177,7 +177,7 @@ func TestIntegration_VPC_AutoAssociation_Subnet_AutoPick_RT(t *testing.T) {
 		"auto-pick должен выбрать самую раннюю RT (created_at ASC)")
 
 	subExplicit := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-b", Name: domain.RcNameVPC("sub-explicit-late"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-b", Name: domain.RcNameVPC("sub-explicit-late"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.73.0.0/24"}, RouteTableID: rtLate.ID,
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -230,7 +230,7 @@ func TestIntegration_VPC_AutoAssociation_RT_Delete_FK_SetNull(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-c", Name: domain.RcNameVPC("sub-fk-setnull"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-c", Name: domain.RcNameVPC("sub-fk-setnull"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.74.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
@@ -291,7 +291,7 @@ func TestIntegration_VPC_AutoAssociation_OutboxEmit_OnTriggeredUpdate(t *testing
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-d", Name: domain.RcNameVPC("sub-outbox"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "f-assoc-d", Name: domain.RcNameVPC("sub-outbox"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.75.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {

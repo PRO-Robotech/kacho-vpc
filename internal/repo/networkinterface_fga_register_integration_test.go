@@ -38,12 +38,13 @@ func insertSubnetRow(ctx context.Context, t *testing.T, r kacho.Repository, proj
 	subID := ids.NewID(ids.PrefixSubnet)
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Subnets().Insert(ctx, &domain.Subnet{
-			ID:           subID,
-			ProjectID:    projectID,
-			Name:         domain.RcNameVPC(name + "-sub"),
-			NetworkID:    netID,
-			ZoneID:       "zone-a",
-			V4CidrBlocks: []string{"10.0.0.0/24"},
+			ID:            subID,
+			ProjectID:     projectID,
+			Name:          domain.RcNameVPC(name + "-sub"),
+			NetworkID:     netID,
+			PlacementType: domain.PlacementZonal,
+			ZoneID:        "zone-a",
+			V4CidrBlocks:  []string{"10.0.0.0/24"},
 		})
 		return e
 	}))

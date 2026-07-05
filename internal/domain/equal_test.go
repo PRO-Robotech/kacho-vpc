@@ -91,16 +91,17 @@ func TestNetwork_Equal(t *testing.T) {
 
 func newSubnet() domain.Subnet {
 	return domain.Subnet{
-		ID:           "e9b1",
-		ProjectID:    "fld1",
-		Name:         "sub1",
-		Description:  "desc",
-		Labels:       domain.LabelsFromMap(map[string]string{"env": "prod"}),
-		NetworkID:    "enp1",
-		ZoneID:       "zone-a",
-		V4CidrBlocks: []string{"10.0.0.0/24", "10.0.1.0/24"},
-		V6CidrBlocks: []string{"2001:db8::/64"},
-		RouteTableID: "enp3",
+		ID:            "e9b1",
+		ProjectID:     "fld1",
+		Name:          "sub1",
+		Description:   "desc",
+		Labels:        domain.LabelsFromMap(map[string]string{"env": "prod"}),
+		NetworkID:     "enp1",
+		PlacementType: domain.PlacementZonal,
+		ZoneID:        "zone-a",
+		V4CidrBlocks:  []string{"10.0.0.0/24", "10.0.1.0/24"},
+		V6CidrBlocks:  []string{"2001:db8::/64"},
+		RouteTableID:  "enp3",
 		DhcpOptions: &domain.DhcpOptions{
 			DomainName:        "example.com",
 			DomainNameServers: []string{"8.8.8.8"},
@@ -131,6 +132,18 @@ func TestSubnet_Equal(t *testing.T) {
 		NtpServers:        []string{"pool.ntp.org"},
 	}
 	assert.False(t, base.Equal(diffDhcp))
+
+	// diff PlacementType (ZONAL vs REGIONAL) → not equal
+	diffPlacement := newSubnet()
+	diffPlacement.PlacementType = domain.PlacementRegional
+	diffPlacement.ZoneID = ""
+	diffPlacement.RegionID = "region-1"
+	assert.False(t, base.Equal(diffPlacement), "placement_type participates in equality")
+
+	// diff RegionID alone → not equal
+	diffRegion := newSubnet()
+	diffRegion.RegionID = "region-2"
+	assert.False(t, base.Equal(diffRegion), "region_id participates in equality")
 
 	// both DhcpOptions nil → equal
 	a := newSubnet()
@@ -199,6 +212,11 @@ func TestAddress_Equal(t *testing.T) {
 		{AddressID: "e9b2", ReferrerType: "compute_instance", ReferrerID: "ciOTHER"},
 	}
 	assert.False(t, base.Equal(diffUsed))
+
+	// diff UsedBy owned (единственное отличие — owned-флаг)
+	diffOwned := newAddress()
+	diffOwned.UsedBy[0].Owned = true
+	assert.False(t, base.Equal(diffOwned))
 
 	// empty UsedBy → not equal
 	emptyUsed := newAddress()

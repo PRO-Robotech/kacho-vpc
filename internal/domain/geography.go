@@ -14,3 +14,13 @@ type Zone struct {
 	Name      string
 	CreatedAt time.Time
 }
+
+// Region — регион (Geography — leaf-домен kacho-geo). Узкая read-проекция для
+// валидации region_id REGIONAL-подсети через порт RegionRegistry: kacho-vpc
+// хранит region_id как TEXT без FK и проверяет существование вызовом
+// geo.v1.RegionService.Get.
+type Region struct {
+	ID        string
+	Name      string
+	CreatedAt time.Time
+}

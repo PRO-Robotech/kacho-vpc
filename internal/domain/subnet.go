@@ -21,27 +21,48 @@ func (d *DhcpOptions) Equal(other *DhcpOptions) bool {
 		stringSlicesEqual(d.NtpServers, other.NtpServers)
 }
 
+// SubnetPlacementType — дискриминатор размещения подсети. Задается при Create,
+// immutable. Пустое значение (PlacementUnspecified) на входе невалидно — клиент
+// обязан выбрать явно (UNSPECIFIED не дефолтит в ZONAL).
+type SubnetPlacementType string
+
+const (
+	// PlacementUnspecified — отсутствие выбора (UNSPECIFIED). На Create отвергается.
+	PlacementUnspecified SubnetPlacementType = ""
+	// PlacementZonal — unicast-адреса, подсеть живет в одной зоне (ZoneID).
+	PlacementZonal SubnetPlacementType = "ZONAL"
+	// PlacementRegional — anycast-префикс, region-scoped (RegionID), анонсируется
+	// active-active из здоровых зон региона.
+	PlacementRegional SubnetPlacementType = "REGIONAL"
+)
+
 // Subnet — подсеть.
 //
 // Семантически-нагруженные поля (Name/Description/Labels) — newtypes из
 // `domain/types.go` со встроенным Validate(). `CreatedAt` сюда НЕ входит —
 // DB-managed, живет в `SubnetRecord` (см. `internal/repo/kacho/entity_subnet.go`).
 //
-// `ID` / `ProjectID` / `NetworkID` / `ZoneID` / `RouteTableID` — голый `string`
-// (внешние reference-id, валидация — на уровне `corevalidate.ResourceID` в
-// service-слое перед запросом к репо).
+// `ID` / `ProjectID` / `NetworkID` / `ZoneID` / `RegionID` / `RouteTableID` —
+// голый `string` (внешние reference-id, валидация — на уровне
+// `corevalidate.ResourceID` в service-слое перед запросом к репо).
+//
+// `PlacementType` дискриминирует пару `ZoneID`/`RegionID`: ровно одно из них
+// непусто (ZONAL → ZoneID, REGIONAL → RegionID). Инвариант держит DB-CHECK
+// (subnets_placement_payload_chk); service-слой валидирует ту же форму до repo.
 type Subnet struct {
-	ID           string
-	ProjectID    string
-	Name         RcNameVPC
-	Description  RcDescription
-	Labels       RcLabels
-	NetworkID    string
-	ZoneID       string
-	V4CidrBlocks []string
-	V6CidrBlocks []string // output-only ipv6
-	RouteTableID string
-	DhcpOptions  *DhcpOptions
+	ID            string
+	ProjectID     string
+	Name          RcNameVPC
+	Description   RcDescription
+	Labels        RcLabels
+	NetworkID     string
+	PlacementType SubnetPlacementType
+	ZoneID        string
+	RegionID      string
+	V4CidrBlocks  []string
+	V6CidrBlocks  []string // output-only ipv6
+	RouteTableID  string
+	DhcpOptions   *DhcpOptions
 }
 
 // Validate проверяет name/description/labels по domain-контракту. Вызывается
@@ -67,7 +88,9 @@ func (s Subnet) Equal(other Subnet) bool {
 		s.Description == other.Description &&
 		LabelsEqual(s.Labels, other.Labels) &&
 		s.NetworkID == other.NetworkID &&
+		s.PlacementType == other.PlacementType &&
 		s.ZoneID == other.ZoneID &&
+		s.RegionID == other.RegionID &&
 		stringSlicesEqual(s.V4CidrBlocks, other.V4CidrBlocks) &&
 		stringSlicesEqual(s.V6CidrBlocks, other.V6CidrBlocks) &&
 		s.RouteTableID == other.RouteTableID &&

@@ -174,12 +174,13 @@ func TestIntegration_SubnetRepo_CidrBlocks(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID:           ids.NewUID(),
-		ProjectID:    "project-1",
-		Name:         domain.RcNameVPC("test-subnet"),
-		NetworkID:    net.ID,
-		ZoneID:       "zone-a",
-		V4CidrBlocks: []string{"10.0.0.0/24", "10.1.0.0/24"},
+		ID:            ids.NewUID(),
+		ProjectID:     "project-1",
+		Name:          domain.RcNameVPC("test-subnet"),
+		NetworkID:     net.ID,
+		PlacementType: domain.PlacementZonal,
+		ZoneID:        "zone-a",
+		V4CidrBlocks:  []string{"10.0.0.0/24", "10.1.0.0/24"},
 	}
 	var created *kacho.SubnetRecord
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
@@ -259,12 +260,13 @@ func TestIntegration_AddressRepo_ExternalAndInternal(t *testing.T) {
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID:           ids.NewUID(),
-		ProjectID:    "project-1",
-		Name:         domain.RcNameVPC("sub-for-internal-addr"),
-		NetworkID:    net.ID,
-		ZoneID:       "zone-a",
-		V4CidrBlocks: []string{"10.0.0.0/24"},
+		ID:            ids.NewUID(),
+		ProjectID:     "project-1",
+		Name:          domain.RcNameVPC("sub-for-internal-addr"),
+		NetworkID:     net.ID,
+		PlacementType: domain.PlacementZonal,
+		ZoneID:        "zone-a",
+		V4CidrBlocks:  []string{"10.0.0.0/24"},
 	}
 	require.NoError(t, legacyWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
 		_, e := w.Subnets().Insert(ctx, sub)

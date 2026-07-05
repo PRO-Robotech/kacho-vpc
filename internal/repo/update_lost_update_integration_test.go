@@ -200,7 +200,7 @@ func TestIntegration_Subnet_GetForUpdate_TakesRowLock(t *testing.T) {
 		}
 		_, e := w.Subnets().Insert(ctx, &domain.Subnet{
 			ID: subID, ProjectID: "f-su", Name: domain.RcNameVPC("s-su"),
-			NetworkID: netID, ZoneID: "zone-a", V4CidrBlocks: []string{"10.9.0.0/24"},
+			NetworkID: netID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a", V4CidrBlocks: []string{"10.9.0.0/24"},
 		})
 		return e
 	}))

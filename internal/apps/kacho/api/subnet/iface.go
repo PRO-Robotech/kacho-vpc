@@ -71,6 +71,13 @@ type ZoneRegistry interface {
 	Get(ctx context.Context, id string) (*domain.Zone, error)
 }
 
+// RegionRegistry — port для проверки существования региона (используется Create
+// REGIONAL-подсети, validateRegionID). Реализация — gRPC-клиент к
+// `geo.v1.RegionService.Get` (Geography — leaf-домен kacho-geo).
+type RegionRegistry interface {
+	Get(ctx context.Context, id string) (*domain.Region, error)
+}
+
 // ListFilter — port per-object List-фильтра. Реализация —
 // `authzfilter.AsPort(*authzfilter.FGAFilter)` поверх AuthorizeService.ListObjects.
 // nil → use-case делает unfiltered passthrough (list-filter disabled / dev).

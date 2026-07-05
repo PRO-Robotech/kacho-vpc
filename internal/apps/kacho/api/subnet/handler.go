@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	operationpb "github.com/PRO-Robotech/kacho-corelib/proto/gen/go/kacho/cloud/operation"
-	reference "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/reference"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/pbconv"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
@@ -117,15 +117,17 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*
 		return nil, err
 	}
 	s := domain.Subnet{
-		ProjectID:    req.ProjectId,
-		Name:         domain.RcNameVPC(req.Name),
-		Description:  domain.RcDescription(req.Description),
-		Labels:       domain.LabelsFromMap(req.Labels),
-		NetworkID:    req.NetworkId,
-		ZoneID:       req.ZoneId,
-		V4CidrBlocks: req.V4CidrBlocks,
-		V6CidrBlocks: req.V6CidrBlocks,
-		RouteTableID: req.RouteTableId,
+		ProjectID:     req.ProjectId,
+		Name:          domain.RcNameVPC(req.Name),
+		Description:   domain.RcDescription(req.Description),
+		Labels:        domain.LabelsFromMap(req.Labels),
+		NetworkID:     req.NetworkId,
+		PlacementType: placementFromPb(req.PlacementType),
+		ZoneID:        req.ZoneId,
+		RegionID:      req.RegionId,
+		V4CidrBlocks:  req.V4CidrBlocks,
+		V6CidrBlocks:  req.V6CidrBlocks,
+		RouteTableID:  req.RouteTableId,
 	}
 	if req.DhcpOptions != nil {
 		s.DhcpOptions = &domain.DhcpOptions{
@@ -139,6 +141,19 @@ func (h *Handler) Create(ctx context.Context, req *vpcv1.CreateSubnetRequest) (*
 		return nil, err
 	}
 	return pbconv.OperationToProto(op), nil
+}
+
+// placementFromPb — proto-enum дискриминатора размещения → domain. UNSPECIFIED
+// (или неизвестное) → PlacementUnspecified; use-case отвергает его InvalidArgument.
+func placementFromPb(p vpcv1.SubnetPlacementType) domain.SubnetPlacementType {
+	switch p {
+	case vpcv1.SubnetPlacementType_ZONAL:
+		return domain.PlacementZonal
+	case vpcv1.SubnetPlacementType_REGIONAL:
+		return domain.PlacementRegional
+	default:
+		return domain.PlacementUnspecified
+	}
 }
 
 // Update — sync repo.Get + AuthZ + use-case.

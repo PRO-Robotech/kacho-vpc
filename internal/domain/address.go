@@ -115,12 +115,16 @@ func (s *ExternalIpv6Spec) Equal(other *ExternalIpv6Spec) bool {
 }
 
 // AddressReference — кто использует Address (referrer-tracking). Один referrer
-// на адрес. ReferrerType — "compute_instance" (расширяемо).
+// на адрес. ReferrerType — "compute_instance"/"network_interface"/
+// "network_load_balancer" (расширяемо). Owned=true означает, что referrer
+// владеет адресом (lifecycle связан): такой адрес освобождается вместе с
+// referrer'ом (ClearReference + Delete), а не только отвязывается.
 type AddressReference struct {
 	AddressID    string
 	ReferrerType string
 	ReferrerID   string
 	ReferrerName string
+	Owned        bool
 	AttachedAt   time.Time
 }
 
@@ -134,6 +138,7 @@ func (r *AddressReference) Equal(other *AddressReference) bool {
 		r.ReferrerType == other.ReferrerType &&
 		r.ReferrerID == other.ReferrerID &&
 		r.ReferrerName == other.ReferrerName &&
+		r.Owned == other.Owned &&
 		r.AttachedAt.Equal(other.AttachedAt)
 }
 

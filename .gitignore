@@ -28,3 +28,10 @@ tests/newman/out/baseline-*.json
 /proto/kacho/iam/authz/v1/authz_options.proto
 go.work
 go.work.sum
+
+# AI-оснастка (источник истины — kacho-workspace, локально синкается) — не коммитим
+.claude/
+CLAUDE.md
+AGENTS.md
+.codex/
+.agents/

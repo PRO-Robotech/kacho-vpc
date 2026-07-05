@@ -54,7 +54,7 @@ func TestIntegration_NICRepo_MacAddressUniqueness(t *testing.T) {
 	}))
 
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "project-mac", Name: domain.RcNameVPC("sub-mac"), NetworkID: net.ID, ZoneID: "zone-a", V4CidrBlocks: []string{"10.20.0.0/24"},
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "project-mac", Name: domain.RcNameVPC("sub-mac"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a", V4CidrBlocks: []string{"10.20.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {
 		_, e := w.Subnets().Insert(ctx, sub)

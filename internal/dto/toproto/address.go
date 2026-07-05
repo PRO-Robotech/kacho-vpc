@@ -7,8 +7,8 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	reference "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/reference"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // address — receiver-объект под трансфер kacho.AddressRecord → *vpcv1.Address.
@@ -77,14 +77,17 @@ func (address) toPb(rec kachorepo.AddressRecord) (*vpcv1.Address, error) {
 			},
 		}
 	}
-	// used_by (kacho extension, output-only) — кто использует адрес.
+	// used_by (kacho extension, output-only) — кто использует адрес: type/id/name
+	// referrer'а + owned (владеет ли он адресом). name/owned tenant-facing — это
+	// намерение (какой ресурс держит адрес), не инфра-данные.
 	for _, ref := range rec.UsedBy {
 		if ref == nil {
 			continue
 		}
 		p.UsedBy = append(p.UsedBy, &reference.Reference{
-			Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID},
+			Referrer: &reference.Referrer{Type: ref.ReferrerType, Id: ref.ReferrerID, Name: ref.ReferrerName},
 			Type:     reference.Reference_USED_BY,
+			Owned:    ref.Owned,
 		})
 	}
 	return p, nil

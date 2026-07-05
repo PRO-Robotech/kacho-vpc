@@ -19,7 +19,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // DeleteNetworkUseCase — sync FAILED_PRECONDITION если в Network есть subnets /

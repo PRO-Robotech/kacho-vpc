@@ -55,7 +55,7 @@ func TestIntegration_NICRepo_AddressCardinality_DBCheck(t *testing.T) {
 		return e
 	}))
 	sub := &domain.Subnet{
-		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "project-card", Name: domain.RcNameVPC("sub-card"), NetworkID: net.ID, ZoneID: "zone-a",
+		ID: ids.NewID(ids.PrefixSubnet), ProjectID: "project-card", Name: domain.RcNameVPC("sub-card"), NetworkID: net.ID, PlacementType: domain.PlacementZonal, ZoneID: "zone-a",
 		V4CidrBlocks: []string{"10.40.0.0/24"},
 	}
 	require.NoError(t, withTx(t, func(w kacho.RepositoryWriter) error {

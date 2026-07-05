@@ -12,7 +12,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	// Blank-import регистрирует трансферы Address/time через init().
 	_ "github.com/PRO-Robotech/kacho-vpc/internal/dto/toproto"
@@ -23,6 +23,23 @@ import (
 // к NetworkInterface. Зеркальная копия константы из
 // `internal/apps/kacho/api/networkinterface/create.go::niReferrerType`.
 const niReferrerType = "network_interface"
+
+// lbReferrerType — ReferrerType в address_references для VIP-адресов, привязанных
+// к network load balancer'у (owner-сервис хранит referrer через SetReference).
+const lbReferrerType = "network_load_balancer"
+
+// referrerTypeLabel переводит машинный ReferrerType в человекочитаемую форму для
+// Delete-guard-сообщения. Неизвестный тип отдается как есть.
+func referrerTypeLabel(referrerType string) string {
+	switch referrerType {
+	case niReferrerType:
+		return "network interface"
+	case lbReferrerType:
+		return "network_load_balancer"
+	default:
+		return referrerType
+	}
+}
 
 // isUniqueViolation распознает UNIQUE-violation для retry-loop в allocate.
 //

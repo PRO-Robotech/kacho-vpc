@@ -8,7 +8,7 @@
 //
 // Сервисное репо kacho-vpc — внутренний control-plane, а сгенерированные
 // proto-stubs живут в централизованном репо kacho-proto
-// (github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1). Чтобы
+// (github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1). Чтобы
 // интегратору не пришлось руками открывать gRPC-соединение и регистрировать
 // семь публичных service-клиентов плюс OperationService, этот пакет
 // предоставляет единый Client с типизированными accessors по каждому ресурсу.
@@ -21,7 +21,7 @@
 //
 //	import (
 //	    vpcsdk "github.com/PRO-Robotech/kacho-vpc/pkg/sdk/vpc"
-//	    vpcv1  "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+//	    vpcv1  "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 //	    "google.golang.org/grpc"
 //	    "google.golang.org/grpc/credentials"
 //	)

@@ -18,7 +18,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // DeleteAddressUseCase — sync FAILED_PRECONDITION при deletion_protection=true
@@ -59,26 +59,25 @@ func (u *DeleteAddressUseCase) Execute(ctx context.Context, id string) (*operati
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s has deletion_protection enabled; clear it via Update before Delete", id)
 	}
-	// Адрес используется NIC (или любым другим referrer'ом) — блокируем до создания Operation
-	// `used` держится в синхроне с referrer-row через SetReference /
-	// ClearReference; читаем referrer ради точного сообщения.
+	// Адрес используется каким-либо referrer'ом (NIC, load balancer, …) —
+	// блокируем до создания Operation. `used` держится в синхроне с referrer-row
+	// через SetReference / ClearReference; читаем referrer ради точного сообщения.
+	// Шаблон единый для любого типа referrer'а: сначала снять привязку у корневого
+	// ресурса, потом удалять адрес.
 	if existing.Used {
 		ref, refErr := rd.Addresses().GetReference(ctx, id)
 		_ = rd.Close()
-		switch {
-		case refErr == nil && ref != nil && ref.ReferrerType == niReferrerType:
+		if refErr == nil && ref != nil {
 			referrer := ref.ReferrerName
 			if referrer == "" {
 				referrer = ref.ReferrerID
 			}
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"address %s is in use by network interface %s; detach it before deleting the address", id, referrer)
-		case refErr == nil && ref != nil:
-			return nil, status.Errorf(codes.FailedPrecondition, "address %s is in use", id)
-		default:
-			// Referrer-row нет (или чтение упало), но used=true — все равно блокируем generic-сообщением.
-			return nil, status.Errorf(codes.FailedPrecondition, "address %s is in use", id)
+				"address %s is in use by %s %s; detach it before deleting the address",
+				id, referrerTypeLabel(ref.ReferrerType), referrer)
 		}
+		// Referrer-row нет (или чтение упало), но used=true — все равно блокируем generic-сообщением.
+		return nil, status.Errorf(codes.FailedPrecondition, "address %s is in use", id)
 	}
 	_ = rd.Close()
 

@@ -16,7 +16,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	// blank-import регистрирует трансфер kachorepo.NetworkRecord → *vpcv1.Network
 	// в DTO-реестре (тот же, что использует production-хендлер).

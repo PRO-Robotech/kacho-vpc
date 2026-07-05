@@ -19,7 +19,7 @@ import (
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/kachomock"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // Тесты Address use-case'ов и handler'а.
@@ -505,4 +505,87 @@ func TestAddressToPb_External(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "e9b-test", p.Id)
 	assert.Equal(t, "203.0.113.5", p.GetExternalIpv4Address().GetAddress())
+}
+
+// Публичная проекция used_by выдает referrer'а с type/id/name/owned — tenant
+// видит, кто владеет/использует адрес (напр. network_load_balancer).
+func TestAddressToPb_UsedByReferrerNameAndOwned(t *testing.T) {
+	rec := &kachorepo.AddressRecord{
+		Address: domain.Address{
+			ID:        "e9b-usedby",
+			ProjectID: "f1",
+			Type:      domain.AddressTypeInternal,
+			IpVersion: domain.IpVersionIPv4,
+			Used:      true,
+			UsedBy: []*domain.AddressReference{{
+				AddressID:    "e9b-usedby",
+				ReferrerType: "network_load_balancer",
+				ReferrerID:   "nlb00000000000001",
+				ReferrerName: "lb-name",
+				Owned:        true,
+			}},
+		},
+	}
+	p, err := addressToPb(rec)
+	require.NoError(t, err)
+	require.Len(t, p.UsedBy, 1)
+	ref := p.UsedBy[0]
+	assert.Equal(t, "network_load_balancer", ref.GetReferrer().GetType())
+	assert.Equal(t, "nlb00000000000001", ref.GetReferrer().GetId())
+	assert.Equal(t, "lb-name", ref.GetReferrer().GetName())
+	assert.True(t, ref.GetOwned())
+}
+
+// Delete-guard: referrer типа network_load_balancer дает обобщенное сообщение
+// (шаблон общий с NIC), а не generic "is in use".
+func TestDeleteUseCase_InUseByLoadBalancer_GeneralizedMessage(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	addrID := ids.NewID(ids.PrefixAddress)
+	kr.SeedAddress(&kachorepo.AddressRecord{Address: domain.Address{
+		ID:        addrID,
+		ProjectID: "prj-A",
+		Used:      true,
+	}})
+	kr.SeedReference(&domain.AddressReference{
+		AddressID:    addrID,
+		ReferrerType: "network_load_balancer",
+		ReferrerID:   "nlb00000000000001",
+		ReferrerName: "lb-name",
+		Owned:        true,
+	})
+	uc := NewDeleteAddressUseCase(kr, or)
+	_, err := uc.Execute(context.Background(), addrID)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	assert.Equal(t,
+		"address "+addrID+" is in use by network_load_balancer lb-name; detach it before deleting the address",
+		st.Message())
+}
+
+// Delete-guard: NIC-referrer дает тот же шаблон (human-label "network interface").
+func TestDeleteUseCase_InUseByNIC_GeneralizedMessage(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	addrID := ids.NewID(ids.PrefixAddress)
+	kr.SeedAddress(&kachorepo.AddressRecord{Address: domain.Address{
+		ID:        addrID,
+		ProjectID: "prj-A",
+		Used:      true,
+	}})
+	kr.SeedReference(&domain.AddressReference{
+		AddressID:    addrID,
+		ReferrerType: "network_interface",
+		ReferrerID:   "eni0000000000001",
+		ReferrerName: "nic-1",
+	})
+	uc := NewDeleteAddressUseCase(kr, or)
+	_, err := uc.Execute(context.Background(), addrID)
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.FailedPrecondition, st.Code())
+	assert.Equal(t,
+		"address "+addrID+" is in use by network interface nic-1; detach it before deleting the address",
+		st.Message())
 }

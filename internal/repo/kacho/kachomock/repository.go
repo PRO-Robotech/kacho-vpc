@@ -31,6 +31,7 @@ import (
 	"sync"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -58,7 +59,12 @@ type Repository struct {
 	routeTables       map[string]*kacho.RouteTableRecord
 	networkInterfaces map[string]*kacho.NetworkInterfaceRecord
 	addresses         map[string]*kacho.AddressRecord
-	gateways          map[string]*kacho.GatewayRecord
+	// references — referrer-строки address_references по address_id (кто
+	// использует адрес + owned-флаг). Seed'ится напрямую для тестов, читающих
+	// GetReference/ReferencesForAddresses (mock не моделирует SetReference-запись
+	// в этот map).
+	references map[string]*domain.AddressReference
+	gateways   map[string]*kacho.GatewayRecord
 	// addressPools — admin-only ресурс.
 	addressPools map[string]*kacho.AddressPoolRecord
 	// netDefBinds — explicit-биндинги pool ↔ network (network_default).
@@ -96,6 +102,7 @@ func NewRepository() *Repository {
 		routeTables:        make(map[string]*kacho.RouteTableRecord),
 		networkInterfaces:  make(map[string]*kacho.NetworkInterfaceRecord),
 		addresses:          make(map[string]*kacho.AddressRecord),
+		references:         make(map[string]*domain.AddressReference),
 		gateways:           make(map[string]*kacho.GatewayRecord),
 		addressPools:       make(map[string]*kacho.AddressPoolRecord),
 		netDefBinds:        make(map[string]string),
@@ -138,6 +145,17 @@ func (r *Repository) SeedAddress(rec *kacho.AddressRecord) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.addresses[rec.ID] = rec
+}
+
+// SeedReference добавляет referrer-строку (кто использует адрес + owned) в
+// Address-references state. Нужен тестам, читающим referrer через
+// Reader().Addresses().GetReference / ReferencesForAddresses (напр. проверка
+// обобщенного Delete-guard-сообщения по типу referrer'а).
+func (r *Repository) SeedReference(ref *domain.AddressReference) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *ref
+	r.references[ref.AddressID] = &cp
 }
 
 // SeedSubnet добавляет SubnetRecord в Subnet-state. Нужен тестам, которые
@@ -304,6 +322,11 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		cp := *a
 		addrSnap[id] = &cp
 	}
+	addrRefSnap := make(map[string]*domain.AddressReference, len(r.references))
+	for id, ref := range r.references {
+		cp := *ref
+		addrRefSnap[id] = &cp
+	}
 	gwSnap := make(map[string]*kacho.GatewayRecord, len(r.gateways))
 	for id, g := range r.gateways {
 		cp := *g
@@ -319,15 +342,16 @@ func (r *Repository) Reader(_ context.Context) (kacho.RepositoryReader, error) {
 		ndSnap[k] = v
 	}
 	return &readerImpl{
-		netSnap:  netSnap,
-		sgSnap:   sgSnap,
-		subSnap:  subSnap,
-		rtSnap:   rtSnap,
-		niSnap:   niSnap,
-		addrSnap: addrSnap,
-		gwSnap:   gwSnap,
-		apSnap:   apSnap,
-		ndSnap:   ndSnap,
+		netSnap:     netSnap,
+		sgSnap:      sgSnap,
+		subSnap:     subSnap,
+		rtSnap:      rtSnap,
+		niSnap:      niSnap,
+		addrSnap:    addrSnap,
+		addrRefSnap: addrRefSnap,
+		gwSnap:      gwSnap,
+		apSnap:      apSnap,
+		ndSnap:      ndSnap,
 	}, nil
 }
 
@@ -403,15 +427,16 @@ func (r *Repository) Close() {}
 // Per-resource Reader iface-методы возвращают per-resource структуры (см.
 // `network.go`, `subnet.go`, ...).
 type readerImpl struct {
-	netSnap  map[string]*kacho.NetworkRecord
-	sgSnap   map[string]*kacho.SecurityGroupRecord
-	subSnap  map[string]*kacho.SubnetRecord
-	rtSnap   map[string]*kacho.RouteTableRecord
-	niSnap   map[string]*kacho.NetworkInterfaceRecord
-	addrSnap map[string]*kacho.AddressRecord
-	gwSnap   map[string]*kacho.GatewayRecord
-	apSnap   map[string]*kacho.AddressPoolRecord
-	ndSnap   map[string]string
+	netSnap     map[string]*kacho.NetworkRecord
+	sgSnap      map[string]*kacho.SecurityGroupRecord
+	subSnap     map[string]*kacho.SubnetRecord
+	rtSnap      map[string]*kacho.RouteTableRecord
+	niSnap      map[string]*kacho.NetworkInterfaceRecord
+	addrSnap    map[string]*kacho.AddressRecord
+	addrRefSnap map[string]*domain.AddressReference
+	gwSnap      map[string]*kacho.GatewayRecord
+	apSnap      map[string]*kacho.AddressPoolRecord
+	ndSnap      map[string]string
 }
 
 func (rd *readerImpl) Networks() kacho.NetworkReaderIface {
@@ -435,7 +460,7 @@ func (rd *readerImpl) NetworkInterfaces() kacho.NetworkInterfaceReaderIface {
 }
 
 func (rd *readerImpl) Addresses() kacho.AddressReaderIface {
-	return &addressReader{snap: rd.addrSnap}
+	return &addressReader{snap: rd.addrSnap, refs: rd.addrRefSnap}
 }
 
 func (rd *readerImpl) Gateways() kacho.GatewayReaderIface {
