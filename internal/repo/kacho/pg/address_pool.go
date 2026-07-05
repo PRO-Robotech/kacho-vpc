@@ -362,6 +362,21 @@ func (w *addressPoolWriter) Delete(ctx context.Context, id string) error {
 // LockForUpdate — row-lock pool (`FOR UPDATE`). Конфликтует с `FOR SHARE`,
 // который берут external-allocate пути → сериализует Delete vs in-flight
 // allocate. ErrNotFound если pool отсутствует.
+// GetForUpdate — Get с row-lock (`FOR UPDATE`) в writer-TX. Сериализует
+// конкурентный read-modify-write в UpdateAddressPoolUseCase: второй concurrent
+// admin-Update блокируется до commit первого, затем читает уже обновлённый row и
+// применяет свою маску поверх — lost-update (silent revert is_default /
+// selector_priority) исключён (project-rule #10). ErrNotFound если pool
+// отсутствует.
+func (w *addressPoolWriter) GetForUpdate(ctx context.Context, id string) (*kacho.AddressPoolRecord, error) {
+	q := fmt.Sprintf(`SELECT %s FROM address_pools WHERE id = $1 FOR UPDATE`, helpers.AddressPoolCols)
+	rec, err := helpers.ScanAddressPool(w.tx.QueryRow(ctx, q, id))
+	if err != nil {
+		return nil, helpers.WrapPgErr(err, "AddressPool", id)
+	}
+	return rec, nil
+}
+
 func (w *addressPoolWriter) LockForUpdate(ctx context.Context, id string) error {
 	var got string
 	err := w.tx.QueryRow(ctx, `SELECT id FROM address_pools WHERE id = $1 FOR UPDATE`, id).Scan(&got)

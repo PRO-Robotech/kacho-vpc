@@ -4,11 +4,11 @@
 package toproto
 
 import (
+	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	reference "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/reference"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // networkInterface — receiver-объект под трансфер kacho.NetworkInterfaceRecord →

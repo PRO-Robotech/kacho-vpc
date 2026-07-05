@@ -14,12 +14,12 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // UpdateInput — параметры для UpdateAddressUseCase.Execute. Address — особый
@@ -90,8 +90,11 @@ func (u *UpdateAddressUseCase) doUpdate(ctx context.Context, in UpdateInput) (*a
 	}
 	defer w.Abort()
 
-	// Get + Update внутри одной writer-TX: race-free read-modify-write.
-	rec, err := w.Addresses().Get(ctx, in.AddressID)
+	// GetForUpdate + Update внутри одной writer-TX: row-lock (`FOR UPDATE`)
+	// сериализует read-modify-write — конкурентный disjoint-mask Update не может
+	// затереть un-masked поле (напр. deletion_protection). Голый Get здесь был бы
+	// TOCTOU-race (project-rule #10).
+	rec, err := w.Addresses().GetForUpdate(ctx, in.AddressID)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}

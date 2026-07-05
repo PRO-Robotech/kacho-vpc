@@ -6,7 +6,6 @@ package repo_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -86,8 +85,8 @@ func TestIntegration_Subnet_ConcurrentAddCidr_NoLostUpdate(t *testing.T) {
 		bDone <- wb.Commit()
 	}()
 
-	// Дать TX-B дойти до своего Get/Set, пока TX-A держит lock.
-	time.Sleep(300 * time.Millisecond)
+	// Дождаться, пока TX-B реально встанет в очередь за row-lock'ом (детерминированно).
+	waitForLockWaiter(t, ctx, pool)
 
 	// TX-A: добавляет "10.0.1.0/24" и коммитит → освобождает lock.
 	mergedA := append(append([]string{}, subA.V4CidrBlocks...), "10.0.1.0/24")

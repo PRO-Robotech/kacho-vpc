@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
-	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
+	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

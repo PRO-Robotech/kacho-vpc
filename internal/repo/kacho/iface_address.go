@@ -66,6 +66,11 @@ type AddressWriterIface interface {
 	AddressReaderIface
 	Insert(ctx context.Context, a *domain.Address) (*AddressRecord, error)
 	Update(ctx context.Context, a *domain.Address) (*AddressRecord, error)
+	// GetForUpdate — Get с `SELECT ... FOR UPDATE` (row-lock) внутри writer-TX.
+	// Сериализует read-modify-write в Update (doUpdate): конкурентный Update
+	// блокируется на GetForUpdate до commit первого, затем читает уже обновлённый
+	// row и применяет свою маску поверх — lost-update исключён (project-rule #10).
+	GetForUpdate(ctx context.Context, id string) (*AddressRecord, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteGuarded — атомарный CAS-delete: удаляет адрес ТОЛЬКО если он не
 	// used и не deletion_protection, и возвращает удаленный record (свежий

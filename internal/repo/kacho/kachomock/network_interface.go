@@ -117,6 +117,12 @@ func (nw *networkInterfaceWriter) Get(_ context.Context, id string) (*kacho.Netw
 	return &cp, nil
 }
 
+// GetForUpdate — in-memory mock не моделирует row-lock; делегирует Get
+// (сериализация проверяется integration-тестом на реальном Postgres).
+func (nw *networkInterfaceWriter) GetForUpdate(ctx context.Context, id string) (*kacho.NetworkInterfaceRecord, error) {
+	return nw.Get(ctx, id)
+}
+
 func (nw *networkInterfaceWriter) List(_ context.Context, f kacho.NetworkInterfaceFilter, _ kacho.Pagination) ([]*kacho.NetworkInterfaceRecord, string, error) {
 	var result []*kacho.NetworkInterfaceRecord
 	for id, n := range nw.w.localNIs {

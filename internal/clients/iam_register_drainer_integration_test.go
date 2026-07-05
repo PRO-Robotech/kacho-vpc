@@ -292,9 +292,20 @@ func TestVPC_SEC_D_14_RegisterDrainerPermanentPoison(t *testing.T) {
 	d := newRegisterDrainer(t, pool, iam, maxAttempts)
 	go func() { _ = d.Run(ctx) }()
 
-	// Сначала poison-строка, затем здоровая.
+	// Сначала poison-строка, затем здоровая. Порядок «poison первой» фиксируем
+	// детерминированно: ждём, пока drainer РЕАЛЬНО заберёт poison-строку
+	// (attempt_count вырос) — а не фиксированным сном, который на медленном CI мог
+	// бы истечь до того, как drainer коснулся poison, и порядок не гарантировался.
 	insertRegisterIntent(t, ctx, pool, "fga.register", "project:proj-x", "project", "vpc_network:poison")
-	time.Sleep(200 * time.Millisecond) // детерминированно гарантируем, что poison заклеймят первой
+	require.Eventually(t, func() bool {
+		var attempts int
+		if err := pool.QueryRow(ctx,
+			`SELECT attempt_count FROM kacho_vpc.fga_register_outbox
+			   WHERE payload->>'object' = 'vpc_network:poison'`).Scan(&attempts); err != nil {
+			return false
+		}
+		return attempts >= 1
+	}, 5*time.Second, 20*time.Millisecond, "drainer must claim the poison row before healthy is enqueued")
 	insertRegisterIntent(t, ctx, pool, "fga.register", "project:proj-x", "project", "vpc_network:healthy")
 
 	// Здоровая строка в итоге применена — drainer не застрял на poison.

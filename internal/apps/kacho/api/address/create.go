@@ -5,12 +5,9 @@ package address
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/netip"
 	"strings"
 
@@ -20,8 +17,8 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
-	"github.com/PRO-Robotech/kacho-corelib/safeconv"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
@@ -29,7 +26,6 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
-	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // ExternalAddrSpec — спецификация внешнего адреса.
@@ -316,6 +312,81 @@ func (u *CreateAddressUseCase) validateInternalIPv6InSubnet(ctx context.Context,
 	)
 }
 
+// mapRequirements — общий маппинг spec-Requirements → domain для external-family
+// (v4 и v6 несут одинаковый AddrRequirements). nil → nil (поле остается пустым).
+func mapRequirements(r *AddrRequirements) *domain.AddressRequirements {
+	if r == nil {
+		return nil
+	}
+	return &domain.AddressRequirements{
+		DdosProtectionProvider: r.DdosProtectionProvider,
+		OutgoingSmtpCapability: r.OutgoingSmtpCapability,
+	}
+}
+
+// checkSubnetExists — общая FK-валидация ("Subnet <X> not found") для
+// internal-family (v4 и v6). Пустой subnetID пропускается (CIDR-less подсеть
+// легальна). Это чтение связанного ресурса, а не side-effect — остается в
+// use-case.
+func (u *CreateAddressUseCase) checkSubnetExists(ctx context.Context, subnetID string) error {
+	if subnetID == "" {
+		return nil
+	}
+	if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
+		return status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+	}
+	return nil
+}
+
+// applyAddressSpec — заполняет family-specific поля domain.Address по тому
+// единственному из четырех spec'ов, что задан в CreateInput (взаимоисключимость
+// гарантирована валидатором Execute). Все четыре ветви идут через общие
+// helper'ы (mapRequirements для external, checkSubnetExists для internal), чтобы
+// новое family-инвариант-правило не пришлось дублировать по-семейно.
+func (u *CreateAddressUseCase) applyAddressSpec(ctx context.Context, a *domain.Address, in CreateInput) error {
+	switch {
+	case in.ExternalSpec != nil:
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv4
+		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
+			Address:      in.ExternalSpec.Address,
+			ZoneID:       in.ExternalSpec.ZoneID,
+			Requirements: mapRequirements(in.ExternalSpec.Requirements),
+		}
+	case in.InternalSpec != nil:
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv4
+		if err := u.checkSubnetExists(ctx, in.InternalSpec.SubnetID); err != nil {
+			return err
+		}
+		a.InternalIpv4 = &domain.InternalIpv4Spec{
+			Address:  in.InternalSpec.Address,
+			SubnetID: in.InternalSpec.SubnetID,
+		}
+	case in.InternalIpv6Spec != nil:
+		a.Type = domain.AddressTypeInternal
+		a.IpVersion = domain.IpVersionIPv6
+		if err := u.checkSubnetExists(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
+			return err
+		}
+		a.InternalIpv6 = &domain.InternalIpv6Spec{
+			Address:  in.InternalIpv6Spec.Address,
+			SubnetID: in.InternalIpv6Spec.SubnetID,
+		}
+	default:
+		// external IPv6: sparse counter-based allocator из глобального
+		// AddressPool с v6 CIDR (cascade resolve как у v4).
+		a.Type = domain.AddressTypeExternal
+		a.IpVersion = domain.IpVersionIPv6
+		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
+			Address:      in.ExternalIpv6Spec.Address,
+			ZoneID:       in.ExternalIpv6Spec.ZoneID,
+			Requirements: mapRequirements(in.ExternalIpv6Spec.Requirements),
+		}
+	}
+	return nil
+}
+
 // doCreate — async-часть Create (внутри Operation worker'а). Атомарный
 // backstop: project-exists + Insert + multi-family IPAM allocation +
 // outbox-emit Address.CREATED — все в одной writer-TX. Defer w.Abort() —
@@ -340,62 +411,8 @@ func (u *CreateAddressUseCase) doCreate(ctx context.Context, addrID string, in C
 		Reserved:           true,
 	}
 
-	if in.ExternalSpec != nil {
-		a.Type = domain.AddressTypeExternal
-		a.IpVersion = domain.IpVersionIPv4
-		a.ExternalIpv4 = &domain.ExternalIpv4Spec{
-			Address: in.ExternalSpec.Address,
-			ZoneID:  in.ExternalSpec.ZoneID,
-		}
-		if r := in.ExternalSpec.Requirements; r != nil {
-			a.ExternalIpv4.Requirements = &domain.AddressRequirements{
-				DdosProtectionProvider: r.DdosProtectionProvider,
-				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
-			}
-		}
-	} else if in.InternalSpec != nil {
-		a.Type = domain.AddressTypeInternal
-		a.IpVersion = domain.IpVersionIPv4
-		subnetID := in.InternalSpec.SubnetID
-		// FK-валидация ("Subnet <X> not found"). Остается в use-case — это
-		// чтение связанного ресурса, а не side-effect.
-		if subnetID != "" {
-			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
-			}
-		}
-		a.InternalIpv4 = &domain.InternalIpv4Spec{
-			Address:  in.InternalSpec.Address,
-			SubnetID: subnetID,
-		}
-	} else if in.InternalIpv6Spec != nil {
-		a.Type = domain.AddressTypeInternal
-		a.IpVersion = domain.IpVersionIPv6
-		subnetID := in.InternalIpv6Spec.SubnetID
-		if subnetID != "" {
-			if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
-			}
-		}
-		a.InternalIpv6 = &domain.InternalIpv6Spec{
-			Address:  in.InternalIpv6Spec.Address,
-			SubnetID: subnetID,
-		}
-	} else {
-		// external IPv6: sparse counter-based allocator из глобального
-		// AddressPool с v6 CIDR (cascade resolve как у v4).
-		a.Type = domain.AddressTypeExternal
-		a.IpVersion = domain.IpVersionIPv6
-		a.ExternalIpv6 = &domain.ExternalIpv6Spec{
-			Address: in.ExternalIpv6Spec.Address,
-			ZoneID:  in.ExternalIpv6Spec.ZoneID,
-		}
-		if r := in.ExternalIpv6Spec.Requirements; r != nil {
-			a.ExternalIpv6.Requirements = &domain.AddressRequirements{
-				DdosProtectionProvider: r.DdosProtectionProvider,
-				OutgoingSmtpCapability: r.OutgoingSmtpCapability,
-			}
-		}
+	if err := u.applyAddressSpec(ctx, a, in); err != nil {
+		return nil, err
 	}
 
 	// Резолвим external-пулы ДО открытия Writer-TX (отдельная Reader-TX).
@@ -572,7 +589,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Write
 		tried := make(map[string]struct{}, allocateMaxAttempts)
 		// Phase 1: random pick.
 		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
-			ip, err := pickRandomIPv4(cidr)
+			ip, err := domain.PickRandomIPv4(cidr)
 			if err != nil {
 				break
 			}
@@ -595,7 +612,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Write
 			return &allocResult{IP: updated.InternalIpv4.Address}, nil
 		}
 		// Phase 2: deterministic sweep.
-		for _, candidate := range usableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
+		for _, candidate := range domain.UsableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
 			if _, dup := tried[candidate]; dup {
 				continue
 			}
@@ -656,7 +673,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, w Write
 	tried := make(map[string]struct{}, v6AllocateMaxAttempts)
 	conflicts := 0
 	for attempt := 0; attempt < v6AllocateMaxAttempts; attempt++ {
-		ip, perr := pickRandomIPv6(prefix)
+		ip, perr := domain.PickRandomIPv6(prefix)
 		if perr != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "subnet %s: cannot pick IPv6 in %s: %v", sub.ID, prefix, perr)
 		}
@@ -747,120 +764,4 @@ func (u *CreateAddressUseCase) allocateExternalIPv6(ctx context.Context, w Write
 		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: allocate external ipv6: %v", repo.ErrInternal, err))
 	}
 	return &allocResult{IP: ip, PoolID: pool.ID}, nil
-}
-
-// usableIPv4Sweep — deterministic enumeration usable IPv4 в CIDR (без
-// network/broadcast). Используется в Phase 2 allocator'а для гарантии closure
-// когда random-pick не сходится. Cap'ируется maxN чтобы не аллокировать
-// миллионы строк для больших CIDR; для /28 (14 IP) maxN=24 достаточно.
-func usableIPv4Sweep(cidr netip.Prefix, maxN int) []string {
-	if !cidr.Addr().Is4() {
-		return nil
-	}
-	bits := cidr.Bits()
-	hostBits := 32 - bits
-	if hostBits >= 32 {
-		return nil
-	}
-	total := uint32(1) << hostBits
-	first := uint32(1)
-	last := total - 1
-	switch hostBits {
-	case 0:
-		first, last = 0, 1
-	case 1:
-		first, last = 0, 2
-	}
-	if safeconv.IntToUint32(maxN) < last-first {
-		last = first + safeconv.IntToUint32(maxN)
-	}
-	base := cidr.Addr().As4()
-	baseInt := binary.BigEndian.Uint32(base[:])
-	out := make([]string, 0, last-first)
-	for i := first; i < last; i++ {
-		var ipBytes [4]byte
-		binary.BigEndian.PutUint32(ipBytes[:], baseInt+i)
-		out = append(out, net.IP(ipBytes[:]).String())
-	}
-	return out
-}
-
-// pickRandomIPv4 выбирает random IP из CIDR, исключая network/broadcast-адреса
-// (для prefix length < 31). Использует crypto/rand для unpredictable allocation.
-//
-// Edge cases:
-//   - /32 (hostBits=0): единственный адрес — base.
-//   - /31 (hostBits=1): оба адреса валидны (point-to-point) — base+0 или base+1.
-//   - /≤30 (hostBits≥2): пропускаем .0 (network) и .last (broadcast) →
-//     offset в [1, maxHosts].
-func pickRandomIPv4(cidr netip.Prefix) (string, error) {
-	if !cidr.Addr().Is4() {
-		return "", repo.ErrInvalidIPv4
-	}
-	bits := cidr.Bits()
-	hostBits := 32 - bits
-	base := cidr.Addr().As4()
-	baseInt := binary.BigEndian.Uint32(base[:])
-	var offset uint32
-	switch hostBits {
-	case 0:
-		return cidr.Addr().String(), nil
-	case 1:
-		var randBytes [4]byte
-		if _, err := rand.Read(randBytes[:]); err != nil {
-			return "", err
-		}
-		offset = binary.BigEndian.Uint32(randBytes[:]) % 2
-	default:
-		maxHosts := uint32(1<<hostBits) - 2
-		var randBytes [4]byte
-		if _, err := rand.Read(randBytes[:]); err != nil {
-			return "", err
-		}
-		offset = binary.BigEndian.Uint32(randBytes[:])%maxHosts + 1
-	}
-	var ipBytes [4]byte
-	binary.BigEndian.PutUint32(ipBytes[:], baseInt+offset)
-	return net.IP(ipBytes[:]).String(), nil
-}
-
-// pickRandomIPv6 выбирает случайный адрес внутри IPv6-префикса, заполняя
-// host-биты криптослучайными значениями. Пропускает all-zeros host (subnet-router
-// anycast `<prefix>::`); для очень узких префиксов (/127, /128) ведет себя
-// детерминированно (там почти нет выбора).
-func pickRandomIPv6(prefix netip.Prefix) (string, error) {
-	addr := prefix.Masked().Addr()
-	base := addr.As16()
-	bits := prefix.Bits()
-	hostBits := 128 - bits
-	if hostBits <= 0 {
-		return addr.String(), nil
-	}
-	var rnd [16]byte
-	for try := 0; try < 8; try++ {
-		if _, err := rand.Read(rnd[:]); err != nil {
-			return "", err
-		}
-		out := base
-		for i := 0; i < 16; i++ {
-			bitIndex := i * 8
-			if bitIndex+8 <= bits {
-				continue
-			}
-			var mask byte
-			if bitIndex >= bits {
-				mask = 0xff
-			} else {
-				keep := bits - bitIndex
-				mask = byte(0xff >> keep)
-			}
-			out[i] = (base[i] &^ mask) | (rnd[i] & mask)
-		}
-		cand := netip.AddrFrom16(out)
-		if cand == addr {
-			continue
-		}
-		return cand.String(), nil
-	}
-	return addr.String(), nil
 }
