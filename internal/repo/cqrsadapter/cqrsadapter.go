@@ -16,11 +16,11 @@ package cqrsadapter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
+	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
 
@@ -62,7 +62,7 @@ func (a *NetworkAdapter) Update(ctx context.Context, n *domain.Network) (*kacho.
 	if err != nil {
 		return nil, err
 	}
-	if err := w.Outbox().Emit(ctx, "Network", rec.ID, "UPDATED", networkPayloadMap(rec)); err != nil {
+	if err := w.Outbox().Emit(ctx, "Network", rec.ID, "UPDATED", helpers.DomainToMap(rec)); err != nil {
 		return nil, fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err)
 	}
 	if err := w.Commit(); err != nil {
@@ -85,7 +85,7 @@ func (a *NetworkAdapter) SetDefaultSGID(ctx context.Context, networkID, sgID str
 	if err != nil {
 		return nil, err
 	}
-	if err := w.Outbox().Emit(ctx, "Network", rec.ID, "UPDATED", networkPayloadMap(rec)); err != nil {
+	if err := w.Outbox().Emit(ctx, "Network", rec.ID, "UPDATED", helpers.DomainToMap(rec)); err != nil {
 		return nil, fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err)
 	}
 	if err := w.Commit(); err != nil {
@@ -307,7 +307,7 @@ func (a *SecurityGroupAdapter) Insert(ctx context.Context, sg *domain.SecurityGr
 	if err != nil {
 		return nil, err
 	}
-	if err := w.Outbox().Emit(ctx, "SecurityGroup", rec.ID, "CREATED", securityGroupPayloadMap(rec)); err != nil {
+	if err := w.Outbox().Emit(ctx, "SecurityGroup", rec.ID, "CREATED", helpers.DomainToMap(rec)); err != nil {
 		return nil, fmt.Errorf("%w: outbox emit: %v", repo.ErrInternal, err)
 	}
 	if err := w.Commit(); err != nil {
@@ -354,41 +354,4 @@ func (a *NetworkInterfaceAdapter) ListBySubnet(ctx context.Context, subnetID str
 	}
 	defer func() { _ = rd.Close() }()
 	return rd.NetworkInterfaces().ListBySubnet(ctx, subnetID)
-}
-
-// =============================================================================
-// Payload helpers — копии из соответствующих use-case-пакетов (импортировать
-// `apps/kacho/api/network` и т.п. отсюда нельзя из-за обратной зависимости).
-// Набор полей совпадает с тем, что эмитят use-case-пакеты в свой outbox.
-// =============================================================================
-
-// networkPayloadMap — snapshot Network для outbox-payload (тот же формат, что у
-// `apps/kacho/api/network/helpers.go::networkPayloadMap`: JSON round-trip
-// сериализация всей entity-структуры).
-func networkPayloadMap(n *kacho.NetworkRecord) map[string]any {
-	return jsonRoundTrip(n)
-}
-
-// securityGroupPayloadMap — snapshot SG для outbox-payload (тот же формат, что у
-// `apps/kacho/api/securitygroup/helpers.go::securityGroupPayloadMap`).
-func securityGroupPayloadMap(sg *kacho.SecurityGroupRecord) map[string]any {
-	return jsonRoundTrip(sg)
-}
-
-// jsonRoundTrip — общий helper «struct → JSON → map[string]any». При ошибке
-// возвращает пустой map (outbox-payload не критичен — лучше пустой, чем паника).
-// Тот же подход, что в `helpers.go::*payloadMap` use-case-пакетов.
-func jsonRoundTrip(v any) map[string]any {
-	if v == nil {
-		return map[string]any{}
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return map[string]any{}
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return map[string]any{}
-	}
-	return m
 }

@@ -114,21 +114,19 @@ func (f *sgNetFixture) getSG(t *testing.T, id string) *kacho.SecurityGroupRecord
 	return rec
 }
 
-// awaitOp поллит opsRepo.Get до done=true (или дедлайна в 3 секунды).
+// awaitOp поллит opsRepo.Get до done=true. Дедлайн 10s (тот же щедрый бюджет, что
+// и у остальных integration-хелперов: под загруженным CI-раннером in-process
+// operations.Run-goroutine может не успеть за 3s → ложный red).
 func (f *sgNetFixture) awaitOp(t *testing.T, opID string) *operations.Operation {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		op, err := f.opsRepo.Get(f.ctx, opID)
+	var op *operations.Operation
+	require.Eventually(t, func() bool {
+		var err error
+		op, err = f.opsRepo.Get(f.ctx, opID)
 		require.NoError(t, err)
-		if op.Done {
-			return op
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("operation %s did not complete within deadline", opID)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return op.Done
+	}, 10*time.Second, 20*time.Millisecond, "operation %s did not complete within deadline", opID)
+	return op
 }
 
 // assertFieldViolation проверяет, что ошибка — gRPC InvalidArgument с заданным
