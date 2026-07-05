@@ -10,7 +10,7 @@ import (
 
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	corevalidate "github.com/PRO-Robotech/kacho-corelib/validate"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"

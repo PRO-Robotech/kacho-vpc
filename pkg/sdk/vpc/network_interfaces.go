@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	operationv1 "github.com/PRO-Robotech/kacho-corelib/proto/gen/go/kacho/cloud/operation"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	operationv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // NetworkInterfaceServiceClient — alias на сгенерированный gRPC-клиент.

@@ -15,7 +15,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // fakeAllocator — стаб AddressAllocator: фиксирует, какой allocate-метод позвал

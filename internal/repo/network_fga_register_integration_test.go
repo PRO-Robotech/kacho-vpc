@@ -31,7 +31,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/repomock"
-	vpcv1 "github.com/PRO-Robotech/kacho-vpc/proto/gen/go/kacho/cloud/vpc/v1"
+	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 )
 
 // ---- helpers ----
