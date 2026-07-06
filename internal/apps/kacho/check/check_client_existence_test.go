@@ -50,7 +50,7 @@ func newProbeClientCtx(t *testing.T, resp *iamv1.CheckResponse, probe ResourceEx
 
 // Decision 1 GWT-1.1/1.2/1.3: object-scoped deny на ОТСУТСТВУЮЩИЙ vpc-объект →
 // existence-probe говорит "нет" → возвращаем ErrNoPath (interceptor пропускает к
-// handler'у, который отдаст verbatim NotFound 404), а не plain-deny 403.
+// handler'у, который отдаст дословный NotFound 404), а не plain-deny 403.
 func TestIAMCheckClient_ExistenceHiding_AbsentObject_PassesThrough(t *testing.T) {
 	const object = "vpc_network:enpabsent99999999999"
 	client, ctx := newProbeClientCtx(t, denyResp(object), &fakeProbe{exists: map[string]bool{}})

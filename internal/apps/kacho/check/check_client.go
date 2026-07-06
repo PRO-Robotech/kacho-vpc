@@ -17,7 +17,7 @@ import (
 // ResourceExistenceProbe — порт проверки существования object-scoped ресурса в
 // БД vpc по его FGA-объекту (`<type>:<id>`). Используется на deny-пути
 // IAMCheckClient'а для existence-hiding: object-scoped deny на ОТСУТСТВУЮЩИЙ
-// объект ведет себя как `ErrNoPath` (passthrough → handler отдаст verbatim
+// объект ведет себя как `ErrNoPath` (passthrough → handler отдаст дословный
 // NotFound 404, скрывая отсутствие owner-tuple), а на СУЩЕСТВУЮЩИЙ — остается
 // PermissionDenied (verb-RBAC сохранен, мутация-handler недостижим).
 //
@@ -109,7 +109,7 @@ func (c *IAMCheckClient) Check(ctx context.Context, subjectID, relation, object 
 	// объекта без owner-tuple возвращает reason "lacks relation …" (не "no path"),
 	// так что отличить «нет owner-tuple/нет объекта» от «объект есть, но нет
 	// доступа» можно только сверкой с собственной БД vpc. Отсутствует → ведем
-	// как ErrNoPath (passthrough → handler вернет verbatim NotFound 404, скрывая
+	// как ErrNoPath (passthrough → handler вернет дословный NotFound 404, скрывая
 	// отсутствие); существует → оставляем deny (PermissionDenied; verb-RBAC
 	// сохранен, мутация-handler недостижим → no tamper). Probe-ошибка/неизвестный
 	// тип → fail-closed (оставляем deny, без passthrough).
@@ -120,7 +120,7 @@ func (c *IAMCheckClient) Check(ctx context.Context, subjectID, relation, object 
 				if perr == nil {
 					if !exists {
 						// Объекта нет → passthrough (ErrNoPath): handler сам отдаст
-						// verbatim NotFound из БД, скрывая отсутствие owner-tuple.
+						// дословный NotFound из БД, скрывая отсутствие owner-tuple.
 						return false, authz.ErrNoPath
 					}
 					// Объект есть, но caller не вправе видеть → existence-hiding:
