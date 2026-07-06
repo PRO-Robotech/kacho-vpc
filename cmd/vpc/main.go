@@ -194,6 +194,13 @@ func runServe(cfg config.Config) error {
 	if err := cfg.ValidateServerMTLS(mtlsCfg); err != nil {
 		return fmt.Errorf("config validate (server mTLS): %w", err)
 	}
+	// Fail-closed boot-гардрейл S4: production требует verified transport на исходящих
+	// vpc→iam рёбрах (authz Check :9091 + ProjectService.Get :9090). Иначе dialPeer
+	// откатился бы в insecure creds и per-RPC authz Check ушёл бы по cleartext (MITM →
+	// forge allowed=true → обход авторизации). Проверка — здесь, ДО cross-service dial'ов.
+	if err := cfg.ValidatePeerTransport(mtlsCfg); err != nil {
+		return fmt.Errorf("config validate (peer transport): %w", err)
+	}
 
 	// Cross-service gRPC dial — через единый builder: retries=3 / dialTimeout=10s /
 	// keepalive=30s / TLS / опц. dns:///+round_robin.
