@@ -84,16 +84,8 @@ func validateCIDRPrefix(field, value string) error {
 	return nil
 }
 
-// netipPrefix — internal alias для netip.Prefix.
-type netipPrefix = netip.Prefix
-
-// parseNetipPrefix парсит CIDR-строку в netip.Prefix.
-func parseNetipPrefix(s string) (netipPrefix, error) {
-	return netip.ParsePrefix(s)
-}
-
 // prefixesOverlap возвращает true если два CIDR-блока пересекаются.
-func prefixesOverlap(a, b netipPrefix) bool {
+func prefixesOverlap(a, b netip.Prefix) bool {
 	if a.Addr().Is4() != b.Addr().Is4() {
 		return false
 	}
@@ -106,9 +98,9 @@ func prefixesOverlap(a, b netipPrefix) bool {
 // checkCIDRDisjoint — sync-проверка, что массив CIDR не содержит пересекающихся.
 // fieldPrefix — имя поля для error-сообщений (например "v4_cidr_blocks").
 func checkCIDRDisjoint(fieldPrefix string, cidrs []string) error {
-	prefixes := make([]netipPrefix, 0, len(cidrs))
+	prefixes := make([]netip.Prefix, 0, len(cidrs))
 	for i, c := range cidrs {
-		pr, err := parseNetipPrefix(c)
+		pr, err := netip.ParsePrefix(c)
 		if err != nil {
 			return serviceerr.InvalidArg(fmt.Sprintf("%s[%d]", fieldPrefix, i), "must be valid CIDR")
 		}

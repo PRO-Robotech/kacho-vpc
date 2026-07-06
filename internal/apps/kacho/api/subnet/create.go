@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -254,9 +255,9 @@ func (u *CreateSubnetUseCase) checkSubnetCIDROverlap(ctx context.Context, rd Rea
 	if len(v4) == 0 {
 		return nil
 	}
-	newPrefixes := make([]netipPrefix, 0, len(v4))
+	newPrefixes := make([]netip.Prefix, 0, len(v4))
 	for _, c := range v4 {
-		pr, err := parseNetipPrefix(c)
+		pr, err := netip.ParsePrefix(c)
 		if err != nil {
 			// host-bits / формат уже провалидированы выше; защищаемся на всякий случай.
 			return serviceerr.InvalidArg("v4_cidr_blocks", "must be valid CIDR")
@@ -269,7 +270,7 @@ func (u *CreateSubnetUseCase) checkSubnetCIDROverlap(ctx context.Context, rd Rea
 	}
 	for _, sub := range existing {
 		for _, raw := range sub.V4CidrBlocks {
-			pr, perr := parseNetipPrefix(raw)
+			pr, perr := netip.ParsePrefix(raw)
 			if perr != nil {
 				continue
 			}

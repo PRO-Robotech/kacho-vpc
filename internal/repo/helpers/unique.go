@@ -153,5 +153,12 @@ func WrapPgErr(err error, kind, id string) error {
 	if IsExclusionViolation(err) {
 		return fmt.Errorf("%w: value conflicts with existing %s", ErrFailedPrecondition, kind)
 	}
-	return ErrInternal
+	// Неклассифицированный класс (напр. 40001 serialization_failure, 40P01
+	// deadlock, 57014 statement_timeout, connection reset). Клиент по контракту
+	// получит фиксированный INTERNAL (serviceerr сворачивает ErrInternal-ветку в
+	// "internal database error", no-leak), но root-cause сохраняем в цепочке для
+	// server-side логов оператора — иначе SQLSTATE/constraint/detail теряются
+	// безвозвратно на границе repo (CWE-778). Тот же `%w: %v`-паттерн, что и в
+	// helpers/jsonb.go.
+	return fmt.Errorf("%w: %v", ErrInternal, err)
 }

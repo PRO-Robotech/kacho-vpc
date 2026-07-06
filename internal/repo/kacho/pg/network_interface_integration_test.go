@@ -78,3 +78,61 @@ func TestCQRS_NIC_InsertCommit_ReaderSees(t *testing.T) {
 	assert.Equal(t, subnetID, got.SubnetID)
 	assert.Equal(t, "0e:11:22:33:44:55", got.MAC)
 }
+
+// TestCQRS_NIC_SecurityGroupIDs_DanglingRefSilentlyAccepted — characterization-тест
+// известного gap'а **G6** (docs/architecture/within-service-refs-audit.md,
+// issue PRO-Robotech/kacho-vpc#27): `network_interfaces.security_group_ids` —
+// within-service ссылка на `security_groups(id)` в той же БД `kacho_vpc`, но она
+// НЕ выражена ни FK/join-table, ни software-check'ом (NIC use-case не имеет
+// SecurityGroups-reader-порта). Поэтому NIC с НЕсуществующим SG id принимается
+// молча (dangling ref).
+//
+// Тест ПИННИТ текущую (документированную, до behavioral-фикса) семантику
+// silent-accept: и внезапный reject, и потеря значения в round-trip'е — регрессии,
+// которые тест должен поймать. Настоящее закрытие G6 (join-table nic↔sg с FK
+// RESTRICT) меняет tenant-видимую семантику `SG.Delete` → отдельный behavioral-PR
+// с APPROVED acceptance (#27), вне scope contract-safe-прохода.
+func TestCQRS_NIC_SecurityGroupIDs_DanglingRefSilentlyAccepted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	dsn := setupTestDB(t)
+	projectID, subnetID := insertSubnetForNIC(t, ctx, dsn)
+
+	pool, err := coredb.NewPool(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+	r := kachopg.New(pool, nil)
+
+	// SG id, которого НЕТ в security_groups (well-formed, но не вставлен).
+	danglingSG := ids.NewID(ids.PrefixSecurityGroup)
+
+	w, err := r.Writer(ctx)
+	require.NoError(t, err)
+	nic := &domain.NetworkInterface{
+		ID:               ids.NewID(ids.PrefixNetworkInterface),
+		ProjectID:        projectID,
+		Name:             domain.RcNameVPC("nic-dangling-sg"),
+		Description:      domain.RcDescription(""),
+		Labels:           domain.LabelsFromMap(nil),
+		SubnetID:         subnetID,
+		MAC:              "0e:11:22:33:44:66",
+		Status:           domain.NIStatusAvailable,
+		SecurityGroupIDs: []string{danglingSG},
+	}
+	created, err := w.NetworkInterfaces().Insert(ctx, nic)
+	require.NoError(t, err,
+		"NIC Create referencing a nonexistent security_group_id is silently accepted (G6, #27) — no FK/software-check")
+	require.Equal(t, []string{danglingSG}, created.SecurityGroupIDs)
+	require.NoError(t, w.Outbox().Emit(ctx, "NetworkInterface", created.ID, "CREATED", map[string]any{"id": created.ID}))
+	require.NoError(t, w.Commit())
+
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	defer func() { _ = rd.Close() }()
+	got, err := rd.NetworkInterfaces().Get(ctx, nic.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{danglingSG}, got.SecurityGroupIDs,
+		"dangling SG id round-trips unchanged — control plane offers no integrity signal (G6, #27)")
+}
