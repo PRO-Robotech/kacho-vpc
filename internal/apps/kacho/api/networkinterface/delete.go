@@ -73,7 +73,14 @@ func (u *DeleteNetworkInterfaceUseCase) doDelete(ctx context.Context, id string)
 	}
 	defer w.Abort()
 
-	cur, err := w.NetworkInterfaces().Get(ctx, id)
+	// GetForUpdate (row-lock `FOR UPDATE`), а не голый Get: Delete читает
+	// address-set NIC, чистит ClearReference ровно этот set и удаляет строку —
+	// read-modify-write, который ОБЯЗАН сериализоваться с конкурентным Update
+	// (тот тоже берёт GetForUpdate, update.go). На голом Get конкурентный Update
+	// мог доаттачить адрес МЕЖДУ snapshot'ом и DML: новый адрес не попадал в
+	// snapshot, ClearReference его пропускал, NIC удалялся → адрес навсегда
+	// used=true с referrer на удалённый NIC (project-rule #10, TOCTOU-орфан).
+	cur, err := w.NetworkInterfaces().GetForUpdate(ctx, id)
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}

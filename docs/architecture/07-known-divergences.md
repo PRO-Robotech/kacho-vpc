@@ -201,3 +201,49 @@ guardrail), от которого предостерегает сам ресур
   рефакторинг ~28 call-site'ов в ~16 файлах; выигрыш спорный (компайл-ошибка
   вместо boot-паники), а blast radius в security-ветке неоправдан. Если делать —
   отдельным clean-refactor тикетом с полным newman-прогоном, не в hardening-pass.
+
+## 16. `AddressFamily` / `ResolvedPool` живут в use-case-пакете `addresspool`
+
+Типы `AddressFamily` (`FamilyV4`/`FamilyV6`) и value-object `ResolvedPool`
+объявлены в use-case-пакете `internal/apps/kacho/api/addresspool`
+(`helpers.go`), а не в `internal/domain`. Use-case `address` потребляет их через
+port `PoolService` (`address/iface.go`), из-за чего `address` импортирует
+sibling use-case-пакет `addresspool` (`iface.go` / `allocate.go` / `create.go`)
+ради этих определений типов.
+
+Это **осознанный** выбор, а не layering-break: port-абстракция соблюдена
+(impl `*addresspool.ResolverService` подключается в composition root; `address`
+не зовёт `addresspool` напрямую), а единый источник enum'а family и
+resolve-результата — сам pool-resolver, поэтому вызывающий код прозрачно
+переиспользует его константы вместо параллельного типа (см. doc-комментарий
+`address/iface.go`).
+
+Trade-off: strict Clean Architecture предпочёл бы, чтобы сигнатуры port'а
+оперировали `internal/domain`-типами, и тогда слайсы зависели бы только от
+domain, а не друг от друга. Вынос `AddressFamily`/`ResolvedPool` в
+`internal/domain` — поведенчески-нейтральный cross-package рефактор (трогает
+`addresspool` helpers/resolve/poolHasFamily, `address` iface/allocate/create и
+их тесты); выигрыш — компайл-когезия, риск в security-hardening-проходе
+неоправдан. Делается отдельным clean-refactor тикетом, не здесь.
+
+## 17. `List`/`ListByIDs` в pg-ридерах — рукописные, не сведены в общий builder
+
+Каждый pg-ридер (`internal/repo/kacho/pg/{network,subnet,address,security_group,
+route_table,gateway,network_interface}.go`) держит `List` и `ListByIDs` как две
+почти идентичные рукописные сборки запроса (условия, `filter.Parse`-whitelist,
+decode page-token, scan-loop, next-token). Пара расходится только предикатом
+allowed-ID (authz-scoped `ListByIDs` vs unscoped `List`).
+
+Это **следствие** ban #3 (no-ORM: только sqlc + handwritten pgx) — часть
+hand-rolling'а неизбежна. Активного бага нет: filter-whitelist'ы пары
+согласованы по всем ресурсам (напр. `subnet.go` `List`/`ListByIDs` оба
+`["name","placement_type"]`); инвариант держится copy-paste-дисциплиной.
+
+Trade-off: сведение обоих тел в один параметризованный helper (allowed-ID
+предикат + per-resource колонки/whitelist как входы) убрало бы дрейф-риск
+(правку whitelist в `List` без парной правки `ListByIDs`), но это
+поведенчески-нейтральный рефактор ~16 тел во всех ресурсах — крупный blast
+radius на list-пути в security-hardening-проходе. Как и #15, делается отдельным
+clean-refactor тикетом с полным newman-прогоном, не здесь. До того парность
+whitelist'ов держит регрессионный newman-слой (`*-LST-*` кейсы) и list-authz
+CI-гейт (`make audit-list-filter`).

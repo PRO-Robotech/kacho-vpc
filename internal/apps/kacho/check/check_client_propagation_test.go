@@ -71,7 +71,7 @@ func startFakeInternalIAM(t *testing.T, fake *fakeInternalIAM) *grpc.ClientConn 
 func TestIAMCheckClient_Check_PropagatesPrincipal(t *testing.T) {
 	fake := &fakeInternalIAM{}
 	conn := startFakeInternalIAM(t, fake)
-	client := NewIAMCheckClient(conn)
+	client := NewIAMCheckClientWithProbe(conn, nil)
 	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -119,7 +119,7 @@ func TestIAMCheckClient_Check_PropagatesPrincipal(t *testing.T) {
 func TestIAMCheckClient_Check_SystemPrincipalFallback(t *testing.T) {
 	fake := &fakeInternalIAM{}
 	conn := startFakeInternalIAM(t, fake)
-	client := NewIAMCheckClient(conn)
+	client := NewIAMCheckClientWithProbe(conn, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

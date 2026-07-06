@@ -54,16 +54,12 @@ type IAMCheckClient struct {
 	probe ResourceExistenceProbe
 }
 
-// NewIAMCheckClient создает adapter. conn — `*grpc.ClientConn`/`ClientConnInterface`
-// к internal-port'у kacho-iam (обычно `kacho-iam.kacho.svc.cluster.local:9091`).
-func NewIAMCheckClient(conn grpc.ClientConnInterface) *IAMCheckClient {
-	return &IAMCheckClient{
-		cli: iamv1.NewInternalIAMServiceClient(conn),
-	}
-}
-
-// NewIAMCheckClientWithProbe — adapter с подключенным existence-probe (Decision 1
-// existence-hiding). probe может быть nil (== NewIAMCheckClient).
+// NewIAMCheckClientWithProbe создаёт adapter с (опционально) подключенным
+// existence-probe (Decision 1 existence-hiding). conn — `*grpc.ClientConn`/
+// `ClientConnInterface` к internal-port'у kacho-iam (обычно
+// `kacho-iam.kacho.svc.cluster.local:9091`). probe может быть nil — тогда deny
+// на object-scoped ресурс не существенно-скрывается, применяется лишь прежнее
+// поведение (reason-substring "no path" → ErrNoPath).
 func NewIAMCheckClientWithProbe(conn grpc.ClientConnInterface, probe ResourceExistenceProbe) *IAMCheckClient {
 	return &IAMCheckClient{
 		cli:   iamv1.NewInternalIAMServiceClient(conn),
