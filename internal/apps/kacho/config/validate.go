@@ -44,6 +44,20 @@ const (
 	// обойден в production (emergency-обход). Логируется composition root'ом на WARN.
 	WarnBreakglassProduction = "authz.breakglass=true in production mode (%s): " +
 		"ALL authz Check is BYPASSED — every RPC is allowed without IAM authorization; emergency use only"
+
+	// S4-гардрейлы (транспорт исходящих vpc→iam рёбер обязан быть verified в
+	// production). %s = Mode.String(). Тексты — часть контракта (наблюдаемый отказ
+	// старта), меняются только осознанно.
+	errAuthzPeerTransportRequired = "production mode (%s): outbound vpc→iam authz Check edge " +
+		"(authz.iam-endpoint → InternalIAMService.Check) requires verified transport — set client mTLS " +
+		"(KACHO_VPC_IAM_AUTHZ_MTLS_ENABLE=true) or verified server-TLS (authz.iam-tls.enable=true). Without it " +
+		"the per-RPC authorization Check is dialed over cleartext gRPC (dialPeer falls back to insecure creds); " +
+		"a network attacker can MITM the response and forge allowed=true — full authz bypass. Set authz.breakglass=true " +
+		"only to intentionally disable authz entirely (emergency)"
+	errProjectPeerTransportRequired = "production mode (%s): outbound vpc→iam ProjectService.Get edge " +
+		"(extapi.iam → project existence / account lookup) requires verified transport — set client mTLS " +
+		"(KACHO_VPC_IAM_PROJECT_MTLS_ENABLE=true) or verified server-TLS (extapi.iam.tls.enable=true). Without it " +
+		"the edge is dialed over cleartext gRPC (CWE-319 / MITM of resource-ownership validation)"
 )
 
 // Validate проверяет инварианты Config — чистая функция без побочных эффектов и без
@@ -204,16 +218,61 @@ func (c Config) ValidateListFilter(scopeFilteredRPCs []string) error {
 	return nil
 }
 
+// ValidatePeerTransport — boot-гардрейл S4: транспортная аутентификация ИСХОДЯЩИХ
+// рёбер vpc→iam. Зеркалит S2 (ValidateServerMTLS), но для клиентской стороны:
+// ValidateServerMTLS энфорсит mTLS на ЛИСТЕНЕРАХ (:9090/:9091), тогда как исходящие
+// authz/project dial'ы оставались незащищёнными — оба per-edge флага
+// (mtls.IAM{Authz,Project}MTLS.Enable и authz.iam-tls.enable / extapi.iam.tls.enable)
+// по умолчанию false, а dialPeer тихо откатывается в insecure.NewCredentials().
+//
+// Рёбра под гардом (оба — vpc→iam):
+//   - authz Check edge (authzConn → InternalIAMService.Check, :9091): несёт per-RPC
+//     authorization-решение. Cleartext → сетевой MITM подделывает allowed=true →
+//     ПОЛНЫЙ обход авторизации. Активен только когда authz.iam-endpoint задан И authz
+//     не выключен breakglass'ом (breakglass=true → Check не выполняется, ребро не несёт
+//     security-решения — тот же escape, что в S1). Требует client-mTLS
+//     (IAMAuthzMTLS.Enable) ЛИБО verified server-TLS (AuthZ.IAMTLS.Enable).
+//   - ProjectService.Get edge (iamConn → extapi.iam, :9090): валидация project-existence /
+//     account-lookup на request-path Create/Update. Активен в любом production (обязательная
+//     валидация; breakglass его НЕ отключает — это authz-escape, не project-validation).
+//     Требует client-mTLS (IAMProjectMTLS.Enable) ЛИБО verified server-TLS (ExtAPI.IAM.TLS.Enable).
+//
+// MTLSConfig грузится отдельно от viper-Config (envconfig, LoadMTLS), поэтому проверка —
+// отдельный метод, вызываемый сразу после config.LoadMTLS() и ДО cross-service dial'ов.
+// dev-режим гардом не затронут. Возвращает multierr со всеми нарушениями сразу.
+func (c Config) ValidatePeerTransport(m MTLSConfig) error {
+	if !c.AuthN.Mode.IsProduction() {
+		return nil
+	}
+	var errs error
+
+	// authz Check edge — только когда реально дилится и несёт authz-решение.
+	authzEdgeActive := strings.TrimSpace(c.AuthZ.IAMEndpoint) != "" && !c.AuthZ.Breakglass
+	if authzEdgeActive && !m.IAMAuthzMTLS.Enable && !c.AuthZ.IAMTLS.Enable {
+		errs = multierr.Append(errs, fmt.Errorf(errAuthzPeerTransportRequired, c.AuthN.Mode))
+	}
+
+	// ProjectService.Get edge — всегда активен в production (обязательная валидация).
+	if !m.IAMProjectMTLS.Enable && !c.ExtAPI.IAM.TLS.Enable {
+		errs = multierr.Append(errs, fmt.Errorf(errProjectPeerTransportRequired, c.AuthN.Mode))
+	}
+
+	return errs
+}
+
 // ValidateBoot — единый boot-валидатор: агрегирует Validate (S1 + базовые
-// инварианты) и ValidateServerMTLS (S2) в один multierr, чтобы оператор увидел
-// полный список проблем за один прогон. Используется как single-shot gate перед
-// привязкой листенеров.
+// инварианты), ValidateServerMTLS (S2) и ValidatePeerTransport (S4) в один multierr,
+// чтобы оператор увидел полный список проблем за один прогон. Используется как
+// single-shot gate перед привязкой листенеров и cross-service dial'ами.
 //
 // S3 (ValidateListFilter) НЕ входит сюда: ему нужен список ScopeFiltered RPC из
 // permission-map (пакет check), который config не импортирует — его вызывает
 // composition root отдельно (см. cmd/vpc/main.go).
 func (c Config) ValidateBoot(m MTLSConfig) error {
-	return multierr.Append(c.Validate(), c.ValidateServerMTLS(m))
+	return multierr.Append(
+		multierr.Append(c.Validate(), c.ValidateServerMTLS(m)),
+		c.ValidatePeerTransport(m),
+	)
 }
 
 // validateMode гарантирует, что Mode — известное значение (ENUM).
