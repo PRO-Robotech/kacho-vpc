@@ -69,9 +69,15 @@ var macAddressRe = regexp.MustCompile(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)
 // не отбиваем, потому что repo обязан маппить «STATUS_UNSPECIFIED» обратно в
 // NIStatusUnspecified без error.
 //
-// Cross-resource invariants (subnet_id existence, address cardinality ≤1 v4/v6,
-// security_group_ids existence) — service-слой (validateNICAddressCardinality
-// + validateAddressRef). Это не newtype-level.
+// Cross-resource invariants — не newtype-level, живут выше по стеку:
+//   - subnet_id existence + address cardinality (≤1 v4/v6) + address existence —
+//     service-слой (validateNICAddressCardinality + validateAddressRef / attach-CAS)
+//     с DB-backstop (FK subnet_id RESTRICT, CHECK ≤1, address_references CAS);
+//   - security_group_ids existence — НЕ энфорсится: jsonb-массив без FK/join-table,
+//     within-service refcheck отсутствует (в отличие от v4/v6 address_ids здесь нет
+//     backstop). SG.Delete не блокируется ссылающимся NIC → возможен dangling ref.
+//     Known gap PRO-Robotech/kacho-vpc#27 (red-тест SG-DEL-NEG-NIC-ATTACHED); фикс —
+//     DB-level join-table + FK RESTRICT (rule #10) отдельным behavioral-PR.
 func (n NetworkInterface) Validate() error {
 	errs := []error{
 		n.Name.Validate(),

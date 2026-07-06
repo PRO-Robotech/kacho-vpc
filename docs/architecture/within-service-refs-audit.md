@@ -26,7 +26,10 @@
 - **Проверено**: ресурсные/служебные таблицы схемы `kacho_vpc`, все ссылочные поля и инварианты.
 - **Покрыто DB-уровнем** (FK / partial UNIQUE / EXCLUDE / CHECK / CAS / SKIP LOCKED): все
   существенные within-service инварианты.
-- **Остаточные пункты** ниже-приоритетные (enum-like колонки без CHECK) — описаны в разделе 2.
+- **Остаточные пункты** — описаны в разделе 2: enum-like колонки без CHECK (G5, Low) и
+  `network_interfaces.security_group_ids` — within-service ref без FK/software-check
+  (G6, Medium; известный gap [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27),
+  фикс — join-table отдельным behavioral-PR).
 
 Ключевые within-service инварианты закрыты на DB-уровне:
 
@@ -120,6 +123,7 @@
 | `jsonb_array_length(v4_address_ids) ≤ 1` | максимум 1 v4 на NIC | CHECK `network_interfaces_v4_addr_max1` ✅ | sync `validateNICAddressCardinality` | OK |
 | `jsonb_array_length(v6_address_ids) ≤ 1` | максимум 1 v6 на NIC | CHECK `network_interfaces_v6_addr_max1` ✅ | sync check | OK |
 | `v4_address_ids[*]` / `v6_address_ids[*]` references | каждый id существует | ❌ нет FK (jsonb-массив) | semantic guard: address `used=true` + referrer-row; `AddressService.Delete` блокирует пока address in use | acceptable (jsonb-массив не поддерживает FK; backstop через `addresses.used` + `address_references`) |
+| `security_group_ids[*]` references | каждый SG существует | ❌ нет FK/join-table (jsonb-массив) | ❌ software-check тоже отсутствует (NIC use-case не имеет SecurityGroups-порта); `SG.Delete` гардит только `DefaultForNetwork`, `repo.Delete` безусловен | **G6** — within-service refcheck ОТСУТСТВУЕТ (в отличие от v4/v6 address_ids здесь нет backstop). Dangling ref после `SG.Delete`; известный gap [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27), red-тест `SG-DEL-NEG-NIC-ATTACHED` |
 | `used_by_id` attach race | атомарный set-if-free-or-same | CAS atomic UPDATE: `UPDATE … WHERE id=$1 AND (used_by_id='' OR used_by_id=$new) RETURNING …` ✅; 0 rows → `ErrFailedPrecondition` | n/a (DB CAS — единственная защита) | OK |
 | `used_by_type/id/name` co-clearing на detach | атомарно очищаются вместе | single-statement UPDATE всех 3-х колонок ✅ | n/a | OK |
 | `status` (TEXT enum) | значение из enum | CHECK `network_interfaces_status_check` ✅ | sync mapping в `niStatusName` | OK |
@@ -236,6 +240,33 @@ mac_address уже покрыты CHECK-ами в базовой схеме; SG 
 apply — pre-flight `SELECT … WHERE NOT (…)` на стенде (constraint нагнется на невалидных
 row'ах). При добавлении нового enum value в proto CHECK расширяется новой миграцией.
 
+### G6 — `network_interfaces.security_group_ids` — within-service ref без DB/software enforcement
+
+**Severity**: Medium — нарушение rule #10 (within-service ссылка обязана быть DB-выражена),
+целостность firewall-политики без backstop.
+
+`network_interfaces.security_group_ids jsonb` ссылается на `security_groups(id)` в ТОЙ ЖЕ БД
+`kacho_vpc`, но связь не выражена НИ FK/join-table, НИ software-check'ом:
+
+- NIC `Create`/`Update` пишут `security_group_ids` в domain без какой-либо проверки
+  существования SG (use-case NIC не имеет `SecurityGroups`-reader-порта).
+- `securitygroup/delete.go` гардит только `DefaultForNetwork`; `repo.Delete` безусловен —
+  SG удаляется, даже если на него ссылается NIC → permanently dangling ref.
+
+В отличие от `v4/v6_address_ids` (там backstop: `addresses.used` + `address_references` +
+`AddressService.Delete` блокирует in-use address) — у `security_group_ids` backstop'а нет.
+
+**Статус**: известный gap, трекается [PRO-Robotech/kacho-vpc#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27);
+persistent-RED newman-регрессия `SG-DEL-NEG-NIC-ATTACHED` (rule #13, «Known failing» в
+`tests/newman/docs/RESULTS.md`) держит инвариант.
+
+**Решение** (rule #10-корректное, отдельным behavioral-PR c APPROVED acceptance-доком):
+join-table `network_interface_security_groups(nic_id → network_interfaces ON DELETE CASCADE,
+sg_id → security_groups ON DELETE RESTRICT)` как source-of-truth (FK энфорсит существование +
+блокирует `SG.Delete` пока референс жив; `23503` → FailedPrecondition), `security_group_ids`
+jsonb остаётся output-only зеркалом. Меняет tenant-видимую семантику `SG.Delete` (теперь
+может быть отклонён) → требует продуктового sign-off, вне scope contract-safe hardening-прохода.
+
 ---
 
 ## 3. Сводная таблица
@@ -268,6 +299,7 @@ row'ах). При добавлении нового enum value в proto CHECK р
 | Outbox sequence + emit-в-той-же-tx | trigger + repo convention | ✅ |
 | **Остаточные пункты** | | |
 | Enum-like columns no CHECK | addr_type / ip_version / gateway_type / kind | **G5** (Low) |
+| `security_group_ids` ref без FK/software-check | network_interfaces → security_groups | **G6** (Medium, [#27](https://github.com/PRO-Robotech/kacho-vpc/issues/27)) |
 
 ---
 
