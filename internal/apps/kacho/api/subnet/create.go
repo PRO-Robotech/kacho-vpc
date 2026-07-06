@@ -125,12 +125,21 @@ func (u *CreateSubnetUseCase) Execute(ctx context.Context, s domain.Subnet) (*op
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}
-	if _, gerr := rd.Networks().Get(ctx, s.NetworkID); gerr != nil {
+	parentNet, gerr := rd.Networks().Get(ctx, s.NetworkID)
+	if gerr != nil {
 		_ = rd.Close()
 		if errors.Is(gerr, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
 		}
 		return nil, serviceerr.MapRepoErr(gerr)
+	}
+	// BOLA-guard: parent Network обязана принадлежать проекту вызывающего. Иначе
+	// caller создал бы Subnet, ссылающуюся на чужую сеть (cross-project reference).
+	// Ответ — тот же NotFound, что для несуществующей сети (без existence-oracle:
+	// «существует, но не твоя» неотличимо от «нет такой»).
+	if parentNet.ProjectID != s.ProjectID {
+		_ = rd.Close()
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
 	}
 	name := string(s.Name)
 	if name != "" {
@@ -193,7 +202,13 @@ func (u *CreateSubnetUseCase) doCreate(ctx context.Context, subID string, s doma
 
 	// Parent network existence — повторная проверка в writer-TX (atomic backstop
 	// — FK violation на subnets.network_id даст 23503; sync-check уже отверг бы).
-	if _, gerr := w.Networks().Get(ctx, s.NetworkID); gerr != nil {
+	parentNet, gerr := w.Networks().Get(ctx, s.NetworkID)
+	if gerr != nil {
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
+	}
+	// BOLA-guard (async backstop): parent Network обязана принадлежать проекту
+	// вызывающего — тот же NotFound, что для отсутствующей сети (без oracle).
+	if parentNet.ProjectID != s.ProjectID {
 		return nil, status.Errorf(codes.NotFound, "Network %s not found", s.NetworkID)
 	}
 

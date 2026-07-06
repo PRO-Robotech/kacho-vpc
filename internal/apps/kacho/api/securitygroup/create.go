@@ -105,11 +105,18 @@ func (u *CreateSecurityGroupUseCase) Execute(ctx context.Context, sg domain.Secu
 	// network-existence/uniqueness (по DB-state в той же сервис-БД) остаются —
 	// они race-free относительно peer-сервисов.
 	if u.networkReader != nil {
-		if _, err := u.networkReader.Get(ctx, sg.NetworkID); err != nil {
+		parentNet, err := u.networkReader.Get(ctx, sg.NetworkID)
+		if err != nil {
 			if errors.Is(err, repo.ErrNotFound) {
 				return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 			}
 			return nil, serviceerr.MapRepoErr(err)
+		}
+		// BOLA-guard: parent Network обязана принадлежать проекту вызывающего —
+		// иначе SG цеплялась бы к чужой сети (cross-project reference). Ответ —
+		// тот же NotFound, что для несуществующей сети (без existence-oracle).
+		if parentNet.ProjectID != sg.ProjectID {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 		}
 	}
 
@@ -169,8 +176,14 @@ func (u *CreateSecurityGroupUseCase) doCreate(ctx context.Context, sgID string, 
 		return nil, status.Errorf(codes.NotFound, "Project %s not found", sg.ProjectID)
 	}
 	if u.networkReader != nil {
-		if _, gerr := u.networkReader.Get(ctx, sg.NetworkID); gerr != nil {
+		parentNet, gerr := u.networkReader.Get(ctx, sg.NetworkID)
+		if gerr != nil {
 			return nil, serviceerr.MapRepoErr(gerr)
+		}
+		// BOLA-guard (async backstop): parent Network обязана принадлежать проекту
+		// вызывающего — тот же NotFound, что для отсутствующей сети (без oracle).
+		if parentNet.ProjectID != sg.ProjectID {
+			return nil, status.Errorf(codes.NotFound, "Network %s not found", sg.NetworkID)
 		}
 	}
 	// Async backstop для same-network SG-target-правил: ловит гонку «target-SG

@@ -88,12 +88,20 @@ func (u *CreateRouteTableUseCase) Execute(ctx context.Context, rt domain.RouteTa
 	if err != nil {
 		return nil, serviceerr.MapRepoErr(err)
 	}
-	if _, gerr := rd.Networks().Get(ctx, rt.NetworkID); gerr != nil {
+	parentNet, gerr := rd.Networks().Get(ctx, rt.NetworkID)
+	if gerr != nil {
 		_ = rd.Close()
 		if errors.Is(gerr, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
 		}
 		return nil, serviceerr.MapRepoErr(gerr)
+	}
+	// BOLA-guard: parent Network обязана принадлежать проекту вызывающего — иначе
+	// RouteTable ссылалась бы на чужую сеть (cross-project reference). Ответ — тот
+	// же NotFound, что для несуществующей сети (без existence-oracle).
+	if parentNet.ProjectID != rt.ProjectID {
+		_ = rd.Close()
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
 	}
 	// Uniqueness (project_id, name) — partial UNIQUE WHERE name<>'' покрывает на
 	// DB-уровне. Sync-precheck для fast-fail UX.
@@ -161,11 +169,17 @@ func (u *CreateRouteTableUseCase) doCreate(ctx context.Context, rtID string, rt 
 	// Parent Network existence — повторная проверка внутри writer-TX (FK ниже —
 	// атомарный backstop). FK route_tables.network_id → networks(id) дает
 	// 23503 если parent исчез между sync-check и Insert.
-	if _, gerr := w.Networks().Get(ctx, rt.NetworkID); gerr != nil {
+	parentNet, gerr := w.Networks().Get(ctx, rt.NetworkID)
+	if gerr != nil {
 		if errors.Is(gerr, repo.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
 		}
 		return nil, serviceerr.MapRepoErr(gerr)
+	}
+	// BOLA-guard (async backstop): parent Network обязана принадлежать проекту
+	// вызывающего — тот же NotFound, что для отсутствующей сети (без oracle).
+	if parentNet.ProjectID != rt.ProjectID {
+		return nil, status.Errorf(codes.NotFound, "Network %s not found", rt.NetworkID)
 	}
 
 	created, err := w.RouteTables().Insert(ctx, &rt)

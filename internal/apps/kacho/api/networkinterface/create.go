@@ -159,10 +159,17 @@ func (u *CreateNetworkInterfaceUseCase) doCreate(ctx context.Context, niID strin
 	if rerr != nil {
 		return nil, serviceerr.MapRepoErr(rerr)
 	}
-	_, serr := rd.Subnets().Get(ctx, n.SubnetID)
+	parentSub, serr := rd.Subnets().Get(ctx, n.SubnetID)
 	_ = rd.Close()
 	if serr != nil {
 		return nil, serviceerr.MapRepoErr(serr)
+	}
+	// BOLA-guard: parent Subnet обязана принадлежать проекту вызывающего — иначе
+	// NIC создавался бы в чужой подсети (cross-project reference). Ответ — тот же
+	// NotFound, что для несуществующего subnet (без existence-oracle: mismatch
+	// неотличим от «нет такого» — `serviceerr.MapRepoErr(repo.ErrNotFound)`).
+	if parentSub.ProjectID != n.ProjectID {
+		return nil, serviceerr.MapRepoErr(repo.ErrNotFound)
 	}
 	st := domain.NIStatusAvailable
 	usedByType, usedByID := "", ""
