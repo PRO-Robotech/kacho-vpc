@@ -58,6 +58,20 @@ const (
 		"(extapi.iam → project existence / account lookup) requires verified transport — set client mTLS " +
 		"(KACHO_VPC_IAM_PROJECT_MTLS_ENABLE=true) or verified server-TLS (extapi.iam.tls.enable=true). Without it " +
 		"the edge is dialed over cleartext gRPC (CWE-319 / MITM of resource-ownership validation)"
+
+	// S4b-гардрейлы (SEC-hardening r9b): те же требования, что project/authz рёбра,
+	// но для оставшихся двух исходящих рёбер. %s = Mode.String(). Тексты — часть
+	// контракта (наблюдаемый отказ старта).
+	errGeoPeerTransportRequired = "production mode (%s): outbound vpc→geo edge " +
+		"(extapi.geo → geo.v1.ZoneService.Get / RegionService.Get) requires verified transport — set client mTLS " +
+		"(KACHO_VPC_GEO_MTLS_ENABLE=true) or verified server-TLS (extapi.geo.tls.enable=true). Without it the " +
+		"cross-domain zone_id/region_id reference-validation edge is dialed over cleartext gRPC (CWE-319 / MITM " +
+		"forges a geo existence-OK for an invalid or foreign zone/region, defeating Subnet/AddressPool scope validation)"
+	errRegisterPeerTransportRequired = "production mode (%s): outbound vpc→iam owner-tuple register edge " +
+		"(register-drainer + sync registrar → InternalIAMService.RegisterResource, :9091) requires client mTLS " +
+		"(KACHO_VPC_IAM_REGISTER_MTLS_ENABLE=true) — this edge uses client-cert creds only (no server-TLS variant). " +
+		"Without it the FGA owner-tuple registration that grants resource ownership is dialed over cleartext gRPC " +
+		"(CWE-319 / MITM tampers with authorization-relevant ownership tuples)"
 )
 
 // Validate проверяет инварианты Config — чистая функция без побочных эффектов и без
@@ -225,7 +239,7 @@ func (c Config) ValidateListFilter(scopeFilteredRPCs []string) error {
 // (mtls.IAM{Authz,Project}MTLS.Enable и authz.iam-tls.enable / extapi.iam.tls.enable)
 // по умолчанию false, а dialPeer тихо откатывается в insecure.NewCredentials().
 //
-// Рёбра под гардом (оба — vpc→iam):
+// Рёбра под гардом (все исходящие cross-service):
 //   - authz Check edge (authzConn → InternalIAMService.Check, :9091): несёт per-RPC
 //     authorization-решение. Cleartext → сетевой MITM подделывает allowed=true →
 //     ПОЛНЫЙ обход авторизации. Активен только когда authz.iam-endpoint задан И authz
@@ -236,6 +250,16 @@ func (c Config) ValidateListFilter(scopeFilteredRPCs []string) error {
 //     account-lookup на request-path Create/Update. Активен в любом production (обязательная
 //     валидация; breakglass его НЕ отключает — это authz-escape, не project-validation).
 //     Требует client-mTLS (IAMProjectMTLS.Enable) ЛИБО verified server-TLS (ExtAPI.IAM.TLS.Enable).
+//   - vpc→geo edge (geoConn → geo.v1.ZoneService.Get / RegionService.Get, :9090): cross-domain
+//     zone_id/region_id reference-validation на request-path Subnet/AddressPool.Create. Дилится
+//     безусловно, поэтому активен в любом production. Cleartext → MITM форжит существование
+//     чужой/несуществующей zone/region, обходя scope-валидацию. Требует client-mTLS
+//     (GeoMTLS.Enable) ЛИБО verified server-TLS (ExtAPI.Geo.TLS.Enable).
+//   - vpc→iam owner-tuple register edge (register-drainer + sync registrar →
+//     InternalIAMService.RegisterResource, :9091): пишет FGA owner-tuple, гранты владения
+//     ресурсом. Активен, когда register-drainer включён И authz.iam-endpoint задан (иначе не
+//     дилится). Ребро использует ТОЛЬКО client-cert creds (IAMRegisterClientCreds) — server-TLS
+//     варианта нет, поэтому гард требует именно client-mTLS (IAMRegisterMTLS.Enable).
 //
 // MTLSConfig грузится отдельно от viper-Config (envconfig, LoadMTLS), поэтому проверка —
 // отдельный метод, вызываемый сразу после config.LoadMTLS() и ДО cross-service dial'ов.
@@ -255,6 +279,19 @@ func (c Config) ValidatePeerTransport(m MTLSConfig) error {
 	// ProjectService.Get edge — всегда активен в production (обязательная валидация).
 	if !m.IAMProjectMTLS.Enable && !c.ExtAPI.IAM.TLS.Enable {
 		errs = multierr.Append(errs, fmt.Errorf(errProjectPeerTransportRequired, c.AuthN.Mode))
+	}
+
+	// vpc→geo edge — дилится безусловно, поэтому всегда активен в production.
+	if !m.GeoMTLS.Enable && !c.ExtAPI.Geo.TLS.Enable {
+		errs = multierr.Append(errs, fmt.Errorf(errGeoPeerTransportRequired, c.AuthN.Mode))
+	}
+
+	// register edge — активен, только когда register-drainer/sync-registrar реально
+	// дилятся (RegisterDrainerEnabled И задан iam-internal endpoint). Client-cert-only:
+	// нет server-TLS варианта, поэтому требуется именно IAMRegisterMTLS.Enable.
+	registerEdgeActive := c.IAM.RegisterDrainerEnabled && strings.TrimSpace(c.AuthZ.IAMEndpoint) != ""
+	if registerEdgeActive && !m.IAMRegisterMTLS.Enable {
+		errs = multierr.Append(errs, fmt.Errorf(errRegisterPeerTransportRequired, c.AuthN.Mode))
 	}
 
 	return errs

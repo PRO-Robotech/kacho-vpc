@@ -160,6 +160,128 @@ func TestValidatePeerTransport_Dev_NoGuard(t *testing.T) {
 	require.NoError(t, c.ValidatePeerTransport(m))
 }
 
+// --- SEC-hardening r9b (2026-07-06): S4 расширен на исходящие рёбра vpc→geo и
+// vpc→iam owner-tuple register. Оба несли ту же дыру, что authz/project рёбра:
+// per-edge флаги (mtls.GeoMTLS.Enable / extapi.geo.tls.enable и
+// mtls.IAMRegisterMTLS.Enable) по умолчанию false, dialPeer/register-dial тихо
+// откатывались в insecure. geo — cross-domain zone_id/region_id reference-validation
+// (MITM форжит существование чужой/несуществующей zone/region); register —
+// owner-tuple, гранты владения ресурсом (MITM тамперит authz-relevant tuple). ---
+
+// vpc9b-C-01: production + vpc→geo edge cleartext (нет ни mTLS, ни server-TLS) → отказ.
+func TestValidatePeerTransport_Production_GeoEdgeInsecure_Fails(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.ExtAPI.Geo.TLS.Enable = false // geo edge cleartext
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true // authz edge удовлетворён → изолируем geo
+	err := c.ValidatePeerTransport(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "vpc→geo edge")
+	require.Contains(t, err.Error(), "production mode (production)")
+	require.NotContains(t, err.Error(), "authz Check edge")
+	require.NotContains(t, err.Error(), "ProjectService.Get edge")
+}
+
+// vpc9b-C-02: production-strict + geo edge cleartext → тот же отказ (любой IsProduction()).
+func TestValidatePeerTransport_ProductionStrict_GeoEdgeInsecure_Fails(t *testing.T) {
+	c := prodCfg(ModeProductionStrict, "kacho-iam:9091", false)
+	c.ExtAPI.Geo.TLS.Enable = false
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true
+	err := c.ValidatePeerTransport(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "vpc→geo edge")
+	require.Contains(t, err.Error(), "production mode (production-strict)")
+}
+
+// vpc9b-C-03: production + geo edge через client-mTLS (server-TLS off) → проходит.
+func TestValidatePeerTransport_Production_GeoEdgeMTLS_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.ExtAPI.Geo.TLS.Enable = false
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true
+	m.GeoMTLS.Enable = true // geo edge ok через mTLS
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
+// vpc9b-C-04: production + geo edge через verified server-TLS → проходит (default prodCfg).
+func TestValidatePeerTransport_Production_GeoEdgeServerTLS_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false) // ExtAPI.Geo.TLS.Enable=true
+	require.True(t, c.ExtAPI.Geo.TLS.Enable)
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
+// vpc9b-C-05: production + register-drainer активен + register edge cleartext
+// (IAMRegisterMTLS off) → отказ. Ребро использует ТОЛЬКО client-mTLS (нет server-TLS
+// варианта), поэтому гард требует именно IAMRegisterMTLS.Enable.
+func TestValidatePeerTransport_Production_RegisterEdgeInsecure_Fails(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.IAM.RegisterDrainerEnabled = true // register edge активен (endpoint задан)
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true // authz edge удовлетворён → изолируем register
+	err := c.ValidatePeerTransport(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "register edge")
+	require.Contains(t, err.Error(), "production mode (production)")
+	require.NotContains(t, err.Error(), "authz Check edge")
+}
+
+// vpc9b-C-06: production + register edge через client-mTLS → проходит.
+func TestValidatePeerTransport_Production_RegisterEdgeMTLS_Passes(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.IAM.RegisterDrainerEnabled = true
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true
+	m.IAMRegisterMTLS.Enable = true // register edge ok
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
+// vpc9b-C-07: register-drainer выключен → register edge неактивен → нет требования,
+// даже если IAMRegisterMTLS off.
+func TestValidatePeerTransport_Production_RegisterDisabled_NoRequirement(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.IAM.RegisterDrainerEnabled = false // register edge НЕ дилится
+	var m MTLSConfig
+	m.IAMAuthzMTLS.Enable = true
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
+// vpc9b-C-08: register-drainer включён, но authz.iam-endpoint пуст → register edge
+// не дилится (нет iam-internal endpoint) → нет требования. (breakglass, чтобы S1 не
+// требовал endpoint.)
+func TestValidatePeerTransport_Production_RegisterEnabled_NoEndpoint_NoRequirement(t *testing.T) {
+	c := prodCfg(ModeProduction, "", true) // breakglass, endpoint пуст
+	c.IAM.RegisterDrainerEnabled = true
+	var m MTLSConfig
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
+// vpc9b-C-09: все четыре ребра cleartext → все сообщения агрегируются в один multierr.
+func TestValidatePeerTransport_Production_AllEdgesInsecure_AggregatesAll(t *testing.T) {
+	c := prodCfg(ModeProduction, "kacho-iam:9091", false)
+	c.ExtAPI.IAM.TLS.Enable = false // project edge cleartext
+	c.ExtAPI.Geo.TLS.Enable = false // geo edge cleartext
+	c.IAM.RegisterDrainerEnabled = true
+	var m MTLSConfig // authz + register edges cleartext
+	err := c.ValidatePeerTransport(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "authz Check edge")
+	require.Contains(t, err.Error(), "ProjectService.Get edge")
+	require.Contains(t, err.Error(), "vpc→geo edge")
+	require.Contains(t, err.Error(), "register edge")
+}
+
+// vpc9b-C-10: dev-режим гардом не затронут (geo/register рёбра могут быть insecure).
+func TestValidatePeerTransport_Dev_GeoRegister_NoGuard(t *testing.T) {
+	c := prodCfg(ModeDev, "kacho-iam:9091", false)
+	c.ExtAPI.Geo.TLS.Enable = false
+	c.IAM.RegisterDrainerEnabled = true
+	var m MTLSConfig
+	require.NoError(t, c.ValidatePeerTransport(m))
+}
+
 // vpc9-C-11: ValidateBoot агрегирует S4 — insecure authz edge в production всплывает
 // в едином boot-валидаторе (single-shot gate).
 func TestValidateBoot_Production_IncludesPeerTransport(t *testing.T) {

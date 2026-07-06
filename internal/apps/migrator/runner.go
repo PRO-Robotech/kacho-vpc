@@ -32,7 +32,7 @@ import (
 // Config — параметры одного запуска runner'а. Заполняется cmd/migrator/main.go
 // из cobra-флагов / ENV / viper-config.
 type Config struct {
-	// Dialect — резолвленный диалект (через [ResolveDialect] или [NewDialect]).
+	// Dialect — резолвленный диалект (через [NewDialect]).
 	Dialect Dialect
 	// DSN — строка подключения для sql.Open(<driver>, DSN).
 	// Тот же DSN, что использует kacho-vpc для pgxpool (без pool_max_conns

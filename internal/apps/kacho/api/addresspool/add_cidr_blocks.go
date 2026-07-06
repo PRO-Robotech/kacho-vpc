@@ -61,7 +61,15 @@ func (u *AddCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6 []
 	}
 	defer w.Abort()
 
-	curRec, err := w.AddressPools().Get(ctx, id)
+	// GetForUpdate (row-lock), НЕ plain Get: v4_cidr_blocks/v6_cidr_blocks — это
+	// set read-modify-write (append-с-дедупом → Update). Без FOR UPDATE конкурентный
+	// addCidrBlocks/removeCidrBlocks на том же пуле читает тот же массив и второй
+	// UPDATE тихо затирает первый (second-writer-wins): address_pool_cidrs (EXCLUDE,
+	// per-op INSERT disjoint) хранит оба блока, а массив пула теряет один — вечная
+	// дивергенция pool.v4_cidr_blocks ↔ address_pool_cidrs ↔ freelist (project-rule
+	// #10 / data-integrity.md). Row-lock сериализует мутаторов набора; parity с
+	// UpdateAddressPoolUseCase (update.go).
+	curRec, err := w.AddressPools().GetForUpdate(ctx, id)
 	if err != nil {
 		return nil, err
 	}

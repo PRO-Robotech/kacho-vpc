@@ -160,7 +160,7 @@ func newCreateCmd(opts *rootOptions, migrationsFS fs.FS) *cobra.Command {
 // (config.Load → cfg.MigrateDSN). Так одно helm-values покрывает оба binary,
 // и можно явно перекрыть `--dsn` для cross-DB-инструментов и ad-hoc запусков.
 func buildRunner(opts *rootOptions, migrationsFS fs.FS) (*migrator.Runner, error) {
-	dialect, err := migrator.ResolveDialect(opts.dialect)
+	dialect, err := migrator.NewDialect(opts.dialect)
 	if err != nil {
 		return nil, err
 	}

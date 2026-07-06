@@ -30,6 +30,10 @@ func prodCfg(mode Mode, iamEndpoint string, breakglass bool) Config {
 	c.AuthZ.Breakglass = breakglass
 	// strict-смежные инварианты удовлетворены, чтобы изолировать проверяемый гард.
 	c.ExtAPI.IAM.TLS.Enable = true
+	// Исходящий vpc→geo edge удовлетворён server-TLS по умолчанию (как IAM выше),
+	// чтобы S4-тесты изолировали проверяемое ребро; geo-специфичные тесты явно
+	// снимают его через c.ExtAPI.Geo.TLS.Enable=false.
+	c.ExtAPI.Geo.TLS.Enable = true
 	return c
 }
 

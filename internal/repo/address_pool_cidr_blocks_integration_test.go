@@ -239,3 +239,77 @@ func TestIntegration_AddressPoolCIDR_ConcurrentAllocVsRemove(t *testing.T) {
 		}
 	}
 }
+
+func countPoolCidrRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, poolID string) int {
+	t.Helper()
+	var n int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM address_pool_cidrs WHERE pool_id = $1`, poolID).Scan(&n))
+	return n
+}
+
+// (e) concurrent addCidrBlocks на ОДИН пул: N goroutine добавляют попарно-disjoint
+// v4-блоки. address_pools.v4_cidr_blocks — set read-modify-write (Get→append→Update),
+// поэтому без row-lock (project-rule #10 / data-integrity.md) второй-writer-wins тихо
+// теряет блок: address_pool_cidrs (EXCLUDE gist, per-op INSERT disjoint) хранит все N,
+// но массив пула расходится. Инвариант: pool.v4_cidr_blocks == множество
+// address_pool_cidrs == freelist-покрытие. RED до фикса (plain Get), GREEN после
+// (GetForUpdate). Раньше только ConcurrentAllocVsRemove покрывал contention — гонка
+// параллельных array-мутаторов НЕ ловилась.
+func TestIntegration_AddressPoolCIDR_ConcurrentAddArrayConverges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	ctx := context.Background()
+	pgPool, err := coredb.NewPool(ctx, setupTestDB(t))
+	require.NoError(t, err)
+	defer pgPool.Close()
+	r := kachopg.New(pgPool, nil)
+	defer r.Close()
+
+	// Пул стартует с одним блоком A; добавляем 6 disjoint /28 конкурентно.
+	const base = "198.51.100.0/28"
+	added := []string{
+		"203.0.113.0/28", "203.0.113.16/28", "203.0.113.32/28",
+		"203.0.113.48/28", "203.0.113.64/28", "203.0.113.80/28",
+	}
+	p := mkCidrPool(t, ctx, r, t.Name(), []string{base})
+
+	addUC := addresspool.NewAddCidrBlocksUseCase(r)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, len(added))
+	for i, cidr := range added {
+		wg.Add(1)
+		go func(i int, cidr string) {
+			defer wg.Done()
+			<-start // барьер: максимизируем перекрытие read-modify-write окон
+			_, errs[i] = addUC.Execute(ctx, p.ID, []string{cidr}, nil)
+		}(i, cidr)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, e := range errs {
+		require.NoError(t, e, "addCidrBlocks(%s) failed", added[i])
+	}
+
+	// Инвариант конвергенции: массив пула несёт base + все 6 добавленных, и это
+	// ровно множество address_pool_cidrs.
+	rd, err := r.Reader(ctx)
+	require.NoError(t, err)
+	rec, err := rd.AddressPools().Get(ctx, p.ID)
+	require.NoError(t, err)
+	_ = rd.Close()
+
+	want := append([]string{base}, added...)
+	assert.ElementsMatch(t, want, rec.V4CIDRBlocks,
+		"pool.v4_cidr_blocks lost a concurrently-added block (second-writer-wins)")
+	assert.Len(t, rec.V4CIDRBlocks, len(want))
+	assert.Equal(t, len(want), countPoolCidrRows(t, ctx, pgPool, p.ID),
+		"address_pool_cidrs diverged from pool.v4_cidr_blocks")
+	// Freelist покрывает все 7 /28 (7*14=98) — ни один блок не осиротел.
+	assert.Equal(t, 98, countFreeIPs(t, ctx, pgPool, p.ID),
+		"freelist coverage diverged from advertised CIDR set")
+}

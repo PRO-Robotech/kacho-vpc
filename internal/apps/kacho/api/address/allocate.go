@@ -15,11 +15,7 @@ package address
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
-	"net/netip"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -84,93 +80,12 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"address %s internal_ipv4.subnet_id is empty", addressID)
 	}
-	sub, err := u.subnetReader.Get(ctx, addr.InternalIpv4.SubnetID)
+	// Shared IPAM-цикл (alloc_shared.go) — общий с CreateAddressUseCase.allocateInternalIPv4.
+	updated, err := allocateInternalV4IntoTx(ctx, w, u.subnetReader, addr)
 	if err != nil {
 		return nil, err
 	}
-	if len(sub.V4CidrBlocks) == 0 {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"subnet %s has no IPv4 CIDR", sub.ID)
-	}
-
-	parsedV4Count := 0
-	totalConflicts := 0
-	skippedNonV4 := 0
-	parseFails := 0
-	for _, cidrStr := range sub.V4CidrBlocks {
-		cidr, err := netip.ParsePrefix(strings.TrimSpace(cidrStr))
-		if err != nil {
-			parseFails++
-			slog.WarnContext(ctx, "allocator: skipping unparseable subnet cidr",
-				"subnet_id", sub.ID, "cidr", cidrStr, "err", err)
-			continue
-		}
-		if !cidr.Addr().Is4() {
-			skippedNonV4++
-			continue
-		}
-		parsedV4Count++
-		tried := make(map[string]struct{}, allocateMaxAttempts)
-		// Phase 1: random pick.
-		for attempt := 0; attempt < allocateRandomPhase; attempt++ {
-			ip, err := domain.PickRandomIPv4(cidr)
-			if err != nil {
-				break
-			}
-			if _, dup := tried[ip]; dup {
-				continue
-			}
-			tried[ip] = struct{}{}
-			addr.InternalIpv4.Address = ip
-			updated, err := w.Addresses().SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
-			if err != nil {
-				if isUniqueViolation(err) {
-					totalConflicts++
-					addr.InternalIpv4.Address = ""
-					continue
-				}
-				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error",
-					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", err)
-				return nil, err
-			}
-			return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
-		}
-		// Phase 2: deterministic sweep.
-		for _, candidate := range domain.UsableIPv4Sweep(cidr, allocateMaxAttempts-allocateRandomPhase) {
-			if _, dup := tried[candidate]; dup {
-				continue
-			}
-			tried[candidate] = struct{}{}
-			addr.InternalIpv4.Address = candidate
-			updated, err := w.Addresses().SetIPSpec(ctx, addressID, nil, addr.InternalIpv4)
-			if err != nil {
-				if isUniqueViolation(err) {
-					totalConflicts++
-					addr.InternalIpv4.Address = ""
-					continue
-				}
-				slog.ErrorContext(ctx, "allocator: SetIPSpec returned non-conflict error in sweep",
-					"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", candidate, "err", err)
-				return nil, err
-			}
-			return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
-		}
-	}
-	slog.WarnContext(ctx, "allocator: subnet exhausted",
-		"subnet_id", sub.ID,
-		"address_id", addressID,
-		"cidr_blocks", sub.V4CidrBlocks,
-		"parsed_ipv4", parsedV4Count,
-		"skipped_non_v4", skippedNonV4,
-		"parse_fails", parseFails,
-		"unique_conflicts", totalConflicts)
-	if parsedV4Count == 0 {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"subnet %s has no IPv4 cidr_blocks (allocator requires IPv4)", sub.ID)
-	}
-	return nil, status.Errorf(codes.ResourceExhausted,
-		"subnet %s exhausted (tried %d random + %d sweep IPs across %d cidr_blocks; %d unique-conflicts)",
-		sub.ID, allocateRandomPhase, allocateMaxAttempts-allocateRandomPhase, parsedV4Count, totalConflicts)
+	return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv4.Address})
 }
 
 // AllocateInternalIPv6 — выделяет случайный свободный IPv6 внутри
@@ -198,47 +113,12 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 	if addr.InternalIpv6.SubnetID == "" {
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s internal_ipv6.subnet_id is empty", addressID)
 	}
-	sub, err := u.subnetReader.Get(ctx, addr.InternalIpv6.SubnetID)
+	// Shared IPAM-цикл (alloc_shared.go) — общий с CreateAddressUseCase.allocateInternalIPv6.
+	updated, err := allocateInternalV6IntoTx(ctx, w, u.subnetReader, addr)
 	if err != nil {
 		return nil, err
 	}
-	if len(sub.V6CidrBlocks) == 0 {
-		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has no v6_cidr_blocks", sub.ID)
-	}
-	prefix, err := netip.ParsePrefix(strings.TrimSpace(sub.V6CidrBlocks[0]))
-	if err != nil || !prefix.Addr().Is6() || prefix.Addr().Is4In6() {
-		return nil, status.Errorf(codes.FailedPrecondition, "subnet %s has invalid v6 cidr block %q", sub.ID, sub.V6CidrBlocks[0])
-	}
-	tried := make(map[string]struct{}, v6AllocateMaxAttempts)
-	conflicts := 0
-	for attempt := 0; attempt < v6AllocateMaxAttempts; attempt++ {
-		ip, perr := domain.PickRandomIPv6(prefix)
-		if perr != nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "subnet %s: cannot pick IPv6 in %s: %v", sub.ID, prefix, perr)
-		}
-		if _, dup := tried[ip]; dup {
-			continue
-		}
-		tried[ip] = struct{}{}
-		addr.InternalIpv6.Address = ip
-		updated, uerr := w.Addresses().SetInternalIPv6(ctx, addressID, addr.InternalIpv6)
-		if uerr != nil {
-			if isUniqueViolation(uerr) {
-				conflicts++
-				addr.InternalIpv6.Address = ""
-				continue
-			}
-			slog.ErrorContext(ctx, "v6 allocator: SetInternalIPv6 returned non-conflict error",
-				"subnet_id", sub.ID, "address_id", addressID, "ip_attempt", ip, "err", uerr)
-			return nil, uerr
-		}
-		return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv6.Address})
-	}
-	slog.WarnContext(ctx, "v6 allocator: exhausted attempts",
-		"subnet_id", sub.ID, "address_id", addressID, "cidr", prefix.String(), "conflicts", conflicts)
-	return nil, status.Errorf(codes.ResourceExhausted,
-		"subnet %s: could not allocate a free IPv6 in %s after %d attempts (%d unique-conflicts)",
-		sub.ID, prefix, v6AllocateMaxAttempts, conflicts)
+	return u.finishAllocate(ctx, w, updated, &domain.AllocateResult{IP: updated.InternalIpv6.Address})
 }
 
 // AllocateExternalIP — резолвит pool через cascade и выделяет next-free IPv4
@@ -291,15 +171,11 @@ func (u *AllocateUseCase) AllocateExternalIP(ctx context.Context, addressID stri
 		return nil, serviceerr.MapRepoErr(err)
 	}
 	defer w.Abort()
-	ip, err := w.Addresses().AllocateIPFromFreelist(ctx, pool.ID, addressID)
+	// Shared freelist-pop + error-map (alloc_shared.go) — общий с
+	// CreateAddressUseCase.allocateExternalIPv4.
+	ip, err := allocateExternalV4IntoTx(ctx, w, pool.ID, addressID)
 	if err != nil {
-		if errors.Is(err, repo.ErrPoolExhausted) {
-			return nil, status.Errorf(codes.FailedPrecondition,
-				"address pool %s exhausted", pool.ID)
-		}
-		slog.ErrorContext(ctx, "allocator: AllocateIPFromFreelist failed",
-			"pool_id", pool.ID, "address_id", addressID, "err", err)
-		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: allocate from freelist: %v", repo.ErrInternal, err))
+		return nil, err
 	}
 	// Re-read updated record (AllocateIPFromFreelist пишет в addresses внутри
 	// writer-TX, видим себе) — для outbox-snapshot'а.
@@ -354,19 +230,11 @@ func (u *AllocateUseCase) AllocateExternalIPv6(ctx context.Context, addressID st
 		return nil, serviceerr.MapRepoErr(err)
 	}
 	defer w.Abort()
-	ip, err := w.Addresses().AllocateExternalIPv6(ctx, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
+	// Shared external-v6 allocate + error-map (alloc_shared.go) — общий с
+	// CreateAddressUseCase.allocateExternalIPv6.
+	ip, err := allocateExternalV6IntoTx(ctx, w, pool.ID, addressID, addr.ExternalIpv6.ZoneID)
 	if err != nil {
-		if errors.Is(err, repo.ErrPoolExhausted) {
-			return nil, status.Errorf(codes.FailedPrecondition,
-				"address pool %s exhausted (ipv6)", pool.ID)
-		}
-		if errors.Is(err, repo.ErrFailedPrecondition) {
-			return nil, status.Errorf(codes.FailedPrecondition,
-				"%s", strings.TrimPrefix(err.Error(), repo.ErrFailedPrecondition.Error()+": "))
-		}
-		slog.ErrorContext(ctx, "allocator: AllocateExternalIPv6 failed",
-			"pool_id", pool.ID, "address_id", addressID, "err", err)
-		return nil, serviceerr.MapRepoErr(fmt.Errorf("%w: allocate external ipv6: %v", repo.ErrInternal, err))
+		return nil, err
 	}
 	updated, gerr := w.Addresses().Get(ctx, addressID)
 	if gerr != nil {

@@ -53,7 +53,7 @@ func TestUpCmd_ParsesTargetFlag(t *testing.T) {
 	// Парсинг `up --target 10` не должен падать на flag-уровне; ошибка
 	// допустима только из-за пустого DSN (наш namespace при unset env).
 	// Проверка проще: запустить с явно невалидным dialect — cobra-парсер
-	// корректно дойдет до RunE, а там ResolveDialect отдаст ошибку.
+	// корректно дойдет до RunE, а там NewDialect отдаст ошибку.
 	_, _, err := runCommand(t, []string{
 		"--dialect", "bogus-dialect",
 		"--dsn", "postgres://x:y@z:1/d?sslmode=disable",

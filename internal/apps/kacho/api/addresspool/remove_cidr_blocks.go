@@ -57,7 +57,13 @@ func (u *RemoveCidrBlocksUseCase) Execute(ctx context.Context, id string, v4, v6
 	}
 	defer w.Abort()
 
-	curRec, err := w.AddressPools().Get(ctx, id)
+	// GetForUpdate (row-lock), НЕ plain Get: v4_cidr_blocks/v6_cidr_blocks — set
+	// read-modify-write (subtract → Update). DeleteFreelistForCidrs берёт row-lock
+	// только на free_ips УДАЛЯЕМОГО CIDR — он НЕ сериализует конкурентную мутацию
+	// массива пула (add[X]/remove[Y] на disjoint блоки). Без FOR UPDATE на пуле
+	// второй UPDATE тихо затирает первый (project-rule #10 / data-integrity.md).
+	// Row-lock сериализует мутаторов набора; parity с add_cidr_blocks/update.
+	curRec, err := w.AddressPools().GetForUpdate(ctx, id)
 	if err != nil {
 		return nil, err
 	}
