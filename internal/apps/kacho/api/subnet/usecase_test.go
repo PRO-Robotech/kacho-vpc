@@ -264,6 +264,37 @@ func TestCreateUseCase_NetworkNotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
+// TestCreateUseCase_CrossProjectNetwork_Denied — BOLA-guard: caller в проекте
+// "f1" НЕ может создать Subnet, ссылающуюся на Network чужого проекта ("other").
+// Parent Network существует, но принадлежит другому проекту → NotFound (тот же
+// ответ, что для несуществующей сети — без existence-oracle). RED до фикса:
+// cross-project reference проходил (Network.Get не сверял project) и Subnet
+// создавалась в чужой сети.
+func TestCreateUseCase_CrossProjectNetwork_Denied(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	// Network принадлежит проекту "other", а не вызывающему "f1".
+	foreignNet := ids.NewID(ids.PrefixNetwork)
+	seedNetwork(t, kr, "other", foreignNet)
+
+	uc := NewCreateSubnetUseCase(kr, &repomock.ProjectClient{OK: true},
+		repomock.NewZoneRegistry(testZone), repomock.NewRegionRegistry(testRegion), or)
+
+	_, err := uc.Execute(context.Background(), domain.Subnet{
+		ProjectID: "f1", NetworkID: foreignNet,
+		PlacementType: domain.PlacementZonal, ZoneID: testZone,
+		Name:         domain.RcNameVPC("sub-bola"),
+		V4CidrBlocks: []string{"10.0.0.0/24"},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+	// Ответ идентичен «сети нет» — cross-project не распознаётся как отдельный код.
+	assert.Equal(t, "Network "+foreignNet+" not found", st.Message())
+	// Subnet не создана.
+	assert.Empty(t, kr.Subnets())
+}
+
 func TestCreateUseCase_OK(t *testing.T) {
 	h, or, kr, netID := minimalHandler(t, true)
 

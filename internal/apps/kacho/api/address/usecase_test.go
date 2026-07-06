@@ -242,6 +242,36 @@ func TestCreateUseCase_External_NoAutoAlloc_PoolsNil(t *testing.T) {
 	assert.Equal(t, "zone-a", addrs[0].ExternalIpv4.ZoneID)
 }
 
+// TestCreateUseCase_CrossProjectSubnet_Denied — BOLA-guard: internal Address в
+// проекте "f1" НЕ может ссылаться на Subnet чужого проекта ("other"). Cross-project
+// → NotFound (тот же ответ, что для несуществующего subnet — без existence-oracle).
+// RED до фикса: reference на чужую подсеть проходил (subnetReader.Get не сверял
+// project) и внутренний адрес аллоцировался в чужой сети.
+func TestCreateUseCase_CrossProjectSubnet_Denied(t *testing.T) {
+	kr := kachomock.NewRepository()
+	sr := repomock.NewSubnetRepo()
+	or := repomock.NewOpsRepo()
+	// Subnet принадлежит проекту "other".
+	foreign := &domain.Subnet{
+		ID:           ids.NewID(ids.PrefixSubnet),
+		ProjectID:    "other",
+		NetworkID:    ids.NewID(ids.PrefixNetwork),
+		Name:         domain.RcNameVPC("sn"),
+		V4CidrBlocks: []string{"10.0.0.0/24"},
+	}
+	_, _ = sr.Insert(context.Background(), foreign)
+	uc := NewCreateAddressUseCase(kr, sr, &repomock.ProjectClient{OK: true}, or, nil)
+
+	_, err := uc.Execute(context.Background(), CreateInput{
+		ProjectID:    "f1",
+		InternalSpec: &InternalAddrSpec{SubnetID: foreign.ID},
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+	assert.Equal(t, "Subnet "+foreign.ID+" not found", st.Message())
+}
+
 func TestCreateUseCase_Internal_WithSubnet(t *testing.T) {
 	kr := kachomock.NewRepository()
 	sr := repomock.NewSubnetRepo()

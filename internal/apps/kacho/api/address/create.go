@@ -170,19 +170,13 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 	// (через DB-state в той же сервис-БД) остаются — они race-free относительно
 	// peer-сервисов.
 	if in.InternalSpec != nil && in.InternalSpec.SubnetID != "" {
-		if _, err := u.subnetReader.Get(ctx, in.InternalSpec.SubnetID); err != nil {
-			if errors.Is(err, repo.ErrNotFound) {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalSpec.SubnetID)
-			}
-			return nil, serviceerr.MapRepoErr(err)
+		if err := u.assertSubnetOwned(ctx, in.InternalSpec.SubnetID, in.ProjectID); err != nil {
+			return nil, err
 		}
 	}
 	if in.InternalIpv6Spec != nil && in.InternalIpv6Spec.SubnetID != "" {
-		if _, err := u.subnetReader.Get(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
-			if errors.Is(err, repo.ErrNotFound) {
-				return nil, status.Errorf(codes.NotFound, "Subnet %s not found", in.InternalIpv6Spec.SubnetID)
-			}
-			return nil, serviceerr.MapRepoErr(err)
+		if err := u.assertSubnetOwned(ctx, in.InternalIpv6Spec.SubnetID, in.ProjectID); err != nil {
+			return nil, err
 		}
 	}
 	if in.Name != "" {
@@ -324,15 +318,21 @@ func mapRequirements(r *AddrRequirements) *domain.AddressRequirements {
 	}
 }
 
-// checkSubnetExists — общая FK-валидация ("Subnet <X> not found") для
-// internal-family (v4 и v6). Пустой subnetID пропускается (CIDR-less подсеть
-// легальна). Это чтение связанного ресурса, а не side-effect — остается в
-// use-case.
-func (u *CreateAddressUseCase) checkSubnetExists(ctx context.Context, subnetID string) error {
+// assertSubnetOwned — общая FK+BOLA-валидация для internal-family (v4 и v6):
+// referenced Subnet обязана существовать И принадлежать проекту вызывающего.
+// Пустой subnetID пропускается (CIDR-less подсеть легальна). Cross-project
+// reference («subnet есть, но чужого проекта») отдаёт тот же NotFound
+// "Subnet <X> not found", что и несуществующий subnet — без existence-oracle.
+// Это чтение связанного ресурса, а не side-effect — остаётся в use-case.
+func (u *CreateAddressUseCase) assertSubnetOwned(ctx context.Context, subnetID, projectID string) error {
 	if subnetID == "" {
 		return nil
 	}
-	if _, serr := u.subnetReader.Get(ctx, subnetID); serr != nil {
+	sub, serr := u.subnetReader.Get(ctx, subnetID)
+	if serr != nil {
+		return status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
+	}
+	if sub.ProjectID != projectID {
 		return status.Errorf(codes.NotFound, "Subnet %s not found", subnetID)
 	}
 	return nil
@@ -356,7 +356,7 @@ func (u *CreateAddressUseCase) applyAddressSpec(ctx context.Context, a *domain.A
 	case in.InternalSpec != nil:
 		a.Type = domain.AddressTypeInternal
 		a.IpVersion = domain.IpVersionIPv4
-		if err := u.checkSubnetExists(ctx, in.InternalSpec.SubnetID); err != nil {
+		if err := u.assertSubnetOwned(ctx, in.InternalSpec.SubnetID, in.ProjectID); err != nil {
 			return err
 		}
 		a.InternalIpv4 = &domain.InternalIpv4Spec{
@@ -366,7 +366,7 @@ func (u *CreateAddressUseCase) applyAddressSpec(ctx context.Context, a *domain.A
 	case in.InternalIpv6Spec != nil:
 		a.Type = domain.AddressTypeInternal
 		a.IpVersion = domain.IpVersionIPv6
-		if err := u.checkSubnetExists(ctx, in.InternalIpv6Spec.SubnetID); err != nil {
+		if err := u.assertSubnetOwned(ctx, in.InternalIpv6Spec.SubnetID, in.ProjectID); err != nil {
 			return err
 		}
 		a.InternalIpv6 = &domain.InternalIpv6Spec{

@@ -145,6 +145,32 @@ func TestCreateUseCase_ProjectNotFound(t *testing.T) {
 	assert.Equal(t, "Project f1 not found", saved.Error.Message)
 }
 
+// TestCreateUseCase_CrossProjectNetwork_Denied — BOLA-guard: RouteTable в проекте
+// "f1" НЕ может ссылаться на Network чужого проекта ("other"). Cross-project →
+// NotFound (тот же ответ, что для несуществующей сети — без existence-oracle).
+// RED до фикса: reference на чужую сеть проходил.
+func TestCreateUseCase_CrossProjectNetwork_Denied(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	// Network принадлежит проекту "other".
+	foreignNet := ids.NewID(ids.PrefixNetwork)
+	w, err := kr.Writer(context.Background())
+	require.NoError(t, err)
+	_, err = w.Networks().Insert(context.Background(), &domain.Network{ID: foreignNet, ProjectID: "other", Name: "net"})
+	require.NoError(t, err)
+	require.NoError(t, w.Commit())
+
+	uc := NewCreateRouteTableUseCase(kr, &repomock.ProjectClient{OK: true}, or)
+	_, err = uc.Execute(context.Background(), domain.RouteTable{
+		ProjectID: "f1", NetworkID: foreignNet, Name: domain.RcNameVPC("rt-bola"),
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+	assert.Equal(t, "Network "+foreignNet+" not found", st.Message())
+	assert.Empty(t, kr.RouteTables())
+}
+
 func TestCreateUseCase_OK(t *testing.T) {
 	kr := kachomock.NewRepository()
 	or := repomock.NewOpsRepo()

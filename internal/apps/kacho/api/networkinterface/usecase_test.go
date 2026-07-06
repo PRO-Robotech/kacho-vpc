@@ -351,6 +351,35 @@ func TestCreateUseCase_OK(t *testing.T) {
 	assert.Nil(t, saved.Error)
 }
 
+// TestCreateUseCase_CrossProjectSubnet_Denied — BOLA-guard: NIC в проекте "f1"
+// НЕ может ссылаться на Subnet чужого проекта ("other"). Parent-Subnet проверяется
+// async (в doCreate), поэтому Operation завершается с Error.Code == NotFound, тем
+// же ответом, что для несуществующего subnet (без existence-oracle). RED до фикса:
+// cross-project subnet reference проходил (Subnets().Get не сверял project) и NIC
+// создавался в чужой подсети.
+func TestCreateUseCase_CrossProjectSubnet_Denied(t *testing.T) {
+	kr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	// Subnet принадлежит проекту "other".
+	kr.SeedSubnet(&kachorepo.SubnetRecord{
+		Subnet: domain.Subnet{ID: "e9bsub9", ProjectID: "other", Name: domain.RcNameVPC("sn")},
+	})
+	uc := NewCreateNetworkInterfaceUseCase(kr, &repomock.ProjectClient{OK: true}, or)
+
+	op, err := uc.Execute(context.Background(), CreateInput{NetworkInterface: domain.NetworkInterface{
+		ProjectID: "f1", Name: "nic", SubnetID: "e9bsub9",
+	}})
+	require.NoError(t, err)
+	saved := repomock.AwaitOpDone(t, or, op.ID)
+	require.True(t, saved.Done)
+	require.NotNil(t, saved.Error, "cross-project subnet reference must fail")
+	assert.Equal(t, int32(codes.NotFound), saved.Error.Code)
+	// Ответ идентичен «subnet нет» — cross-project не распознаётся как отдельный код.
+	assert.Equal(t, repo.ErrNotFound.Error(), saved.Error.Message)
+	// NIC не создан.
+	require.Empty(t, kr.NetworkInterfaces())
+}
+
 // TestCreateUseCase_ProjectNotFound — при отсутствующем Project async doCreate
 // возвращает NotFound с каноническим текстом "<Resource> %s not found".
 func TestCreateUseCase_ProjectNotFound(t *testing.T) {

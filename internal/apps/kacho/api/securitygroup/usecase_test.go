@@ -210,6 +210,27 @@ func TestCreateUseCase_ProjectNotFound(t *testing.T) {
 	assert.Equal(t, "Project f1 not found", saved.Error.Message)
 }
 
+// TestCreateUseCase_CrossProjectNetwork_Denied — BOLA-guard: SG в проекте "f1"
+// НЕ может ссылаться на Network чужого проекта ("other"). Cross-project → NotFound
+// (тот же ответ, что для несуществующей сети — без existence-oracle). RED до фикса:
+// reference на чужую сеть проходил (networkReader.Get не сверял project).
+func TestCreateUseCase_CrossProjectNetwork_Denied(t *testing.T) {
+	sgr := kachomock.NewRepository()
+	or := repomock.NewOpsRepo()
+	nr := repomock.NewNetworkRepo()
+	foreignNet := ids.NewID(ids.PrefixNetwork)
+	_, _ = nr.Insert(context.Background(), &domain.Network{ID: foreignNet, ProjectID: "other", Name: domain.RcNameVPC("net")})
+	uc := NewCreateSecurityGroupUseCase(sgr, nr, &repomock.ProjectClient{OK: true}, or)
+
+	_, err := uc.Execute(context.Background(), domain.SecurityGroup{
+		ProjectID: "f1", NetworkID: foreignNet, Name: domain.RcNameVPC("sg-bola"),
+	})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+	assert.Equal(t, "Network "+foreignNet+" not found", st.Message())
+}
+
 // TestCreateUseCase_OK — happy-path Create с валидной существующей Network
 // (network_id обязателен).
 func TestCreateUseCase_OK(t *testing.T) {
