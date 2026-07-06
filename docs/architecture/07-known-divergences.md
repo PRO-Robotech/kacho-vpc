@@ -247,3 +247,60 @@ radius на list-пути в security-hardening-проходе. Как и #15, �
 clean-refactor тикетом с полным newman-прогоном, не здесь. До того парность
 whitelist'ов держит регрессионный newman-слой (`*-LST-*` кейсы) и list-authz
 CI-гейт (`make audit-list-filter`).
+
+## 18. `Writer.Commit()`/`Abort()` финализируют TX на `context.Background()` — намеренно
+
+`writerImpl.Commit()` / `Abort()` (`internal/repo/kacho/pg/repository.go`) вызывают
+`tx.Commit(context.Background())` / `tx.Rollback(context.Background())`, а не request-ctx.
+Порт `RepositoryWriter.Commit()`/`Abort()` намеренно БЕЗ ctx-аргумента: терминальная
+финализация TX не должна отменяться отменой request-контекста.
+
+Почему так, а не thread-ctx:
+
+- commit по уже-отменённому ctx (клиент отвалился / deadline истёк ПОСЛЕ успешного DML)
+  должен **завершиться**, иначе успешная бизнес-операция откатывается «из-за таймаута
+  клиента» — хуже, чем чуть дольше подержать соединение. Rollback по Background
+  симметричен: abort обязан отработать всегда.
+- верхняя граница на всю обработку RPC уже стоит: `handler.Unary/StreamTimeoutInterceptor`
+  (request-timeout, outermost) + bounded pgxpool (`pool_max_conns`) + statement/lock
+  таймауты БД. Отдельный per-commit timeout добавил бы риск оборвать легитимно-медленный
+  commit без выигрыша — blast-radius уже ограничен пулом.
+
+Trade-off: под зависшим primary commit по Background ждёт нижних (pgx/OS) таймаутов, а не
+request-deadline. Это осознанный выбор «всегда финализировать TX», а не пропущенная
+ctx-propagation.
+
+## 19. Три TTL-кеша (existence / project / list-filter) НЕ сведены в общий primitive
+
+`internal/clients/existence_cache.go` (`existsCache` — positive-only, region/zone),
+`internal/clients/project_cache.go` (`CachedProjectClient` — TTL+LRU pos/neg через
+container/list, clock-inject) и `internal/authzfilter/filter.go` (`FGAFilter`-cache —
+TTL + prefix-`Invalidate` + slice-deep-copy) держат по своей mutex+map+expiry-реализации.
+
+Не сведены в один generic намеренно: три **разные** политики eviction/invalidation, а не
+один primitive:
+
+- `existsCache`: positive-only, без bound (region/zone — low-cardinality: рост ограничен
+  числом зон/регионов в деплое, не unbounded на практике);
+- `CachedProjectClient`: true-LRU c раздельными positive/negative TTL + clock-injection
+  под unit-тесты;
+- `FGAFilter`-cache: prefix-based `Invalidate(subject)` (LISTEN/NOTIFY-driven) + защитная
+  deep-copy `AllowedIDs` на выдаче.
+
+Единый `ttlcache[V]`, покрывающий LRU + clock + prefix-invalidation + copy-hook, нёс бы
+больше policy-knob-сложности, чем убирает дублирования — net-negative для LEAN-цели.
+Каждый кеш индивидуально оправдан (hot-path RTT-removal) и покрыт `-race` unit-тестом.
+Сведение оправдано, только если появится 4-й кеш с той же политикой.
+
+## 20. Migrator `Dialect`-интерфейс сохранён при единственной реализации — тонкий seam
+
+`internal/apps/migrator` держит интерфейс `Dialect` + `DialectSpec` при единственной
+реализации `postgresDialect` (продукт Postgres-only: Postgres 16, database-per-service).
+Registry-таблица под один элемент, тип `dialectFactory`, `listDialects` и алиас
+`ResolveDialect` **убраны** (LEAN r9b) — `NewDialect` резолвит прямой веткой.
+
+Сам интерфейс оставлен намеренно (НЕ speculative multi-DB задел): `Runner` /
+`Config.Dialect` зависят от него — тонкая обёртка делегирует Up/Down/Status/Create без
+if-веток, изолируя goose-пакетные глобалки, и держит CLI-контракт `--dialect postgres`
+(unknown → ошибка). Второй диалект добавляется реализацией интерфейса, если станет
+реальным требованием.

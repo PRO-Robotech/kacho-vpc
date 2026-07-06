@@ -58,9 +58,8 @@ type Dialect interface {
 //
 // Это НЕ runtime-behaviour: реальная Up/Down/Status/Create логика живет в
 // реализации [Dialect]-интерфейса. Spec нужен, чтобы:
-//   - CLI мог напечатать список зарегистрированных диалектов в help;
-//   - тесты могли проверить, что `--dialect postgres` правильно резолвится;
-//   - registry хранил пары name→constructor.
+//   - CLI мог напечатать имя/driver диалекта в help;
+//   - тесты могли проверить, что `--dialect postgres` правильно резолвится.
 type DialectSpec struct {
 	// Name — имя диалекта для CLI (postgres).
 	Name string
@@ -79,36 +78,14 @@ var SpecPostgres = DialectSpec{
 	SQLDriver:    "pgx",
 }
 
-// dialectFactory — конструктор реализации [Dialect] по имени.
-type dialectFactory func() Dialect
-
-// registry — name → factory.
-var registry = map[string]dialectFactory{
-	SpecPostgres.Name: func() Dialect { return newPostgresDialect() },
-}
-
-// NewDialect — фабрика, возвращает реализацию [Dialect] по имени.
-//
-// Поддерживаемый: "postgres". Неизвестное имя → ошибка со списком
-// зарегистрированных.
+// NewDialect — фабрика, возвращает реализацию [Dialect] по имени. Поддерживается
+// один диалект — "postgres" (продукт Postgres-only: Postgres 16,
+// database-per-service). Неизвестное имя → ошибка. Второй диалект добавляется
+// прямой веткой здесь, когда станет реальным требованием — без registry-таблицы /
+// factory-типа под единственный элемент (non-negotiable #11).
 func NewDialect(name string) (Dialect, error) {
-	factory, ok := registry[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown dialect %q (supported: %v)", name, listDialects())
+	if name == SpecPostgres.Name {
+		return newPostgresDialect(), nil
 	}
-	return factory(), nil
-}
-
-// ResolveDialect — обертка над [NewDialect]; возвращает [Dialect], чью метадату
-// читают через Spec(). Сохранена как стабильная точка входа для cmd/migrator.
-func ResolveDialect(name string) (Dialect, error) {
-	return NewDialect(name)
-}
-
-func listDialects() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	return out
+	return nil, fmt.Errorf("unknown dialect %q (supported: %s)", name, SpecPostgres.Name)
 }

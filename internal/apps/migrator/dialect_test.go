@@ -1,9 +1,8 @@
 // Copyright (c) PRO-Robotech
 // SPDX-License-Identifier: BUSL-1.1
 
-// dialect_test.go — unit-тесты на фабрику [NewDialect] и алиас [ResolveDialect].
-// Integration-тесты против реальной БД живут в `internal/repo/...` (postgres
-// через testcontainers).
+// dialect_test.go — unit-тесты на фабрику [NewDialect]. Integration-тесты против
+// реальной БД живут в `internal/repo/...` (postgres через testcontainers).
 package migrator
 
 import (
@@ -44,22 +43,6 @@ func TestNewDialect_Invalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown dialect") {
 		t.Fatalf("expected 'unknown dialect' in error, got: %v", err)
-	}
-}
-
-func TestResolveDialect_Alias(t *testing.T) {
-	// ResolveDialect — алиас для NewDialect.
-	d, err := ResolveDialect("postgres")
-	if err != nil {
-		t.Fatalf("ResolveDialect(postgres) failed: %v", err)
-	}
-	if d.Spec().Name != "postgres" {
-		t.Fatalf("expected Name=postgres, got %q", d.Spec().Name)
-	}
-
-	_, err = ResolveDialect("unknown")
-	if err == nil {
-		t.Fatal("expected error for unknown dialect")
 	}
 }
 
