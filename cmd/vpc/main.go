@@ -421,7 +421,7 @@ func runServe(cfg config.Config) error {
 		DenyRateLimitPerSec: cfg.AuthZ.DenyRateLimitPerSec,
 		CacheTTL:            cfg.AuthZ.CacheTTL,
 		// Existence-hiding (Decision 1): object-scoped deny на отсутствующий
-		// vpc-ресурс → passthrough → handler verbatim NotFound 404. Probe читает
+		// vpc-ресурс → passthrough → handler отдаёт дословный NotFound 404. Probe читает
 		// master-pool (авторитетно, без replica-lag false-absent).
 		Probe: kachopg.NewExistenceProbe(pool),
 	})

@@ -112,7 +112,7 @@ func (u *DeleteAddressUseCase) Execute(ctx context.Context, id string) (*operati
 		}
 
 		// external_ipv6 / freelist-возврат вычисляем из УДАЛЕННОЙ строки (свежий
-		// snapshot), а не из sync-phase `existing` — иначе IP, аллоцированный
+		// snapshot), а не из sync-read `existing` — иначе IP, аллоцированный
 		// между sync-read и worker'ом, утек бы.
 		if deleted.ExternalIpv6 != nil && deleted.ExternalIpv6.Address != "" {
 			if frr := w.Addresses().FreeExternalIPv6(ctx, id); frr != nil {
