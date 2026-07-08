@@ -38,14 +38,18 @@ import (
 // Принимает CQRS-порт `Repo`. Каждый Allocate-метод открывает writer-TX и
 // делает Get + Set/Allocate + Outbox.UPDATED атомарно.
 type AllocateUseCase struct {
-	repo         Repo
-	subnetReader SubnetReader
-	pools        PoolService // nil → Allocate*ExternalIP* недоступны
+	repo  Repo
+	pools PoolService // nil → Allocate*ExternalIP* недоступны
 }
 
 // NewAllocateUseCase создает AllocateUseCase.
-func NewAllocateUseCase(r Repo, subnetReader SubnetReader, pools PoolService) *AllocateUseCase {
-	return &AllocateUseCase{repo: r, subnetReader: subnetReader, pools: pools}
+//
+// Subnet-чтение internal-IPAM-путём идёт через собственную writer-TX
+// (`w.Subnets().Get`), поэтому отдельный SubnetReader-порт use-case'у не нужен —
+// это устраняет nested reader-conn под held-writer'ом (pool-deadlock, см.
+// alloc_shared.go).
+func NewAllocateUseCase(r Repo, pools PoolService) *AllocateUseCase {
+	return &AllocateUseCase{repo: r, pools: pools}
 }
 
 // AllocateInternalIP — выделяет next-free IPv4 в subnet, который указан
@@ -81,7 +85,8 @@ func (u *AllocateUseCase) AllocateInternalIP(ctx context.Context, addressID stri
 			"address %s internal_ipv4.subnet_id is empty", addressID)
 	}
 	// Shared IPAM-цикл (alloc_shared.go) — общий с CreateAddressUseCase.allocateInternalIPv4.
-	updated, err := allocateInternalV4IntoTx(ctx, w, u.subnetReader, addr)
+	// Subnet читается на TX writer'а внутри (single-conn, без nested reader-conn).
+	updated, err := allocateInternalV4IntoTx(ctx, w, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +119,8 @@ func (u *AllocateUseCase) AllocateInternalIPv6(ctx context.Context, addressID st
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s internal_ipv6.subnet_id is empty", addressID)
 	}
 	// Shared IPAM-цикл (alloc_shared.go) — общий с CreateAddressUseCase.allocateInternalIPv6.
-	updated, err := allocateInternalV6IntoTx(ctx, w, u.subnetReader, addr)
+	// Subnet читается на TX writer'а внутри (single-conn, без nested reader-conn).
+	updated, err := allocateInternalV6IntoTx(ctx, w, addr)
 	if err != nil {
 		return nil, err
 	}

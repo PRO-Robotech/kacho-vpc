@@ -99,7 +99,7 @@ func TestIntegration_IPAM_Cascade(t *testing.T) {
 	subnetAdapter := cqrsadapter.NewSubnet(r)
 	addrAdapter := cqrsadapter.NewAddress(r)
 	apResolver := addresspool.NewResolverService(r, addrAdapter, subnetAdapter)
-	addrSvc := addressapp.NewAllocateUseCase(r, subnetAdapter, apResolver)
+	addrSvc := addressapp.NewAllocateUseCase(r, apResolver)
 
 	mkAddr := func(projectID, name string, typ domain.AddressType, ext *domain.ExternalIpv4Spec, intSpec *domain.InternalIpv4Spec) *domain.Address {
 		return &domain.Address{

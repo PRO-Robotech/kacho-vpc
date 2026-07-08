@@ -563,7 +563,8 @@ func (u *CreateAddressUseCase) allocateInternalIPv4(ctx context.Context, w Write
 			"address %s internal_ipv4.subnet_id is empty", addr.ID)
 	}
 	// Shared IPAM-цикл (alloc_shared.go) — общий с AllocateUseCase.AllocateInternalIP.
-	updated, err := allocateInternalV4IntoTx(ctx, w, u.subnetReader, addr)
+	// Subnet читается на TX writer'а внутри (single-conn, без nested reader-conn).
+	updated, err := allocateInternalV4IntoTx(ctx, w, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +581,7 @@ func (u *CreateAddressUseCase) allocateInternalIPv6(ctx context.Context, w Write
 	if addr.InternalIpv6.SubnetID == "" {
 		return nil, status.Errorf(codes.FailedPrecondition, "address %s internal_ipv6.subnet_id is empty", addr.ID)
 	}
-	updated, err := allocateInternalV6IntoTx(ctx, w, u.subnetReader, addr)
+	updated, err := allocateInternalV6IntoTx(ctx, w, addr)
 	if err != nil {
 		return nil, err
 	}

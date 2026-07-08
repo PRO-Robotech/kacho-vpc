@@ -41,10 +41,18 @@ import (
 // record с проставленным internal_ipv4.address; иначе — gRPC status
 // (FailedPrecondition при отсутствии v4-CIDR, ResourceExhausted при исчерпании).
 //
+// Subnet читается через СОБСТВЕННУЮ TX writer'а (`w.Subnets().Get`), а НЕ через
+// отдельный SubnetReader-порт: у writer'а уже держится одно соединение пула, и
+// открытие второго (Reader на том же пуле) под held-writer'ом — nested-conn
+// deadlock под нагрузкой (pool.MaxConns исчерпан writer'ами → каждый ждёт
+// reader-conn, которого нет; row-lock GetForUpdate одного address'а копит очередь
+// → statement_timeout). Тот же single-conn инвариант, что и на external-пути
+// (см. allocate.go AllocateExternalIP: pool резолвится ДО Writer-TX).
+//
 // Pre-conditions (проверяет caller): addr.InternalIpv4 != nil, .Address == "",
 // .SubnetID != "".
-func allocateInternalV4IntoTx(ctx context.Context, w Writer, subnetReader SubnetReader, addr *kachorepo.AddressRecord) (*kachorepo.AddressRecord, error) {
-	sub, err := subnetReader.Get(ctx, addr.InternalIpv4.SubnetID)
+func allocateInternalV4IntoTx(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*kachorepo.AddressRecord, error) {
+	sub, err := w.Subnets().Get(ctx, addr.InternalIpv4.SubnetID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,10 +145,13 @@ func allocateInternalV4IntoTx(ctx context.Context, w Writer, subnetReader Subnet
 // subnet.V6CidrBlocks[0] с атомарным claim'ом через SetInternalIPv6 в открытой
 // writer-TX. На успех — updated record с internal_ipv6.address.
 //
+// Subnet читается через собственную TX writer'а (см. allocateInternalV4IntoTx:
+// second-pool-conn под held-writer'ом = nested-conn deadlock под нагрузкой).
+//
 // Pre-conditions (проверяет caller): addr.InternalIpv6 != nil, .Address == "",
 // .SubnetID != "".
-func allocateInternalV6IntoTx(ctx context.Context, w Writer, subnetReader SubnetReader, addr *kachorepo.AddressRecord) (*kachorepo.AddressRecord, error) {
-	sub, err := subnetReader.Get(ctx, addr.InternalIpv6.SubnetID)
+func allocateInternalV6IntoTx(ctx context.Context, w Writer, addr *kachorepo.AddressRecord) (*kachorepo.AddressRecord, error) {
+	sub, err := w.Subnets().Get(ctx, addr.InternalIpv6.SubnetID)
 	if err != nil {
 		return nil, err
 	}
