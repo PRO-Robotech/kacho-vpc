@@ -5,6 +5,8 @@ package check
 
 import (
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/PRO-Robotech/kacho-corelib/authz"
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
@@ -584,4 +586,59 @@ func PermissionMap() authz.RPCMap {
 		"/kacho.cloud.operation.OperationService/Get":    {Public: true},
 		"/kacho.cloud.operation.OperationService/Cancel": {Public: true},
 	}
+}
+
+// internalPrefix — fullMethod-префикс cluster-internal (:9091) сервисов
+// kacho-vpc. Дублирует правило handler.assertAdminAccess (там строка та же
+// самая по историческим причинам package-boundary — см. comment в
+// tenant_interceptor.go).
+const internalPrefix = "/kacho.cloud.vpc.v1.Internal"
+
+var (
+	objectScopedInternalMethodsOnce sync.Once
+	objectScopedInternalMethodsSet  map[string]struct{}
+)
+
+// IsObjectScopedInternalMethod — true, если fullMethod — Internal RPC (:9091)
+// object-scoped в PermissionMap (per-object v_get/v_update/v_list/…, напр.
+// InternalAddressService.AllocateInternalIP → vpc_address:<id> v_update), а
+// НЕ cluster-scoped admin/system_*-RPC (InternalAddressPoolService.*,
+// InternalNetworkService.SetDefaultSecurityGroupId — system_admin/
+// system_viewer@cluster).
+//
+// Используется handler.assertAdminAccess (internal :9091 admin-gate): без
+// этого различия blanket admin-gate отвергает ЛЮБОЙ non-admin principal на
+// Internal*-методе ДО того, как per-RPC authz-Check вообще успевает
+// посмотреть на конкретный объект — что ломает nlb->vpc IPAM edge (nlb
+// форвардит только x-kacho-principal-*, не x-kacho-admin). Object-scoped
+// internal-методы обязаны пройти tenant-gate и попасть под authz-Check,
+// который энфорсит per-object relation; cluster-scoped admin-RPC остаются
+// admin-gated здесь же (authz-Check для них — на singleton
+// cluster:cluster_kacho_root, admin-gate — defense-in-depth поверх него).
+//
+// Не-Internal fullMethod и unmapped Internal fullMethod → false (fail-closed:
+// остаются под admin-gate, как раньше).
+func IsObjectScopedInternalMethod(fullMethod string) bool {
+	if !strings.HasPrefix(fullMethod, internalPrefix) {
+		return false
+	}
+	objectScopedInternalMethodsOnce.Do(func() {
+		m := PermissionMap()
+		objectScopedInternalMethodsSet = make(map[string]struct{}, len(m))
+		for method, entry := range m {
+			if !strings.HasPrefix(method, internalPrefix) {
+				continue
+			}
+			switch entry.Relation {
+			case relationSystemAdmin, relationSystemViewer:
+				// cluster-scoped — остается admin-gated.
+			default:
+				if entry.Relation != "" {
+					objectScopedInternalMethodsSet[method] = struct{}{}
+				}
+			}
+		}
+	})
+	_, ok := objectScopedInternalMethodsSet[fullMethod]
+	return ok
 }
