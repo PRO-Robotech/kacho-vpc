@@ -18,8 +18,9 @@ import (
 // БД vpc по его FGA-объекту (`<type>:<id>`). Используется на deny-пути
 // IAMCheckClient'а для existence-hiding: object-scoped deny на ОТСУТСТВУЮЩИЙ
 // объект ведет себя как `ErrNoPath` (passthrough → handler отдаст дословный
-// NotFound 404, скрывая отсутствие owner-tuple), а на СУЩЕСТВУЮЩИЙ — остается
-// PermissionDenied (verb-RBAC сохранен, мутация-handler недостижим).
+// NotFound 404, скрывая отсутствие owner-tuple), а на СУЩЕСТВУЮЩИЙ-но-без-доступа
+// возвращает `ErrHideExistence` (interceptor блокирует handler и отдает NotFound
+// 404, а не PermissionDenied 403 — «есть-но-не-твой» неотличимо от «нет такого»).
 //
 // objectType — один из vpc-типов (`vpc_network`, `vpc_subnet`, …); неизвестный
 // тип → ошибка (caller оставляет deny). Реализация — read-only `SELECT EXISTS`
@@ -106,9 +107,11 @@ func (c *IAMCheckClient) Check(ctx context.Context, subjectID, relation, object 
 	// так что отличить «нет owner-tuple/нет объекта» от «объект есть, но нет
 	// доступа» можно только сверкой с собственной БД vpc. Отсутствует → ведем
 	// как ErrNoPath (passthrough → handler вернет дословный NotFound 404, скрывая
-	// отсутствие); существует → оставляем deny (PermissionDenied; verb-RBAC
-	// сохранен, мутация-handler недостижим → no tamper). Probe-ошибка/неизвестный
-	// тип → fail-closed (оставляем deny, без passthrough).
+	// отсутствие); существует-но-без-доступа → ErrHideExistence (interceptor
+	// блокирует handler и отдает NotFound 404, а не PermissionDenied 403 — verb-RBAC
+	// сохранен, мутация-handler недостижим → no tamper, а «есть-но-не-твой»
+	// неотличимо от «нет такого»). Probe-ошибка/неизвестный тип → fail-closed
+	// (оставляем deny/403, без passthrough).
 	if c.probe != nil {
 		if objectType, objectID, ok := splitFGAObject(object); ok {
 			if _, isVPCObj := vpcObjectTypes[objectType]; isVPCObj {
