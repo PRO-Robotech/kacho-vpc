@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
 )
 
@@ -77,22 +78,37 @@ func TenantStreamInterceptor(requireAdmin, productionMode bool) grpc.StreamServe
 	}
 }
 
-// assertAdminAccess — internal :9091 listener gate. Отвергает не-admin caller'а.
-// Anonymous (нет AuthN) → пропускается в dev-mode (backward-compat); в
-// production-mode anonymous уже отвергнут вышестоящим productionMode-guard'ом.
+// assertAdminAccess — internal :9091 listener gate. Отвергает не-admin caller'а
+// на cluster-scoped admin-RPC. Anonymous (нет AuthN) → пропускается в
+// dev-mode (backward-compat); в production-mode anonymous уже отвергнут
+// вышестоящим productionMode-guard'ом.
+//
+// Object-scoped internal RPC (InternalAddressService.* — vpc_address:<id>
+// v_update/v_get, per permission_map.go) — исключение из blanket admin-gate:
+// non-admin caller (nlb->vpc IPAM edge форвардит только
+// x-kacho-principal-*, БЕЗ x-kacho-admin) обязан дойти до per-object
+// authz-Check'а (authzIntr), а не быть отвергнут раньше, чем FGA вообще
+// посмотрит на объект — иначе nlb->vpc IPAM edge (polyrepo.md) сломан
+// целиком. Cluster-scoped admin/system_*-RPC
+// (InternalAddressPoolService.*, InternalNetworkService.SetDefault…)
+// остаются admin-gated здесь же — check.IsObjectScopedInternalMethod
+// различает их через PermissionMap (source of truth).
 func assertAdminAccess(t tenant.TenantCtx, fullMethod string) error {
 	if t.IsAnonymous() {
 		return nil
 	}
-	if !t.Admin {
-		// Не-/Internal* method для не-admin → NotFound (не светить структуру
-		// admin-only listener'а). HasPrefix безопаснее Contains.
-		if !strings.HasPrefix(fullMethod, "/kacho.cloud.vpc.v1.Internal") {
-			return status.Error(codes.NotFound, "not found")
-		}
-		return status.Error(codes.PermissionDenied, "Permission denied")
+	if t.Admin {
+		return nil
 	}
-	return nil
+	// Не-/Internal* method для не-admin → NotFound (не светить структуру
+	// admin-only listener'а). HasPrefix безопаснее Contains.
+	if !strings.HasPrefix(fullMethod, "/kacho.cloud.vpc.v1.Internal") {
+		return status.Error(codes.NotFound, "not found")
+	}
+	if check.IsObjectScopedInternalMethod(fullMethod) {
+		return nil
+	}
+	return status.Error(codes.PermissionDenied, "Permission denied")
 }
 
 type wrappedStream struct {

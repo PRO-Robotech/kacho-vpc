@@ -151,3 +151,34 @@ func TestTenantUnary_RequireAdminNonInternalNotFound(t *testing.T) {
 		t.Fatalf("ожидался NotFound для non-/Internal на admin-listener, got: %v", err)
 	}
 }
+
+// TestTenantUnary_RequireAdminObjectScopedInternalPasses — object-scoped
+// internal RPC (InternalAddressService.AllocateInternalIP, per
+// permission_map.go — v_update на vpc_address:<id>, зеркало публичного
+// AddressService.Update) не должен быть заблокирован blanket admin-gate'ом:
+// non-admin caller (nlb->vpc IPAM edge форвардит только
+// x-kacho-principal-*, БЕЗ x-kacho-admin) обязан дойти до object-scoped
+// authz-Check'а (authzIntr), а не получить PermissionDenied на tenant-gate
+// раньше, чем FGA вообще успеет посмотреть на объект.
+func TestTenantUnary_RequireAdminObjectScopedInternalPasses(t *testing.T) {
+	md := metadata.MD{"x-kacho-project-id": []string{"f1"}}
+	err := callInterceptor(t, false, true,
+		"/kacho.cloud.vpc.v1.InternalAddressService/AllocateInternalIP", md)
+	if err != nil {
+		t.Fatalf("non-admin caller на object-scoped internal RPC должен пройти tenant-gate (authz-Check решает per-object v_update), got: %v", err)
+	}
+}
+
+// TestTenantUnary_RequireAdminClusterScopedInternalStillRejected — admin-only
+// cluster-scoped internal RPC (InternalAddressPoolService.Create,
+// system_admin@cluster) остается admin-gated на tenant-interceptor'е:
+// non-admin caller получает PermissionDenied ДО authz-Check'а (нет смысла
+// звать FGA для RPC, которого ни один non-admin принципал не должен видеть).
+func TestTenantUnary_RequireAdminClusterScopedInternalStillRejected(t *testing.T) {
+	md := metadata.MD{"x-kacho-project-id": []string{"f1"}}
+	err := callInterceptor(t, false, true,
+		"/kacho.cloud.vpc.v1.InternalAddressPoolService/Create", md)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ожидался PermissionDenied для non-admin на admin-only cluster-scoped internal RPC, got: %v", err)
+	}
+}
