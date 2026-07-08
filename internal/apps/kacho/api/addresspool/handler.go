@@ -6,6 +6,7 @@ package addresspool
 import (
 	"context"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -248,7 +249,7 @@ func (h *Handler) ListAddresses(ctx context.Context, req *vpcv1.ListAddressPoolA
 			ZoneId:    zone,
 			Reserved:  a.Reserved,
 			Used:      a.Used,
-			CreatedAt: timestamppb.New(a.CreatedAt),
+			CreatedAt: timestamppb.New(a.CreatedAt.Truncate(time.Second)), // sec-truncation (timestamp-convention)
 		})
 	}
 	return &vpcv1.ListAddressPoolAddressesResponse{Addresses: out, NextPageToken: next}, nil
@@ -285,8 +286,10 @@ func poolToProto(rec *kachorepo.AddressPoolRecord) *vpcv1.AddressPool {
 		return nil
 	}
 	return &vpcv1.AddressPool{
-		Id:               rec.ID,
-		CreatedAt:        timestamppb.New(rec.CreatedAt),
+		Id: rec.ID,
+		// Timestamp-convention: truncate до секунд (БД хранит микросекунды, proto
+		// отдает секунды) — паритет с dto/toproto.timeObj и всеми VPC-ресурсами.
+		CreatedAt:        timestamppb.New(rec.CreatedAt.Truncate(time.Second)),
 		Name:             string(rec.Name),
 		Description:      string(rec.Description),
 		Labels:           domain.LabelsToMap(rec.Labels),
