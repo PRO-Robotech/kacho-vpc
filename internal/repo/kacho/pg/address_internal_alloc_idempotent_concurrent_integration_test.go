@@ -26,7 +26,6 @@ import (
 	coredb "github.com/PRO-Robotech/kacho-corelib/db"
 	addressapp "github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/address"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
-	"github.com/PRO-Robotech/kacho-vpc/internal/repo/cqrsadapter"
 	kachopg "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho/pg"
 )
 
@@ -85,7 +84,7 @@ func TestAllocateInternalIP_ConcurrentIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Commit())
 
-	uc := addressapp.NewAllocateUseCase(r, cqrsadapter.NewSubnet(r), nil)
+	uc := addressapp.NewAllocateUseCase(r, nil)
 
 	const N = 8
 	ips, errs := runConcurrentAllocate(N, func() (*domain.AllocateResult, error) {
@@ -133,7 +132,7 @@ func TestAllocateInternalIPv6_ConcurrentIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Commit())
 
-	uc := addressapp.NewAllocateUseCase(r, cqrsadapter.NewSubnet(r), nil)
+	uc := addressapp.NewAllocateUseCase(r, nil)
 
 	const N = 8
 	ips, errs := runConcurrentAllocate(N, func() (*domain.AllocateResult, error) {

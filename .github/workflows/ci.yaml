@@ -71,7 +71,11 @@ jobs:
       # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
       # (Docker есть на ubuntu-latest runner'ах). Без -cover (covdata-инструменты в
       # отдельных toolchain-сборках бывают неполны; coverage здесь не нужен).
-      - run: go test ./internal/repo/... ./internal/clients/... -race -count=1 -timeout 600s
+      # -p 1: пакеты тестов сериализуются, чтобы не поднимать несколько postgres-
+      # контейнеров одновременно — под -race + Docker-contention CI-runner'а параллельные
+      # testcontainers-пакеты голодают друг у друга ресурсы и concurrent-race-кейсы
+      # (AllocateInternalIP idempotent) флакают. Серийный прогон — как в kacho-nlb.
+      - run: go test ./internal/repo/... ./internal/clients/... -race -count=1 -timeout 600s -p 1
 
   authz-deny-suite:
     name: authz-deny suite — generate + validate
