@@ -19,6 +19,7 @@
 package authzfilter
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -109,16 +110,24 @@ type AuthorizeClient interface {
 }
 
 // FGAFilter — продакшен-реализация Filter поверх AuthorizeService.ListObjects
-// с in-memory TTL-кешем.
+// с in-memory TTL+LRU-кешем.
+//
+// Eviction — LRU (как в internal/clients/project_cache.go): при переполнении
+// CacheMaxEntries вытесняется least-recently-used entry (хвост lruLst), а не
+// произвольная (Go-map-randomized, возможно горячая) запись. Иначе burst
+// distinct-List под нагрузкой трэшил бы кеш (мог выбросить свежую запись, оставив
+// вот-вот-протухшую) и гнал бы лишний AuthorizeService.ListObjects QPS в kacho-iam.
 type FGAFilter struct {
 	cli AuthorizeClient
 	cfg Config
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
+	mu     sync.Mutex
+	cache  map[string]*list.Element
+	lruLst *list.List
 }
 
 type cacheEntry struct {
+	key      string
 	decision Decision
 	expires  time.Time
 }
@@ -138,9 +147,10 @@ func NewFGAFilter(cli AuthorizeClient, cfg Config) *FGAFilter {
 		cfg.MaxResults = 10000
 	}
 	return &FGAFilter{
-		cli:   cli,
-		cfg:   cfg,
-		cache: make(map[string]cacheEntry, cfg.CacheMaxEntries),
+		cli:    cli,
+		cfg:    cfg,
+		cache:  make(map[string]*list.Element, cfg.CacheMaxEntries),
+		lruLst: list.New(),
 	}
 }
 
@@ -216,14 +226,17 @@ func cacheKey(subject, resourceType, action string) string {
 func (f *FGAFilter) getCache(key string) (Decision, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	e, ok := f.cache[key]
+	el, ok := f.cache[key]
 	if !ok {
 		return Decision{}, false
 	}
+	e := el.Value.(*cacheEntry)
 	if time.Now().After(e.expires) {
+		f.lruLst.Remove(el)
 		delete(f.cache, key)
 		return Decision{}, false
 	}
+	f.lruLst.MoveToFront(el) // LRU touch
 	d := e.decision
 	if len(d.AllowedIDs) > 0 {
 		idsCopy := make([]string, len(d.AllowedIDs))
@@ -236,15 +249,25 @@ func (f *FGAFilter) getCache(key string) (Decision, bool) {
 func (f *FGAFilter) putCache(key string, d Decision) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.cache) >= f.cfg.CacheMaxEntries {
-		for k := range f.cache {
-			delete(f.cache, k)
+	exp := time.Now().Add(f.cfg.CacheTTL)
+	if el, ok := f.cache[key]; ok {
+		e := el.Value.(*cacheEntry)
+		e.decision = d
+		e.expires = exp
+		f.lruLst.MoveToFront(el)
+		return
+	}
+	el := f.lruLst.PushFront(&cacheEntry{key: key, decision: d, expires: exp})
+	f.cache[key] = el
+	// Вытеснить LRU-tail пока перешагиваем bound.
+	for f.lruLst.Len() > f.cfg.CacheMaxEntries {
+		tail := f.lruLst.Back()
+		if tail == nil {
 			break
 		}
-	}
-	f.cache[key] = cacheEntry{
-		decision: d,
-		expires:  time.Now().Add(f.cfg.CacheTTL),
+		te := tail.Value.(*cacheEntry)
+		f.lruLst.Remove(tail)
+		delete(f.cache, te.key)
 	}
 }
 
@@ -252,7 +275,7 @@ func (f *FGAFilter) putCache(key string, d Decision) {
 func (f *FGAFilter) Size() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return len(f.cache)
+	return f.lruLst.Len()
 }
 
 // Invalidate — удаляет записи subject'а из cache (LISTEN/NOTIFY-driven inval).
@@ -260,8 +283,9 @@ func (f *FGAFilter) Invalidate(subject string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	prefix := subject + "|"
-	for k := range f.cache {
+	for k, el := range f.cache {
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			f.lruLst.Remove(el)
 			delete(f.cache, k)
 		}
 	}
