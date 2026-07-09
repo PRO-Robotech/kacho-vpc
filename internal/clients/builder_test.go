@@ -97,6 +97,31 @@ func TestBuild_DNSLB_RespectsExistingScheme(t *testing.T) {
 	}
 }
 
+func TestDNSLBServiceConfig_MirrorsCorlibRetries(t *testing.T) {
+	t.Parallel()
+	// Parity guard (audit R6): the DNSLB path must carry the same retry-on-Unavailable
+	// intent as the corlib path (WithMaxRetries). The service-config must therefore
+	// embed a retryPolicy whose maxAttempts derives from opts.Retries and whose
+	// retryable set is UNAVAILABLE (same code as corlib grpc_retry.WithCodes).
+	sc := dnslbServiceConfigJSON(3)
+	require.Contains(t, sc, `"round_robin"`, "round_robin LB must remain")
+	require.Contains(t, sc, `"retryPolicy"`, "DNSLB path must apply a transport retry policy")
+	require.Contains(t, sc, `"maxAttempts":4`, "maxAttempts must be Retries+1 (config counts original attempt)")
+	require.Contains(t, sc, `"retryableStatusCodes":["UNAVAILABLE"]`, "must retry Unavailable, mirroring corlib WithCodes")
+
+	// Retries is honoured (not a hardcoded constant).
+	require.Contains(t, dnslbServiceConfigJSON(5), `"maxAttempts":6`)
+
+	// And the assembled config parses cleanly inside grpc.NewClient (DNSLB Build).
+	conn, err := Build(context.Background(), BuildOptions{
+		Endpoint: "kacho-iam.kacho.svc.cluster.local:9090",
+		DNSLB:    true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	_ = conn.Close()
+}
+
 func TestBuildOptions_WithDefaults(t *testing.T) {
 	t.Parallel()
 	// Zero-valued struct → дефолты заполняются.
