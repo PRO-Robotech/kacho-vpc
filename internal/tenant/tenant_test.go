@@ -38,18 +38,16 @@ func TestHasProjectAccess_AdminAlwaysPasses(t *testing.T) {
 	}
 }
 
-// TestIsAnonymous_ActorIsNotAuthN — Actor — audit-only, не считается AuthN.
-func TestIsAnonymous_ActorIsNotAuthN(t *testing.T) {
+// TestIsAnonymous — anonymous = ни Admin, ни ProjectIDs.
+func TestIsAnonymous(t *testing.T) {
 	cases := []struct {
 		name string
 		tc   TenantCtx
 		want bool
 	}{
 		{"empty", TenantCtx{}, true},
-		{"actor-only", TenantCtx{Actor: "alice"}, true},
 		{"project", TenantCtx{ProjectIDs: map[string]struct{}{"f1": {}}}, false},
 		{"admin", TenantCtx{Admin: true}, false},
-		{"admin+actor", TenantCtx{Actor: "x", Admin: true}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

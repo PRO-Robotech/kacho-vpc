@@ -30,7 +30,6 @@ import (
 // metadata и кладет в ctx через tenant.WithTenant.
 //
 // Headers (case-insensitive):
-//   - `x-kacho-actor` — actor name для audit (e.g. "admin@kacho").
 //   - `x-kacho-project-id` — project, к которому caller имеет access (повторяемый).
 //   - `x-kacho-admin` — "true" → cluster-wide admin.
 //
@@ -130,9 +129,6 @@ func tenantFromMetadata(ctx context.Context, honorAdmin bool) tenant.TenantCtx {
 		return tenant.TenantCtx{}
 	}
 	t := tenant.TenantCtx{}
-	if v := md.Get("x-kacho-actor"); len(v) > 0 {
-		t.Actor = v[0]
-	}
 	if honorAdmin {
 		if v := md.Get("x-kacho-admin"); len(v) > 0 && v[0] == "true" {
 			t.Admin = true
