@@ -78,12 +78,8 @@ type ProjectClient interface {
 // internal/clients/geo_client.go.
 //
 // Get возвращает ErrNotFound для несуществующей зоны.
-// ListIDs возвращает идентификаторы всех зарегистрированных зон — нужен для
-// динамического сообщения `must be one of: ...`. Без пагинации: зон в системе
-// единицы, даже при росте до десятков все помещается в один SELECT.
 type ZoneRegistry interface {
 	Get(ctx context.Context, id string) (*domain.Zone, error)
-	ListIDs(ctx context.Context) ([]string, error)
 }
 
 // RegionRegistry — port для проверки существования региона (REGIONAL-подсеть).

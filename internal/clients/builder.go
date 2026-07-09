@@ -68,6 +68,27 @@ const (
 	defaultUserAgent     = "kacho-vpc"
 )
 
+// defaultPeerCallTimeout — per-call deadline на КАЖДЫЙ исходящий peer-gRPC вызов
+// cross-service peer-клиентов (geo Zone/Region Get, iam Project Exists). Эти
+// вызовы идут в том числе из async Operation-worker'а, чей ctx лишён дедлайна
+// (operations baggage.Extract снимает deadline/cancel) и ограничен только грубым
+// opTimeout; без собственного per-call дедлайна alive-but-unresponsive peer
+// (deadlocked handler / GC-pause / slow query — gRPC keepalive не срабатывает,
+// пока stream активен) вешает worker-горутину надолго → исчерпание LRO-слотов
+// (DoS-амплификация). Зеркалит sibling SyncRegistrar (5s). См. architecture.md
+// «per-call deadline на КАЖДОМ внешнем вызове».
+const defaultPeerCallTimeout = 5 * time.Second
+
+// peerCallCtx оборачивает ctx per-call дедлайном (если timeout>0), иначе возвращает
+// ctx как есть. Применяется единообразно ко ВСЕМ sibling-методам peer-клиентов —
+// не «часть — да, часть — нет». Возвращаемый cancel обязателен к вызову (defer).
+func peerCallCtx(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func (o BuildOptions) withDefaults() BuildOptions {
 	if o.Retries == 0 {
 		o.Retries = defaultRetries

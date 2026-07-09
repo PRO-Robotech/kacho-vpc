@@ -29,9 +29,6 @@ type fakeGeoZoneClient struct {
 	// getErrSeq — последовательность ошибок per Get-вызов (nil = успех с getResp).
 	// Позволяет смоделировать «Unavailable на 1-й попытке, успех на retry».
 	getErrSeq []error
-
-	listResps []*geov1.ListZonesResponse
-	listErr   error
 }
 
 func (f *fakeGeoZoneClient) Get(_ context.Context, in *geov1.GetZoneRequest, _ ...grpc.CallOption) (*geov1.Zone, error) {
@@ -49,22 +46,51 @@ func (f *fakeGeoZoneClient) Get(_ context.Context, in *geov1.GetZoneRequest, _ .
 	return f.getResp, nil
 }
 
+// List удовлетворяет geov1.ZoneServiceClient (Get+List). ListIDs удалён из
+// ZoneRegistry-порта (vestigial, LEAN), поэтому List программировать не нужно.
 func (f *fakeGeoZoneClient) List(_ context.Context, _ *geov1.ListZonesRequest, _ ...grpc.CallOption) (*geov1.ListZonesResponse, error) {
-	if f.listErr != nil {
-		return nil, f.listErr
-	}
-	if len(f.listResps) == 0 {
-		return &geov1.ListZonesResponse{}, nil
-	}
-	resp := f.listResps[0]
-	f.listResps = f.listResps[1:]
-	return resp, nil
+	return &geov1.ListZonesResponse{}, nil
 }
 
 // newTestGeoZoneClient собирает GeoZoneClient поверх fake ZoneServiceClient,
 // инъектируя stub в обход gRPC-conn (unit-уровень, без сети).
 func newTestGeoZoneClient(fake geov1.ZoneServiceClient) *GeoZoneClient {
-	return &GeoZoneClient{zones: fake, cache: newExistsCache(geoZoneExistsTTL)}
+	return &GeoZoneClient{zones: fake, cache: newExistsCache(geoZoneExistsTTL), timeout: defaultPeerCallTimeout}
+}
+
+// blockingZoneClient — geov1.ZoneServiceClient, чей Get блокируется до отмены ctx.
+// Моделирует alive-but-unresponsive geo (deadlocked handler / GC-pause): gRPC
+// keepalive не срабатывает, пока stream активен. Без per-call дедлайна вызов
+// висит навсегда на unbounded worker-ctx.
+type blockingZoneClient struct{ geov1.ZoneServiceClient }
+
+func (blockingZoneClient) Get(ctx context.Context, _ *geov1.GetZoneRequest, _ ...grpc.CallOption) (*geov1.Zone, error) {
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+// TestGeoZoneClient_Get_PerCallDeadlineOnHungPeer — regression под audit-находку
+// (concurrency): peer-клиент обязан нести собственный per-call дедлайн. Вызов идёт
+// на unbounded ctx (context.Background — как worker-ctx после baggage.Extract);
+// hung geo не должен вешать горутину — клиент сам ограничивает вызов timeout'ом и
+// возвращает DeadlineExceeded ~за timeout, не навсегда.
+func TestGeoZoneClient_Get_PerCallDeadlineOnHungPeer(t *testing.T) {
+	c := &GeoZoneClient{zones: blockingZoneClient{}, cache: newExistsCache(geoZoneExistsTTL), timeout: 150 * time.Millisecond}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Get(context.Background(), "zone-a")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if status.Code(err) != codes.DeadlineExceeded {
+			t.Fatalf("expected DeadlineExceeded from hung geo, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Get did not return: per-call deadline not applied (goroutine hung on unbounded ctx)")
+	}
 }
 
 func TestGeoZoneClient_Get_FoundOK(t *testing.T) {
@@ -140,39 +166,5 @@ func TestGeoZoneClient_Get_PositiveCacheSkipsSecondCall(t *testing.T) {
 	}
 	if fake.getCalls != 1 {
 		t.Fatalf("expected 1 upstream call (positive cache hit on 2nd), got %d", fake.getCalls)
-	}
-}
-
-func TestGeoZoneClient_ListIDs_PaginatesAndCollects(t *testing.T) {
-	fake := &fakeGeoZoneClient{listResps: []*geov1.ListZonesResponse{
-		{Zones: []*geov1.Zone{{Id: "zone-a"}, {Id: "zone-b"}}, NextPageToken: "tok"},
-		{Zones: []*geov1.Zone{{Id: "zone-d"}}},
-	}}
-	c := newTestGeoZoneClient(fake)
-
-	ids, err := c.ListIDs(context.Background())
-	if err != nil {
-		t.Fatalf("ListIDs: %v", err)
-	}
-	want := []string{"zone-a", "zone-b", "zone-d"}
-	if len(ids) != len(want) {
-		t.Fatalf("expected %v, got %v", want, ids)
-	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("expected %v, got %v", want, ids)
-		}
-	}
-}
-
-func TestGeoZoneClient_ListIDs_DownFailsClosed(t *testing.T) {
-	fake := &fakeGeoZoneClient{listErr: status.Error(codes.Unavailable, "geo unreachable")}
-	c := newTestGeoZoneClient(fake)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	_, err := c.ListIDs(ctx)
-	if err == nil {
-		t.Fatal("expected error when geo is down (fail-closed), got nil")
 	}
 }
