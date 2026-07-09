@@ -34,8 +34,8 @@ const geoZoneExistsTTL = 60 * time.Second
 // через owner-сервис, без собственного зеркала зон.
 type GeoZoneClient struct {
 	zones   geov1.ZoneServiceClient
-	cache   *existsCache  // positive-only TTL «зона существует»
-	timeout time.Duration // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
+	cache   *valueCache[*domain.Zone] // positive-only TTL закешированной проекции зоны
+	timeout time.Duration             // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
 }
 
 // NewGeoZoneClient создает GeoZoneClient. conn — обычно `clients.Build(...)`
@@ -44,19 +44,20 @@ type GeoZoneClient struct {
 func NewGeoZoneClient(conn grpc.ClientConnInterface) *GeoZoneClient {
 	return &GeoZoneClient{
 		zones:   geov1.NewZoneServiceClient(conn),
-		cache:   newExistsCache(geoZoneExistsTTL),
+		cache:   newValueCache[*domain.Zone](geoZoneExistsTTL),
 		timeout: defaultPeerCallTimeout,
 	}
 }
 
-// Get возвращает зону по id. Маппинг ошибок cross-domain-валидации:
+// Get возвращает зону по id. На positive cache-hit отдаёт закешированную полную
+// проекцию (та же, что вернул бы cache-miss). Маппинг ошибок cross-domain-валидации:
 //   - зона не найдена (geo вернул NotFound) → repo.ErrNotFound (use-case
 //     транслирует в InvalidArgument: zone_id ссылается на несуществующую зону);
 //   - geo недоступен → gRPC Unavailable пробрасывается как есть (fail-closed на
 //     мутации; consumer не смог провалидировать zone).
 func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error) {
-	if c.cache.hit(id) {
-		return &domain.Zone{ID: id}, nil
+	if z, ok := c.cache.hit(id); ok {
+		return z, nil
 	}
 
 	var z *domain.Zone
@@ -76,6 +77,6 @@ func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error
 	if err != nil {
 		return nil, err
 	}
-	c.cache.remember(id)
+	c.cache.remember(id, z)
 	return z, nil
 }
