@@ -24,9 +24,11 @@ package helpers
 // после commit первого видит непустой external_ipv4 → target пуст → pop не
 // выполняется → 0 строк (ErrNoRows). Один SQL-statement.
 // Возвращает host(r.ip)::text — assigned IP в host-нотации (без mask).
-// ErrPoolExhausted — если free IP нет ИЛИ адрес уже имеет IP/не существует
-// (Scan вернет pgx.ErrNoRows; caller-guard `Address != ""` отделяет идемпотентный
-// re-call от реального exhausted).
+// Scan вернет pgx.ErrNoRows и когда free IP нет, и когда адрес уже имеет IP/не
+// существует (target-guard отсёк pop). Различение — в repo-caller
+// AllocateIPFromFreelist: он re-read'ит address FOR UPDATE и на непустом
+// external_ipv4 возвращает существующий IP идемпотентно (зеркало
+// AllocateExternalIPv6), иначе — ErrPoolExhausted (реальный exhausted).
 const AllocateFromFreelistSQL = `
 WITH pool_lock AS (
     -- FOR SHARE: совместим с другими allocate, конфликтует с AddressPool.Delete

@@ -113,3 +113,44 @@ func TestInternalNetwork_GetNetwork_NotFound(t *testing.T) {
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
 }
+
+// TestInternalNetwork_SetDefaultSG_MalformedNetworkID — malformed network_id →
+// sync InvalidArgument «invalid network id '<X>'» ПЕРВЫМ стейтментом (apiconv
+// malformed-id-first, как GetNetwork); repo НЕ вызывается. Без format-check
+// garbage network_id уходил в service.Get и возвращал NotFound (неверный код).
+func TestInternalNetwork_SetDefaultSG_MalformedNetworkID(t *testing.T) {
+	// rec != nil, чтобы до фикса дойти до NotFound, а не nil-panic в сервисе.
+	r := &fakeNetInternalRepo{rec: &kachorepo.NetworkRecord{}}
+	h := newInternalNetHandler(r)
+
+	_, err := h.SetDefaultSecurityGroupId(context.Background(),
+		&vpcv1.SetDefaultSecurityGroupIdRequest{
+			NetworkId:       "garbage",
+			SecurityGroupId: ids.NewID(ids.PrefixSecurityGroup),
+		})
+
+	require.Error(t, err)
+	st, _ := grpcstatus.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Contains(t, st.Message(), "invalid network id 'garbage'")
+	assert.Equal(t, 0, r.getCalls, "repo must not be called for malformed network id")
+}
+
+// TestInternalNetwork_SetDefaultSG_MalformedSGID — malformed security_group_id →
+// sync InvalidArgument «invalid security group id '<X>'» до любого repo-вызова.
+func TestInternalNetwork_SetDefaultSG_MalformedSGID(t *testing.T) {
+	r := &fakeNetInternalRepo{rec: &kachorepo.NetworkRecord{}}
+	h := newInternalNetHandler(r)
+
+	_, err := h.SetDefaultSecurityGroupId(context.Background(),
+		&vpcv1.SetDefaultSecurityGroupIdRequest{
+			NetworkId:       ids.NewID(ids.PrefixNetwork),
+			SecurityGroupId: "garbage",
+		})
+
+	require.Error(t, err)
+	st, _ := grpcstatus.FromError(err)
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+	assert.Contains(t, st.Message(), "invalid security group id 'garbage'")
+	assert.Equal(t, 0, r.getCalls, "repo must not be called for malformed security group id")
+}

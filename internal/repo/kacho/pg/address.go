@@ -536,7 +536,26 @@ func (w *addressWriter) AllocateIPFromFreelist(ctx context.Context, poolID, addr
 	var ip string
 	err := w.tx.QueryRow(ctx, helpers.AllocateFromFreelistSQL, poolID, addressID).Scan(&ip)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", helpers.ErrPoolExhausted
+		// 0 строк из freelist-SQL — две причины: (1) freelist пуст (genuine
+		// exhausted); (2) target-guard отсёк pop, т.к. у address уже есть
+		// external_ipv4 — идемпотентный re-call ИЛИ проигравший конкурентный
+		// дубликат (первый allocate закоммитил IP в TOCTOU-окне use-case'а).
+		// Row-lock address FOR UPDATE + re-check emptiness ВНУТРИ writer-TX
+		// (зеркало AllocateExternalIPv6, project-rule #10): непустой external_ipv4
+		// → возвращаем существующий IP идемпотентно вместо ложного ErrPoolExhausted.
+		var curExt4 string
+		if rerr := w.tx.QueryRow(ctx,
+			`SELECT COALESCE(external_ipv4 ->> 'address', '') FROM addresses WHERE id = $1 FOR UPDATE`,
+			addressID).Scan(&curExt4); rerr != nil {
+			if errors.Is(rerr, pgx.ErrNoRows) {
+				return "", helpers.ErrPoolExhausted // address не существует — прежнее поведение
+			}
+			return "", fmt.Errorf("allocate from freelist recheck: %w", rerr)
+		}
+		if curExt4 != "" {
+			return curExt4, nil // идемпотентный re-allocate: адрес уже имеет external_ipv4
+		}
+		return "", helpers.ErrPoolExhausted // freelist действительно пуст
 	}
 	if err != nil {
 		return "", fmt.Errorf("allocate from freelist: %w", err)

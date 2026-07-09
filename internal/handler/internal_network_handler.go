@@ -63,6 +63,15 @@ func (h *InternalNetworkHandler) GetNetwork(ctx context.Context, req *vpcv1.GetI
 }
 
 func (h *InternalNetworkHandler) SetDefaultSecurityGroupId(ctx context.Context, req *vpcv1.SetDefaultSecurityGroupIdRequest) (*vpcv1.SetDefaultSecurityGroupIdResponse, error) {
+	// Первыми стейтментами: malformed id → InvalidArgument "invalid <res> id '<X>'"
+	// (apiconv malformed-id-first, как GetNetwork). ResourceID — no-op для пустой
+	// строки, поэтому non-empty required-check ниже сохраняется.
+	if err := corevalidate.ResourceID("network", ids.PrefixNetwork, req.GetNetworkId()); err != nil {
+		return nil, err
+	}
+	if err := corevalidate.ResourceID("security group", ids.PrefixSecurityGroup, req.GetSecurityGroupId()); err != nil {
+		return nil, err
+	}
 	if req.GetNetworkId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "network_id required")
 	}
