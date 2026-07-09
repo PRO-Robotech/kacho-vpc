@@ -33,9 +33,11 @@ IP можно создать заранее, переиспользовать, �
   по зоне и виду через каскад резолва пула (`external_ipv4_address_spec` / `external_ipv6_address_spec`).
   Используется для статического входного/выходного адреса в Интернет.
 
-Адрес принадлежит проекту (`project_id`). Адрес, привязанный к сетевому интерфейсу
-(`used = true`), **нельзя удалить** — сначала отвяжите его от `NetworkInterface`. Спецификация вида
-адреса (`external_*` / `internal_*`) и `project_id` — **immutable** после `Create`.
+Адрес принадлежит проекту (`project_id`). Адрес, используемый каким-либо ресурсом
+(`used = true`) — сетевым интерфейсом (`NetworkInterface`) или network load balancer'ом, —
+**нельзя удалить**: сначала отвяжите его у ресурса-потребителя. Кто именно использует адрес,
+видно в output-only поле `used_by`. Спецификация вида адреса (`external_*` / `internal_*`) и
+`project_id` — **immutable** после `Create`.
 
 ## Поля ресурса
 
@@ -53,11 +55,11 @@ IP можно создать заранее, переиспользовать, �
     <tr><td><code>internalIpv6Address</code></td><td><code>InternalIpv6Address</code></td><td>Вариант oneof: внутренний IPv6 (<code>address</code>, <code>subnetId</code>)</td></tr>
     <tr><td><code>externalIpv6Address</code></td><td><code>ExternalIpv6Address</code></td><td>Вариант oneof: внешний IPv6 (<code>address</code>, <code>zoneId</code>, <code>requirements</code>)</td></tr>
     <tr><td><code>reserved</code></td><td><code>{TYPES.bool}</code></td><td>Адрес зарезервирован (не освобождается автоматически)</td></tr>
-    <tr><td><code>used</code></td><td><code>{TYPES.bool}</code></td><td>Адрес используется (output-only; <code>true</code>, когда привязан к <code>NetworkInterface</code>)</td></tr>
+    <tr><td><code>used</code></td><td><code>{TYPES.bool}</code></td><td>Адрес используется (output-only; <code>true</code>, когда его использует <code>NetworkInterface</code> или network load balancer)</td></tr>
     <tr><td><code>type</code></td><td><code>Address.Type</code></td><td>Тип адреса: <code>INTERNAL</code> / <code>EXTERNAL</code> (output-only enum)</td></tr>
     <tr><td><code>ipVersion</code></td><td><code>Address.IpVersion</code></td><td>Версия адреса: <code>IPV4</code> / <code>IPV6</code> (output-only enum)</td></tr>
     <tr><td><code>deletionProtection</code></td><td><code>{TYPES.bool}</code></td><td>{DICTIONARY.deletionProtection.short}</td></tr>
-    <tr><td><code>usedBy</code></td><td><code>{TYPES.reference}[]</code></td><td>{DICTIONARY.usedBy.short}</td></tr>
+    <tr><td><code>usedBy</code></td><td><code>{TYPES.reference}[]</code></td><td>{DICTIONARY.usedBy.short}. Каждый элемент: <code>referrer</code> (<code>type</code>, <code>id</code>, <code>name</code>), <code>type</code> и <code>owned</code> (см. ниже)</td></tr>
     <tr><td><code>dnsRecords</code></td><td><code>DnsRecord[]</code></td><td>DNS-записи адреса (поле зарезервировано; обработка отложена — <code>blocked:kacho-dns</code>)</td></tr>
   </tbody>
 </table>
@@ -79,6 +81,26 @@ IP можно создать заранее, переиспользовать, �
 Публичный `Address` показывает лишь выделенный tenant-адрес и `used_by`
 (см. [Авторизация и приватность](/architecture/authz)).
 :::
+
+### Кто использует адрес — `usedBy`
+
+`usedBy` — output-only список ссылок (`Reference`), заполняемый сервером на `Get`/`List`
+(на `Create`/`Update` игнорируется). Каждый элемент:
+
+<table>
+  <thead><tr><th>Поле</th><th>Тип</th><th>Описание</th></tr></thead>
+  <tbody>
+    <tr><td><code>referrer.type</code></td><td><code>{TYPES.string}</code></td><td>Тип ресурса-потребителя (например, <code>loadbalancer.networkLoadBalancer</code>, <code>compute.instance</code>)</td></tr>
+    <tr><td><code>referrer.id</code></td><td><code>{TYPES.string}</code></td><td>id ресурса-потребителя</td></tr>
+    <tr><td><code>referrer.name</code></td><td><code>{TYPES.string}</code></td><td>Имя потребителя на момент привязки (best-effort denormalised, может устареть)</td></tr>
+    <tr><td><code>type</code></td><td><code>Reference.Type</code></td><td><code>USED_BY</code> / <code>MANAGED_BY</code></td></tr>
+    <tr><td><code>owned</code></td><td><code>{TYPES.bool}</code></td><td>Владеет ли потребитель адресом (lifecycle связан), а не просто ссылается. Для VIP network load balancer'а <code>owned=true</code>, когда адрес заказан LB неявно (auto), и <code>owned=false</code>, когда tenant создал адрес заранее и залинковал (link)</td></tr>
+  </tbody>
+</table>
+
+Флаг `owned` важен при удалении: если LB владеет адресом (`owned=true`), при снятии VIP
+адрес освобождается вместе с LB; при `owned=false` адрес — самостоятельный ресурс tenant'а
+и переживает LB.
 
 ---
 
@@ -116,7 +138,14 @@ IP можно создать заранее, переиспользовать, �
       "used": true,
       "type": "INTERNAL",
       "ipVersion": "IPV4",
-      "deletionProtection": false
+      "deletionProtection": false,
+      "usedBy": [
+        {
+          "referrer": { "type": "network_interface", "id": "{networkInterfaceId}", "name": "web-nic" },
+          "type": "USED_BY",
+          "owned": false
+        }
+      ]
     }
   `}
 </CodeBlock>
@@ -247,7 +276,7 @@ IP можно создать заранее, переиспользовать, �
       -d '{
         "projectId": "{projectId}",
         "name": "nat-public",
-        "externalIpv4AddressSpec": { "zoneId": "zone-a" }
+        "externalIpv4AddressSpec": { "zoneId": "region-1-a" }
       }'
   `}
 </CodeBlock>
@@ -350,10 +379,14 @@ IP можно создать заранее, переиспользовать, �
 
 Удаляет адрес (hard-delete). Возвращает `Operation` (response = `Empty`).
 
-**Адрес в использовании удалить нельзя:** если `used = true` (привязан к `NetworkInterface`) —
-`FAILED_PRECONDITION`; сначала отвяжите адрес от NIC (убрать его id из `v4_address_ids` /
-`v6_address_ids` через `NetworkInterface.Update`). Также удаление блокируется при включенной
-`deletionProtection` (`FailedPrecondition`).
+**Адрес в использовании удалить нельзя:** если `used = true` — `FAILED_PRECONDITION`.
+Сообщение указывает конкретного потребителя из `used_by`: `"address <id> is in use by
+<referrer> <name>; detach it before deleting the address"` (например, `network interface
+web-nic` или `network_load_balancer prod-lb`); если referrer-строку прочитать не удалось —
+generic `"address <id> is in use"`. Сначала отвяжите адрес у потребителя (для NIC — убрать
+его id из `v4_address_ids` / `v6_address_ids` через `NetworkInterface.Update`; для LB —
+снять VIP). Также удаление блокируется при включенной `deletionProtection`
+(`"address <id> has deletion_protection enabled; clear it via Update before Delete"`).
 
 #### Пример запроса
 
@@ -530,11 +563,14 @@ ref-валидации и UI-выбора адресов в пределах к�
 
 ## Жизненный цикл и привязка
 
-`Address` — независимый ресурс: он создается, существует и удаляется отдельно от
-`NetworkInterface`. Связь устанавливается со стороны интерфейса — id адреса добавляется в
-`v4_address_ids` / `v6_address_ids` интерфейса (см. [NetworkInterface](/api/network-interface)).
-Как только адрес попадает в этот список, сервис помечает его `used = true`, и адрес становится
-защищенным от удаления.
+`Address` — независимый ресурс: он создается, существует и удаляется отдельно от своих
+потребителей. Связь устанавливается со стороны потребителя: для `NetworkInterface` — id
+адреса добавляется в `v4_address_ids` / `v6_address_ids` интерфейса
+(см. [NetworkInterface](/api/network-interface)); network load balancer может использовать
+адрес как VIP. Как только адрес начинает использоваться, сервис помечает его `used = true`
+и заполняет `used_by`, а адрес становится защищенным от удаления. Флаг `owned` в `used_by`
+различает адрес, заказанный потребителем неявно (`owned=true`, освобождается вместе с ним),
+и заранее созданный tenant'ом и залинкованный (`owned=false`, переживает потребителя).
 
 ```mermaid
 flowchart LR
@@ -578,9 +614,11 @@ flowchart LR
 ## Подводные камни и рекомендации
 
 :::caution Что важно знать
-- **Удаление используемого адреса** (`used = true`) → `FailedPrecondition`. Сначала уберите id
-  адреса из `v4_address_ids` / `v6_address_ids` интерфейса (`NetworkInterface.Update`), затем
-  удаляйте. То же для `deletionProtection = true` — снимите защиту перед удалением.
+- **Удаление используемого адреса** (`used = true`) → `FailedPrecondition`; сообщение
+  называет потребителя из `used_by`. Сначала отвяжите адрес у него (для NIC — уберите id
+  адреса из `v4_address_ids` / `v6_address_ids` через `NetworkInterface.Update`; для LB —
+  снимите VIP), затем удаляйте. То же для `deletionProtection = true` — снимите защиту перед
+  удалением.
 - **Вид адреса immutable.** После `Create` нельзя сменить `internal` ↔ `external` или версию
   протокола — это другой ресурс. Указание `internal_*`/`external_*`/`project_id` в `updateMask` →
   `InvalidArgument` (`"<field> is immutable after Address.Create"`).

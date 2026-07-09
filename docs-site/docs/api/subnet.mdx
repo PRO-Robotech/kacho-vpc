@@ -10,36 +10,50 @@ import { RESTRICTIONS } from '@site/src/constants/restrictions'
 import { Restrictions } from '@site/src/components/commonBlocks/Restrictions'
 import { Codes } from '@site/src/components/commonBlocks/Codes'
 import { ApiOperation } from '@site/src/components/commonBlocks/ApiOperation'
+import Tabs from '@theme/Tabs'
+import TabItem from '@theme/TabItem'
 import CodeBlock from '@theme/CodeBlock'
 import dedent from 'ts-dedent'
 
 # Subnet
 
-**Subnet** — это диапазон адресов внутри сети, привязанный к конкретной зоне. Подсеть
-отвечает на практический вопрос «откуда брать внутренние IP-адреса для ресурсов в этой
-зоне»: вы задаете один или несколько CIDR-блоков (IPv4 и/или IPv6), и из них автоматически
-выделяются внутренние адреса (`Address`) и сетевые интерфейсы (`NetworkInterface`). Так вы
-сами планируете адресацию приложения — разбиваете сеть на сегменты под разные зоны, ярусы
+**Subnet** — это диапазон адресов внутри сети, из которого выделяются внутренние IP.
+Подсеть отвечает на практический вопрос «откуда брать адреса для ресурсов»: вы задаете
+один или несколько CIDR-блоков (IPv4 и/или IPv6), и из них автоматически выделяются
+внутренние адреса (`Address`) и сетевые интерфейсы (`NetworkInterface`). Так вы сами
+планируете адресацию приложения — разбиваете сеть на сегменты под разные зоны, ярусы
 или команды.
 
-Подсеть всегда живет в одной зоне (`zoneId`) и принадлежит одной виртуальной сети
-(`networkId`). Платформа гарантирует, что **CIDR-блоки подсетей одной сети не
-пересекаются** (контроль на уровне БД, EXCLUDE-constraint) — это исключает «двойную
-адресацию» и связанные с ней инциденты еще до того, как адрес будет кому-то выдан. Подсеть
-может быть привязана к таблице маршрутизации (`routeTableId`); если ее не указать —
-выполняется авто-ассоциация с самой ранней `RouteTable` сети.
+Способ размещения подсети задается дискриминатором `placementType` (обязателен и
+immutable):
 
-`networkId` и `zoneId` — **immutable** после создания (сегмент нельзя «переехать» в другую
-сеть или зону). Набор CIDR-блоков меняется **не** через `Update` (там эти поля
-soft-immutable, no-op), а через специальные действия `:add-cidr-blocks` /
-`:remove-cidr-blocks` — отдельные операции, чтобы расширение/сжатие адресного пространства
-было явным и проходило проверку на пересечения.
+- **ZONAL** — подсеть живет в одной зоне доступности (`zoneId`); адреса unicast,
+  привязаны к зоне. Классический сегмент под ресурсы конкретной зоны.
+- **REGIONAL** — подсеть region-scoped (`regionId`); ее префикс анонсируется
+  active-active из здоровых зон региона (anycast). Используется, когда адрес должен быть
+  доступен из всего региона без привязки к одной зоне (например, региональный VIP
+  network load balancer).
 
-:::info Идентификатор и зона
+Ровно одно из полей `zoneId` / `regionId` заполнено — в зависимости от `placementType`.
+Подсеть принадлежит одной виртуальной сети (`networkId`). Платформа гарантирует, что
+**CIDR-блоки подсетей одной сети не пересекаются** (контроль на уровне БД,
+EXCLUDE-constraint) — это исключает «двойную адресацию» и связанные с ней инциденты еще до
+того, как адрес будет кому-то выдан. Подсеть может быть привязана к таблице маршрутизации
+(`routeTableId`); если ее не указать — выполняется авто-ассоциация с самой ранней
+`RouteTable` сети.
+
+`networkId`, `placementType`, `zoneId` и `regionId` — **immutable** после создания
+(сегмент нельзя «переехать» в другую сеть, зону, регион или сменить тип размещения). Набор
+CIDR-блоков меняется **не** через `Update` (там эти поля soft-immutable, no-op), а через
+специальные действия `:add-cidr-blocks` / `:remove-cidr-blocks` — отдельные операции, чтобы
+расширение/сжатие адресного пространства было явным и проходило проверку на пересечения.
+
+:::info Идентификатор и размещение
 ID подсети — префикс `sub` + 17 символов crockford-base32 (например,
-`sub-7k2m9p4q1r8s3t6vw`). Зона (`zoneId`) — ресурс отдельного домена `kacho-geo`; ее
-существование проверяется при `Create` синхронным вызовом `kacho-geo` (несуществующая зона
-→ `InvalidArgument`, недоступность домена → `Unavailable`).
+`sub-7k2m9p4q1r8s3t6vw`). Зона (`zoneId`) и регион (`regionId`) — ресурсы отдельного домена
+`kacho-geo`; их существование проверяется при `Create` синхронным вызовом `kacho-geo`
+(несуществующая зона/регион → `InvalidArgument "unknown zone id '<id>'"` /
+`"unknown region id '<id>'"`, недоступность домена → `Unavailable`).
 :::
 
 ## Поля ресурса
@@ -50,7 +64,9 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
     <tr><td><code>id</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.id.short}</td></tr>
     <tr><td><code>projectId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
     <tr><td><code>networkId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.networkId.short} (immutable)</td></tr>
-    <tr><td><code>zoneId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short} (immutable)</td></tr>
+    <tr><td><code>placementType</code></td><td><code>SubnetPlacementType</code></td><td>{DICTIONARY.placementType.short}</td></tr>
+    <tr><td><code>zoneId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short} — задан при <code>ZONAL</code> (immutable)</td></tr>
+    <tr><td><code>regionId</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.regionId.short} — задан при <code>REGIONAL</code> (immutable)</td></tr>
     <tr><td><code>name</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
     <tr><td><code>description</code></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
     <tr><td><code>labels</code></td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
@@ -66,7 +82,8 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 В теле `Update` поля `v4_cidr_blocks` / `v6_cidr_blocks` принимаются в `update_mask`, но
 их применение — **no-op** (запрос завершается успешно, реального изменения набора CIDR
 нет). Чтобы изменить набор CIDR — используйте `:add-cidr-blocks` / `:remove-cidr-blocks`.
-Поля `network_id` и `zone_id` — hard-immutable: явно в `update_mask` → `InvalidArgument`.
+Поля `network_id`, `placement_type`, `zone_id` и `region_id` — hard-immutable: явно в
+`update_mask` → `InvalidArgument`.
 :::
 
 ---
@@ -94,7 +111,8 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
       "id": "{subnetId}",
       "projectId": "{projectId}",
       "networkId": "{networkId}",
-      "zoneId": "zone-a",
+      "placementType": "ZONAL",
+      "zoneId": "region-1-a",
       "name": "prod-subnet-a",
       "description": "Подсеть прод-зоны A",
       "labels": { "env": "prod" },
@@ -125,11 +143,17 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
   <thead><tr><th>Параметр</th><th>Обязательность</th><th>Тип</th><th>Описание</th></tr></thead>
   <tbody>
     <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
-    <tr><td><code>filter</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.filter.short}</td></tr>
+    <tr><td><code>filter</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>Фильтр (конвенция Kachō). Whitelist полей: <code>name="&lt;value&gt;"</code> и <code>placement_type="ZONAL"</code> / <code>placement_type="REGIONAL"</code></td></tr>
     <tr><td><code>pageSize</code></td><td>нет</td><td><code>{TYPES.int64}</code></td><td>{DICTIONARY.pageSize.short}</td></tr>
     <tr><td><code>pageToken</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.pageToken.short}</td></tr>
   </tbody>
 </table>
+
+:::tip Фильтр по типу размещения
+`filter=placement_type="REGIONAL"` вернет только региональные подсети (аналогично
+`ZONAL`). Значение — точное совпадение enum-строки. Пример:
+`GET /vpc/v1/subnets?projectId={projectId}&filter=placement_type%3D%22REGIONAL%22`.
+:::
 
 #### Пример запроса
 
@@ -150,7 +174,8 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
           "id": "{subnetId}",
           "projectId": "{projectId}",
           "networkId": "{networkId}",
-          "zoneId": "zone-a",
+          "placementType": "ZONAL",
+          "zoneId": "region-1-a",
           "name": "prod-subnet-a",
           "v4CidrBlocks": ["10.0.0.0/24"],
           "createdAt": "2026-06-06T14:27:00Z"
@@ -172,11 +197,15 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 
 <ApiOperation method="POST" endpoint="/vpc/v1/subnets" async>
 
-Создает подсеть в указанной сети и зоне. Возвращает `Operation` (async). Несуществующая
-сеть, дубль имени и пересечение CIDR отклоняются **синхронно** (`NOT_FOUND "Network %s not found"` /
-`ALREADY_EXISTS` / `FAILED_PRECONDITION "Subnet CIDRs can not overlap"`). В worker'е:
-проверка существования проекта → вставка Subnet (FK + EXCLUDE — атомарный backstop) →
-запись событий в outbox.
+Создает подсеть в указанной сети. Возвращает `Operation` (async). `placementType`
+обязателен и определяет пару полей размещения: **ZONAL** → задается `zoneId` (а `regionId`
+должен быть пуст); **REGIONAL** → задается `regionId` (а `zoneId` должен быть пуст).
+Пропущенный/`UNSPECIFIED` `placementType`, лишнее поле размещения и несуществующая
+зона/регион отклоняются **синхронно** (`InvalidArgument`); несуществующая сеть, дубль имени
+и пересечение CIDR — тоже синхронно (`NOT_FOUND "Network %s not found"` / `ALREADY_EXISTS` /
+`FAILED_PRECONDITION "Subnet CIDRs can not overlap"`). В worker'е: проверка существования
+проекта → вставка Subnet (FK + EXCLUDE + CHECK-размещения — атомарный backstop) → запись
+событий в outbox.
 
 #### Тело запроса
 
@@ -185,7 +214,9 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
   <tbody>
     <tr><td><code>projectId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.projectId.short}</td></tr>
     <tr><td><code>networkId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.networkId.short}</td></tr>
-    <tr><td><code>zoneId</code></td><td><strong>да</strong></td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short}</td></tr>
+    <tr><td><code>placementType</code></td><td><strong>да</strong></td><td><code>SubnetPlacementType</code></td><td>{DICTIONARY.placementType.short}</td></tr>
+    <tr><td><code>zoneId</code></td><td>для ZONAL</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.zoneId.short}; при <code>ZONAL</code> обязателен, <code>regionId</code> пуст</td></tr>
+    <tr><td><code>regionId</code></td><td>для REGIONAL</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.regionId.short}; при <code>REGIONAL</code> обязателен, <code>zoneId</code> пуст</td></tr>
     <tr><td><code>name</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.name.short}</td></tr>
     <tr><td><code>description</code></td><td>нет</td><td><code>{TYPES.string}</code></td><td>{DICTIONARY.description.short}</td></tr>
     <tr><td><code>labels</code></td><td>нет</td><td><code>{TYPES.mapStringString}</code></td><td>{DICTIONARY.labels.short}</td></tr>
@@ -198,6 +229,9 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 
 #### Пример запроса
 
+<Tabs>
+  <TabItem value="zonal" label="ZONAL" default>
+
 <CodeBlock language="bash">
   {dedent`
     curl -X POST http://localhost:18080/vpc/v1/subnets \\
@@ -206,13 +240,36 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
       -d '{
         "projectId": "{projectId}",
         "networkId": "{networkId}",
-        "zoneId": "zone-a",
+        "placementType": "ZONAL",
+        "zoneId": "region-1-a",
         "name": "prod-subnet-a",
         "v4CidrBlocks": ["10.0.0.0/24"],
         "labels": { "env": "prod" }
       }'
   `}
 </CodeBlock>
+
+  </TabItem>
+  <TabItem value="regional" label="REGIONAL">
+
+<CodeBlock language="bash">
+  {dedent`
+    curl -X POST http://localhost:18080/vpc/v1/subnets \\
+      -H 'Authorization: Bearer <JWT>' \\
+      -H 'Content-Type: application/json' \\
+      -d '{
+        "projectId": "{projectId}",
+        "networkId": "{networkId}",
+        "placementType": "REGIONAL",
+        "regionId": "region-1",
+        "name": "prod-subnet-regional",
+        "v4CidrBlocks": ["10.1.0.0/24"]
+      }'
+  `}
+</CodeBlock>
+
+  </TabItem>
+</Tabs>
 
 #### Пример ответа (Operation)
 
@@ -239,7 +296,9 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 
 <Restrictions items={[
   { label: 'projectId', rules: RESTRICTIONS.projectId },
+  { label: 'placementType', rules: RESTRICTIONS.placementType },
   { label: 'zoneId', rules: RESTRICTIONS.zoneId },
+  { label: 'regionId', rules: RESTRICTIONS.regionId },
   { label: 'name', rules: RESTRICTIONS.name },
   { label: 'cidr', rules: RESTRICTIONS.cidr },
   { label: 'labels', rules: RESTRICTIONS.labels },
@@ -255,9 +314,10 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 <ApiOperation method="PATCH" endpoint="/vpc/v1/subnets/{subnetId}" async>
 
 Изменяет mutable-поля подсети (`name`, `description`, `labels`, `route_table_id`,
-`dhcp_options`). Поля `network_id` / `zone_id` — hard-immutable (явно в `update_mask` →
-`InvalidArgument "<field> is immutable after Subnet.Create"`). Поля
-`v4_cidr_blocks` / `v6_cidr_blocks` — soft-immutable (принимаются, но no-op).
+`dhcp_options`). Поля `network_id`, `placement_type`, `zone_id`, `region_id` —
+hard-immutable (явно в `update_mask` → `InvalidArgument "<field> is immutable after
+Subnet.Create"`). Поля `v4_cidr_blocks` / `v6_cidr_blocks` — soft-immutable (принимаются,
+но no-op).
 
 #### Тело запроса
 
@@ -497,9 +557,13 @@ ID подсети — префикс `sub` + 17 символов crockford-base3
 
 ## Сценарии использования
 
-- **Планирование адресации по зонам.** Разбейте сеть на подсети — по одной на зону — с
-  непересекающимися диапазонами (`10.0.0.0/24`, `10.0.1.0/24`, …). Из них платформа сама
-  раздает внутренние адреса интерфейсам ресурсов.
+- **Планирование адресации по зонам (ZONAL).** Разбейте сеть на подсети — по одной на
+  зону — с непересекающимися диапазонами (`10.0.0.0/24`, `10.0.1.0/24`, …). Из них
+  платформа сама раздает внутренние адреса интерфейсам ресурсов.
+- **Региональный сегмент (REGIONAL).** Создайте подсеть с `placementType=REGIONAL` и
+  `regionId`, когда адрес должен быть доступен из всего региона без привязки к одной зоне —
+  например, под региональный VIP network load balancer (префикс анонсируется active-active
+  из здоровых зон региона).
 - **Расширение без простоя.** Когда диапазона перестает хватать, добавьте новый CIDR-блок
   через `:add-cidr-blocks` — это штатный путь увеличить адресное пространство подсети, не
   пересоздавая ее и не трогая уже выданные адреса.
@@ -525,6 +589,14 @@ CIDR-блоки подсетей одной сети не должны пере�
 `NetworkInterface → Address`, затем удаляйте подсеть.
 :::
 
+:::caution placement_type задается один раз
+`placementType` обязателен при `Create` (`UNSPECIFIED` → `InvalidArgument`, в `ZONAL` не
+дефолтит) и immutable. Для `ZONAL` заполняется `zoneId`, а `regionId` должен быть пуст; для
+`REGIONAL` — наоборот. Лишнее поле размещения → `InvalidArgument`
+(`"region_id must be empty for ZONAL placement"` / `"zone_id must be empty for REGIONAL
+placement"`). Сменить тип размещения нельзя — создайте новую подсеть.
+:::
+
 :::caution host-биты CIDR обязаны быть нулевыми
 Адрес сети должен быть выровнен по маске: `10.0.0.0/24` — корректно, `10.0.0.5/24` →
 `InvalidArgument`. Это относится и к `Create`, и к `:add-cidr-blocks`.
@@ -533,8 +605,9 @@ CIDR-блоки подсетей одной сети не должны пере�
 :::note CIDR не меняются через Update
 В `Update` поля `v4CidrBlocks` / `v6CidrBlocks` принимаются в `updateMask`, но их
 применение — **no-op** (запрос успешен, набор CIDR не меняется). Единственный способ
-изменить диапазоны — `:add-cidr-blocks` / `:remove-cidr-blocks`. Поля `networkId` /
-`zoneId` — hard-immutable: явное указание в `updateMask` → `InvalidArgument`.
+изменить диапазоны — `:add-cidr-blocks` / `:remove-cidr-blocks`. Поля `networkId`,
+`placementType`, `zoneId`, `regionId` — hard-immutable: явное указание в `updateMask` →
+`InvalidArgument`.
 :::
 
 ## Рекомендации
