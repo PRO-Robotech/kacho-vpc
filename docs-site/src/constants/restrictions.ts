@@ -20,7 +20,9 @@ export const RESTRICTIONS = {
     'host-биты = 0 (10.0.0.0/24 — OK; 10.0.0.5/24 → InvalidArgument)',
     'CIDR не должен пересекаться с соседними Subnet (EXCLUDE-constraint, FailedPrecondition)',
   ],
-  zoneId: ['обязателен (Subnet)', 'immutable после Create', 'существование валидируется через kacho-geo ZoneService.Get'],
+  zoneId: ['для Subnet — обязателен при ZONAL-placement (region_id должен быть пуст); для external Address — при неявном адресе', 'immutable после Create', 'существование валидируется через kacho-geo ZoneService.Get'],
+  regionId: ['для Subnet — обязателен при REGIONAL-placement (zone_id должен быть пуст)', 'immutable после Create', 'существование валидируется через kacho-geo RegionService.Get'],
+  placementType: ['обязателен при Create: ZONAL | REGIONAL', 'UNSPECIFIED → InvalidArgument (не дефолтит в ZONAL)', 'immutable после Create'],
   updateMask: [
     'неизвестное поле → InvalidArgument',
     'hard-immutable поле в mask → InvalidArgument («<field> is immutable after <Resource>.Create»)',
