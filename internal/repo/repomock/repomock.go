@@ -789,12 +789,6 @@ func (m *ZoneRegistry) Get(_ context.Context, id string) (*domain.Zone, error) {
 	return nil, repo.ErrNotFound
 }
 
-func (m *ZoneRegistry) ListIDs(_ context.Context) ([]string, error) {
-	out := make([]string, len(m.Known))
-	copy(out, m.Known)
-	return out, nil
-}
-
 // ---- RegionRegistry ----
 
 type RegionRegistry struct {

@@ -33,8 +33,9 @@ const geoZoneExistsTTL = 60 * time.Second
 // (geo.v1.ZoneService — owner Geography). Ребро vpc→geo: VPC валидирует zone_id
 // через owner-сервис, без собственного зеркала зон.
 type GeoZoneClient struct {
-	zones geov1.ZoneServiceClient
-	cache *existsCache // positive-only TTL «зона существует»
+	zones   geov1.ZoneServiceClient
+	cache   *existsCache  // positive-only TTL «зона существует»
+	timeout time.Duration // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
 }
 
 // NewGeoZoneClient создает GeoZoneClient. conn — обычно `clients.Build(...)`
@@ -42,8 +43,9 @@ type GeoZoneClient struct {
 // с corlib `ClientConn` и `*grpc.ClientConn`.
 func NewGeoZoneClient(conn grpc.ClientConnInterface) *GeoZoneClient {
 	return &GeoZoneClient{
-		zones: geov1.NewZoneServiceClient(conn),
-		cache: newExistsCache(geoZoneExistsTTL),
+		zones:   geov1.NewZoneServiceClient(conn),
+		cache:   newExistsCache(geoZoneExistsTTL),
+		timeout: defaultPeerCallTimeout,
 	}
 }
 
@@ -59,7 +61,9 @@ func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error
 
 	var z *domain.Zone
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		resp, rerr := c.zones.Get(auth.PropagateOutgoing(ctx), &geov1.GetZoneRequest{ZoneId: id})
+		cctx, cancel := peerCallCtx(ctx, c.timeout)
+		defer cancel()
+		resp, rerr := c.zones.Get(auth.PropagateOutgoing(cctx), &geov1.GetZoneRequest{ZoneId: id})
 		if rerr != nil {
 			if st, ok := status.FromError(rerr); ok && st.Code() == codes.NotFound {
 				return repo.ErrNotFound
@@ -74,32 +78,4 @@ func (c *GeoZoneClient) Get(ctx context.Context, id string) (*domain.Zone, error
 	}
 	c.cache.remember(id)
 	return z, nil
-}
-
-// ListIDs возвращает идентификаторы всех зон (для динамического сообщения
-// «must be one of: ...»). Без пагинации наружу — зон в системе единицы;
-// при необходимости проходит все страницы.
-func (c *GeoZoneClient) ListIDs(ctx context.Context) ([]string, error) {
-	var ids []string
-	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		ids = ids[:0]
-		var pageToken string
-		for {
-			resp, rerr := c.zones.List(auth.PropagateOutgoing(ctx), &geov1.ListZonesRequest{PageSize: 1000, PageToken: pageToken})
-			if rerr != nil {
-				return rerr
-			}
-			for _, z := range resp.GetZones() {
-				ids = append(ids, z.GetId())
-			}
-			pageToken = resp.GetNextPageToken()
-			if pageToken == "" {
-				return nil
-			}
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	return ids, nil
 }

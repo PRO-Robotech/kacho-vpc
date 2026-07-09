@@ -5,6 +5,7 @@ package clients
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,14 +31,15 @@ import (
 // bounded TTL+LRU поверх Exists, которым оборачивается raw-клиент в composition
 // root. Здесь — чистый pass-through к gRPC без локального кеша.
 type ProjectClient struct {
-	cli iamv1.ProjectServiceClient
+	cli     iamv1.ProjectServiceClient
+	timeout time.Duration // per-call deadline на каждый iam-вызов (см. defaultPeerCallTimeout)
 }
 
 // NewProjectClient создает ProjectClient. conn — обычно `clients.Build(...)`
 // (см. builder.go), принимается как grpc.ClientConnInterface — что подходит и
 // для corlib `ClientConn`, и для `*grpc.ClientConn`.
 func NewProjectClient(conn grpc.ClientConnInterface) *ProjectClient {
-	return &ProjectClient{cli: iamv1.NewProjectServiceClient(conn)}
+	return &ProjectClient{cli: iamv1.NewProjectServiceClient(conn), timeout: defaultPeerCallTimeout}
 }
 
 // Exists проверяет существование Project через kacho-iam.ProjectService.Get.
@@ -45,7 +47,9 @@ func NewProjectClient(conn grpc.ClientConnInterface) *ProjectClient {
 func (c *ProjectClient) Exists(ctx context.Context, projectID string) (bool, error) {
 	var exists bool
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		_, rerr := c.cli.Get(auth.PropagateOutgoing(ctx), &iamv1.GetProjectRequest{ProjectId: projectID})
+		cctx, cancel := peerCallCtx(ctx, c.timeout)
+		defer cancel()
+		_, rerr := c.cli.Get(auth.PropagateOutgoing(cctx), &iamv1.GetProjectRequest{ProjectId: projectID})
 		if rerr != nil {
 			st, ok := status.FromError(rerr)
 			if ok && (st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument) {

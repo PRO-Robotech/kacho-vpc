@@ -30,7 +30,8 @@ const geoRegionExistsTTL = 60 * time.Second
 // region_id REGIONAL-подсети через owner-сервис, без собственного зеркала регионов.
 type GeoRegionClient struct {
 	regions geov1.RegionServiceClient
-	cache   *existsCache // positive-only TTL «регион существует»
+	cache   *existsCache  // positive-only TTL «регион существует»
+	timeout time.Duration // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
 }
 
 // NewGeoRegionClient создает GeoRegionClient поверх общего geo-conn.
@@ -38,6 +39,7 @@ func NewGeoRegionClient(conn grpc.ClientConnInterface) *GeoRegionClient {
 	return &GeoRegionClient{
 		regions: geov1.NewRegionServiceClient(conn),
 		cache:   newExistsCache(geoRegionExistsTTL),
+		timeout: defaultPeerCallTimeout,
 	}
 }
 
@@ -53,7 +55,9 @@ func (c *GeoRegionClient) Get(ctx context.Context, id string) (*domain.Region, e
 
 	var r *domain.Region
 	err := retry.OnUnavailable(ctx, func(ctx context.Context) error {
-		resp, rerr := c.regions.Get(auth.PropagateOutgoing(ctx), &geov1.GetRegionRequest{RegionId: id})
+		cctx, cancel := peerCallCtx(ctx, c.timeout)
+		defer cancel()
+		resp, rerr := c.regions.Get(auth.PropagateOutgoing(cctx), &geov1.GetRegionRequest{RegionId: id})
 		if rerr != nil {
 			if st, ok := status.FromError(rerr); ok && st.Code() == codes.NotFound {
 				return repo.ErrNotFound
