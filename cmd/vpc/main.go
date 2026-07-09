@@ -385,13 +385,21 @@ func runServe(cfg config.Config) error {
 	// deadline-less/долгий запрос не держал pooled-connection бесконечно
 	// (bounded-pool exhaustion / DoS, CWE-770). timeout<=0 → no-op.
 	reqTimeout := cfg.APIServer.RequestTimeout
+	// Recovery-interceptor — ПЕРВЫЙ (outermost) в обеих цепочках: grpc-go не
+	// восстанавливает panic из handler'ов/интерсепторов, поэтому один nil-deref в
+	// sync request-path уронил бы весь процесс (вместе с LRO-worker'ом и
+	// register-drainer'ом). Ловит panic и из вложенных интерсепторов, и из
+	// handler'а → opaque codes.Internal (без leak'а panic-текста), stack — в лог.
+	// Симметрично async-guard'у (operations.Run / network/create.go defer recover).
 	publicUnary := []grpc.UnaryServerInterceptor{
+		handler.UnaryRecoveryInterceptor(logger),
 		handler.UnaryTimeoutInterceptor(reqTimeout),
 		fgaboot.GuardCreateUnary(bootGate),
 		grpcsrv.UnaryPrincipalExtract(),
 		handler.TenantUnaryInterceptor(false, productionMode),
 	}
 	publicStream := []grpc.StreamServerInterceptor{
+		handler.StreamRecoveryInterceptor(logger),
 		handler.StreamTimeoutInterceptor(reqTimeout),
 		grpcsrv.StreamPrincipalExtract(),
 		handler.TenantStreamInterceptor(false, productionMode),
@@ -407,11 +415,13 @@ func runServe(cfg config.Config) error {
 	// Check; IPAM InternalAddressService.* — object-scoped verb-bearing Check на
 	// `vpc_address` (v_update/v_get), все в PermissionMap.
 	internalUnary := []grpc.UnaryServerInterceptor{
+		handler.UnaryRecoveryInterceptor(logger),
 		handler.UnaryTimeoutInterceptor(reqTimeout),
 		grpcsrv.UnaryPrincipalExtract(),
 		handler.TenantUnaryInterceptor(true, productionMode),
 	}
 	internalStream := []grpc.StreamServerInterceptor{
+		handler.StreamRecoveryInterceptor(logger),
 		handler.StreamTimeoutInterceptor(reqTimeout),
 		grpcsrv.StreamPrincipalExtract(),
 		handler.TenantStreamInterceptor(true, productionMode),
