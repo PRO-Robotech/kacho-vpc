@@ -380,9 +380,10 @@ func runServe(cfg config.Config) error {
 	// отвергается (UNAVAILABLE), когда KACHO_VPC_REQUIRE_IAM взведен, а
 	// register-drainer не подключен к IAM, — чтобы ни один tenant-ресурс не создавался
 	// без доставляемого owner-tuple intent. Read RPC не затронуты.
-	// request-deadline interceptor стоит ПЕРВЫМ (outermost): кладёт верхнюю
-	// границу на всю обработку RPC (включая authz Check и DB-запросы), чтобы
-	// deadline-less/долгий запрос не держал pooled-connection бесконечно
+	// request-deadline interceptor стоит сразу за recovery (второй в цепочке,
+	// внутри recovery-фрейма — recovery остаётся единственным outermost): кладёт
+	// верхнюю границу на всю обработку RPC (включая authz Check и DB-запросы),
+	// чтобы deadline-less/долгий запрос не держал pooled-connection бесконечно
 	// (bounded-pool exhaustion / DoS, CWE-770). timeout<=0 → no-op.
 	reqTimeout := cfg.APIServer.RequestTimeout
 	// Recovery-interceptor — ПЕРВЫЙ (outermost) в обеих цепочках: grpc-go не

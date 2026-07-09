@@ -60,13 +60,15 @@ func TestTenantUnary_AnonymousProductionRejected(t *testing.T) {
 	}
 }
 
-// TestTenantUnary_ActorOnlyProductionRejected — caller с x-kacho-actor без
-// project/admin не должен обходить fail-closed гейт (Actor — audit-only, не AuthN).
-func TestTenantUnary_ActorOnlyProductionRejected(t *testing.T) {
-	md := metadata.MD{"x-kacho-actor": []string{"evil@attacker"}}
+// TestTenantUnary_NonIdentityHeaderProductionRejected — caller, предъявивший
+// произвольный НЕ-identity header (без x-kacho-project-id / x-kacho-admin), не
+// должен обходить fail-closed гейт: такой header не несет authz-claims →
+// caller остается anonymous → PermissionDenied.
+func TestTenantUnary_NonIdentityHeaderProductionRejected(t *testing.T) {
+	md := metadata.MD{"x-some-header": []string{"evil@attacker"}}
 	err := callInterceptor(t, true, false, "/svc/M", md)
 	if err == nil {
-		t.Fatal("actor-only metadata не должен проходить fail-closed в production-mode (Actor — audit-only, не AuthN)")
+		t.Fatal("non-identity metadata не должен проходить fail-closed в production-mode")
 	}
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("ожидался PermissionDenied, got: %v", err)

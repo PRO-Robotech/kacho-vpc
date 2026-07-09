@@ -27,8 +27,6 @@ type TenantCtx struct {
 	// ProjectIDs — projects, которые caller'у разрешено читать/писать.
 	// Empty = full access (admin / cluster-scoped) — backward-compat без AuthN.
 	ProjectIDs map[string]struct{}
-	// Actor — для audit log (admin@kacho или sub-claim из JWT).
-	Actor string
 	// Admin — true, если caller имеет cluster-wide read/write.
 	Admin bool
 }
@@ -45,8 +43,7 @@ func (t TenantCtx) HasProjectAccess(projectID string) bool {
 }
 
 // IsAnonymous — true, если caller не предъявил authorization-claims (ни Admin,
-// ни ProjectIDs). Actor — ортогональное audit-only поле, само по себе не
-// авторизует.
+// ни ProjectIDs).
 func (t TenantCtx) IsAnonymous() bool {
 	return !t.Admin && len(t.ProjectIDs) == 0
 }

@@ -27,7 +27,7 @@ import (
 //	                       insecure-defaults (TLS off, sslmode=disable) только
 //	                       логируются. В проде — ModeProduction (fail-closed).
 //	ModeProduction       — fail-closed: каждый запрос обязан иметь не-пустой
-//	                       TenantCtx (Actor + (Admin или ProjectIDs)). Anonymous →
+//	                       TenantCtx (Admin или ProjectIDs). Anonymous →
 //	                       PermissionDenied.
 //	ModeProductionStrict — production + дополнительно валидирует extapi.*.tls.*
 //	                       и repository.postgres.ssl-mode (require|verify-ca|verify-full).

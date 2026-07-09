@@ -500,11 +500,10 @@ Immutable-поля по ресурсам:
 
 | Header | Семантика |
 |---|---|
-| `x-kacho-actor` | Audit-only поле, идет в логи; не дает AuthZ-прав |
 | `x-kacho-project-id` (повторяемый) | Project, к которому caller имеет доступ |
 | `x-kacho-admin: true` | Cluster-wide админ, минует project-check |
 
-В context кладется `TenantCtx{ProjectIDs, Actor, Admin}`. Handler-ы
+В context кладется `TenantCtx{ProjectIDs, Admin}`. Handler-ы
 вызывают `AssertProjectOwnership(ctx, resource.ProjectID)` после `repo.Get`
 и до возврата ресурса/мутации.
 
