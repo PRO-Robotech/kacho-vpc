@@ -5,6 +5,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -127,4 +128,28 @@ func TestHandler_AllocateExternalIPv6_NotFound(t *testing.T) {
 	require.Error(t, err)
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code())
+}
+
+// TestHandler_AllocateInternalIP_NotFound_MessageTone — не-fabricated regression:
+// use-case возвращает repo.ErrNotFound В ОБЁРНУТОМ виде, ровно как его отдаёт
+// GetForUpdate → helpers.WrapPgErr (`%w: Address <id> not found`). mapAllocErr
+// обязан снять внутренний sentinel-префикс "not found: " и отдать клиенту
+// (:9091 IPAM edge — kacho-compute/kacho-nlb) канонический message-tone
+// "Address <id> not found" — parity с public NetworkService.Get и с sibling
+// reference-методами (serviceerr.MapRepoErr). Без фикса на wire уходит
+// "not found: Address adr_missing not found" (утечка формы repo-обёртки).
+func TestHandler_AllocateInternalIP_NotFound_MessageTone(t *testing.T) {
+	wrapped := fmt.Errorf("%w: Address %s not found", repo.ErrNotFound, "adr_missing")
+	alloc := &fakeAllocator{err: wrapped}
+	h := NewInternalAddressAllocateHandler(alloc, noopRefs{})
+
+	_, err := h.AllocateInternalIP(context.Background(),
+		&vpcv1.AllocateInternalIPRequest{AddressId: "adr_missing"})
+	require.Error(t, err)
+	st, _ := status.FromError(err)
+	assert.Equal(t, codes.NotFound, st.Code())
+	assert.Equal(t, "Address adr_missing not found", st.Message(),
+		"клиент должен видеть канонический tone без внутреннего sentinel-префикса")
+	assert.NotContains(t, st.Message(), "not found: ",
+		"внутренняя repo-обёртка sentinel'а не должна течь на wire")
 }

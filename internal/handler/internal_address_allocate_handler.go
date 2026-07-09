@@ -38,6 +38,7 @@ import (
 
 	vpcv1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/vpc/v1"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/shared/serviceerr"
 	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
@@ -207,7 +208,13 @@ func mapAllocErr(err error) error {
 		return nil
 	}
 	if errors.Is(err, repo.ErrNotFound) {
-		return status.Error(codes.NotFound, err.Error())
+		// Reference-path parity: SetAddressReference/GetAddressReference идут
+		// через serviceerr.MapRepoErr, который снимает sentinel-префикс
+		// "not found: " и отдаёт клиенту канонический message-tone
+		// "Address <id> not found" (api-conventions.md). Голый err.Error()
+		// протащил бы внутреннюю repo-обёртку sentinel'а на wire (:9091 IPAM
+		// edge). pgx-leak'а здесь нет — ErrNotFound несёт только pgx.ErrNoRows.
+		return serviceerr.MapRepoErr(err)
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		return err
