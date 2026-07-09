@@ -15,6 +15,7 @@ import (
 
 	geov1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/geo/v1"
 
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 )
 
@@ -55,7 +56,7 @@ func (f *fakeGeoZoneClient) List(_ context.Context, _ *geov1.ListZonesRequest, _
 // newTestGeoZoneClient собирает GeoZoneClient поверх fake ZoneServiceClient,
 // инъектируя stub в обход gRPC-conn (unit-уровень, без сети).
 func newTestGeoZoneClient(fake geov1.ZoneServiceClient) *GeoZoneClient {
-	return &GeoZoneClient{zones: fake, cache: newExistsCache(geoZoneExistsTTL), timeout: defaultPeerCallTimeout}
+	return &GeoZoneClient{zones: fake, cache: newValueCache[*domain.Zone](geoZoneExistsTTL), timeout: defaultPeerCallTimeout}
 }
 
 // blockingZoneClient — geov1.ZoneServiceClient, чей Get блокируется до отмены ctx.
@@ -75,7 +76,7 @@ func (blockingZoneClient) Get(ctx context.Context, _ *geov1.GetZoneRequest, _ ..
 // hung geo не должен вешать горутину — клиент сам ограничивает вызов timeout'ом и
 // возвращает DeadlineExceeded ~за timeout, не навсегда.
 func TestGeoZoneClient_Get_PerCallDeadlineOnHungPeer(t *testing.T) {
-	c := &GeoZoneClient{zones: blockingZoneClient{}, cache: newExistsCache(geoZoneExistsTTL), timeout: 150 * time.Millisecond}
+	c := &GeoZoneClient{zones: blockingZoneClient{}, cache: newValueCache[*domain.Zone](geoZoneExistsTTL), timeout: 150 * time.Millisecond}
 
 	done := make(chan error, 1)
 	go func() {
@@ -151,6 +152,33 @@ func TestGeoZoneClient_Get_RetriesUnavailableThenSucceeds(t *testing.T) {
 	}
 	if fake.getCalls != 2 {
 		t.Fatalf("expected 2 calls (1 Unavailable + 1 retry success), got %d", fake.getCalls)
+	}
+}
+
+// TestGeoZoneClient_Get_CacheHitReturnsFullStruct — regression под audit-находку
+// (readability): положительный cache-hit обязан вернуть ТУ ЖЕ полную проекцию
+// зоны (ID+RegionID+Name), что и cache-miss, а не усечённый {ID}. Иначе caller,
+// читающий .RegionID/.Name, молча получает ” на весь TTL — latent foot-gun.
+func TestGeoZoneClient_Get_CacheHitReturnsFullStruct(t *testing.T) {
+	fake := &fakeGeoZoneClient{getResp: &geov1.Zone{Id: "zone-a", RegionId: "reg-x", Name: "RU Central A"}}
+	c := newTestGeoZoneClient(fake)
+
+	first, err := c.Get(context.Background(), "zone-a")
+	if err != nil {
+		t.Fatalf("first Get: %v", err)
+	}
+	second, err := c.Get(context.Background(), "zone-a")
+	if err != nil {
+		t.Fatalf("cached Get: %v", err)
+	}
+	if fake.getCalls != 1 {
+		t.Fatalf("expected cache hit on 2nd Get (1 upstream call), got %d", fake.getCalls)
+	}
+	if second.ID != first.ID || second.RegionID != first.RegionID || second.Name != first.Name {
+		t.Fatalf("cache-hit struct != cache-miss struct: got %+v, want %+v", second, first)
+	}
+	if second.RegionID == "" || second.Name == "" {
+		t.Fatalf("cache-hit returned partial struct (RegionID/Name empty): %+v", second)
 	}
 }
 

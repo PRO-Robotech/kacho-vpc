@@ -30,27 +30,28 @@ const geoRegionExistsTTL = 60 * time.Second
 // region_id REGIONAL-подсети через owner-сервис, без собственного зеркала регионов.
 type GeoRegionClient struct {
 	regions geov1.RegionServiceClient
-	cache   *existsCache  // positive-only TTL «регион существует»
-	timeout time.Duration // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
+	cache   *valueCache[*domain.Region] // positive-only TTL закешированной проекции региона
+	timeout time.Duration               // per-call deadline на каждый geo-вызов (см. defaultPeerCallTimeout)
 }
 
 // NewGeoRegionClient создает GeoRegionClient поверх общего geo-conn.
 func NewGeoRegionClient(conn grpc.ClientConnInterface) *GeoRegionClient {
 	return &GeoRegionClient{
 		regions: geov1.NewRegionServiceClient(conn),
-		cache:   newExistsCache(geoRegionExistsTTL),
+		cache:   newValueCache[*domain.Region](geoRegionExistsTTL),
 		timeout: defaultPeerCallTimeout,
 	}
 }
 
-// Get возвращает регион по id. Маппинг ошибок cross-domain-валидации:
+// Get возвращает регион по id. На positive cache-hit отдаёт закешированную полную
+// проекцию (та же, что вернул бы cache-miss). Маппинг ошибок cross-domain-валидации:
 //   - регион не найден (geo вернул NotFound) → repo.ErrNotFound (use-case
 //     транслирует в InvalidArgument: region_id ссылается на несуществующий регион);
 //   - geo недоступен → gRPC Unavailable пробрасывается как есть (fail-closed на
 //     мутации; consumer не смог провалидировать region).
 func (c *GeoRegionClient) Get(ctx context.Context, id string) (*domain.Region, error) {
-	if c.cache.hit(id) {
-		return &domain.Region{ID: id}, nil
+	if r, ok := c.cache.hit(id); ok {
+		return r, nil
 	}
 
 	var r *domain.Region
@@ -70,6 +71,6 @@ func (c *GeoRegionClient) Get(ctx context.Context, id string) (*domain.Region, e
 	if err != nil {
 		return nil, err
 	}
-	c.cache.remember(id)
+	c.cache.remember(id, r)
 	return r, nil
 }

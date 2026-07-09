@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	geov1 "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/geo/v1"
+
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 )
 
 // blockingRegionClient — geov1.RegionServiceClient, чей Get блокируется до отмены
@@ -25,12 +27,59 @@ func (blockingRegionClient) Get(ctx context.Context, _ *geov1.GetRegionRequest, 
 	return nil, status.FromContextError(ctx.Err()).Err()
 }
 
+// fakeGeoRegionClient — детерминированный stub geov1.RegionServiceClient под
+// unit-тесты GeoRegionClient. Реализует только Get (остальное — из embedded nil-
+// интерфейса, не вызывается).
+type fakeGeoRegionClient struct {
+	geov1.RegionServiceClient
+	getResp  *geov1.Region
+	getCalls int
+}
+
+func (f *fakeGeoRegionClient) Get(_ context.Context, _ *geov1.GetRegionRequest, _ ...grpc.CallOption) (*geov1.Region, error) {
+	f.getCalls++
+	return f.getResp, nil
+}
+
+// newTestGeoRegionClient собирает GeoRegionClient поверх fake RegionServiceClient,
+// инъектируя stub в обход gRPC-conn (unit-уровень, без сети).
+func newTestGeoRegionClient(fake geov1.RegionServiceClient) *GeoRegionClient {
+	return &GeoRegionClient{regions: fake, cache: newValueCache[*domain.Region](geoRegionExistsTTL), timeout: defaultPeerCallTimeout}
+}
+
+// TestGeoRegionClient_Get_CacheHitReturnsFullStruct — regression под audit-находку
+// (readability): положительный cache-hit обязан вернуть ТУ ЖЕ полную проекцию
+// региона (ID+Name), что и cache-miss, а не усечённый {ID}. Иначе caller,
+// читающий .Name, молча получает ” на весь TTL — latent foot-gun.
+func TestGeoRegionClient_Get_CacheHitReturnsFullStruct(t *testing.T) {
+	fake := &fakeGeoRegionClient{getResp: &geov1.Region{Id: "reg-a", Name: "RU Central"}}
+	c := newTestGeoRegionClient(fake)
+
+	first, err := c.Get(context.Background(), "reg-a")
+	if err != nil {
+		t.Fatalf("first Get: %v", err)
+	}
+	second, err := c.Get(context.Background(), "reg-a")
+	if err != nil {
+		t.Fatalf("cached Get: %v", err)
+	}
+	if fake.getCalls != 1 {
+		t.Fatalf("expected cache hit on 2nd Get (1 upstream call), got %d", fake.getCalls)
+	}
+	if second.ID != first.ID || second.Name != first.Name {
+		t.Fatalf("cache-hit struct != cache-miss struct: got %+v, want %+v", second, first)
+	}
+	if second.Name == "" {
+		t.Fatalf("cache-hit returned partial struct (Name empty): %+v", second)
+	}
+}
+
 // TestGeoRegionClient_Get_PerCallDeadlineOnHungPeer — regression под audit-находку
 // (concurrency): GeoRegionClient.Get обязан нести собственный per-call дедлайн.
 // На unbounded ctx (worker-ctx после baggage.Extract) hung geo не должен вешать
 // горутину — клиент возвращает DeadlineExceeded ~за timeout.
 func TestGeoRegionClient_Get_PerCallDeadlineOnHungPeer(t *testing.T) {
-	c := &GeoRegionClient{regions: blockingRegionClient{}, cache: newExistsCache(geoRegionExistsTTL), timeout: 150 * time.Millisecond}
+	c := &GeoRegionClient{regions: blockingRegionClient{}, cache: newValueCache[*domain.Region](geoRegionExistsTTL), timeout: 150 * time.Millisecond}
 
 	done := make(chan error, 1)
 	go func() {

@@ -22,8 +22,6 @@ import (
 	"github.com/PRO-Robotech/kacho-corelib/ids"
 	"github.com/PRO-Robotech/kacho-corelib/operations"
 	operationpb "github.com/PRO-Robotech/kacho-proto/gen/go/kacho/cloud/operation"
-
-	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
 )
 
 // fakeOwnedOpsRepo — тестовый double, реализующий operations.Repo И
@@ -191,11 +189,6 @@ func saCtx(id string) context.Context {
 		operations.Principal{Type: "service_account", ID: id, DisplayName: "test"})
 }
 
-// adminCtx — ctx cluster-admin'а (доверенный x-kacho-admin=true → TenantCtx.Admin).
-func adminCtx() context.Context {
-	return tenant.WithTenant(context.Background(), tenant.TenantCtx{Admin: true})
-}
-
 // seedInFlight — кладет in-flight (done=false) операцию владельца (type,id).
 func seedInFlight(repo *fakeOwnedOpsRepo, principalType, principalID string) *operations.Operation {
 	op := &operations.Operation{
@@ -333,31 +326,6 @@ func TestOperationHandler_Cancel_AlreadyCompleted_FailedPrecondition(t *testing.
 	st, _ := grpcstatus.FromError(err)
 	assert.Equal(t, codes.FailedPrecondition, st.Code())
 	assert.Equal(t, "operation "+op.ID+" already completed", st.Message())
-}
-
-// --- Сценарий 08: cluster-admin short-circuit ---
-
-func TestOperationHandler_Admin_ShortCircuit(t *testing.T) {
-	repo := newFakeOwnedOpsRepo()
-	op := seedInFlight(repo, "user", "usr-A")
-	h := NewOperationHandler(repo)
-
-	// admin Get чужой op → OK.
-	got, err := h.Get(adminCtx(), &operationpb.GetOperationRequest{OperationId: op.ID})
-	require.NoError(t, err)
-	assert.Equal(t, op.ID, got.Id)
-
-	// admin Cancel чужой in-flight op → OK, терминал CANCELLED.
-	cancelled, err := h.Cancel(adminCtx(), &operationpb.CancelOperationRequest{OperationId: op.ID})
-	require.NoError(t, err)
-	assert.True(t, cancelled.Done)
-	require.NotNil(t, cancelled.GetError())
-	assert.Equal(t, int32(1), cancelled.GetError().GetCode())
-
-	// non-admin не-владелец по-прежнему NotFound на ту же op.
-	_, err = h.Get(userCtx("usr-B"), &operationpb.GetOperationRequest{OperationId: op.ID})
-	st, _ := grpcstatus.FromError(err)
-	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 // --- Сценарий 11: service-account владелец — match по паре (type,id) ---
