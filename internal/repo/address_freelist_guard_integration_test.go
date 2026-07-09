@@ -31,8 +31,11 @@ func poolFreeCount(t *testing.T, ctx context.Context, pgPool *pgxpool.Pool, pool
 	return n
 }
 
-// Повторный allocate того же адреса (уже с IP) → ErrPoolExhausted и НЕ
-// вынимает второй IP из freelist (no double-pop / no leak).
+// Повторный allocate того же адреса (уже с IP) идемпотентен: возвращает тот же
+// external_ipv4 и НЕ вынимает второй IP из freelist (no double-pop / no leak).
+// Раньше отдавал ErrPoolExhausted — ложный «exhausted» для адреса, которому IP
+// уже выдан; теперь зеркалит идемпотентный AllocateExternalIPv6 (project-rule #10):
+// re-read address FOR UPDATE внутри writer-TX → существующий IP.
 func TestFreelist_NoDoublePop_SameAddress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -60,14 +63,15 @@ func TestFreelist_NoDoublePop_SameAddress(t *testing.T) {
 
 	countBefore := poolFreeCount(t, ctx, pgPool, poolID)
 
-	// Повторный allocate того же (уже выделенного) адреса → ErrPoolExhausted,
-	// размер freelist не меняется (нет второго pop).
-	err = freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
-		_, e := w.Addresses().AllocateIPFromFreelist(ctx, poolID, addrID)
+	// Повторный allocate того же (уже выделенного) адреса → тот же IP
+	// идемпотентно, размер freelist не меняется (нет второго pop).
+	var secondIP string
+	require.NoError(t, freelistWithTx(t, ctx, r, func(w kacho.RepositoryWriter) error {
+		ip, e := w.Addresses().AllocateIPFromFreelist(ctx, poolID, addrID)
+		secondIP = ip
 		return e
-	})
-	require.Error(t, err)
-	require.True(t, errors.Is(err, repo.ErrPoolExhausted))
+	}))
+	require.Equal(t, firstIP, secondIP, "repeat allocate of same address returns the same IP idempotently")
 	require.Equal(t, countBefore, poolFreeCount(t, ctx, pgPool, poolID), "second allocate must not pop another IP")
 }
 
