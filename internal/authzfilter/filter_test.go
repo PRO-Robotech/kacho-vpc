@@ -6,6 +6,7 @@ package authzfilter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -111,6 +112,41 @@ func TestFGAFilter_Cache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, cli.calls, "second identical call served from cache")
 	assert.True(t, d2.FromCache)
+}
+
+// TestFGAFilter_LRUEvictsLeastRecentlyUsed locks the eviction discipline: on
+// overflow the *least-recently-used* entry is dropped (mirrors project_cache.go),
+// never a Go-map-randomized arbitrary (possibly hot) one. A repeatedly-touched
+// "hot" entry must survive an arbitrary number of overflow inserts; under the old
+// `for k := range f.cache { delete; break }` random eviction it is eventually
+// dropped (each overflow evicts it with probability 1/N), so the in-loop
+// FromCache assertion flips to false and the test fails.
+func TestFGAFilter_LRUEvictsLeastRecentlyUsed(t *testing.T) {
+	cli := &fakeAuthorizeClient{resp: &iamv1.ListObjectsResponse{ResourceIds: []string{"a"}}}
+	cfg := DefaultConfig()
+	cfg.CacheMaxEntries = 10
+	f := NewFGAFilter(cli, cfg)
+
+	ctx := context.Background()
+	// Fill cache to capacity with distinct subjects.
+	for i := 0; i < 10; i++ {
+		_, err := f.ListAllowedIDs(ctx, fmt.Sprintf("user:usr_%d", i), ResourceTypeSubnet, ActionSubnetList)
+		require.NoError(t, err)
+	}
+	require.Equal(t, 10, f.Size())
+
+	const hot = "user:usr_0"
+	// Touch the hot entry (promotes it to MRU), then insert a fresh entry forcing
+	// one eviction. LRU always evicts the cold tail, so hot survives every round.
+	for i := 10; i < 110; i++ {
+		d, err := f.ListAllowedIDs(ctx, hot, ResourceTypeSubnet, ActionSubnetList)
+		require.NoError(t, err)
+		require.True(t, d.FromCache, "recently-used hot entry must stay cached across overflow (LRU, not random eviction)")
+
+		_, err = f.ListAllowedIDs(ctx, fmt.Sprintf("user:usr_%d", i), ResourceTypeSubnet, ActionSubnetList)
+		require.NoError(t, err)
+	}
+	require.Equal(t, 10, f.Size(), "cache stays bounded at CacheMaxEntries")
 }
 
 func TestFGAFilter_DisabledOrNilClientBypass(t *testing.T) {
