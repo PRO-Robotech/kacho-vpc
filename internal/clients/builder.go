@@ -9,7 +9,11 @@
 // (retries=3, dialTimeout=10s, KeepAlive 30s, userAgent="kacho-vpc"). Client-side
 // round_robin LB включается флагом DNSLB: corlib builder не поддерживает
 // `grpc.WithDefaultServiceConfig` нативно, поэтому при DNSLB=true используется
-// прямой `grpc.NewClient` с теми же defaults — single code path, общие константы.
+// прямой `grpc.NewClient`. Оба пути применяют одни и те же дефолты — retries
+// (retry-on-Unavailable), dial-backoff, keepalive, userAgent, creds; на DNSLB-пути
+// retry едет через service-config `retryPolicy`, а dial-backoff — через
+// `grpc.WithConnectParams` (см. buildDNSLBConn), зеркаля corlib WithMaxRetries /
+// WithDialDuration. Общие константы, одинаковый профиль отказоустойчивости.
 //
 // Возвращает `Conn` — interface `grpc.ClientConnInterface + io.Closer`. Generated
 // proto-клиенты (`iamv1.NewProjectServiceClient(conn)` и т.п.) принимают
@@ -27,6 +31,7 @@ import (
 
 	corlibgrpc "github.com/H-BF/corlib/client/grpc"
 	"google.golang.org/grpc"
+	grpcbackoff "google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -110,9 +115,9 @@ func (o BuildOptions) withDefaults() BuildOptions {
 // Поведение по флагам:
 //   - DNSLB=false (default): corlib builder с retries / dialDuration / keepalive
 //     / TLS / userAgent. Стандартный паттерн для cross-service.
-//   - DNSLB=true: `grpc.NewClient` с dns:///prefix и
-//     `loadBalancingConfig: round_robin` (corlib builder serviceConfig
-//     не поддерживает; собираем те же defaults вручную).
+//   - DNSLB=true: `grpc.NewClient` с dns:///prefix, `loadBalancingConfig:
+//     round_robin` + retry/dial-backoff-дефолты вручную (corlib builder
+//     serviceConfig не поддерживает; параметры зеркалят corlib-путь).
 //
 // Возвращает `Conn` — interface с grpc.ClientConnInterface + io.Closer.
 // Подходит для передачи в generated `xxxv1.NewXxxServiceClient(conn)`.
@@ -161,14 +166,43 @@ func buildCorlibConn(ctx context.Context, opts BuildOptions, creds credentials.T
 	return cc, nil
 }
 
-// roundRobinServiceConfig — service-config JSON для client-side round_robin LB.
-// Применяется с dns:///prefix: grpc сам резолвит все A/AAAA записи Headless
-// Service и распределяет RPC между ними. Без этого — pick_first (1 backend per addr).
-const roundRobinServiceConfig = `{"loadBalancingConfig":[{"round_robin":{}}]}`
+// dnslbServiceConfigJSON — service-config JSON для DNSLB-пути: client-side
+// round_robin LB + retry-on-Unavailable policy, зеркаля corlib WithMaxRetries.
+//   - round_robin: с dns:///prefix grpc резолвит все A/AAAA Headless Service и
+//     распределяет RPC между ними (без этого — pick_first, 1 backend per addr).
+//   - retryPolicy: maxAttempts = retries+1 (service-config считает исходную
+//     попытку), retryableStatusCodes = UNAVAILABLE (тот же код-сет, что corlib
+//     grpc_retry.WithCodes(codes.Unavailable)). Backoff — короткая экспонента:
+//     service-config требует положительный backoff, поэтому в отличие от
+//     corlib-immediate-retry между попытками вставляется небольшая задержка.
+func dnslbServiceConfigJSON(retries uint) string {
+	maxAttempts := retries + 1
+	return fmt.Sprintf(`{"loadBalancingConfig":[{"round_robin":{}}],`+
+		`"methodConfig":[{"name":[{}],"retryPolicy":{`+
+		`"maxAttempts":%d,"initialBackoff":"0.1s","maxBackoff":"1s",`+
+		`"backoffMultiplier":2.0,"retryableStatusCodes":["UNAVAILABLE"]}}]}`, maxAttempts)
+}
+
+// dnslbConnectParams — dial-backoff для DNSLB-пути, зеркалит corlib
+// WithDialDuration (grpcBackoff.DefaultConfig с BaseDelay=d/10, Multiplier=1.01,
+// Jitter=0.1, MaxDelay=d, MinConnectTimeout=d/10; d поднимается до >=1s).
+func dnslbConnectParams(dialTimeout time.Duration) grpc.ConnectParams {
+	d := dialTimeout
+	if d < time.Second {
+		d = time.Second
+	}
+	bk := grpcbackoff.DefaultConfig
+	bk.BaseDelay = d / 10
+	bk.Multiplier = 1.01
+	bk.Jitter = 0.1
+	bk.MaxDelay = d
+	return grpc.ConnectParams{Backoff: bk, MinConnectTimeout: d / 10}
+}
 
 // buildDNSLBConn — путь DNSLB. corlib builder не экспонирует
 // `grpc.WithDefaultServiceConfig`, поэтому здесь собираем те же defaults через
-// прямой `grpc.NewClient` + serviceConfig.
+// прямой `grpc.NewClient`: retry (service-config retryPolicy) + dial-backoff
+// (`WithConnectParams`) + keepalive + creds + userAgent — паритет с corlib-путём.
 //
 // Префикс `dns:///` добавляется автоматически (если addr им не начинается) —
 // gRPC dns resolver требует его для multi-IP резолва Headless Service.
@@ -180,7 +214,8 @@ func buildDNSLBConn(opts BuildOptions, creds credentials.TransportCredentials) (
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithUserAgent(opts.UserAgent),
-		grpc.WithDefaultServiceConfig(roundRobinServiceConfig),
+		grpc.WithDefaultServiceConfig(dnslbServiceConfigJSON(opts.Retries)),
+		grpc.WithConnectParams(dnslbConnectParams(opts.DialTimeout)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                opts.KeepAliveTime,
 			Timeout:             opts.KeepAliveTime / 3,
