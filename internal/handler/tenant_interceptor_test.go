@@ -12,8 +12,69 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
 )
+
+// mockServerStream — минимальный grpc.ServerStream с настраиваемым ctx для
+// прогона stream-interceptor'а в тестах.
+type mockServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (m *mockServerStream) Context() context.Context { return m.ctx }
+
+// TestTenantUnary_PrincipalProductionPasses — regression против fe3455 production-auth
+// бага: api-gateway форвардит identity как x-kacho-principal-* (operations.WithPrincipal),
+// а НЕ legacy x-kacho-project-id. Запрос с реальным forwarded-принципалом НЕ должен
+// считаться anonymous в production — он проходит tenant-guard дальше, к per-object
+// authz-интерсептору (реальный гейт). До фикса guard отвергал его (учитывался только
+// x-kacho-project-id), и аутентифицированный+авторизованный юзер получал 403.
+func TestTenantUnary_PrincipalProductionPasses(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{})
+	ctx = operations.WithPrincipal(ctx, operations.Principal{Type: "user", ID: "usr7j2yp1v24tx90tcv7"})
+	interceptor := TenantUnaryInterceptor(false, true) // public listener, production
+	called := false
+	h := func(ctx context.Context, req any) (any, error) { called = true; return nil, nil }
+	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.NetworkService/List"}
+	if _, err := interceptor(ctx, struct{}{}, info, h); err != nil {
+		t.Fatalf("production-запрос с forwarded-принципалом обязан пройти tenant-guard, got: %v", err)
+	}
+	if !called {
+		t.Fatal("downstream handler не был вызван")
+	}
+}
+
+// TestTenantStream_PrincipalProductionPasses — то же для server-stream RPC.
+func TestTenantStream_PrincipalProductionPasses(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{})
+	ctx = operations.WithPrincipal(ctx, operations.Principal{Type: "service_account", ID: "sa9kx2"})
+	interceptor := TenantStreamInterceptor(false, true)
+	called := false
+	h := func(srv any, ss grpc.ServerStream) error { called = true; return nil }
+	info := &grpc.StreamServerInfo{FullMethod: "/kacho.cloud.vpc.v1.NetworkService/List"}
+	if err := interceptor(nil, &mockServerStream{ctx: ctx}, info, h); err != nil {
+		t.Fatalf("production stream-запрос с forwarded-принципалом обязан пройти, got: %v", err)
+	}
+	if !called {
+		t.Fatal("downstream stream-handler не был вызван")
+	}
+}
+
+// TestTenantUnary_TrulyAnonymousProductionStillRejected — negative: без principal И
+// без x-kacho-project-id (ctx-fallback → system:bootstrap) production по-прежнему
+// fail-closed. Локает, что фикс не открыл дыру для настоящего anonymous.
+func TestTenantUnary_TrulyAnonymousProductionStillRejected(t *testing.T) {
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{})
+	interceptor := TenantUnaryInterceptor(false, true)
+	h := func(ctx context.Context, req any) (any, error) { return nil, nil }
+	info := &grpc.UnaryServerInfo{FullMethod: "/kacho.cloud.vpc.v1.NetworkService/List"}
+	_, err := interceptor(ctx, struct{}{}, info, h)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("настоящий anonymous в production обязан быть отвергнут, got: %v", err)
+	}
+}
 
 // callInterceptor — helper: прогон unary interceptor с заданными metadata.
 func callInterceptor(t *testing.T, productionMode bool, requireAdmin bool, fullMethod string, md metadata.MD) error {
