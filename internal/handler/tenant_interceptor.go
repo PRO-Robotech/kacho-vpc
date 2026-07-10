@@ -22,9 +22,32 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/PRO-Robotech/kacho-corelib/operations"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/check"
 	"github.com/PRO-Robotech/kacho-vpc/internal/tenant"
 )
+
+// principalForwarded сообщает, несёт ли ctx реальный forwarded end-user principal
+// (`x-kacho-principal-*`, положенный в ctx `grpcsrv.UnaryPrincipalExtract` выше по
+// цепочке). Зеркалит kacho-iam `authzguard.IsAnonymous`: api-gateway форвардит
+// identity ТОЛЬКО как principal (без legacy `x-kacho-project-id`), поэтому запрос с
+// реальным принципалом НЕ anonymous, даже если tenant-headers пусты. Project-scoping
+// энфорсится downstream — per-object authz-интерсептором (FGA Check) + listFilter,
+// а не этим tenant-guard'ом (см. cmd/vpc/main.go: authzIntr.Unary добавлен последним,
+// fatal-if-missing в production).
+func principalForwarded(ctx context.Context) bool {
+	p := operations.PrincipalFromContext(ctx)
+	if p.ID == "" || p.Type == "" {
+		return false
+	}
+	if p.Type == "anonymous" || p.ID == "anonymous" {
+		return false // api-gateway injectAnonymous → {system, anonymous}
+	}
+	if p.Type == "system" && p.ID == "bootstrap" {
+		return false // SystemPrincipal()-fallback: principal-headers не форвардились
+	}
+	return true
+}
 
 // TenantUnaryInterceptor — gRPC unary interceptor. Извлекает caller-identity из
 // metadata и кладет в ctx через tenant.WithTenant.
@@ -45,7 +68,7 @@ import (
 func TenantUnaryInterceptor(requireAdmin, productionMode bool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		t := tenantFromMetadata(ctx, requireAdmin)
-		if productionMode && t.IsAnonymous() {
+		if productionMode && t.IsAnonymous() && !principalForwarded(ctx) {
 			return nil, status.Error(codes.PermissionDenied,
 				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
 		}
@@ -63,7 +86,7 @@ func TenantUnaryInterceptor(requireAdmin, productionMode bool) grpc.UnaryServerI
 func TenantStreamInterceptor(requireAdmin, productionMode bool) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		t := tenantFromMetadata(ss.Context(), requireAdmin)
-		if productionMode && t.IsAnonymous() {
+		if productionMode && t.IsAnonymous() && !principalForwarded(ss.Context()) {
 			return status.Error(codes.PermissionDenied,
 				"AuthN required (production mode): set x-kacho-* identity headers via gateway")
 		}
