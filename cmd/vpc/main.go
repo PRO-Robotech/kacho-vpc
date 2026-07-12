@@ -930,7 +930,9 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 	// `CreateAddressUseCase.doCreate` / `AllocateUseCase.*`. subnetAdapter — peer-port
 	// для SubnetReader (Get + AddressesBySubnet), удовлетворяется тем же kachoRepo
 	// через cqrsadapter.
-	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver).WithRegistrar(registrar)
+	addressCreateUC := addressapp.NewCreateAddressUseCase(kachoRepo, subnetAdapter, projectClient, opsRepo, addressPoolResolver).
+		WithRegistrar(registrar).
+		WithZoneRegistry(geoClient)
 	addressUpdateUC := addressapp.NewUpdateAddressUseCase(kachoRepo, opsRepo)
 	addressDeleteUC := addressapp.NewDeleteAddressUseCase(kachoRepo, opsRepo)
 	addressGetUC := addressapp.NewGetAddressUseCase(kachoRepo, listFilter)
