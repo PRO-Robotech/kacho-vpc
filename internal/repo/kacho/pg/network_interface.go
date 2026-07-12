@@ -5,6 +5,7 @@ package pg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,12 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/helpers"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
+
+// nicColsNI — helpers.NICCols с алиасом ni. Нужен в RETURNING у attach-CAS
+// (`UPDATE network_interfaces ni … FROM subnets s …`): без алиаса RETURNING id/
+// project_id/name/created_at был бы ambiguous (subnets несёт те же имена колонок).
+const nicColsNI = `ni.id, ni.project_id, ni.created_at, ni.name, ni.description, ni.labels, ni.subnet_id,
+	ni.v4_address_ids, ni.v6_address_ids, ni.security_group_ids, ni.used_by_type, ni.used_by_id, ni.used_by_name, ni.mac_address, ni.status`
 
 // networkInterfaceReader — Get/List/ListBySubnet поверх произвольной pgx.Tx
 // (read-only или RW). NIC ведется в CQRS-модели поверх единой writer-TX, чтобы
@@ -194,6 +201,50 @@ func (r *networkInterfaceReader) ListBySubnet(ctx context.Context, subnetID stri
 	return out, nil
 }
 
+// ListByInstanceIDs — batched read NIC-привязок по набору instance_id
+// (used_by_type='compute_instance' AND used_by_id = ANY). Один запрос на всё
+// множество (не N+1) для compute-side зеркала Instance.Get/List. Каждая запись
+// несёт instance-local Index (used_by_index) + денормализованное зеркало адресации
+// (primary v4/v6 адрес резолвится LEFT JOIN на первый v4/v6 Address-ресурс NIC —
+// его IP лежит в jsonb-spec `->>'address'`). Пустой набор → (nil, nil).
+func (r *networkInterfaceReader) ListByInstanceIDs(ctx context.Context, instanceIDs []string) ([]*kacho.NetworkInterfaceAttachment, error) {
+	if len(instanceIDs) == 0 {
+		return nil, nil
+	}
+	const q = `
+		SELECT ni.id, ni.used_by_id, COALESCE(ni.used_by_index, 0), ni.subnet_id,
+		       ni.security_group_ids, ni.mac_address,
+		       COALESCE(av4.internal_ipv4->>'address', av4.external_ipv4->>'address', ''),
+		       COALESCE(av6.internal_ipv6->>'address', av6.external_ipv6->>'address', '')
+		  FROM network_interfaces ni
+		  LEFT JOIN addresses av4 ON av4.id = (ni.v4_address_ids->>0)
+		  LEFT JOIN addresses av6 ON av6.id = (ni.v6_address_ids->>0)
+		 WHERE ni.used_by_type = 'compute_instance' AND ni.used_by_id = ANY($1::text[])
+		 ORDER BY ni.used_by_id ASC, ni.used_by_index ASC`
+	rows, err := r.tx.Query(ctx, q, instanceIDs)
+	if err != nil {
+		return nil, helpers.WrapPgErr(err, "Network interface", "")
+	}
+	defer rows.Close()
+	var out []*kacho.NetworkInterfaceAttachment
+	for rows.Next() {
+		var a kacho.NetworkInterfaceAttachment
+		var sgJSON []byte
+		if err := rows.Scan(&a.NICID, &a.InstanceID, &a.Index, &a.SubnetID, &sgJSON, &a.MAC,
+			&a.PrimaryV4Address, &a.PrimaryV6Address); err != nil {
+			return nil, helpers.WrapPgErr(err, "Network interface", "")
+		}
+		if err := helpers.UnmarshalJSONB(sgJSON, &a.SecurityGroupIDs, "NetworkInterface.security_group_ids"); err != nil {
+			return nil, err
+		}
+		out = append(out, &a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, helpers.WrapPgErr(err, "Network interface", "")
+	}
+	return out, nil
+}
+
 // networkInterfaceWriter — DML над network_interfaces через writer-TX. Embeds
 // networkInterfaceReader, так что writer видит свои writes.
 //
@@ -311,4 +362,131 @@ func (w *networkInterfaceWriter) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: Network interface %s not found", helpers.ErrNotFound, id)
 	}
 	return nil
+}
+
+// AttachToInstance — атомарный CAS NIC↔Instance (self-describing; vpc валидирует
+// СВОИ строки ni+subnet, НЕ зовёт compute — ацикличность, KAC-266). Single-statement
+// UPDATE … FROM subnets:
+//   - `used_by_id=” OR =$instance` — свободен ИЛИ уже наш (идемпотентный replay);
+//   - `project_id=$project` — project-coherence (из self-describing payload);
+//   - `placement_type='REGIONAL' OR zone_id=$instance_zone` — zone-coherence с
+//     anycast-исключением (REGIONAL-subnet зоны не несёт → zone-check пропущен).
+//
+// used_by_index: CASE сохраняет существующий слот при replay (used_by_id уже наш),
+// иначе назначает $slot (явный или вычисленный первый свободный). Слот-уникальность
+// держит partial UNIQUE(used_by_id, used_by_index) → 23505 при коллизии →
+// ErrNICIndexTaken (service retry для auto-index). 0 rows → disambiguation.
+func (w *networkInterfaceWriter) AttachToInstance(ctx context.Context, p kacho.AttachNICParams) (*kacho.NetworkInterfaceRecord, error) {
+	slot := p.Index
+	if slot < 0 { // AutoIndex — первый свободный слот на инстансе (в этой же TX)
+		free, err := w.firstFreeSlot(ctx, p.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		slot = free
+	}
+	q := fmt.Sprintf(`
+		UPDATE network_interfaces ni
+		   SET used_by_id    = $2,
+		       used_by_type  = 'compute_instance',
+		       used_by_name  = $3,
+		       used_by_index = CASE WHEN ni.used_by_id = $2 THEN ni.used_by_index ELSE $6 END,
+		       status        = 'ACTIVE'
+		  FROM subnets s
+		 WHERE ni.id = $1
+		   AND s.id = ni.subnet_id
+		   AND (ni.used_by_id = '' OR ni.used_by_id = $2)
+		   AND ni.project_id = $4
+		   AND (s.placement_type = 'REGIONAL' OR s.zone_id = $5)
+		RETURNING %s`, nicColsNI)
+	rec, err := helpers.ScanNI(w.tx.QueryRow(ctx, q,
+		p.NICID, p.InstanceID, p.InstanceName, p.ProjectID, p.InstanceZoneID, slot))
+	if err != nil {
+		if helpers.IsNICIndexCollision(err) {
+			return nil, helpers.ErrNICIndexTaken
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, w.disambiguateAttach(ctx, p)
+		}
+		return nil, helpers.WrapPgErr(err, "Network interface", p.NICID)
+	}
+	return rec, nil
+}
+
+// firstFreeSlot — первый свободный used_by_index на инстансе (0-based). Читает
+// занятые слоты в текущей writer-TX; concurrency (два fresh NIC → один слот) держит
+// partial UNIQUE + retry в service. min-gap: среди N занятых всегда есть свободный в 0..N.
+func (w *networkInterfaceWriter) firstFreeSlot(ctx context.Context, instanceID string) (int32, error) {
+	rows, err := w.tx.Query(ctx,
+		`SELECT used_by_index FROM network_interfaces WHERE used_by_id = $1 AND used_by_index IS NOT NULL`,
+		instanceID)
+	if err != nil {
+		return 0, helpers.WrapPgErr(err, "Network interface", "")
+	}
+	defer rows.Close()
+	used := map[int32]bool{}
+	for rows.Next() {
+		var idx int32
+		if err := rows.Scan(&idx); err != nil {
+			return 0, helpers.WrapPgErr(err, "Network interface", "")
+		}
+		used[idx] = true
+	}
+	if err := rows.Err(); err != nil {
+		return 0, helpers.WrapPgErr(err, "Network interface", "")
+	}
+	for s := int32(0); ; s++ {
+		if !used[s] {
+			return s, nil
+		}
+	}
+}
+
+// disambiguateAttach — разбор 0-row исхода attach-CAS в той же TX: читает NIC+subnet
+// и определяет причину. Порядок: not-found → in-use → project-mismatch → zone-mismatch.
+func (w *networkInterfaceWriter) disambiguateAttach(ctx context.Context, p kacho.AttachNICParams) error {
+	var usedByID, projectID, placement, zoneID string
+	err := w.tx.QueryRow(ctx,
+		`SELECT ni.used_by_id, ni.project_id, s.placement_type, s.zone_id
+		   FROM network_interfaces ni JOIN subnets s ON s.id = ni.subnet_id
+		  WHERE ni.id = $1`, p.NICID).Scan(&usedByID, &projectID, &placement, &zoneID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: Network interface %s not found", helpers.ErrNotFound, p.NICID)
+		}
+		return helpers.WrapPgErr(err, "Network interface", p.NICID)
+	}
+	switch {
+	case usedByID != "" && usedByID != p.InstanceID:
+		return helpers.ErrNICInUse
+	case projectID != p.ProjectID:
+		// project-mismatch — обычно ловит object-scoped authz раньше (M5); здесь fail-closed.
+		return fmt.Errorf("%w: network interface project mismatch", helpers.ErrFailedPrecondition)
+	case placement == string(domain.PlacementZonal) && zoneID != p.InstanceZoneID:
+		return &helpers.NICZoneMismatchError{SubnetZone: zoneID, InstanceZone: p.InstanceZoneID}
+	default:
+		return fmt.Errorf("%w: network interface attach precondition", helpers.ErrFailedPrecondition)
+	}
+}
+
+// DetachFromInstance — идемпотентное снятие привязки NIC↔Instance. UPDATE clears
+// used_by_* + used_by_index=NULL, status='AVAILABLE' WHERE id=$nic AND used_by_id=
+// $instance. 1 row → отвязан; 0 rows → Get(nic): существует → идемпотентный OK
+// (уже отвязан / привязан к другому — возвращается как есть); нет → ErrNotFound.
+func (w *networkInterfaceWriter) DetachFromInstance(ctx context.Context, nicID, instanceID string) (*kacho.NetworkInterfaceRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE network_interfaces
+		   SET used_by_id='', used_by_type='', used_by_name='', used_by_index=NULL, status='AVAILABLE'
+		 WHERE id = $1 AND used_by_id = $2
+		RETURNING %s`, helpers.NICCols)
+	rec, err := helpers.ScanNI(w.tx.QueryRow(ctx, q, nicID, instanceID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Идемпотентно: NIC не привязан к этому инстансу (или уже отвязан). Возвращаем
+			// текущее состояние; отсутствие NIC → ErrNotFound (через Get→WrapPgErr).
+			return w.Get(ctx, nicID)
+		}
+		return nil, helpers.WrapPgErr(err, "Network interface", nicID)
+	}
+	return rec, nil
 }

@@ -513,6 +513,27 @@ func PermissionMap() authz.RPCMap {
 		"/kacho.cloud.vpc.v1.InternalAddressPoolService/ListAddresses":        clusterScoped(relationSystemAdmin),
 		"/kacho.cloud.vpc.v1.InternalAddressPoolService/GetUtilization":       clusterScoped(relationSystemAdmin),
 
+		// InternalNetworkInterfaceService — NIC↔Instance attach-CAS (:9091, §3a).
+		// object-scoped на самом NIC (vpc_network_interface:<nic_id>): Attach/Detach —
+		// editor (мутация привязки used_by), ListByInstance — viewer cluster-scoped
+		// (batched read для compute-side зеркала). Proto-аннотации
+		// (internal_network_interface_service.proto) 1:1 отражены здесь (permission-map
+		// hand-written, но required_relation/scope должны совпадать с proto). INV-2a:
+		// per-RPC Check энфорсится на internal listener'е (не только mTLS).
+		"/kacho.cloud.vpc.v1.InternalNetworkInterfaceService/Attach": {
+			Relation: relationEditor,
+			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
+				return req.(*vpcv1.AttachNetworkInterfaceRequest).GetNicId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalNetworkInterfaceService/Detach": {
+			Relation: relationEditor,
+			Extract: authz.StaticExtractor(objectTypeNetworkInterface, func(req any) (string, error) {
+				return req.(*vpcv1.DetachNetworkInterfaceRequest).GetNicId(), nil
+			}),
+		},
+		"/kacho.cloud.vpc.v1.InternalNetworkInterfaceService/ListByInstance": clusterScoped(relationViewer),
+
 		// InternalAddressService — IPAM-примитивы на конкретном Address
 		// (object-scoped, не cluster-scoped): мутации (atomic IP-allocate +
 		// referrer-tracking) → v_update, чтение referrer'а → v_get. object —

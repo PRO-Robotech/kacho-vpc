@@ -42,3 +42,16 @@ var ErrMacCollision = helpers.ErrMacCollision
 
 // ErrPoolExhausted — address_pool_free_ips пуст для запрошенного pool_id.
 var ErrPoolExhausted = helpers.ErrPoolExhausted
+
+// ErrNICInUse — NIC-attach CAS: NIC уже приаттачен к другому инстансу. Маппится в
+// FailedPrecondition "NetworkInterface is in use" (service-слой).
+var ErrNICInUse = helpers.ErrNICInUse
+
+// ErrNICIndexTaken — NIC-attach: слот used_by_index занят (partial UNIQUE
+// ni_used_by_index_uniq). auto-index → service retry с пересчётом слота.
+var ErrNICIndexTaken = helpers.ErrNICIndexTaken
+
+// NICZoneMismatchError — NIC-attach: ZONAL-subnet NIC в зоне, отличной от зоны
+// инстанса (placement-coherence). Несёт обе зоны для точного contract-текста
+// "NetworkInterface subnet is in zone %s, instance zone is %s".
+type NICZoneMismatchError = helpers.NICZoneMismatchError
