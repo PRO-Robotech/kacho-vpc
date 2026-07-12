@@ -25,6 +25,7 @@ import (
 	"context"
 
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/api/addresspool"
+	"github.com/PRO-Robotech/kacho-vpc/internal/domain"
 	"github.com/PRO-Robotech/kacho-vpc/internal/repo"
 	kachorepo "github.com/PRO-Robotech/kacho-vpc/internal/repo/kacho"
 )
@@ -64,6 +65,15 @@ type SubnetReader interface {
 // в worker'е Create.
 type ProjectClient interface {
 	Exists(ctx context.Context, projectID string) (bool, error)
+}
+
+// ZoneRegistry — port проверки существования зоны (geo.v1.ZoneService.Get,
+// Geography — leaf-домен kacho-geo). Используется CreateAddressUseCase для
+// existence-валидации `zone_id` external-адреса (placement-coherence). Локальный
+// порт (как subnet/iface.go) — реализация `*clients.GeoZoneClient` удовлетворяет
+// структурно. Get возвращает repo.ErrNotFound для несуществующей зоны.
+type ZoneRegistry interface {
+	Get(ctx context.Context, id string) (*domain.Zone, error)
 }
 
 // ListFilter — port per-object List-фильтра. Реализация —

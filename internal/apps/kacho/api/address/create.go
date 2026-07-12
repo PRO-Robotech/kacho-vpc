@@ -91,6 +91,7 @@ type CreateAddressUseCase struct {
 	opsRepo       operations.Repo
 	pools         PoolService // nil → external IPAM недоступна (test-only)
 	registrar     fgaregister.Registrar
+	zoneReg       ZoneRegistry // nil → external zone_id existence не проверяется
 }
 
 // WithRegistrar подключает синхронный owner-tuple registrar (Decision 2): после
@@ -98,6 +99,14 @@ type CreateAddressUseCase struct {
 // sync-путь пропускается (только async drainer).
 func (u *CreateAddressUseCase) WithRegistrar(r fgaregister.Registrar) *CreateAddressUseCase {
 	u.registrar = r
+	return u
+}
+
+// WithZoneRegistry подключает geo zone-registry для existence-валидации `zone_id`
+// external-адреса (placement-coherence, ребро vpc→geo). Nil → проверка
+// пропускается (тест-fallback; в composition root инжектится всегда).
+func (u *CreateAddressUseCase) WithZoneRegistry(zr ZoneRegistry) *CreateAddressUseCase {
+	u.zoneReg = zr
 	return u
 }
 
@@ -157,6 +166,21 @@ func (u *CreateAddressUseCase) Execute(ctx context.Context, in CreateInput) (*op
 			"external_ipv4_address_spec.requirements.outgoing_smtp_capability",
 			in.ExternalSpec.Requirements.OutgoingSmtpCapability,
 		); err != nil {
+			return nil, err
+		}
+	}
+
+	// Placement-coherence: existence-валидация `zone_id` external-адреса через geo
+	// (зеркало subnet.validateZoneID). Условная — непустой zone_id → existence-
+	// check; пустой zone_id ВАЛИДЕН (anycast из global-пула, зоне-независим — в
+	// отличие от Subnet). Симметрия v4/v6. Sync fail-fast ДО Operation.
+	if in.ExternalSpec != nil {
+		if err := u.validateExternalZone(ctx, in.ExternalSpec.ZoneID); err != nil {
+			return nil, err
+		}
+	}
+	if in.ExternalIpv6Spec != nil {
+		if err := u.validateExternalZone(ctx, in.ExternalIpv6Spec.ZoneID); err != nil {
 			return nil, err
 		}
 	}
@@ -314,6 +338,29 @@ func mapRequirements(r *AddrRequirements) *domain.AddressRequirements {
 		DdosProtectionProvider: r.DdosProtectionProvider,
 		OutgoingSmtpCapability: r.OutgoingSmtpCapability,
 	}
+}
+
+// validateExternalZone — placement-coherence existence-check `zone_id`
+// external-адреса через geo (зеркало subnet.validateZoneID). Условная:
+//   - пустой zone_id → пропуск (anycast из global-пула, зоне-независим — в
+//     отличие от Subnet, где ZONAL требует непустой zone_id);
+//   - zoneReg == nil → пропуск (тест-fallback без geo);
+//   - зона не найдена (geo NotFound → repo.ErrNotFound) → InvalidArgument
+//     `unknown zone id '<X>'` (verbatim-зеркало subnet.validateZoneID);
+//   - geo недоступен → fail-closed (MapRepoErr пробрасывает Unavailable).
+//
+// internal Address зону НЕ несёт (наследует через subnet_id) — сюда не попадает.
+func (u *CreateAddressUseCase) validateExternalZone(ctx context.Context, zoneID string) error {
+	if zoneID == "" || u.zoneReg == nil {
+		return nil
+	}
+	if _, err := u.zoneReg.Get(ctx, zoneID); err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return status.Errorf(codes.InvalidArgument, "unknown zone id '%s'", zoneID)
+		}
+		return serviceerr.MapRepoErr(err)
+	}
+	return nil
 }
 
 // assertSubnetOwned — общая FK+BOLA-валидация для internal-family (v4 и v6):
