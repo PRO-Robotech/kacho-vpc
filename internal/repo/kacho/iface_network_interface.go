@@ -34,6 +34,12 @@ type NetworkInterfaceReaderIface interface {
 	// ListByIDs — per-object filtered List (`WHERE id = ANY`), pagination после
 	// фильтра. Пустой allowedIDs → (nil, "", nil).
 	ListByIDs(ctx context.Context, f NetworkInterfaceFilter, allowedIDs []string, p Pagination) ([]*NetworkInterfaceRecord, string, error)
+	// ListByInstanceIDs — batched read NIC-привязок по набору instance_id
+	// (used_by_type='compute_instance' AND used_by_id = ANY). Один запрос на всё
+	// множество (не N+1) для compute-side зеркала Instance.Get/List. Каждая запись
+	// несёт instance-local Index (used_by_index) + денормализованное зеркало адресации.
+	// Пустой instanceIDs → (nil, nil).
+	ListByInstanceIDs(ctx context.Context, instanceIDs []string) ([]*NetworkInterfaceAttachment, error)
 }
 
 // NetworkInterfaceWriterIface — write-операции плюс read (writer видит свои
@@ -70,4 +76,23 @@ type NetworkInterfaceWriterIface interface {
 	// ErrNotFound. NIC не имеет children FK, но имеет parent FK на subnets
 	// (ON DELETE RESTRICT). outbox-write — в use-case'е.
 	Delete(ctx context.Context, id string) error
+	// AttachToInstance — атомарный CAS NIC↔Instance (self-describing; vpc валидирует
+	// СВОИ строки ni+subnet, НЕ зовёт compute). Single-statement UPDATE:
+	//   used_by_id='' OR =$instance (свободен ИЛИ уже наш — идемпотентно) AND
+	//   project-coherence AND (subnet REGIONAL/anycast OR subnet.zone=$instance_zone).
+	// Исходы:
+	//   - 1 row → успех (used_by выставлен, status ACTIVE, used_by_index назначен).
+	//   - 23505 на ni_used_by_index_uniq → ErrNICIndexTaken (слот занят; auto-index
+	//     retry в service, явный index → slot-taken).
+	//   - 0 rows → disambiguation SELECT в той же TX: ErrNotFound / ErrNICInUse /
+	//     *NICZoneMismatchError / ErrFailedPrecondition (project-mismatch, обычно ловит
+	//     object-scoped authz раньше).
+	// p.Index >=0 → явный слот; <0 (AutoIndex) → первый свободный (вычисляется в TX).
+	AttachToInstance(ctx context.Context, p AttachNICParams) (*NetworkInterfaceRecord, error)
+	// DetachFromInstance — идемпотентное снятие привязки NIC↔Instance:
+	//   UPDATE … SET used_by_id='', used_by_type='', used_by_name='',
+	//   used_by_index=NULL, status='AVAILABLE' WHERE id=$nic AND used_by_id=$instance.
+	//   1 row → отвязан; 0 rows → Get(nic): существует → идемпотентный OK (уже отвязан
+	//   или привязан к другому — возвращается как есть); нет → ErrNotFound.
+	DetachFromInstance(ctx context.Context, nicID, instanceID string) (*NetworkInterfaceRecord, error)
 }

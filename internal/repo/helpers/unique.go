@@ -46,6 +46,27 @@ func IsNICMacCollision(err error) bool {
 	return strings.Contains(err.Error(), NICMacUniqueConstraint)
 }
 
+// NICUsedByIndexUniqueConstraint — имя partial-UNIQUE-индекса ni_used_by_index_uniq
+// на (used_by_id, used_by_index) WHERE used_by_id<>” (миграция
+// 0014_network_interface_used_by_index). См. IsNICIndexCollision.
+const NICUsedByIndexUniqueConstraint = "ni_used_by_index_uniq"
+
+// IsNICIndexCollision — true если err — это нарушение partial-UNIQUE на
+// (used_by_id, used_by_index): выбранный слот уже занят другим NIC на том же
+// инстансе. Используется networkInterfaceWriter.AttachToInstance, чтобы отличить
+// retry-able slot-collision (auto-index пересчитывает свободный слот) от прочих
+// нарушений. Аналог IsNICMacCollision.
+func IsNICIndexCollision(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == NICUsedByIndexUniqueConstraint
+	}
+	return strings.Contains(err.Error(), NICUsedByIndexUniqueConstraint)
+}
+
 // IsFKViolation — Postgres foreign_key_violation (SQLSTATE 23503).
 // Возникает на Delete parent с зависимыми child-row (RESTRICT FK).
 // Маппится в gRPC FailedPrecondition ("Network is not empty").

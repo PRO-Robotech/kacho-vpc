@@ -49,6 +49,7 @@ import (
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/fgaregister"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/addressref"
 	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/networkinternal"
+	"github.com/PRO-Robotech/kacho-vpc/internal/apps/kacho/services/nicinternal"
 	"github.com/PRO-Robotech/kacho-vpc/internal/authzfilter"
 	"github.com/PRO-Robotech/kacho-vpc/internal/clients"
 	"github.com/PRO-Robotech/kacho-vpc/internal/dto"
@@ -107,17 +108,18 @@ func main() {
 // используется register{Public,Internal}Services. Каждый ресурс представлен
 // готовым use-case-handler'ом, а не «толстым» сервисом.
 type services struct {
-	networkHandler          *networkapp.Handler
-	subnetHandler           *subnetapp.Handler
-	addressHandler          *addressapp.Handler
-	addressAllocate         *addressapp.AllocateUseCase
-	addressRefService       *addressref.Service
-	routeTableHandler       *routetableapp.Handler
-	securityGroupHandler    *sgapp.Handler
-	gatewayHandler          *gatewayapp.Handler
-	addressPoolHandler      *addresspoolapp.Handler
-	networkInternal         *networkinternal.Service
-	networkInterfaceHandler *niapp.Handler
+	networkHandler           *networkapp.Handler
+	subnetHandler            *subnetapp.Handler
+	addressHandler           *addressapp.Handler
+	addressAllocate          *addressapp.AllocateUseCase
+	addressRefService        *addressref.Service
+	routeTableHandler        *routetableapp.Handler
+	securityGroupHandler     *sgapp.Handler
+	gatewayHandler           *gatewayapp.Handler
+	addressPoolHandler       *addresspoolapp.Handler
+	networkInternal          *networkinternal.Service
+	networkInterfaceHandler  *niapp.Handler
+	networkInterfaceInternal *nicinternal.Service
 }
 
 func runServe(cfg config.Config) error {
@@ -993,6 +995,10 @@ func buildServices(pool, slavePool *pgxpool.Pool, projectClient repo.ProjectClie
 		addressPoolHandler:      addressPoolHandler,
 		networkInternal:         networkinternal.NewService(networkAdapter, sgAdapter),
 		networkInterfaceHandler: niHandler,
+		// InternalNetworkInterfaceService — NIC↔Instance attach-CAS (:9091, §3a).
+		// Работает напрямую через CQRS-Repository (kachoRepo): attach/detach — writer-TX
+		// с атомарным CAS, ListByInstance — batched reader.
+		networkInterfaceInternal: nicinternal.NewService(kachoRepo),
 	}
 }
 
@@ -1013,6 +1019,10 @@ func registerInternalServices(srv *grpc.Server, svcs *services) {
 	vpcv1.RegisterInternalAddressServiceServer(srv, handler.NewInternalAddressAllocateHandler(svcs.addressAllocate, svcs.addressRefService))
 	vpcv1.RegisterInternalAddressPoolServiceServer(srv, svcs.addressPoolHandler)
 	vpcv1.RegisterInternalNetworkServiceServer(srv, handler.NewInternalNetworkHandler(svcs.networkInternal))
+	// InternalNetworkInterfaceService — NIC↔Instance attach-CAS (:9091, ban #6): не на
+	// external mux (INV-2). Регистрируется на internalSrv → та же authz-Check-цепочка
+	// интерсепторов (internalUnary + authzIntr), что и прочие internal RPC (INV-2a).
+	vpcv1.RegisterInternalNetworkInterfaceServiceServer(srv, handler.NewInternalNetworkInterfaceHandler(svcs.networkInterfaceInternal))
 }
 
 // maskDSN отдает DSN с замаскированным паролем — для безопасного логирования

@@ -97,6 +97,34 @@ func (r *networkInterfaceReader) ListBySubnet(_ context.Context, subnetID string
 	return result, nil
 }
 
+// ListByInstanceIDs — in-memory batched read NIC-привязок. Index не моделируется
+// (used_by_index — DB-колонка, вне domain-записи) → всегда 0; primary-адреса не
+// резолвятся (join addresses — только в pg). Слот/адрес-семантика — в integration.
+func (r *networkInterfaceReader) ListByInstanceIDs(_ context.Context, instanceIDs []string) ([]*kacho.NetworkInterfaceAttachment, error) {
+	if len(instanceIDs) == 0 {
+		return nil, nil
+	}
+	want := make(map[string]struct{}, len(instanceIDs))
+	for _, id := range instanceIDs {
+		want[id] = struct{}{}
+	}
+	var out []*kacho.NetworkInterfaceAttachment
+	for _, n := range r.snap {
+		if n.UsedByType != "compute_instance" {
+			continue
+		}
+		if _, ok := want[n.UsedByID]; !ok {
+			continue
+		}
+		out = append(out, &kacho.NetworkInterfaceAttachment{
+			NICID: n.ID, InstanceID: n.UsedByID, SubnetID: n.SubnetID,
+			SecurityGroupIDs: n.SecurityGroupIDs, MAC: n.MAC,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].NICID < out[j].NICID })
+	return out, nil
+}
+
 // ---- NetworkInterface writer ----
 
 // networkInterfaceWriter — write-«TX» NIC. Writer видит свои writes —
@@ -186,6 +214,36 @@ func (nw *networkInterfaceWriter) ListBySubnet(_ context.Context, subnetID strin
 	return result, nil
 }
 
+// ListByInstanceIDs — writer-side batched read NIC-привязок (parity с pg-writer,
+// который видит свои writes). Index не моделируется (см. reader).
+func (nw *networkInterfaceWriter) ListByInstanceIDs(_ context.Context, instanceIDs []string) ([]*kacho.NetworkInterfaceAttachment, error) {
+	if len(instanceIDs) == 0 {
+		return nil, nil
+	}
+	want := make(map[string]struct{}, len(instanceIDs))
+	for _, id := range instanceIDs {
+		want[id] = struct{}{}
+	}
+	var out []*kacho.NetworkInterfaceAttachment
+	for id, n := range nw.w.localNIs {
+		if _, deleted := nw.w.deletedNIIDs[id]; deleted {
+			continue
+		}
+		if n.UsedByType != "compute_instance" {
+			continue
+		}
+		if _, ok := want[n.UsedByID]; !ok {
+			continue
+		}
+		out = append(out, &kacho.NetworkInterfaceAttachment{
+			NICID: n.ID, InstanceID: n.UsedByID, SubnetID: n.SubnetID,
+			SecurityGroupIDs: n.SecurityGroupIDs, MAC: n.MAC,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].NICID < out[j].NICID })
+	return out, nil
+}
+
 func (nw *networkInterfaceWriter) Insert(_ context.Context, n *domain.NetworkInterface) (*kacho.NetworkInterfaceRecord, error) {
 	// Тест-хук mac-collision: если установлен, вызывается перед вставкой с текущим
 	// MAC. Ненулевая ошибка (обычно repo.ErrMacCollision) заменяет вставку — так
@@ -233,6 +291,47 @@ func (nw *networkInterfaceWriter) Delete(_ context.Context, id string) error {
 	nw.w.deletedNIIDs[id] = struct{}{}
 	delete(nw.w.localNIs, id)
 	return nil
+}
+
+// AttachToInstance — in-memory CAS (used_by_id=” OR =$instance). Zone-coherence и
+// slot-index не моделируются (нужны subnets/UNIQUE-индекс — только в pg); проверяются
+// integration-тестами. Здесь — used_by CAS + idempotent replay + in-use sentinel.
+func (nw *networkInterfaceWriter) AttachToInstance(_ context.Context, p kacho.AttachNICParams) (*kacho.NetworkInterfaceRecord, error) {
+	if _, deleted := nw.w.deletedNIIDs[p.NICID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	n, ok := nw.w.localNIs[p.NICID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	if n.UsedByID != "" && n.UsedByID != p.InstanceID {
+		return nil, repo.ErrNICInUse
+	}
+	n.UsedByType = "compute_instance"
+	n.UsedByID = p.InstanceID
+	n.UsedByName = p.InstanceName
+	n.Status = domain.NIStatusActive
+	cp := *n
+	return &cp, nil
+}
+
+// DetachFromInstance — in-memory идемпотентное снятие привязки.
+func (nw *networkInterfaceWriter) DetachFromInstance(ctx context.Context, nicID, instanceID string) (*kacho.NetworkInterfaceRecord, error) {
+	if _, deleted := nw.w.deletedNIIDs[nicID]; deleted {
+		return nil, repo.ErrNotFound
+	}
+	n, ok := nw.w.localNIs[nicID]
+	if !ok {
+		return nil, repo.ErrNotFound
+	}
+	if n.UsedByID == instanceID {
+		n.UsedByType = ""
+		n.UsedByID = ""
+		n.UsedByName = ""
+		n.Status = domain.NIStatusAvailable
+	}
+	cp := *n
+	return &cp, nil
 }
 
 // Compile-time проверка соответствия интерфейсам.
