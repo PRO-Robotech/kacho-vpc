@@ -10,6 +10,10 @@ github.com/H-BF/corlib v1.2.31-dev h1:8EjCkkiZ02Em77buzIQp1chKPWkWvi40jz0mpx/Lkj
 github.com/H-BF/corlib v1.2.31-dev/go.mod h1:YrRyr4LXSng+HzqIo4HfI3+833UrI9xW3qJcIoXwc04=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+github.com/PRO-Robotech/kacho-corelib v1.0.3-0.20260712234555-666ca389fd55 h1:FBdx68u7OyO0JRBQxUNjGbXrl4Glwxu4DlRRhi2ZwrQ=
+github.com/PRO-Robotech/kacho-corelib v1.0.3-0.20260712234555-666ca389fd55/go.mod h1:6VD1FltG2i04ySe5/wh2TSwyWHhVwyoz5yXIf7DImvs=
+github.com/PRO-Robotech/kacho-proto v0.0.0-20260712234552-8f1df0ce7887 h1:h2lf4FZHUPjwSJgPGym54f3DIUhPSAjShI3loY+guO4=
+github.com/PRO-Robotech/kacho-proto v0.0.0-20260712234552-8f1df0ce7887/go.mod h1:/WNJsNO9mEN8MGFWOGpz5pcOr6iDEPm9owuFuTxZ25s=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
