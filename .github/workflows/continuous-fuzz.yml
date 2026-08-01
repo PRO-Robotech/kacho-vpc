@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod }
 
       - name: restore fuzz corpus

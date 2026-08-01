@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod }
       - run: |
           go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod }
       - run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.5.0

@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
       - run: go build ./...
@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { path: kacho-vpc }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with: { go-version-file: kacho-vpc/go.mod, cache-dependency-path: kacho-vpc/go.sum }
       - run: go mod download
       # internal/repo/*integration_test.go поднимают postgres:16 через testcontainers
